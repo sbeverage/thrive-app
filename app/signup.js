@@ -23,15 +23,18 @@ export default function SignupScreen() {
       Alert.alert('Missing Fields', 'Please fill out all fields.');
       return;
     }
-
+  
     try {
       await API.post('/auth/signup', { name, email, password });
+  
+      // 👇 Go to verify email screen first
       router.push({ pathname: '/verifyEmail', params: { email } });
     } catch (error) {
       Alert.alert('Signup Failed', 'Something went wrong. Try again.');
       console.error('❌ Signup error:', error.response?.data || error.message);
     }
   };
+  
 
   const socialLogins = [
     {

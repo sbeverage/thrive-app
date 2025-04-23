@@ -2,7 +2,7 @@
 import axios from 'axios';
 
 const API = axios.create({
-  baseURL: 'http://192.168.1.27:5050/api', 
+  baseURL: 'https://thrive-backend-671e.onrender.com/api',
   headers: {
     'Content-Type': 'application/json',
   },

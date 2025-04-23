@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,13 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import API from './lib/api'; // ✅ updated path
+import API from './lib/api';
 
 export default function VerifyEmailScreen() {
   const { email } = useLocalSearchParams();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(false);
 
   const handleResendEmail = async () => {
     if (!email) {
@@ -34,6 +35,27 @@ export default function VerifyEmailScreen() {
       setIsLoading(false);
     }
   };
+
+  // 🛎️ Auto-check if email is verified every 5 seconds
+  useEffect(() => {
+    if (!email) return;
+
+    setCheckingStatus(true);
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await API.get(`/auth/check-verification/${email}`);
+        if (res.data?.isVerified) {
+          clearInterval(interval);
+          router.replace({ pathname: '/signupProfile', params: { email } });
+        }
+      } catch (error) {
+        console.error('🔁 Verification check error:', error.message);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [email]);
 
   return (
     <View style={styles.container}>
@@ -60,6 +82,10 @@ export default function VerifyEmailScreen() {
           <Text style={styles.resendButtonText}>Resend Email</Text>
         )}
       </TouchableOpacity>
+
+      {checkingStatus && (
+        <Text style={styles.checkingText}>⏳ Waiting for verification...</Text>
+      )}
     </View>
   );
 }
@@ -116,5 +142,10 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
     fontSize: 16,
+  },
+  checkingText: {
+    marginTop: 20,
+    fontSize: 14,
+    color: '#6d6e72',
   },
 });
