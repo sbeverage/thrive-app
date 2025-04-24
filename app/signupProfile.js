@@ -1,16 +1,27 @@
-import React from "react";
-import { View, Text, Image, StyleSheet, TextInput, TouchableOpacity, ScrollView } from "react-native";
-import { useRouter } from "expo-router";
+import React, { useEffect, useState } from "react";
+import { View, Text, Image, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert } from "react-native";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 export default function SignupProfile() {
   const router = useRouter();
+  const { name, email } = useLocalSearchParams();
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
 
-  const inputFields = [
-    { id: "firstName", placeholder: "First Name" },
-    { id: "lastName", placeholder: "Last Name" },
-    { id: "phoneNumber", placeholder: "Phone Number" },
-  ];
+  useEffect(() => {
+    if (name) {
+      const [first = "", last = ""] = name.split(" ");
+      setFirstName(first);
+      setLastName(last);
+    }
+  }, [name]);
+
+  const handleContinue = () => {
+    Alert.alert("Continue clicked!", `Name: ${firstName} ${lastName}, Phone: ${phoneNumber}`);
+    // TODO: Post data to backend
+  };
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -39,19 +50,40 @@ export default function SignupProfile() {
 
       {/* Input Fields */}
       <View style={styles.formContainer}>
-        {inputFields.map((field) => (
-          <View key={field.id} style={styles.inputWrapper}>
-            <TextInput
-              placeholder={field.placeholder}
-              style={styles.input}
-              placeholderTextColor="#6d6e72"
-            />
-          </View>
-        ))}
+        <View style={styles.inputWrapper}>
+          <TextInput
+            placeholder="First Name"
+            value={firstName}
+            onChangeText={setFirstName}
+            autoCapitalize="words"
+            style={styles.input}
+            placeholderTextColor="#6d6e72"
+          />
+        </View>
+        <View style={styles.inputWrapper}>
+          <TextInput
+            placeholder="Last Name"
+            value={lastName}
+            onChangeText={setLastName}
+            autoCapitalize="words"
+            style={styles.input}
+            placeholderTextColor="#6d6e72"
+          />
+        </View>
+        <View style={styles.inputWrapper}>
+          <TextInput
+            placeholder="Phone Number"
+            value={phoneNumber}
+            onChangeText={setPhoneNumber}
+            keyboardType="phone-pad"
+            style={styles.input}
+            placeholderTextColor="#6d6e72"
+          />
+        </View>
       </View>
 
       {/* Continue Button */}
-      <TouchableOpacity style={styles.continueButton}>
+      <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
         <Text style={styles.continueText}>Continue</Text>
       </TouchableOpacity>
     </ScrollView>
@@ -132,6 +164,7 @@ const styles = StyleSheet.create({
   input: {
     fontSize: 14,
     color: "#324e58",
+    textTransform: "capitalize",
   },
   continueButton: {
     backgroundColor: "#db8633",

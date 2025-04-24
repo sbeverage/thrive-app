@@ -47,7 +47,7 @@ export default function VerifyEmailScreen() {
         const res = await API.get(`/auth/check-verification/${email}`);
         if (res.data?.isVerified) {
           clearInterval(interval);
-          router.replace({ pathname: '/signupProfile', params: { email } });
+          router.replace({ pathname: '/signupProfile', params: { name, email } });
         }
       } catch (error) {
         console.error('🔁 Verification check error:', error.message);
