@@ -50,7 +50,7 @@ export default function VerifyEmailScreen() {
           router.replace({ pathname: '/signupProfile', params: { name, email } });
         }
       } catch (error) {
-        console.error('❌ Verification check error:', error?.response?.data || error?.message || error);
+        console.error('❌ Verification check error:', error?.message || JSON.stringify(error));
       }      
     }, 5000);
 
