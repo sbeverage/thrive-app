@@ -25,6 +25,8 @@ export default function SignupScreen() {
     }
   
     try {
+      console.log('📤 Sending signup request to:', API.defaults.baseURL + '/auth/signup');
+      
       await API.post('/api/auth/signup', { name, email, password });
   
       // 👇 Go to verify email screen first
