@@ -25,7 +25,7 @@ export default function SignupScreen() {
     }
   
     try {
-      await API.post('/auth/signup', { name, email, password });
+      await API.post('/api/auth/signup', { name, email, password });
   
       // 👇 Go to verify email screen first
       router.push({ pathname: '/verifyEmail', params: { email, name } });
