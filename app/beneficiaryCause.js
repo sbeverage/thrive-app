@@ -21,17 +21,16 @@ export default function BeneficiaryCause() {
     "Education",
   ];
 
-  const toggleCause = (cause) => {
-    if (selectedCauses.includes(cause)) {
-      setSelectedCauses((prev) => prev.filter((c) => c !== cause));
-    } else {
-      setSelectedCauses((prev) => [...prev, cause]);
-    }
+  const handleToggleCause = (cause) => {
+    setSelectedCauses((prevSelected) =>
+      prevSelected.includes(cause)
+        ? prevSelected.filter((c) => c !== cause)
+        : [...prevSelected, cause]
+    );
   };
 
   const handleContinue = () => {
-    // Save selected causes or move forward
-    router.push("/nextStep"); // Replace with your real next step later
+    router.push("/nextStep"); // You can replace '/nextStep' with your real next page
   };
 
   const handleSkip = () => {
@@ -59,43 +58,43 @@ export default function BeneficiaryCause() {
         <View style={{ flex: 1, height: 4, backgroundColor: "#F5F5FA", borderRadius: 10, marginHorizontal: 2 }} />
       </View>
 
-      {/* Main content */}
-      <Image
-        source={require("../assets/images/bolt-piggy.png")}
-        style={{ width: 80, height: 80, alignSelf: "center", marginVertical: 10 }}
-      />
-
-      <View style={{ backgroundColor: "#F5F5FA", padding: 12, borderRadius: 8, marginVertical: 10 }}>
-        <Text style={{ color: "#324E58", textAlign: "center" }}>
-          For which cause you want to see beneficiaries?
-        </Text>
+      {/* Piggy and Chat Bubble */}
+      <View style={{ flexDirection: "row", alignItems: "center", marginTop: 10, marginBottom: 20 }}>
+        <Image source={require("../assets/images/bolt-piggy.png")} style={{ width: 60, height: 60 }} />
+        <View style={{ backgroundColor: "#F5F5FA", padding: 12, borderRadius: 8, marginLeft: 10, flex: 1 }}>
+          <Text style={{ color: "#324E58", textAlign: "center" }}>
+            For which cause you want to see beneficiaries?
+          </Text>
+        </View>
       </View>
 
-      <Text style={{ color: "#324E58", fontSize: 18, marginTop: 20, marginBottom: 10 }}>Beneficiaries Cause</Text>
+      {/* Section Title */}
+      <Text style={{ color: "#324E58", fontSize: 20, marginBottom: 20 }}>
+        Beneficiaries Cause
+      </Text>
 
-      {causes.map((cause) => (
-        <TouchableOpacity
-          key={cause}
-          onPress={() => toggleCause(cause)}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            paddingVertical: 12,
-            borderBottomWidth: 1,
-            borderBottomColor: "#F5F5FA",
-          }}
-        >
-          <Text style={{ color: "#324E58", fontSize: 16 }}>{cause}</Text>
-          {selectedCauses.includes(cause) && (
-            <Image
-              source={require("../assets/images/checkmark.png")}
-              style={{ width: 20, height: 20, tintColor: "#DB8633" }}
-            />
-          )}
-        </TouchableOpacity>
-      ))}
+      {/* Causes List */}
+      <View style={{ gap: 20, marginBottom: 40 }}>
+        {causes.map((cause) => (
+          <TouchableOpacity key={cause} onPress={() => handleToggleCause(cause)}>
+            <View style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingVertical: 10,
+              borderBottomWidth: 1,
+              borderBottomColor: "#E1E1E5",
+            }}>
+              <Text style={{ fontSize: 16, color: "#324E58" }}>{cause}</Text>
+              {selectedCauses.includes(cause) && (
+                <Image source={require("../assets/images/checkmark.png")} style={{ width: 20, height: 20, tintColor: "#DB8633" }} />
+              )}
+            </View>
+          </TouchableOpacity>
+        ))}
+      </View>
 
+      {/* Save and Continue Button */}
       <TouchableOpacity
         onPress={handleContinue}
         style={{
@@ -103,7 +102,7 @@ export default function BeneficiaryCause() {
           paddingVertical: 15,
           borderRadius: 10,
           alignItems: "center",
-          marginTop: 30,
+          marginBottom: 20,
         }}
       >
         <Text style={{ color: "#fff", fontSize: 16 }}>Save and continue</Text>
