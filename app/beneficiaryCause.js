@@ -1,8 +1,8 @@
 // app/beneficiaryCause.js
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Image } from 'react-native';
-import { useRouter } from 'expo-router';
-import { AntDesign } from '@expo/vector-icons';
+
+import { useRouter } from "expo-router";
+import React, { useState } from "react";
+import { View, Text, TouchableOpacity, Image, ScrollView } from "react-native";
 
 export default function BeneficiaryCause() {
   const router = useRouter();
@@ -10,89 +10,103 @@ export default function BeneficiaryCause() {
   const [selectedCauses, setSelectedCauses] = useState([]);
 
   const causes = [
-    'Childhood Illness',
-    'Foster Care',
-    'Disabilities',
-    'Mental Health',
-    'Animal Welfare',
-    'Anti-Human Trafficking',
-    'Rehabilitation',
-    'Low Income Families',
-    'Education',
+    "Childhood Illness",
+    "Foster Care",
+    "Disabilities",
+    "Mental Health",
+    "Animal Welfare",
+    "Anti-Human Trafficking",
+    "Rehabilitation",
+    "Low Income Families",
+    "Education",
   ];
 
   const toggleCause = (cause) => {
     if (selectedCauses.includes(cause)) {
-      setSelectedCauses(selectedCauses.filter((c) => c !== cause));
+      setSelectedCauses((prev) => prev.filter((c) => c !== cause));
     } else {
-      setSelectedCauses([...selectedCauses, cause]);
+      setSelectedCauses((prev) => [...prev, cause]);
     }
   };
 
-  const handleSkip = () => {
-    router.replace('/guestHome');
-  };
-
-  const handleBack = () => {
-    router.back();
-  };
-
   const handleContinue = () => {
-    // Later we can save selectedCauses to backend or context!
-    router.push('/nextStep');
+    // Save selected causes or move forward
+    router.push("/nextStep"); // Replace with your real next step later
+  };
+
+  const handleSkip = () => {
+    router.replace("/guestHome");
   };
 
   return (
-    <ScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: '#fff', padding: 20 }}>
-      {/* Top navigation */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <TouchableOpacity onPress={handleBack}>
-          <AntDesign name="arrowleft" size={24} color="#324E58" />
+    <ScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: "#fff", padding: 20 }}>
+      {/* Back and Skip */}
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <Image source={require("../assets/images/arrow-left.png")} style={{ width: 24, height: 24 }} />
         </TouchableOpacity>
         <TouchableOpacity onPress={handleSkip}>
-          <Text style={{ color: '#DB8633', fontSize: 16 }}>Skip</Text>
+          <Text style={{ color: "#DB8633", fontSize: 14 }}>Skip</Text>
         </TouchableOpacity>
       </View>
 
       {/* Progress Bar */}
-      <View style={{ flexDirection: 'row', justifyContent: 'center', marginVertical: 20 }}>
-        <View style={{ width: 50, height: 5, backgroundColor: '#324E58', borderRadius: 5, marginHorizontal: 2 }} />
-        <View style={{ width: 50, height: 5, backgroundColor: '#324E58', borderRadius: 5, marginHorizontal: 2 }} />
-        <View style={{ width: 50, height: 5, backgroundColor: '#324E58', borderRadius: 5, marginHorizontal: 2 }} />
-        <View style={{ width: 50, height: 5, backgroundColor: '#F5F5FA', borderRadius: 5, marginHorizontal: 2 }} />
+      <View style={{ flexDirection: "row", alignItems: "center", marginVertical: 10 }}>
+        <View style={{ flex: 1, height: 4, backgroundColor: "#324E58", borderRadius: 10, marginHorizontal: 2 }} />
+        <View style={{ flex: 1, height: 4, backgroundColor: "#324E58", borderRadius: 10, marginHorizontal: 2 }} />
+        <View style={{ flex: 1, height: 4, backgroundColor: "#324E58", borderRadius: 10, marginHorizontal: 2 }} />
+        <Image source={require("../assets/images/walking-piggy.png")} style={{ width: 30, height: 24 }} />
+        <View style={{ flex: 1, height: 4, backgroundColor: "#F5F5FA", borderRadius: 10, marginHorizontal: 2 }} />
       </View>
 
-      {/* Walking Piggy */}
-      <Image source={require('../assets/images/Walking-Piggy.png')} style={{ width: 50, height: 50, alignSelf: 'center' }} />
+      {/* Main content */}
+      <Image
+        source={require("../assets/images/bolt-piggy.png")}
+        style={{ width: 80, height: 80, alignSelf: "center", marginVertical: 10 }}
+      />
 
-      {/* Speech Bubble */}
-      <View style={{ backgroundColor: '#fff', borderColor: '#E1E1E5', borderWidth: 1, borderRadius: 20, padding: 10, marginVertical: 20 }}>
-        <Text style={{ textAlign: 'center', color: '#324E58' }}>For which cause you want to see beneficiaries?</Text>
+      <View style={{ backgroundColor: "#F5F5FA", padding: 12, borderRadius: 8, marginVertical: 10 }}>
+        <Text style={{ color: "#324E58", textAlign: "center" }}>
+          For which cause you want to see beneficiaries?
+        </Text>
       </View>
 
-      {/* Title */}
-      <Text style={{ fontSize: 24, fontWeight: '600', color: '#324E58', marginBottom: 20 }}>Beneficiaries Cause</Text>
+      <Text style={{ color: "#324E58", fontSize: 18, marginTop: 20, marginBottom: 10 }}>Beneficiaries Cause</Text>
 
-      {/* Causes List */}
-      {causes.map((cause, idx) => (
+      {causes.map((cause) => (
         <TouchableOpacity
-          key={idx}
+          key={cause}
           onPress={() => toggleCause(cause)}
-          style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#F5F5FA', paddingVertical: 15 }}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingVertical: 12,
+            borderBottomWidth: 1,
+            borderBottomColor: "#F5F5FA",
+          }}
         >
-          <Text style={{ fontSize: 16, color: '#324E58' }}>{cause}</Text>
+          <Text style={{ color: "#324E58", fontSize: 16 }}>{cause}</Text>
           {selectedCauses.includes(cause) && (
-            <AntDesign name="checkcircle" size={20} color="#DB8633" />
+            <Image
+              source={require("../assets/images/checkmark.png")}
+              style={{ width: 20, height: 20, tintColor: "#DB8633" }}
+            />
           )}
         </TouchableOpacity>
       ))}
 
-      {/* Save and Continue Button */}
       <TouchableOpacity
         onPress={handleContinue}
-        style={{ backgroundColor: '#DB8633', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 30 }}
+        style={{
+          backgroundColor: "#DB8633",
+          paddingVertical: 15,
+          borderRadius: 10,
+          alignItems: "center",
+          marginTop: 30,
+        }}
       >
-        <Text style={{ color: '#fff', fontSize: 16 }}>Save and continue</Text>
+        <Text style={{ color: "#fff", fontSize: 16 }}>Save and continue</Text>
       </TouchableOpacity>
     </ScrollView>
   );
