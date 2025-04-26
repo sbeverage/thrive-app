@@ -15,7 +15,13 @@ import API from './lib/api';
 export default function SignupScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
-  const [password, usePassword] = useState('');
+  const [password, setPassword] = useState('');
+
+  const socialLogins = [
+    { name: 'Facebook', icon: require('../assets/images/Facebook-icon.png') },
+    { name: 'Google', icon: require('../assets/images/Google-icon.png') },
+    { name: 'Apple', icon: require('../assets/images/Apple-icon.png') },
+  ];
 
   const handleSignup = async () => {
     if (!email || !password) {
@@ -53,7 +59,7 @@ export default function SignupScreen() {
       <TextInput
         placeholder="Password"
         value={password}
-        onChangeText={usePassword}
+        onChangeText={setPassword}
         secureTextEntry
         style={styles.input}
         placeholderTextColor="#6d6e72"
@@ -63,6 +69,14 @@ export default function SignupScreen() {
         <Text style={styles.signupButtonText}>Create Account</Text>
       </TouchableOpacity>
 
+      {/* 👇 Restore the Social Signups */}
+      <Text style={styles.orText}>Or sign up with</Text>
+      {socialLogins.map((social, index) => (
+        <TouchableOpacity key={index} style={styles.socialButton}>
+          <Image source={social.icon} style={styles.socialIcon} />
+          <Text style={styles.socialText}>Sign up with {social.name}</Text>
+        </TouchableOpacity>
+      ))}
     </ScrollView>
   );
 }
@@ -125,4 +139,30 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
   },
+  orText: {
+    color: '#6d6e72',
+    marginBottom: 10,
+  },
+  socialButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderColor: '#e1e1e5',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    width: '100%',
+    marginBottom: 10,
+  },
+  socialIcon: {
+    width: 24,
+    height: 24,
+    marginRight: 20,
+    resizeMode: 'contain',
+  },
+  socialText: {
+    color: '#6d6e72',
+    fontWeight: 'bold',
+  },
 });
+
