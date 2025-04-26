@@ -1,29 +1,16 @@
-import React, { useState } from "react";
-import { View, Text, TouchableOpacity, Image, StyleSheet, ScrollView } from "react-native";
+// app/beneficiary.js
+
 import { useRouter } from "expo-router";
+import React, { useState } from "react";
+import { View, Text, TouchableOpacity, Image, ScrollView } from "react-native";
 
 export default function Beneficiary() {
   const router = useRouter();
 
   const [supportOptions, setSupportOptions] = useState([
-    {
-      id: "local",
-      name: "Local",
-      image: require("../assets/images/local-icon.png"),
-      selected: true,
-    },
-    {
-      id: "national",
-      name: "National",
-      image: require("../assets/images/national-icon.png"),
-      selected: false,
-    },
-    {
-      id: "international",
-      name: "International",
-      image: require("../assets/images/international-icon.png"),
-      selected: false,
-    },
+    { id: "local", name: "Local", image: require("../assets/images/local-pin.png"), selected: true },
+    { id: "national", name: "National", image: require("../assets/images/national.png"), selected: false },
+    { id: "international", name: "International", image: require("../assets/images/international.png"), selected: false },
   ]);
 
   const [sizeOptions, setSizeOptions] = useState([
@@ -33,84 +20,111 @@ export default function Beneficiary() {
   ]);
 
   const handleSupportSelect = (id) => {
-    setSupportOptions((prev) =>
-      prev.map((opt) => ({ ...opt, selected: opt.id === id }))
-    );
+    setSupportOptions((prev) => prev.map((opt) => ({ ...opt, selected: opt.id === id })));
   };
 
   const handleSizeSelect = (id) => {
-    setSizeOptions((prev) =>
-      prev.map((opt) => ({ ...opt, selected: opt.id === id }))
-    );
+    setSizeOptions((prev) => prev.map((opt) => ({ ...opt, selected: opt.id === id })));
   };
 
   const handleContinue = () => {
-    router.push("/nextStep");
+    router.push("/beneficiaryCause"); // 🌟 updated to point to the next page
+  };
+
+  const handleSkip = () => {
+    router.replace("/guestHome");
+  };
+
+  const handleBack = () => {
+    router.replace("/signupProfile"); // 🌟 new function so left arrow always goes back to profile page
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-        <Text style={styles.backArrow}>←</Text>
-      </TouchableOpacity>
-
-      <View style={styles.progressBarWrapper}>
-        <View style={styles.progressDotActive} />
-        <View style={styles.progressDotActive} />
-        <View style={styles.progressDotInactive} />
-        <View style={styles.progressDotInactive} />
+    <ScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: "#fff", padding: 20 }}>
+      {/* Back and Skip */}
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <TouchableOpacity onPress={handleBack}>
+          <Image source={require("../assets/images/back-arrow.png")} style={{ width: 24, height: 24 }} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={handleSkip}>
+          <Text style={{ color: "#DB8633", fontSize: 14 }}>Skip</Text>
+        </TouchableOpacity>
       </View>
 
+      {/* Progress Bar */}
+      <View style={{ flexDirection: "row", alignItems: "center", marginVertical: 10 }}>
+        <View style={{ flex: 1, height: 4, backgroundColor: "#324E58", borderRadius: 10, marginHorizontal: 2 }} />
+        <View style={{ flex: 1, height: 4, backgroundColor: "#324E58", borderRadius: 10, marginHorizontal: 2 }} />
+        <Image source={require("../assets/images/Walking Piggy.png")} style={{ width: 30, height: 24 }} />
+        <View style={{ flex: 1, height: 4, backgroundColor: "#F5F5FA", borderRadius: 10, marginHorizontal: 2 }} />
+        <View style={{ flex: 1, height: 4, backgroundColor: "#F5F5FA", borderRadius: 10, marginHorizontal: 2 }} />
+      </View>
+
+      {/* Main content */}
       <Image
-        source={require("../assets/images/piggy-with-flowers.png")}
-        style={styles.piggy}
+        source={require("../assets/images/walking-piggy.png")}
+        style={{ width: 80, height: 80, alignSelf: "center", marginVertical: 10 }}
       />
 
-      <View style={styles.questionBox}>
-        <Text style={styles.questionText}>Who do you want to donate to?</Text>
+      <View style={{ backgroundColor: "#F5F5FA", padding: 12, borderRadius: 8, marginVertical: 10 }}>
+        <Text style={{ color: "#324E58", textAlign: "center" }}>Who do you want to donate to?</Text>
       </View>
 
-      <Text style={styles.sectionTitle}>Who they support</Text>
+      <Text style={{ color: "#324E58", fontSize: 18, marginTop: 20, marginBottom: 10 }}>Who they support</Text>
 
-      <View style={styles.optionRow}>
+      <View style={{ flexDirection: "row", justifyContent: "space-around", marginBottom: 20 }}>
         {supportOptions.map((option) => (
           <TouchableOpacity key={option.id} onPress={() => handleSupportSelect(option.id)}>
             <View
-              style={[
-                styles.supportCard,
-                option.selected && styles.selectedBorder,
-              ]}
+              style={{
+                width: 90,
+                height: 90,
+                borderRadius: 16,
+                backgroundColor: "#F5F5FA",
+                borderWidth: option.selected ? 2 : 0,
+                borderColor: option.selected ? "#DB8633" : "transparent",
+                justifyContent: "center",
+                alignItems: "center",
+                marginBottom: 5,
+              }}
             >
-              <Image source={option.image} style={styles.optionImage} />
-              <Text
-                style={[
-                  styles.optionText,
-                  option.selected && styles.selectedText,
-                ]}
-              >
-                {option.name}
-              </Text>
+              <Image source={option.image} style={{ width: 40, height: 40 }} />
             </View>
+            <Text
+              style={{
+                textAlign: "center",
+                color: option.selected ? "#DB8633" : "#324E58",
+                fontSize: 14,
+                marginTop: 5,
+              }}
+            >
+              {option.name}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      <Text style={styles.sectionTitle}>Size of organization</Text>
+      <Text style={{ color: "#324E58", fontSize: 18, marginBottom: 10 }}>Size of organization</Text>
 
-      <View style={styles.sizeRow}>
+      <View style={{ flexDirection: "row", justifyContent: "space-around", marginBottom: 20 }}>
         {sizeOptions.map((option) => (
           <TouchableOpacity key={option.id} onPress={() => handleSizeSelect(option.id)}>
             <View
-              style={[
-                styles.sizeButton,
-                option.selected && styles.selectedSize,
-              ]}
+              style={{
+                paddingVertical: 10,
+                paddingHorizontal: 20,
+                borderRadius: 8,
+                backgroundColor: option.selected ? "#FFEAD2" : "#F5F5FA",
+                borderWidth: option.selected ? 1 : 0,
+                borderColor: option.selected ? "#DB8633" : "transparent",
+              }}
             >
               <Text
-                style={[
-                  styles.sizeText,
-                  option.selected && styles.selectedSizeText,
-                ]}
+                style={{
+                  color: option.selected ? "#DB8633" : "#324E58",
+                  fontSize: 14,
+                  textAlign: "center",
+                }}
               >
                 {option.name}
               </Text>
@@ -119,134 +133,18 @@ export default function Beneficiary() {
         ))}
       </View>
 
-      <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
-        <Text style={styles.continueText}>Save and continue</Text>
+      <TouchableOpacity
+        onPress={handleContinue}
+        style={{
+          backgroundColor: "#DB8633",
+          paddingVertical: 15,
+          borderRadius: 10,
+          alignItems: "center",
+          marginTop: 10,
+        }}
+      >
+        <Text style={{ color: "#fff", fontSize: 16 }}>Save and continue</Text>
       </TouchableOpacity>
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: "#fff",
-    padding: 20,
-    alignItems: "center",
-  },
-  backButton: {
-    alignSelf: "flex-start",
-  },
-  backArrow: {
-    fontSize: 24,
-    color: "#324E58",
-  },
-  piggy: {
-    width: 80,
-    height: 80,
-    resizeMode: "contain",
-    marginVertical: 10,
-  },
-  questionBox: {
-    borderWidth: 1,
-    borderColor: "#dbdbdb",
-    borderRadius: 10,
-    padding: 10,
-    width: "100%",
-    marginBottom: 15,
-  },
-  questionText: {
-    color: "#324E58",
-    fontSize: 14,
-    textAlign: "center",
-  },
-  sectionTitle: {
-    fontSize: 16,
-    color: "#324E58",
-    marginVertical: 10,
-    alignSelf: "flex-start",
-  },
-  optionRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "100%",
-    marginBottom: 20,
-  },
-  supportCard: {
-    backgroundColor: "#f5f5fa",
-    borderRadius: 12,
-    padding: 10,
-    alignItems: "center",
-    width: 90,
-    height: 120,
-  },
-  selectedBorder: {
-    borderWidth: 2,
-    borderColor: "#db8633",
-  },
-  optionImage: {
-    width: 50,
-    height: 50,
-    marginBottom: 8,
-  },
-  optionText: {
-    color: "#324E58",
-    fontSize: 14,
-    textAlign: "center",
-  },
-  selectedText: {
-    color: "#db8633",
-  },
-  sizeRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "100%",
-    marginBottom: 30,
-  },
-  sizeButton: {
-    backgroundColor: "#ebebf0",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#e1e1e5",
-  },
-  selectedSize: {
-    backgroundColor: "#db86331a",
-    borderColor: "#db8633",
-  },
-  sizeText: {
-    color: "#979797",
-  },
-  selectedSizeText: {
-    color: "#db8633",
-  },
-  continueButton: {
-    backgroundColor: "#db8633",
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 10,
-    width: "100%",
-  },
-  continueText: {
-    color: "#fff",
-    fontSize: 16,
-    textAlign: "center",
-  },
-  progressBarWrapper: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 6,
-    marginBottom: 15,
-  },
-  progressDotActive: {
-    width: 40,
-    height: 5,
-    backgroundColor: "#324e58",
-    borderRadius: 10,
-  },
-  progressDotInactive: {
-    width: 40,
-    height: 5,
-    backgroundColor: "#f5f5fa",
-    borderRadius: 10,
-  },
-});
