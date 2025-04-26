@@ -44,7 +44,7 @@ export default function VerifyEmailScreen() {
 
     const interval = setInterval(async () => {
       try {
-        const res = await API.get(`/auth/check-verification/${email}`);
+        const res = await API.get(`/api/auth/check-verification/${email}`);
         if (res.data?.isVerified) {
           clearInterval(interval);
           router.replace({ pathname: '/signupProfile', params: { email } });
