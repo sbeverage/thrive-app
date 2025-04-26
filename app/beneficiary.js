@@ -9,9 +9,9 @@ export default function Beneficiary() {
   const router = useRouter();
 
   const [supportOptions, setSupportOptions] = useState([
-    { id: "local", name: "Local", image: require("../assets/images/local-icon.png"), selected: true },
-    { id: "national", name: "National", image: require("../assets/images/national-icon.png"), selected: false },
-    { id: "international", name: "International", image: require("../assets/images/international-icon.png"), selected: false },
+    { id: "local", name: "Local", image: require("../assets/images/local-pin.png"), selected: true },
+    { id: "national", name: "National", image: require("../assets/images/national.png"), selected: false },
+    { id: "international", name: "International", image: require("../assets/images/international.png"), selected: false },
   ]);
 
   const [sizeOptions, setSizeOptions] = useState([

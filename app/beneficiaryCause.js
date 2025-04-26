@@ -1,15 +1,14 @@
 // app/beneficiaryCause.js
 
-import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, Image, ScrollView } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, Image } from "react-native";
+import { useRouter } from "expo-router";
+import { AntDesign } from "@expo/vector-icons";
 
 export default function BeneficiaryCause() {
   const router = useRouter();
 
-  const [selectedCauses, setSelectedCauses] = useState([]);
-
-  const causes = [
+  const [causes, setCauses] = useState([
     "Childhood Illness",
     "Foster Care",
     "Disabilities",
@@ -19,30 +18,36 @@ export default function BeneficiaryCause() {
     "Rehabilitation",
     "Low Income Families",
     "Education",
-  ];
+  ]);
 
-  const handleToggleCause = (cause) => {
-    setSelectedCauses((prevSelected) =>
-      prevSelected.includes(cause)
-        ? prevSelected.filter((c) => c !== cause)
-        : [...prevSelected, cause]
-    );
+  const [selectedCauses, setSelectedCauses] = useState([]);
+
+  const toggleCause = (cause) => {
+    if (selectedCauses.includes(cause)) {
+      setSelectedCauses(selectedCauses.filter((item) => item !== cause));
+    } else {
+      setSelectedCauses([...selectedCauses, cause]);
+    }
   };
 
   const handleContinue = () => {
-    router.push("/nextStep"); // You can replace '/nextStep' with your real next page
+    router.push("/nextStep"); // Placeholder for next screen
   };
 
   const handleSkip = () => {
     router.replace("/guestHome");
   };
 
+  const handleGoBack = () => {
+    router.back();
+  };
+
   return (
     <ScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: "#fff", padding: 20 }}>
-      {/* Back and Skip */}
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Image source={require("../assets/images/arrow-left.png")} style={{ width: 24, height: 24 }} />
+      {/* Top Navigation */}
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <TouchableOpacity onPress={handleGoBack}>
+          <AntDesign name="arrowleft" size={24} color="#324E58" />
         </TouchableOpacity>
         <TouchableOpacity onPress={handleSkip}>
           <Text style={{ color: "#DB8633", fontSize: 14 }}>Skip</Text>
@@ -50,49 +55,61 @@ export default function BeneficiaryCause() {
       </View>
 
       {/* Progress Bar */}
-      <View style={{ flexDirection: "row", alignItems: "center", marginVertical: 10 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 30 }}>
         <View style={{ flex: 1, height: 4, backgroundColor: "#324E58", borderRadius: 10, marginHorizontal: 2 }} />
         <View style={{ flex: 1, height: 4, backgroundColor: "#324E58", borderRadius: 10, marginHorizontal: 2 }} />
         <View style={{ flex: 1, height: 4, backgroundColor: "#324E58", borderRadius: 10, marginHorizontal: 2 }} />
-        <Image source={require("../assets/images/walking-piggy.png")} style={{ width: 30, height: 24 }} />
+        <Image source={require("../assets/images/Walking Piggy.png")} style={{ width: 30, height: 24 }} />
         <View style={{ flex: 1, height: 4, backgroundColor: "#F5F5FA", borderRadius: 10, marginHorizontal: 2 }} />
       </View>
 
-      {/* Piggy and Chat Bubble */}
-      <View style={{ flexDirection: "row", alignItems: "center", marginTop: 10, marginBottom: 20 }}>
-        <Image source={require("../assets/images/bolt-piggy.png")} style={{ width: 60, height: 60 }} />
-        <View style={{ backgroundColor: "#F5F5FA", padding: 12, borderRadius: 8, marginLeft: 10, flex: 1 }}>
-          <Text style={{ color: "#324E58", textAlign: "center" }}>
-            For which cause you want to see beneficiaries?
-          </Text>
+      {/* Piggy + Speech Bubble */}
+      <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 30 }}>
+        <Image source={require("../assets/images/bolt-piggy.png")} style={{ width: 60, height: 60, marginRight: 10 }} />
+        <View style={{ backgroundColor: "#F5F5FA", paddingVertical: 10, paddingHorizontal: 20, borderRadius: 10 }}>
+          <Text style={{ color: "#324E58" }}>For which cause you want to see beneficiaries?</Text>
         </View>
       </View>
 
-      {/* Section Title */}
-      <Text style={{ color: "#324E58", fontSize: 20, marginBottom: 20 }}>
+      {/* Title */}
+      <Text style={{
+        color: "#324E58",
+        fontSize: 20,
+        fontWeight: "700", // BOLD
+        marginBottom: 20,
+      }}>
         Beneficiaries Cause
       </Text>
 
-      {/* Causes List */}
-      <View style={{ gap: 20, marginBottom: 40 }}>
-        {causes.map((cause) => (
-          <TouchableOpacity key={cause} onPress={() => handleToggleCause(cause)}>
+      {/* List of Causes */}
+      {causes.map((cause, index) => (
+        <TouchableOpacity
+          key={index}
+          onPress={() => toggleCause(cause)}
+          style={{
+            paddingVertical: 15,
+            borderBottomWidth: 1,
+            borderBottomColor: "#E1E1E5",
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <Text style={{ color: "#324E58", fontSize: 16 }}>{cause}</Text>
+          {selectedCauses.includes(cause) && (
             <View style={{
-              flexDirection: "row",
+              width: 20,
+              height: 20,
+              borderRadius: 10,
+              backgroundColor: "#DB8633",
+              justifyContent: "center",
               alignItems: "center",
-              justifyContent: "space-between",
-              paddingVertical: 10,
-              borderBottomWidth: 1,
-              borderBottomColor: "#E1E1E5",
             }}>
-              <Text style={{ fontSize: 16, color: "#324E58" }}>{cause}</Text>
-              {selectedCauses.includes(cause) && (
-                <Image source={require("../assets/images/checkmark.png")} style={{ width: 20, height: 20, tintColor: "#DB8633" }} />
-              )}
+              <Text style={{ color: "#fff", fontSize: 12 }}>✓</Text>
             </View>
-          </TouchableOpacity>
-        ))}
-      </View>
+          )}
+        </TouchableOpacity>
+      ))}
 
       {/* Save and Continue Button */}
       <TouchableOpacity
@@ -102,7 +119,7 @@ export default function BeneficiaryCause() {
           paddingVertical: 15,
           borderRadius: 10,
           alignItems: "center",
-          marginBottom: 20,
+          marginTop: 30,
         }}
       >
         <Text style={{ color: "#fff", fontSize: 16 }}>Save and continue</Text>
@@ -110,3 +127,4 @@ export default function BeneficiaryCause() {
     </ScrollView>
   );
 }
+
