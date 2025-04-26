@@ -1,48 +1,57 @@
-import React, { useState } from "react";
-import {
-  View,
-  Text,
-  Image,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-} from "react-native";
-import { useRouter, useLocalSearchParams } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import API from "./lib/api";
+import React, { useState, useEffect } from 'react';
+import { View, Text, Image, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import API from './lib/api';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function SignupProfile() {
   const router = useRouter();
-  const { name, email } = useLocalSearchParams();
+  const { email, name } = useLocalSearchParams();
+  
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
 
-  const [firstName, setFirstName] = useState(name?.split(" ")[0] || "");
-  const [lastName, setLastName] = useState(name?.split(" ")[1] || "");
-  const [phoneNumber, setPhoneNumber] = useState("");
+  useEffect(() => {
+    if (name) {
+      const [first, ...lastParts] = name.split(' ');
+      setFirstName(capitalize(first));
+      setLastName(capitalize(lastParts.join(' ')));
+    }
+  }, [name]);
 
-  const formatPhone = (value) => {
-    const cleaned = ("" + value).replace(/\D/g, "");
-    const match = cleaned.match(/^(\d{3})(\d{3})(\d{0,4})$/);
+  const capitalize = (word) => {
+    if (!word) return '';
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  };
+
+  const formatPhoneNumber = (value) => {
+    const cleaned = ('' + value).replace(/\D/g, '');
+    const match = cleaned.match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
     if (match) {
-      return `(${match[1]}) ${match[2]}-${match[3]}`;
+      const [, area, prefix, line] = match;
+      if (area && prefix && line) return `(${area}) ${prefix}-${line}`;
+      if (area && prefix) return `(${area}) ${prefix}`;
+      if (area) return `(${area}`;
     }
     return value;
   };
 
   const handleSaveProfile = async () => {
+    if (!firstName || !lastName || !phoneNumber) {
+      Alert.alert('Missing Info', 'Please fill in all fields.');
+      return;
+    }
+
     try {
-      const res = await API.post("/auth/save-profile", {
-        email,
-        firstName,
-        lastName,
-        phoneNumber,
-      });
-      console.log("✅ Profile saved:", res.data);
-      router.replace("/home"); // ✅ Change if your homepage is different
+      const payload = { email, firstName, lastName, phoneNumber };
+      const res = await API.post('/api/auth/save-profile', payload);
+      console.log('✅ Profile saved:', res.data);
+      Alert.alert('Profile Saved!', 'Your details have been updated.');
+      // Navigate to home (coming soon!)
     } catch (error) {
-      console.error("❌ Profile save error:", error.response?.data || error.message);
-      Alert.alert("Error", "Something went wrong. Please try again later.");
+      console.error('❌ Profile save error:', error.response?.data || error.message);
+      Alert.alert('Error', 'Something went wrong. Try again.');
     }
   };
 
@@ -54,21 +63,19 @@ export default function SignupProfile() {
 
       {/* Pig & Bubble */}
       <View style={styles.heroContainer}>
-        <Image source={require("../assets/images/bolt-piggy.png")} style={styles.piggy} />
+        <Image source={require('../assets/images/bolt-piggy.png')} style={styles.piggy} />
         <View style={styles.bubble}>
           <Text style={styles.bubbleText}>
-            <Text style={{ color: "#324e58" }}>A Little More{"\n"}</Text>
+            <Text style={{ color: "#324e58" }}>A Little More{'\n'}</Text>
             <Text style={{ color: "#db8633" }}>About You!</Text>
           </Text>
         </View>
       </View>
 
-      {/* Profile Picture */}
+      {/* Avatar */}
       <View style={styles.avatarContainer}>
-        <Image source={require("../assets/images/Avatar-large.png")} style={styles.avatar} />
-        <TouchableOpacity style={styles.editAvatar}>
-          <Ionicons name="image" size={20} color="#324e58" />
-        </TouchableOpacity>
+        <Image source={require('../assets/images/Avatar-large.png')} style={styles.avatar} />
+        {/* No profile upload yet */}
       </View>
 
       {/* Input Fields */}
@@ -77,9 +84,8 @@ export default function SignupProfile() {
           <TextInput
             placeholder="First Name"
             value={firstName}
-            onChangeText={(text) => setFirstName(text)}
+            onChangeText={(text) => setFirstName(capitalize(text))}
             style={styles.input}
-            autoCapitalize="words"
             placeholderTextColor="#6d6e72"
           />
         </View>
@@ -87,19 +93,18 @@ export default function SignupProfile() {
           <TextInput
             placeholder="Last Name"
             value={lastName}
-            onChangeText={(text) => setLastName(text)}
+            onChangeText={(text) => setLastName(capitalize(text))}
             style={styles.input}
-            autoCapitalize="words"
             placeholderTextColor="#6d6e72"
           />
         </View>
         <View style={styles.inputWrapper}>
           <TextInput
             placeholder="Phone Number"
-            value={formatPhone(phoneNumber)}
-            onChangeText={(text) => setPhoneNumber(text)}
-            style={styles.input}
+            value={phoneNumber}
+            onChangeText={(text) => setPhoneNumber(formatPhoneNumber(text))}
             keyboardType="phone-pad"
+            style={styles.input}
             placeholderTextColor="#6d6e72"
           />
         </View>
@@ -149,7 +154,7 @@ const styles = StyleSheet.create({
   bubbleText: {
     fontSize: 24,
     textAlign: "center",
-    lineHeight: 34,
+    lineHeight: 30,
   },
   avatarContainer: {
     marginVertical: 20,
@@ -159,16 +164,6 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    borderWidth: 2,
-    borderColor: "#fff",
-  },
-  editAvatar: {
-    position: "absolute",
-    bottom: 0,
-    right: 0,
-    backgroundColor: "#f5f5fa",
-    borderRadius: 21,
-    padding: 10,
     borderWidth: 2,
     borderColor: "#fff",
   },
