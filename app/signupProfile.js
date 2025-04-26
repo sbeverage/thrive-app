@@ -1,119 +1,108 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, Image, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import API from './lib/api';
-import { Ionicons } from '@expo/vector-icons';
+// app/signupProfile.js
+
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Image,
+  StyleSheet,
+  ScrollView,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { AntDesign } from '@expo/vector-icons';
 
 export default function SignupProfile() {
   const router = useRouter();
-  const { email, name } = useLocalSearchParams();
-  
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
 
-  useEffect(() => {
-    if (name) {
-      const [first, ...lastParts] = name.split(' ');
-      setFirstName(capitalize(first));
-      setLastName(capitalize(lastParts.join(' ')));
-    }
-  }, [name]);
+  const handlePhoneChange = (text) => {
+    const cleaned = ('' + text).replace(/\D/g, '');
+    let formattedNumber = cleaned;
 
-  const capitalize = (word) => {
-    if (!word) return '';
-    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    if (cleaned.length >= 1) {
+      formattedNumber = '(' + cleaned.slice(0, 3);
+    }
+    if (cleaned.length >= 4) {
+      formattedNumber += ') ' + cleaned.slice(3, 6);
+    }
+    if (cleaned.length >= 7) {
+      formattedNumber += '-' + cleaned.slice(6, 10);
+    }
+    setPhoneNumber(formattedNumber);
   };
 
-  const formatPhoneNumber = (value) => {
-    const cleaned = ('' + value).replace(/\D/g, '');
-    const match = cleaned.match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
-    if (match) {
-      const [, area, prefix, line] = match;
-      if (area && prefix && line) return `(${area}) ${prefix}-${line}`;
-      if (area && prefix) return `(${area}) ${prefix}`;
-      if (area) return `(${area}`;
-    }
-    return value;
-  };
-
-  const handleSaveProfile = async () => {
-    if (!firstName || !lastName || !phoneNumber) {
-      Alert.alert('Missing Info', 'Please fill in all fields.');
-      return;
-    }
-
-    try {
-      const payload = { email, firstName, lastName, phoneNumber };
-      const res = await API.post('/api/auth/save-profile', payload);
-      console.log('✅ Profile saved:', res.data);
-      Alert.alert('Profile Saved!', 'Your details have been updated.');
-      router.replace("/beneficiary");
-
-    } catch (error) {
-      console.error('❌ Profile save error:', error.response?.data || error.message);
-      Alert.alert('Error', 'Something went wrong. Try again.');
-    }
+  const handleContinue = () => {
+    router.push('/beneficiary');
   };
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <TouchableOpacity style={styles.backArrow} onPress={() => router.back()}>
-        <Ionicons name="arrow-back" size={24} color="#324e58" />
-      </TouchableOpacity>
+      {/* Top Navigation */}
+      <View style={styles.topRow}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <AntDesign name="arrowleft" size={24} color="#324E58" />
+        </TouchableOpacity>
+      </View>
 
-      {/* Pig & Bubble */}
-      <View style={styles.heroContainer}>
-        <Image source={require('../assets/images/bolt-piggy.png')} style={styles.piggy} />
-        <View style={styles.bubble}>
-          <Text style={styles.bubbleText}>
-            <Text style={{ color: "#324e58" }}>A Little More{'\n'}</Text>
-            <Text style={{ color: "#db8633" }}>About You!</Text>
-          </Text>
+      {/* Progress Bar */}
+      <View style={styles.progressBarContainer}>
+        <View style={styles.progressSegments}>
+          <View style={[styles.segment, { backgroundColor: '#324E58' }]} />
+          <View style={[styles.segment, { backgroundColor: '#F5F5FA' }]} />
+          <View style={[styles.segment, { backgroundColor: '#F5F5FA' }]} />
+          <View style={[styles.segment, { backgroundColor: '#F5F5FA' }]} />
+          <View style={[styles.segment, { backgroundColor: '#F5F5FA' }]} />
+        </View>
+        <View style={styles.piggyContainer}>
+          <Image source={require('../assets/images/walking-piggy.png')} style={styles.walkingPiggy} />
         </View>
       </View>
 
-      {/* Avatar */}
-      <View style={styles.avatarContainer}>
-        <Image source={require('../assets/images/Avatar-large.png')} style={styles.avatar} />
-        {/* No profile upload yet */}
+      {/* Piggy + Speech Bubble */}
+      <View style={styles.speechBubbleContainer}>
+        <Image source={require('../assets/images/bolt-piggy.png')} style={styles.piggyIcon} />
+        <View style={styles.speechBubble}>
+          <Text style={styles.speechNormal}>A Little More</Text>
+          <Text style={styles.speechHighlight}>{'\n'}About you!</Text>
+        </View>
       </View>
 
-      {/* Input Fields */}
-      <View style={styles.formContainer}>
-        <View style={styles.inputWrapper}>
-          <TextInput
-            placeholder="First Name"
-            value={firstName}
-            onChangeText={(text) => setFirstName(capitalize(text))}
-            style={styles.input}
-            placeholderTextColor="#6d6e72"
-          />
-        </View>
-        <View style={styles.inputWrapper}>
-          <TextInput
-            placeholder="Last Name"
-            value={lastName}
-            onChangeText={(text) => setLastName(capitalize(text))}
-            style={styles.input}
-            placeholderTextColor="#6d6e72"
-          />
-        </View>
-        <View style={styles.inputWrapper}>
-          <TextInput
-            placeholder="Phone Number"
-            value={phoneNumber}
-            onChangeText={(text) => setPhoneNumber(formatPhoneNumber(text))}
-            keyboardType="phone-pad"
-            style={styles.input}
-            placeholderTextColor="#6d6e72"
-          />
-        </View>
-      </View>
+      {/* Profile Avatar */}
+      <Image source={require('../assets/images/Avatar-large.png')} style={styles.profileIcon} />
+
+      {/* Inputs */}
+      <TextInput
+        placeholder="First Name"
+        value={firstName}
+        onChangeText={setFirstName}
+        style={styles.input}
+        placeholderTextColor="#6d6e72"
+        autoCapitalize="words"
+      />
+      <TextInput
+        placeholder="Last Name"
+        value={lastName}
+        onChangeText={setLastName}
+        style={styles.input}
+        placeholderTextColor="#6d6e72"
+        autoCapitalize="words"
+      />
+      <TextInput
+        placeholder="Phone Number"
+        value={phoneNumber}
+        onChangeText={handlePhoneChange}
+        style={styles.input}
+        placeholderTextColor="#6d6e72"
+        keyboardType="phone-pad"
+      />
 
       {/* Continue Button */}
-      <TouchableOpacity style={styles.continueButton} onPress={handleSaveProfile}>
-        <Text style={styles.continueText}>Continue</Text>
+      <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
+        <Text style={styles.continueButtonText}>Continue</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -121,80 +110,99 @@ export default function SignupProfile() {
 
 const styles = StyleSheet.create({
   container: {
-    paddingTop: 60,
-    alignItems: "center",
-    backgroundColor: "#fff",
     flexGrow: 1,
-    paddingHorizontal: 20,
+    padding: 20,
+    backgroundColor: '#fff',
   },
-  backArrow: {
-    alignSelf: "flex-start",
-    marginLeft: 10,
-    marginBottom: 10,
-  },
-  heroContainer: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 20,
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 20,
   },
-  piggy: {
-    width: 69,
-    height: 76,
-    resizeMode: "contain",
+  progressBarContainer: {
+    marginBottom: 30,
+    position: 'relative',
+    alignItems: 'center',
   },
-  bubble: {
-    backgroundColor: "#f5f5fa",
-    padding: 10,
+  progressSegments: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 4,
+  },
+  segment: {
+    flex: 1,
+    height: 4,
     borderRadius: 10,
-    justifyContent: "center",
-    alignItems: "center",
-    width: 238,
-    height: 94,
+    marginHorizontal: 2,
   },
-  bubbleText: {
-    fontSize: 24,
-    textAlign: "center",
-    lineHeight: 30,
+  piggyContainer: {
+    position: 'absolute',
+    top: -20,
+    left: '5%',
   },
-  avatarContainer: {
-    marginVertical: 20,
-    alignItems: "center",
+  walkingPiggy: {
+    width: 30,
+    height: 24,
+    resizeMode: 'contain',
   },
-  avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 2,
-    borderColor: "#fff",
+  speechBubbleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 30,
   },
-  formContainer: {
-    width: "100%",
+  piggyIcon: {
+    width: 80,
+    height: 80,
+    resizeMode: 'contain',
+    marginRight: 10,
   },
-  inputWrapper: {
-    backgroundColor: "#f5f5fa",
-    borderRadius: 8,
-    paddingHorizontal: 15,
+  speechBubble: {
+    backgroundColor: '#f5f5fa',
     paddingVertical: 12,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: "#e1e1e5",
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    flexShrink: 1,
+  },
+  speechNormal: {
+    color: '#324E58',
+    fontSize: 18,
+    fontWeight: '400',
+    textAlign: 'center',
+  },
+  speechHighlight: {
+    color: '#DB8633',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  profileIcon: {
+    width: 90,
+    height: 90,
+    resizeMode: 'contain',
+    alignSelf: 'center',
+    marginBottom: 30,
   },
   input: {
-    fontSize: 14,
-    color: "#324e58",
+    height: 48,
+    backgroundColor: '#f5f5fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    paddingHorizontal: 15,
+    marginBottom: 20,
+    fontSize: 16,
+    color: '#324E58',
   },
   continueButton: {
-    backgroundColor: "#db8633",
-    borderRadius: 8,
-    width: "100%",
-    height: 48,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 20,
+    backgroundColor: '#db8633',
+    paddingVertical: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 10,
   },
-  continueText: {
-    color: "#fff",
+  continueButtonText: {
+    color: '#fff',
     fontSize: 16,
   },
 });

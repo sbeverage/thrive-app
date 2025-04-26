@@ -38,7 +38,8 @@ export default function Beneficiary() {
 
   return (
     <ScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: "#fff", padding: 20 }}>
-      {/* Back and Skip */}
+      
+      {/* Top Navigation */}
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <TouchableOpacity onPress={() => router.back()}>
           <AntDesign name="arrowleft" size={24} color="#324E58" />
@@ -52,21 +53,25 @@ export default function Beneficiary() {
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 30 }}>
         <View style={{ flex: 1, height: 4, backgroundColor: "#324E58", borderRadius: 10, marginHorizontal: 2 }} />
         <View style={{ flex: 1, height: 4, backgroundColor: "#324E58", borderRadius: 10, marginHorizontal: 2 }} />
-        <Image source={require("../assets/images/walking-piggy.png")} style={{ width: 30, height: 24 }} />
+        <Image source={require("../assets/images/walking-piggy.png")} style={{ width: 30, height: 24, resizeMode: "contain" }} />
         <View style={{ flex: 1, height: 4, backgroundColor: "#F5F5FA", borderRadius: 10, marginHorizontal: 2 }} />
         <View style={{ flex: 1, height: 4, backgroundColor: "#F5F5FA", borderRadius: 10, marginHorizontal: 2 }} />
       </View>
 
-      {/* Speech bubble */}
+      {/* Speech Bubble */}
       <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 30 }}>
-        <Image source={require("../assets/images/bolt-piggy.png")} style={{ width: 60, height: 60 }} />
-        <View style={{ backgroundColor: "#F5F5FA", padding: 12, borderRadius: 8, marginLeft: 10, flex: 1 }}>
-          <Text style={{ color: "#324E58", fontSize: 16 }}>Who do you want to donate to?</Text>
+        <Image source={require("../assets/images/bolt-piggy.png")} style={{ width: 80, height: 80, resizeMode: "contain", marginRight: 10 }} />
+        <View style={{ backgroundColor: "#F5F5FA", paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, flexShrink: 1 }}>
+          <Text style={{ color: "#324E58", fontSize: 16 }}>
+            Who do you want to donate to?
+          </Text>
         </View>
       </View>
 
       {/* Who they support */}
-      <Text style={{ color: "#324E58", fontSize: 18, marginBottom: 15 }}>Who they support</Text>
+      <Text style={{ color: "#324E58", fontSize: 20, fontWeight: "700", marginBottom: 20 }}>
+        Who they support
+      </Text>
 
       <View style={{ flexDirection: "row", justifyContent: "space-around", marginBottom: 40 }}>
         {supportOptions.map((option) => (
@@ -101,7 +106,9 @@ export default function Beneficiary() {
       </View>
 
       {/* Size of organization */}
-      <Text style={{ color: "#324E58", fontSize: 18, marginBottom: 15 }}>Size of organization</Text>
+      <Text style={{ color: "#324E58", fontSize: 20, fontWeight: "700", marginBottom: 20 }}>
+        Size of organization
+      </Text>
 
       <View style={{ flexDirection: "row", justifyContent: "space-around", marginBottom: 40 }}>
         {sizeOptions.map((option) => (
@@ -130,6 +137,7 @@ export default function Beneficiary() {
         ))}
       </View>
 
+      {/* Save and Continue Button */}
       <TouchableOpacity
         onPress={handleContinue}
         style={{
