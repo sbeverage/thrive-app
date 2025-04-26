@@ -10,7 +10,8 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import API from './lib/api'; // ✅ Corrected path to api.js
+import { AntDesign } from '@expo/vector-icons'; // ✅ Added for back arrow
+import API from './lib/api';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -27,7 +28,7 @@ export default function LoginScreen() {
       const response = await API.post('/auth/login', { email, password });
 
       if (response.data.is_verified) {
-        router.replace('/home'); // ✅ Replace with your actual home path
+        router.replace('/home');
       } else {
         router.push({ pathname: '/verifyEmail', params: { email } });
       }
@@ -39,13 +40,14 @@ export default function LoginScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <TouchableOpacity style={styles.backArrow} onPress={() => router.back()}>
-        <Image
-          source={require('../assets/images/arrow-left.png')}
-          style={styles.backIcon}
-        />
-      </TouchableOpacity>
+      {/* Back Arrow */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <AntDesign name="arrowleft" size={24} color="#324E58" />
+        </TouchableOpacity>
+      </View>
 
+      {/* Piggy and Brand */}
       <Image
         source={require('../assets/images/piggy-with-flowers.png')}
         style={styles.logo}
@@ -56,6 +58,7 @@ export default function LoginScreen() {
       />
       <Text style={styles.tagline}>Doing good is simple & rewarding.</Text>
 
+      {/* Email and Password Inputs */}
       <TextInput
         placeholder="Email Address"
         style={styles.input}
@@ -73,6 +76,7 @@ export default function LoginScreen() {
         onChangeText={setPassword}
       />
 
+      {/* Forgot Password Link */}
       <TouchableOpacity
         style={styles.forgotPassword}
         onPress={() => router.push('/forgotPassword')}
@@ -80,10 +84,12 @@ export default function LoginScreen() {
         <Text style={styles.forgotText}>Forgot Password</Text>
       </TouchableOpacity>
 
+      {/* Login Button */}
       <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
         <Text style={styles.loginButtonText}>Login</Text>
       </TouchableOpacity>
 
+      {/* Link to Signup */}
       <TouchableOpacity onPress={() => router.push('/signup')}>
         <Text style={styles.signupLink}>I don’t have an account</Text>
       </TouchableOpacity>
@@ -93,22 +99,17 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    paddingTop: 80,
+    paddingTop: 60,
     alignItems: 'center',
     backgroundColor: '#fff',
     flexGrow: 1,
     paddingHorizontal: 20,
   },
-  backArrow: {
-    position: 'absolute',
-    top: 60,
-    left: 20,
-    zIndex: 10,
-  },
-  backIcon: {
-    width: 45,
-    height: 45,
-    resizeMode: 'contain',
+  header: {
+    width: '100%',
+    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   logo: {
     width: 90,
@@ -127,6 +128,7 @@ const styles = StyleSheet.create({
     color: '#6d6e72',
     marginBottom: 30,
     textAlign: 'center',
+    lineHeight: 28, // ✅ Same as beneficiary line spacing
   },
   input: {
     height: 48,
