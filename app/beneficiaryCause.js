@@ -31,7 +31,7 @@ export default function BeneficiaryCause() {
   };
 
   const handleContinue = () => {
-    router.push("/nextStep"); // Placeholder for next screen
+    router.push("/beneficiarySearch"); 
   };
 
   const handleSkip = () => {

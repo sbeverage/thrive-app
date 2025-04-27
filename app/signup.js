@@ -10,6 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { AntDesign } from '@expo/vector-icons'; // 👉 (this was missing too!)
 import API from './lib/api';
 
 export default function SignupScreen() {
@@ -40,12 +41,16 @@ export default function SignupScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      {/* ✅ Corrected back arrow */}
       <TouchableOpacity style={styles.backArrow} onPress={() => router.replace('/')}>
-        <Text style={styles.backIcon}>←</Text>
+        <AntDesign name="arrowleft" size={24} color="#324E58" />
       </TouchableOpacity>
 
+      {/* ✅ Made piggy not cut off */}
       <Image source={require('../assets/images/piggy-with-flowers.png')} style={styles.logo} />
+
       <Image source={require('../assets/images/thrive-logo.png')} style={styles.brand} />
+
       <Text style={styles.tagline}>Doing good is simple & rewarding.</Text>
 
       <TextInput
@@ -69,8 +74,8 @@ export default function SignupScreen() {
         <Text style={styles.signupButtonText}>Create Account</Text>
       </TouchableOpacity>
 
-      {/* 👇 Restore the Social Signups */}
       <Text style={styles.orText}>Or sign up with</Text>
+
       {socialLogins.map((social, index) => (
         <TouchableOpacity key={index} style={styles.socialButton}>
           <Image source={social.icon} style={styles.socialIcon} />
@@ -94,13 +99,9 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     marginBottom: 10,
   },
-  backIcon: {
-    fontSize: 30,
-    color: '#324E58',
-  },
   logo: {
-    width: 51,
-    height: 83,
+    width: 80, // 🔥 wider to fix "cut off" piggy
+    height: 100,
     resizeMode: 'contain',
     marginBottom: 10,
   },
@@ -165,4 +166,3 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
-
