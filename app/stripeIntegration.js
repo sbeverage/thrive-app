@@ -16,7 +16,7 @@ export default function StripeIntegration() {
 
   const handleContinue = () => {
     // Handle card validation later if needed
-    router.push('/successPage'); // 🌟 Push to success or next page
+    router.push('/home'); // 🌟 Push to success or next page
   };
 
   const handleSkip = () => {
