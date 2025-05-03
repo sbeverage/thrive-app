@@ -26,7 +26,7 @@ export default function VerifyEmailScreen() {
     setIsLoading(true);
 
     try {
-      await API.post('/auth/resend-verification', { email });
+      await API.post('/api/auth/resend-verification', { email });
       Alert.alert('✅ Email Sent!', 'Check your inbox for a new verification link.');
     } catch (error) {
       Alert.alert('Error', 'Something went wrong. Please try again.');

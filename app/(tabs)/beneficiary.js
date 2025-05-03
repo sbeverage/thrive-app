@@ -82,7 +82,7 @@ export default function BeneficiaryScreen() {
           <Image source={require('../../assets/images/bolt-piggy.png')} style={{ width: 60, height: 60, resizeMode: 'contain' }} />
           <View style={{ backgroundColor: '#F5F5FA', padding: 12, borderRadius: 10, marginLeft: 10, flex: 1, borderWidth: 1, borderColor: '#E1E1E5' }}>
             <Text style={{ color: '#324E58', fontSize: 14 }}>
-              Favorite as many as you’d like to see their updates on your newsfeed. Select only one to donate to.
+              Select only one to donate to. Favorite as many as you’d like to see their updates on your newsfeed. 
             </Text>
           </View>
         </View>
@@ -128,7 +128,7 @@ export default function BeneficiaryScreen() {
                   style={{ flex: 1, height: 48, fontSize: 16, color: '#324E58' }}
                 />
               </View>
-              <TouchableOpacity style={{ marginLeft: 10 }}>
+              <TouchableOpacity style={{ marginLeft: 10 }} onPress={() => router.push('/beneficiaryFilter')}>
                 <AntDesign name="filter" size={22} color="#DB8633" />
               </TouchableOpacity>
             </View>
