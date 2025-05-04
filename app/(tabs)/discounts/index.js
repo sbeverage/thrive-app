@@ -54,6 +54,8 @@ const vendors = [
 export default function DiscountsScreen() {
   const [activeCategory, setActiveCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [dragEnabled, setDragEnabled] = useState(false);
+
   const pan = useRef(new Animated.Value(MINIMIZED_HEIGHT)).current;
   const flatListRef = useRef(null);
   const router = useRouter();
@@ -63,11 +65,12 @@ export default function DiscountsScreen() {
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: (_, gestureState) => {
-        gestureStartY.current = gestureState.y0;
-        return gestureState.y0 <= 100; // Only trigger pan if touch started at the top 100px
+        const isTouchingDragHandle = gestureState.y0 - pan._value <= 40;
+        setDragEnabled(isTouchingDragHandle);
+        return isTouchingDragHandle;
       },
       onMoveShouldSetPanResponder: (_, gestureState) => {
-        return gestureStartY.current <= 100 && Math.abs(gestureState.dy) > 10;
+        return dragEnabled && Math.abs(gestureState.dy) > 10;
       },
       onPanResponderMove: Animated.event([null, { dy: pan }], {
         useNativeDriver: false,
@@ -138,7 +141,20 @@ export default function DiscountsScreen() {
       </MapView>
 
       <Animated.View
-        style={[styles.overlay, { transform: [{ translateY: pan }] }]}
+        style={[
+          styles.overlay,
+          {
+            transform: [
+              {
+                translateY: pan.interpolate({
+                  inputRange: [MAXIMIZED_HEIGHT, MINIMIZED_HEIGHT],
+                  outputRange: [MAXIMIZED_HEIGHT, MINIMIZED_HEIGHT],
+                  extrapolate: 'clamp',
+                }),
+              },
+            ],
+          },
+        ]}
         {...panResponder.panHandlers}
       >
         <View style={styles.dragHandle} />
@@ -187,10 +203,17 @@ export default function DiscountsScreen() {
             data={filteredVendors}
             keyExtractor={item => item.id}
             renderItem={({ item }) => (
-              <VoucherCard brand={item.brandName} logo={item.imageUrl} discounts={3} />
+              <VoucherCard
+                brand={item.brandName}
+                logo={item.imageUrl}
+                discounts={3}
+                onPress={() => router.push(`/discounts/${item.id}`)}
+              />
             )}
             contentContainerStyle={styles.voucherListWithBackground}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            bounces={false}
             onScroll={e => {
               scrollOffsetY.current = e.nativeEvent.contentOffset.y;
             }}
@@ -282,6 +305,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   fixedVoucherListHeight: {
-    flex: 1,
+    flexGrow: 1,
+    maxHeight: SCREEN_HEIGHT * 0.55 - 120,
   },
 });
+

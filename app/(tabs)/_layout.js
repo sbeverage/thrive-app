@@ -7,6 +7,9 @@ export default function TabsLayout() {
   const router = useRouter();
   const pathname = usePathname();
 
+  // ✅ Check if on a dynamic vendor detail screen like /discounts/123
+  const isDetailPage = /^\/discounts\/[^\/]+$/.test(pathname);
+
   const tabs = [
     { name: 'home', label: 'Home', icon: require('../../assets/icons/home.png') },
     { name: 'beneficiary', label: 'Beneficiary', icon: require('../../assets/icons/beneficiary.png') },
@@ -20,43 +23,49 @@ export default function TabsLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarStyle: { display: 'none' }, // Hide Expo Router default tab bar
+          tabBarStyle: { display: 'none' },
         }}
       />
 
-      {/* Custom Footer Navigation */}
-      <View style={styles.footerNavWrapper}>
-        <View style={styles.footerNav}>
-          {tabs.map((tab) => {
-            const focused = pathname.includes(tab.name);
-            return (
-              <TouchableOpacity
-                key={tab.name}
-                style={styles.footerItem}
-                onPress={() => {
-                  setActiveTab(tab.name);
-                  router.push(`/${tab.name}`);
-                }}
-              >
-                <Image
-                  source={tab.icon}
-                  style={{
-                    width: focused ? 28 : 24,
-                    height: focused ? 28 : 24,
-                    tintColor: focused ? '#DB8633' : '#6D6E72',
-                  }}
-                />
-                <Text style={focused ? styles.footerTextActive : styles.footerText}>{tab.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
+      {/* ✅ Show footer only if not on detail page */}
+      {!isDetailPage && (
+        <>
+          <View style={styles.footerNavWrapper}>
+            <View style={styles.footerNav}>
+              {tabs.map((tab) => {
+                const focused = pathname.includes(tab.name);
+                return (
+                  <TouchableOpacity
+                    key={tab.name}
+                    style={styles.footerItem}
+                    onPress={() => {
+                      setActiveTab(tab.name);
+                      router.push(`/${tab.name}`);
+                    }}
+                  >
+                    <Image
+                      source={tab.icon}
+                      style={{
+                        width: focused ? 28 : 24,
+                        height: focused ? 28 : 24,
+                        tintColor: focused ? '#DB8633' : '#6D6E72',
+                      }}
+                    />
+                    <Text style={focused ? styles.footerTextActive : styles.footerText}>
+                      {tab.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
 
-      {/* Floating Search Button */}
-      <TouchableOpacity style={styles.searchButton}>
-        <Image source={require('../../assets/icons/search.png')} style={{ width: 28, height: 28 }} />
-      </TouchableOpacity>
+          {/* Floating Search Button */}
+          <TouchableOpacity style={styles.searchButton}>
+            <Image source={require('../../assets/icons/search.png')} style={{ width: 28, height: 28 }} />
+          </TouchableOpacity>
+        </>
+      )}
     </View>
   );
 }
@@ -113,3 +122,4 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
 });
+

@@ -1,13 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
-import ConfettiCannon from 'react-native-confetti-cannon';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
 import { MotiView } from 'moti';
 
 export default function LeaderboardScreen() {
   const router = useRouter();
-  const [showConfetti, setShowConfetti] = useState(true);
 
   return (
     <View style={styles.container}>
@@ -47,20 +45,12 @@ export default function LeaderboardScreen() {
       <Text style={styles.subtitle}>Get ready to compete, give, and glow ✨</Text>
 
       {/* Notify Me Button */}
-      <TouchableOpacity style={styles.notifyButton} onPress={() => alert('We’ll notify you when it’s live!')}>
+      <TouchableOpacity
+        style={styles.notifyButton}
+        onPress={() => alert("We’ll notify you when it’s live!")}
+      >
         <Text style={styles.notifyButtonText}>Notify Me When It’s Live!</Text>
       </TouchableOpacity>
-
-      {showConfetti && (
-        <ConfettiCannon
-          count={60}
-          origin={{ x: -10, y: 0 }}
-          fadeOut
-          explosionSpeed={300}
-          fallSpeed={2500}
-          onAnimationEnd={() => setShowConfetti(false)}
-        />
-      )}
     </View>
   );
 }

@@ -1,33 +1,41 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  TouchableOpacity
+} from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-const VoucherCard = ({ logo, brand, discounts }) => {
+const VoucherCard = ({ logo, brand, discounts, onPress }) => {
   return (
-    <View style={styles.cardWrapper}>
-      <View style={styles.card}>
-        {/* Left Section with Logo */}
-        <View style={styles.leftSide}>
-          <Image source={logo} style={styles.logo} />
-          <View style={styles.textContainer}>
-            <Text style={styles.brand}>{brand}</Text>
-            <Text style={styles.discounts}>{discounts} discounts available</Text>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
+      <View style={styles.cardWrapper}>
+        <View style={styles.card}>
+          {/* Left Section with Logo */}
+          <View style={styles.leftSide}>
+            <Image source={logo} style={styles.logo} />
+            <View style={styles.textContainer}>
+              <Text style={styles.brand}>{brand}</Text>
+              <Text style={styles.discounts}>{discounts} discounts available</Text>
+            </View>
+          </View>
+
+          {/* Divider */}
+          <View style={styles.dividerContainer}>
+            <View style={styles.notchTop} />
+            <View style={styles.dottedLine} />
+            <View style={styles.notchBottom} />
+          </View>
+
+          {/* Right Section */}
+          <View style={styles.rightSide}>
+            <MaterialCommunityIcons name="ticket-percent" size={24} color="#DB8C0E" />
           </View>
         </View>
-
-        {/* Divider */}
-        <View style={styles.dividerContainer}>
-          <View style={styles.notchTop} />
-          <View style={styles.dottedLine} />
-          <View style={styles.notchBottom} />
-        </View>
-
-        {/* Right Section */}
-        <View style={styles.rightSide}>
-          <MaterialCommunityIcons name="ticket-percent" size={24} color="#DB8C0E" />
-        </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
 
@@ -69,7 +77,7 @@ const styles = StyleSheet.create({
   brand: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#1C4F7D', // branded blue
+    color: '#1C4F7D',
   },
   discounts: {
     fontSize: 14,
