@@ -1,7 +1,5 @@
-// app/donationAmount.js
-
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, ScrollView, Animated, Easing } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, ScrollView, Animated, Easing, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
@@ -34,11 +32,16 @@ export default function DonationAmount() {
   };
 
   const handleSaveAndContinue = () => {
-    router.push('/stripeIntegration');
-  };
-
-  const handleSkip = () => {
-    router.replace('/guestHome');
+    Alert.alert(
+      '🎉 Changes Saved!',
+      'Your donation preferences were successfully updated!',
+      [
+        {
+          text: 'OK',
+          onPress: () => router.replace('/(tabs)/menu'),
+        },
+      ]
+    );
   };
 
   const animatePiggy = () => {
@@ -58,21 +61,8 @@ export default function DonationAmount() {
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
       {/* Top Navigation */}
       <View style={styles.topNav}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => router.replace('/(tabs)/menu')}>
           <AntDesign name="arrowleft" size={24} color="#324E58" />
-        </TouchableOpacity>
-
-        {/* Progress Bar */}
-        <View style={styles.progressContainer}>
-          <View style={styles.progressActive} />
-          <View style={styles.progressInactive} />
-          <View style={styles.progressInactive} />
-          <View style={styles.progressInactive} />
-          <Image source={require('../assets/images/walking-piggy.png')} style={{ width: 30, height: 24, marginLeft: 5 }} />
-        </View>
-
-        <TouchableOpacity onPress={handleSkip}>
-          <Text style={{ color: '#DB8633', fontSize: 14 }}>Skip</Text>
         </TouchableOpacity>
       </View>
 
@@ -80,7 +70,7 @@ export default function DonationAmount() {
         {/* Speech Bubble */}
         <View style={styles.speechContainer}>
           <Animated.Image
-            source={require('../assets/images/bolt-piggy.png')}
+            source={require('../../../assets/images/bolt-piggy.png')}
             style={{ width: 50, height: 50, resizeMode: 'contain', marginRight: 10, transform: [{ rotate: piggyRotate }] }}
           />
           <View style={styles.speechBubble}>
@@ -93,7 +83,7 @@ export default function DonationAmount() {
         {/* Curvy Slider */}
         <View style={styles.sliderContainer}>
           <Image
-            source={require('../assets/images/slider.png')} // 🎨 Your provided slider background
+            source={require('../../../assets/images/slider.png')}
             style={styles.sliderBackground}
           />
           <Slider
@@ -130,7 +120,7 @@ export default function DonationAmount() {
       {/* Bottom Button */}
       <View style={styles.footer}>
         <TouchableOpacity onPress={handleSaveAndContinue} style={styles.continueButton}>
-          <Text style={{ color: '#fff', fontSize: 16 }}>Done! I'm Feeling Generous</Text>
+          <Text style={{ color: '#fff', fontSize: 16 }}>Done & Feeling Generous</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -141,29 +131,9 @@ const styles = StyleSheet.create({
   topNav: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     padding: 20,
     paddingTop: 50,
-  },
-  progressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginHorizontal: 10,
-  },
-  progressActive: {
-    flex: 1,
-    height: 4,
-    backgroundColor: '#324E58',
-    borderRadius: 10,
-    marginHorizontal: 2,
-  },
-  progressInactive: {
-    flex: 1,
-    height: 4,
-    backgroundColor: '#F5F5FA',
-    borderRadius: 10,
-    marginHorizontal: 2,
   },
   speechContainer: {
     flexDirection: 'row',

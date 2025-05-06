@@ -40,7 +40,7 @@ export default function MainHome() {
                 <TouchableOpacity style={styles.iconButton}>
                   <Image source={require('../../assets/icons/notification.png')} style={styles.iconWhite} />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.iconButton}>
+                <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/menu')}>
                   <Image source={require('../../assets/icons/menu.png')} style={styles.iconWhite} />
                 </TouchableOpacity>
               </View>
