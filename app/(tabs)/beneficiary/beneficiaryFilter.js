@@ -10,8 +10,7 @@ import {
 import { Feather, AntDesign } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-const radiusOptions = ['1 mile', '5 miles', '10 miles', '25 miles'];
-const typeOptions = ['Non-Profit', 'Foundation', 'Community Org'];
+const typeOptions = ['Small', 'Medium', 'Large'];
 const causeOptions = [
   'Childhood Illness',
   'Foster Care',
@@ -31,7 +30,6 @@ const emergencyOptions = [
 
 export default function BeneficiaryFilter() {
   const [location, setLocation] = useState('');
-  const [radius, setRadius] = useState('');
   const [type, setType] = useState('');
   const [cause, setCause] = useState('');
   const [emergency, setEmergency] = useState('');
@@ -39,42 +37,39 @@ export default function BeneficiaryFilter() {
   const [isEmergencyDropdownOpen, setIsEmergencyDropdownOpen] = useState(false);
   const router = useRouter();
 
-  const renderOptions = (options, selected, setSelected, scrollable = false) => {
-    const content = options.map((option) => (
-      <TouchableOpacity
-        key={option}
-        style={[styles.option, selected === option && styles.optionSelected]}
-        onPress={() => setSelected(option)}
-      >
-        <Text style={[styles.optionText, selected === option && styles.optionTextSelected]}>
-          {option}
-        </Text>
-      </TouchableOpacity>
-    ));
-
-    return scrollable ? (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollRow}>
-        {content}
-      </ScrollView>
-    ) : (
-      <View style={styles.optionsContainer}>{content}</View>
-    );
-  };
+  const renderOptions = (options, selected, setSelected) => (
+    <View style={styles.optionsContainer}>
+      {options.map((option) => (
+        <TouchableOpacity
+          key={option}
+          style={[styles.option, selected === option && styles.optionSelected]}
+          onPress={() => setSelected(option)}
+        >
+          <Text style={[styles.optionText, selected === option && styles.optionTextSelected]}>
+            {option}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
 
   return (
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-        <AntDesign name="close" size={24} color="#21555b" />
+      {/* Back Navigation */}
+      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <AntDesign name="arrowleft" size={24} color="#324E58" />
       </TouchableOpacity>
 
-      <Text style={styles.header}>Filters for beneficiaries</Text>
+      {/* Title */}
+      <Text style={styles.header}>Filter Beneficiaries</Text>
 
+      {/* Search Input */}
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>Search nearby you</Text>
         <View style={styles.inputRow}>
           <TextInput
             placeholder="Search Location"
-            placeholderTextColor="#aaa"
+            placeholderTextColor="#6d6e72"
             value={location}
             onChangeText={setLocation}
             style={styles.input}
@@ -83,8 +78,9 @@ export default function BeneficiaryFilter() {
         </View>
       </View>
 
+      {/* Cause Dropdown */}
       <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Beneficiary Cause</Text>
+        <Text style={styles.label}>Beneficiary cause</Text>
         <TouchableOpacity
           style={styles.dropdownToggle}
           onPress={() => setIsCauseDropdownOpen(!isCauseDropdownOpen)}
@@ -112,18 +108,20 @@ export default function BeneficiaryFilter() {
         )}
       </View>
 
+      {/* Size Options */}
       <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Beneficiary Type</Text>
-        {renderOptions(typeOptions, type, setType, true)}
+        <Text style={styles.label}>Size of the organization</Text>
+        {renderOptions(typeOptions, type, setType)}
       </View>
 
+      {/* Emergency Dropdown */}
       <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Where to Give Now?</Text>
+        <Text style={styles.label}>Who needs help now?</Text>
         <TouchableOpacity
           style={styles.dropdownToggle}
           onPress={() => setIsEmergencyDropdownOpen(!isEmergencyDropdownOpen)}
         >
-          <Text style={styles.dropdownToggleText}>{emergency || 'Select Emergency'}</Text>
+          <Text style={styles.dropdownToggleText}>{emergency || 'Choose an Emergency Relief Program'}</Text>
           <Feather name={isEmergencyDropdownOpen ? 'chevron-up' : 'chevron-down'} size={18} color="#666" />
         </TouchableOpacity>
         {isEmergencyDropdownOpen && (
@@ -146,7 +144,8 @@ export default function BeneficiaryFilter() {
         )}
       </View>
 
-      <TouchableOpacity style={styles.button} onPress={() => router.back()}>
+      {/* Continue Button */}
+      <TouchableOpacity style={styles.button} onPress={() => router.push('/signupFlow/beneficiarySignupCause')}>
         <Text style={styles.buttonText}>Apply Filters</Text>
       </TouchableOpacity>
     </ScrollView>
@@ -158,65 +157,62 @@ const styles = StyleSheet.create({
     padding: 24,
     backgroundColor: '#fff',
     flexGrow: 1,
-    position: 'relative',
   },
-  closeButton: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    zIndex: 10,
+  backButton: {
+    marginBottom: 16,
   },
   header: {
     fontSize: 22,
-    fontWeight: '600',
-    color: '#21555b',
+    fontWeight: '700',
+    color: '#324E58',
     marginBottom: 16,
-    marginTop: 48,
   },
   fieldGroup: {
-    marginBottom: 16,
+    marginBottom: 24,
   },
   label: {
-    fontSize: 14,
-    marginBottom: 6,
-    color: '#000',
+    fontSize: 16,
+    color: '#324E58',
+    fontWeight: '500',
+    marginBottom: 10,
   },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f4f4f4',
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    backgroundColor: '#f5f5fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    paddingHorizontal: 15,
   },
   input: {
     flex: 1,
     height: 48,
-    fontSize: 14,
-    color: '#000',
+    fontSize: 16,
+    color: '#324E58',
   },
   icon: {
     marginLeft: 8,
-  },
-  scrollRow: {
-    flexDirection: 'row',
-    marginBottom: 8,
   },
   optionsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+    marginTop: 0,
   },
   option: {
-    backgroundColor: '#f4f4f4',
+    backgroundColor: '#f5f5fa',
     paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
     marginRight: 8,
+    marginTop: 0,
   },
   optionSelected: {
     backgroundColor: '#FFF5EB',
     borderColor: '#D0861F',
-    borderWidth: 1,
   },
   optionText: {
     fontSize: 14,
@@ -227,17 +223,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   dropdownToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#f4f4f4',
-    paddingHorizontal: 16,
+    backgroundColor: '#f5f5fa',
     paddingVertical: 12,
-    borderRadius: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   dropdownToggleText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 16,
+    color: '#324E58',
   },
   dropdownScroll: {
     maxHeight: 160,
@@ -251,22 +249,23 @@ const styles = StyleSheet.create({
   dropdownItem: {
     paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 12,
-    marginHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: '#f5f5fa',
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
     marginVertical: 4,
-    backgroundColor: '#f4f4f4',
+    marginHorizontal: 4,
   },
   dropdownItemSelected: {
     backgroundColor: '#FFF5EB',
-    borderWidth: 1,
     borderColor: '#D0861F',
   },
   button: {
-    backgroundColor: '#D0861F',
+    backgroundColor: '#db8633',
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 10,
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: 20,
   },
   buttonText: {
     color: '#fff',

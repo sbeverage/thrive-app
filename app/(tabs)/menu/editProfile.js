@@ -7,6 +7,7 @@ import {
   Image,
   StyleSheet,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
@@ -25,14 +26,12 @@ export default function EditProfileScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      {/* Back Button */}
+    <ScrollView contentContainerStyle={styles.container}>
       <TouchableOpacity onPress={() => router.back()} style={styles.backRow}>
         <AntDesign name="arrowleft" size={24} color="#324E58" />
         <Text style={styles.headerText}>Edit Profile</Text>
       </TouchableOpacity>
 
-      {/* Profile Picture */}
       <View style={styles.imageContainer}>
         <Image
           source={require('../../../assets/images/profile.jpg')}
@@ -43,42 +42,52 @@ export default function EditProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Input Fields */}
-      <View style={styles.inputRow}>
+      <View style={styles.rowInputs}>
+        <View style={styles.searchContainerHalf}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="First Name"
+            placeholderTextColor="#6d6e72"
+            value={firstName}
+            onChangeText={setFirstName}
+          />
+        </View>
+        <View style={styles.searchContainerHalf}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Last Name"
+            placeholderTextColor="#6d6e72"
+            value={lastName}
+            onChangeText={setLastName}
+          />
+        </View>
+      </View>
+
+      <View style={styles.searchContainer}>
         <TextInput
-          style={styles.inputHalf}
-          placeholder="First Name"
-          value={firstName}
-          onChangeText={setFirstName}
-        />
-        <TextInput
-          style={styles.inputHalf}
-          placeholder="Last Name"
-          value={lastName}
-          onChangeText={setLastName}
+          style={styles.searchInput}
+          placeholder="Phone"
+          placeholderTextColor="#6d6e72"
+          value={phone}
+          onChangeText={setPhone}
         />
       </View>
 
-      <TextInput
-        style={styles.fullInput}
-        placeholder="Phone"
-        value={phone}
-        onChangeText={setPhone}
-      />
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Email"
+          placeholderTextColor="#6d6e72"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+        />
+      </View>
 
-      <TextInput
-        style={styles.fullInput}
-        placeholder="Email"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-      />
-
-      {/* Update Button */}
       <TouchableOpacity style={styles.saveButton} onPress={handleUpdate}>
         <Text style={styles.saveText}>Update Changes</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -87,7 +96,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 60,
     backgroundColor: '#fff',
-    flex: 1,
+    flexGrow: 1,
   },
   backRow: {
     flexDirection: 'row',
@@ -117,32 +126,47 @@ const styles = StyleSheet.create({
     padding: 6,
     borderRadius: 16,
   },
-  inputRow: {
+  rowInputs: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 16,
   },
-  inputHalf: {
+  searchContainerHalf: {
     width: '48%',
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: '#f4f4f8',
-    fontSize: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    paddingHorizontal: 10,
   },
-  fullInput: {
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: '#f4f4f8',
-    fontSize: 16,
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    paddingHorizontal: 10,
     marginBottom: 16,
+  },
+  searchInput: {
+    flex: 1,
+    height: 48,
+    fontSize: 16,
+    color: '#324E58',
   },
   saveButton: {
     backgroundColor: '#DB8633',
-    paddingVertical: 16,
+    paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 20,
-    elevation: 2,
+    shadowColor: '#DB8633',
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
   },
   saveText: {
     color: '#fff',

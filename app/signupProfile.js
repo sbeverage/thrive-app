@@ -36,7 +36,7 @@ export default function SignupProfile() {
   };
 
   const handleContinue = () => {
-    router.push('/beneficiary');
+    router.push('/signupFlow/explainerDonate');
   };
 
   return (
@@ -66,8 +66,7 @@ export default function SignupProfile() {
       <View style={styles.speechBubbleContainer}>
         <Image source={require('../assets/images/bolt-piggy.png')} style={styles.piggyIcon} />
         <View style={styles.speechBubble}>
-          <Text style={styles.speechNormal}>A Little More</Text>
-          <Text style={styles.speechHighlight}>{'\n'}About you!</Text>
+          <Text style={styles.speechNormal}>We’re excited to meet you — we just need a few quick details!</Text>
         </View>
       </View>
 
@@ -166,9 +165,9 @@ const styles = StyleSheet.create({
   },
   speechNormal: {
     color: '#324E58',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '400',
-    textAlign: 'center',
+    textAlign: 'left',
   },
   speechHighlight: {
     color: '#DB8633',

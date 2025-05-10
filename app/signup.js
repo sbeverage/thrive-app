@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { AntDesign } from '@expo/vector-icons'; // 👉 (this was missing too!)
+import { AntDesign } from '@expo/vector-icons'; 
 import API from './lib/api';
 
 export default function SignupScreen() {

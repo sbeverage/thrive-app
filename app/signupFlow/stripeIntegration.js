@@ -1,9 +1,8 @@
-// app/stripeIntegration.js
-
 import React, { useState } from 'react';
 import { View, Text, TextInput, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
+import ProfileCompleteModal from '../../components/ProfileCompleteModal';
 
 export default function StripeIntegration() {
   const router = useRouter();
@@ -13,10 +12,10 @@ export default function StripeIntegration() {
   const [expiryDate, setExpiryDate] = useState('');
   const [cvv, setCvv] = useState('');
   const [saveCard, setSaveCard] = useState(true);
+  const [showModal, setShowModal] = useState(false);
 
   const handleContinue = () => {
-    // Handle card validation later if needed
-    router.push('/home'); // 🌟 Push to success or next page
+    setShowModal(true);
   };
 
   const handleSkip = () => {
@@ -30,6 +29,20 @@ export default function StripeIntegration() {
         <TouchableOpacity onPress={() => router.back()}>
           <AntDesign name="arrowleft" size={24} color="#324E58" />
         </TouchableOpacity>
+
+        {/* Progress Bar */}
+        <View style={styles.progressContainer}>
+          <View style={styles.progressActive} />
+          <View style={styles.progressActive} />
+          <View style={styles.progressActive} />
+          <View style={styles.progressActive} />
+          <View style={styles.progressActive} />
+          <Image source={require('../../assets/images/walking-piggy.png')} style={{ width: 30, height: 24, marginLeft: 5 }} />
+        </View>
+
+        <TouchableOpacity onPress={handleSkip}>
+          <Text style={{ color: '#DB8633', fontSize: 14 }}>Skip</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Content */}
@@ -42,12 +55,12 @@ export default function StripeIntegration() {
               Finish up by adding your credit card to process the payments each month.
             </Text>
           </View>
-          <Image source={require('../assets/images/piggy-with-coin.png')} style={styles.piggy} />
+          <Image source={require('../../assets/images/piggy-coin.png')} style={styles.piggy} />
         </View>
 
         {/* Stripe Logo */}
         <Image
-          source={require('../assets/images/stripe-logo.png')} // 🌟 Save your Stripe image into assets/images
+          source={require('../../assets/images/stripe-logo.png')}
           style={styles.stripeLogo}
           resizeMode="contain"
         />
@@ -111,13 +124,37 @@ export default function StripeIntegration() {
           <Text style={{ color: '#fff', fontSize: 16 }}>Save and continue</Text>
         </TouchableOpacity>
       </View>
+
+      <ProfileCompleteModal
+        visible={showModal}
+        onClose={() => {
+          setShowModal(false);
+          router.push('/home');
+        }}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   topNav: {
-    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 20,
+  },
+  progressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginHorizontal: 10,
+  },
+  progressActive: {
+    flex: 1,
+    height: 4,
+    backgroundColor: '#324E58',
+    borderRadius: 10,
+    marginHorizontal: 2,
   },
   speechBubble: {
     backgroundColor: '#F5F5FA',

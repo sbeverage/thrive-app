@@ -1,5 +1,3 @@
-// app/donationAmount.js
-
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, ScrollView, Animated, Easing } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -34,7 +32,7 @@ export default function DonationAmount() {
   };
 
   const handleSaveAndContinue = () => {
-    router.push('/stripeIntegration');
+    router.push('/signupFlow/stripeIntegration');
   };
 
   const handleSkip = () => {
@@ -62,13 +60,18 @@ export default function DonationAmount() {
           <AntDesign name="arrowleft" size={24} color="#324E58" />
         </TouchableOpacity>
 
-        {/* Progress Bar */}
-        <View style={styles.progressContainer}>
-          <View style={styles.progressActive} />
-          <View style={styles.progressInactive} />
-          <View style={styles.progressInactive} />
-          <View style={styles.progressInactive} />
-          <Image source={require('../assets/images/walking-piggy.png')} style={{ width: 30, height: 24, marginLeft: 5 }} />
+        {/* Updated Progress Bar with piggy */}
+        <View style={styles.progressBarWrapper}>
+          <View style={styles.progressBar}>
+            <View style={styles.progressActive} />
+            <View style={styles.progressActive} />
+            <View style={styles.progressActive} />
+            <View style={styles.progressActive} />
+            <View style={styles.progressInactive} />
+          </View>
+          <View style={styles.piggyContainer}>
+            <Image source={require('../../assets/images/walking-piggy.png')} style={styles.walkingPiggy} />
+          </View>
         </View>
 
         <TouchableOpacity onPress={handleSkip}>
@@ -80,20 +83,20 @@ export default function DonationAmount() {
         {/* Speech Bubble */}
         <View style={styles.speechContainer}>
           <Animated.Image
-            source={require('../assets/images/bolt-piggy.png')}
+            source={require('../../assets/images/bolt-piggy.png')}
             style={{ width: 50, height: 50, resizeMode: 'contain', marginRight: 10, transform: [{ rotate: piggyRotate }] }}
           />
           <View style={styles.speechBubble}>
             <Text style={styles.speechText}>
-            Set your giving vibes — how much will you donate monthly?”
+              Set your giving vibes — how much will you donate monthly?
             </Text>
           </View>
         </View>
 
-        {/* Curvy Slider */}
+        {/* Slider */}
         <View style={styles.sliderContainer}>
           <Image
-            source={require('../assets/images/slider.png')} // 🎨 Your provided slider background
+            source={require('../../assets/images/slider.png')}
             style={styles.sliderBackground}
           />
           <Slider
@@ -108,13 +111,11 @@ export default function DonationAmount() {
           />
         </View>
 
-        {/* Min/Max Labels */}
         <View style={styles.sliderLabels}>
           <Text style={styles.amountLabel}>${MIN_AMOUNT}</Text>
           <Text style={styles.amountLabel}>${MAX_AMOUNT}</Text>
         </View>
 
-        {/* Fixed Amount Input */}
         <View style={styles.inputContainer}>
           <TextInput
             value={amount.toString()}
@@ -142,14 +143,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 20,
+    paddingHorizontal: 20,
     paddingTop: 50,
   },
-  progressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  progressBarWrapper: {
     flex: 1,
+    position: 'relative',
+    alignItems: 'center',
     marginHorizontal: 10,
+  },
+  progressBar: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    height: 4,
+    width: '100%',
   },
   progressActive: {
     flex: 1,
@@ -164,6 +171,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5FA',
     borderRadius: 10,
     marginHorizontal: 2,
+  },
+  piggyContainer: {
+    position: 'absolute',
+    top: -18,
+    left: '65%',
+  },
+  walkingPiggy: {
+    width: 30,
+    height: 24,
+    resizeMode: 'contain',
   },
   speechContainer: {
     flexDirection: 'row',

@@ -21,35 +21,37 @@ const categoryOptions = [
 const availabilityOptions = ['In-Store', 'Online', 'Both'];
 
 export default function FilterScreen() {
+  const router = useRouter();
   const [location, setLocation] = useState('');
   const [radius, setRadius] = useState('');
   const [type, setType] = useState('');
   const [category, setCategory] = useState('');
   const [availability, setAvailability] = useState('');
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
-  const router = useRouter();
 
-  const renderOptions = (options, selected, setSelected, scrollable = false) => {
-    const content = options.map((option) => (
-      <TouchableOpacity
-        key={option}
-        style={[styles.option, selected === option && styles.optionSelected]}
-        onPress={() => setSelected(option)}
-      >
-        <Text style={[styles.optionText, selected === option && styles.optionTextSelected]}>
-          {option}
-        </Text>
-      </TouchableOpacity>
-    ));
-
-    return scrollable ? (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollRow}>
-        {content}
-      </ScrollView>
-    ) : (
-      <View style={styles.optionsContainer}>{content}</View>
-    );
-  };
+  const renderHorizontalOptions = (options, selected, setSelected) => (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollRow}>
+      {options.map((option) => (
+        <TouchableOpacity
+          key={option}
+          style={[
+            styles.optionPill,
+            selected === option && styles.optionSelected,
+          ]}
+          onPress={() => setSelected(option)}
+        >
+          <Text
+            style={[
+              styles.optionText,
+              selected === option && styles.optionTextSelected,
+            ]}
+          >
+            {option}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </ScrollView>
+  );
 
   return (
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
@@ -59,12 +61,13 @@ export default function FilterScreen() {
 
       <Text style={styles.header}>Filters for discount</Text>
 
+      {/* Search Input */}
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>Search discount near by you</Text>
         <View style={styles.inputRow}>
           <TextInput
             placeholder="Search Location"
-            placeholderTextColor="#aaa"
+            placeholderTextColor="#6d6e72"
             value={location}
             onChangeText={setLocation}
             style={styles.input}
@@ -73,16 +76,25 @@ export default function FilterScreen() {
         </View>
       </View>
 
+      {/* Radius */}
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>Select radius</Text>
-        {renderOptions(radiusOptions, radius, setRadius, true)}
+        {renderHorizontalOptions(radiusOptions, radius, setRadius)}
       </View>
 
+      {/* Discount Type */}
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>Discount type</Text>
-        {renderOptions(typeOptions, type, setType, true)}
+        {renderHorizontalOptions(typeOptions, type, setType)}
       </View>
 
+      {/* Availability */}
+      <View style={styles.fieldGroup}>
+        <Text style={styles.label}>Availability</Text>
+        {renderHorizontalOptions(availabilityOptions, availability, setAvailability)}
+      </View>
+
+      {/* Category Dropdown */}
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>Discount category</Text>
         <TouchableOpacity
@@ -94,33 +106,30 @@ export default function FilterScreen() {
         </TouchableOpacity>
         {isCategoryDropdownOpen && (
           <ScrollView style={styles.dropdownScroll}>
-            {categoryOptions.map(option => (
+            {categoryOptions.map((option) => (
               <TouchableOpacity
                 key={option}
                 style={[
                   styles.dropdownItem,
-                  category === option && styles.dropdownItemSelected
+                  category === option && styles.dropdownItemSelected,
                 ]}
                 onPress={() => {
                   setCategory(option);
                   setIsCategoryDropdownOpen(false);
                 }}
               >
-                <Text style={[
-                  styles.optionText,
-                  category === option && styles.optionTextSelected
-                ]}>
+                <Text
+                  style={[
+                    styles.optionText,
+                    category === option && styles.optionTextSelected,
+                  ]}
+                >
                   {option}
                 </Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
         )}
-      </View>
-
-      <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Availability</Text>
-        {renderOptions(availabilityOptions, availability, setAvailability, true)}
       </View>
 
       <TouchableOpacity style={styles.button} onPress={() => router.push('/(tabs)/discounts')}>
@@ -135,7 +144,6 @@ const styles = StyleSheet.create({
     padding: 24,
     backgroundColor: '#fff',
     flexGrow: 1,
-    position: 'relative',
   },
   closeButton: {
     position: 'absolute',
@@ -145,55 +153,53 @@ const styles = StyleSheet.create({
   },
   header: {
     fontSize: 22,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#21555b',
-    marginBottom: 16,
     marginTop: 48,
+    marginBottom: 16,
   },
   fieldGroup: {
-    marginBottom: 16,
+    marginBottom: 24,
   },
   label: {
-    fontSize: 14,
-    marginBottom: 6,
-    color: '#000',
+    fontSize: 16,
+    color: '#324E58',
+    fontWeight: '500',
+    marginBottom: 10,
   },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f4f4f4',
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    backgroundColor: '#f5f5fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    paddingHorizontal: 15,
   },
   input: {
     flex: 1,
     height: 48,
-    fontSize: 14,
-    color: '#000',
+    fontSize: 16,
+    color: '#324E58',
   },
   icon: {
     marginLeft: 8,
   },
   scrollRow: {
     flexDirection: 'row',
-    marginBottom: 8,
   },
-  optionsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  option: {
-    backgroundColor: '#f4f4f4',
+  optionPill: {
+    backgroundColor: '#f5f5fa',
     paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
     marginRight: 8,
   },
   optionSelected: {
     backgroundColor: '#FFF5EB',
     borderColor: '#D0861F',
-    borderWidth: 1,
   },
   optionText: {
     fontSize: 14,
@@ -204,20 +210,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   dropdownToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#f4f4f4',
-    paddingHorizontal: 16,
+    backgroundColor: '#f5f5fa',
     paddingVertical: 12,
-    borderRadius: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   dropdownToggleText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 16,
+    color: '#324E58',
   },
   dropdownScroll: {
-    maxHeight: 160,
+    maxHeight: 180,
     backgroundColor: '#fff',
     borderRadius: 12,
     marginTop: 8,
@@ -228,14 +236,15 @@ const styles = StyleSheet.create({
   dropdownItem: {
     paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 12,
-    marginHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: '#f5f5fa',
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
     marginVertical: 4,
-    backgroundColor: '#f4f4f4',
+    marginHorizontal: 4,
   },
   dropdownItemSelected: {
     backgroundColor: '#FFF5EB',
-    borderWidth: 1,
     borderColor: '#D0861F',
   },
   button: {

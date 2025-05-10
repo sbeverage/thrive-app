@@ -7,6 +7,9 @@ import {
   Alert,
   StyleSheet,
   Switch,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
@@ -26,105 +29,146 @@ export default function AddNewCard() {
     }
 
     Alert.alert('✅ Card Added!', 'Your card has been saved.', [
-      {
-        text: 'OK',
-        onPress: () => router.replace('/menu/manageCards'),
-      },
+      { text: 'OK', onPress: () => router.replace('/menu/manageCards') },
     ]);
   };
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => router.replace('/menu/manageCards')}>
-          <AntDesign name="arrowleft" size={24} color="#324E58" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Add Card</Text>
-        <View style={{ width: 24 }} />
-      </View>
-
-      {/* Form Fields */}
-      <View style={styles.form}>
-        <TextInput
-          placeholder="Card Number"
-          placeholderTextColor="#888"
-          style={styles.input}
-          value={cardNumber}
-          onChangeText={setCardNumber}
-          keyboardType="numeric"
-        />
-        <TextInput
-          placeholder="Card Holder Name"
-          placeholderTextColor="#888"
-          style={styles.input}
-          value={cardHolder}
-          onChangeText={setCardHolder}
-        />
-        <View style={styles.row}>
-          <TextInput
-            placeholder="Expiry"
-            placeholderTextColor="#888"
-            style={[styles.input, styles.halfInput]}
-            value={expiry}
-            onChangeText={setExpiry}
-          />
-          <TextInput
-            placeholder="CVV"
-            placeholderTextColor="#888"
-            style={[styles.input, styles.halfInput]}
-            value={cvv}
-            onChangeText={setCvv}
-            secureTextEntry
-          />
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={styles.container}
+    >
+      <ScrollView contentContainerStyle={styles.scroll}>
+        {/* Header */}
+        <View style={styles.headerRow}>
+          <TouchableOpacity onPress={() => router.replace('/menu/manageCards')}>
+            <AntDesign name="arrowleft" size={24} color="#324E58" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Add Card</Text>
+          <View style={{ width: 24 }} />
         </View>
 
-        {/* Save Info */}
-        <View style={styles.checkboxRow}>
-          <Switch
-            value={saveInfo}
-            onValueChange={setSaveInfo}
-            thumbColor={saveInfo ? '#DB8633' : '#ccc'}
-            trackColor={{ false: '#ccc', true: '#f5c89e' }}
-          />
-          <Text style={styles.checkboxLabel}>
-            Use this information for my future use
-          </Text>
+        {/* Form */}
+        <View style={styles.form}>
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Card Number</Text>
+            <TextInput
+              placeholder="1234 5678 9012 3456"
+              placeholderTextColor="#999"
+              style={styles.input}
+              value={cardNumber}
+              onChangeText={setCardNumber}
+              keyboardType="numeric"
+            />
+          </View>
+
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Card Holder Name</Text>
+            <TextInput
+              placeholder="John Doe"
+              placeholderTextColor="#999"
+              style={styles.input}
+              value={cardHolder}
+              onChangeText={setCardHolder}
+            />
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.fieldGroup, styles.halfInput]}>
+              <Text style={styles.label}>Expiry</Text>
+              <TextInput
+                placeholder="MM/YY"
+                placeholderTextColor="#999"
+                style={styles.input}
+                value={expiry}
+                onChangeText={setExpiry}
+              />
+            </View>
+
+            <View style={[styles.fieldGroup, styles.halfInput]}>
+              <Text style={styles.label}>CVV</Text>
+              <TextInput
+                placeholder="123"
+                placeholderTextColor="#999"
+                style={styles.input}
+                value={cvv}
+                onChangeText={setCvv}
+                secureTextEntry
+              />
+            </View>
+          </View>
+
+          {/* Save Info */}
+          <View style={styles.checkboxRow}>
+            <Switch
+              value={saveInfo}
+              onValueChange={setSaveInfo}
+              thumbColor={saveInfo ? '#DB8633' : '#ccc'}
+              trackColor={{ false: '#ccc', true: '#f5c89e' }}
+            />
+            <Text style={styles.checkboxLabel}>Use this information for my future use</Text>
+          </View>
         </View>
-      </View>
+      </ScrollView>
 
       {/* Submit Button */}
       <TouchableOpacity style={styles.addButton} onPress={handleAddCard}>
         <Text style={styles.addButtonText}>Add Card</Text>
       </TouchableOpacity>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', paddingTop: 60 },
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  scroll: {
+    paddingHorizontal: 24,
+    paddingTop: 60,
+    paddingBottom: 100,
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    marginBottom: 32,
   },
-  headerTitle: { fontSize: 18, fontWeight: '600', color: '#324E58' },
-  form: { paddingHorizontal: 20, marginTop: 30 },
-  input: {
-    backgroundColor: '#F5F5FA',
-    borderRadius: 10,
-    padding: 16,
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#324E58',
+  },
+  form: {
+    gap: 24,
+  },
+  fieldGroup: {
+    marginBottom: 0,
+  },
+  label: {
     fontSize: 16,
     color: '#324E58',
-    marginBottom: 16,
+    fontWeight: '500',
+    marginBottom: 10,
+  },
+  input: {
+    backgroundColor: '#F5F5FA',
+    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: '#324E58',
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
   },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 16,
   },
   halfInput: {
-    flex: 0.48,
+    flex: 1,
   },
   checkboxRow: {
     flexDirection: 'row',
@@ -135,17 +179,19 @@ const styles = StyleSheet.create({
   checkboxLabel: {
     fontSize: 14,
     color: '#324E58',
+    flex: 1,
+    flexWrap: 'wrap',
   },
   addButton: {
     backgroundColor: '#DB8633',
     paddingVertical: 16,
-    marginTop: 40,
-    marginHorizontal: 20,
+    marginHorizontal: 24,
     borderRadius: 10,
+    marginBottom: 30,
     position: 'absolute',
-    bottom: 40,
     left: 0,
     right: 0,
+    bottom: 0,
   },
   addButtonText: {
     color: '#fff',

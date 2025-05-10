@@ -61,48 +61,58 @@ export default function InviteCompany() {
           />
           <View style={styles.speechBubble}>
             <Text style={styles.speechText}>
-            Bring in a charity, boost their donations and unlock +100 bonus points for yourself!
+              Bring in a charity, boost their donations and unlock +100 bonus points for yourself!
             </Text>
           </View>
         </View>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Contact Name"
-          value={contactName}
-          onChangeText={setContactName}
-          placeholderTextColor="#888"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Company Name"
-          value={companyName}
-          onChangeText={setCompanyName}
-          placeholderTextColor="#888"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Company Email"
-          value={companyEmail}
-          onChangeText={setCompanyEmail}
-          placeholderTextColor="#888"
-          keyboardType="email-address"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Company Phone"
-          value={companyPhone}
-          onChangeText={(text) => setCompanyPhone(formatPhoneNumber(text))} // ✅ Formatter here
-          placeholderTextColor="#888"
-          keyboardType="phone-pad"
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Web URL"
-          value={webUrl}
-          onChangeText={setWebUrl}
-          placeholderTextColor="#888"
-        />
+        <View style={styles.searchContainer}>
+          <TextInput
+            placeholder="Contact Name"
+            placeholderTextColor="#6d6e72"
+            value={contactName}
+            onChangeText={setContactName}
+            style={styles.searchInput}
+          />
+        </View>
+        <View style={styles.searchContainer}>
+          <TextInput
+            placeholder="Company Name"
+            placeholderTextColor="#6d6e72"
+            value={companyName}
+            onChangeText={setCompanyName}
+            style={styles.searchInput}
+          />
+        </View>
+        <View style={styles.searchContainer}>
+          <TextInput
+            placeholder="Company Email"
+            placeholderTextColor="#6d6e72"
+            value={companyEmail}
+            onChangeText={setCompanyEmail}
+            keyboardType="email-address"
+            style={styles.searchInput}
+          />
+        </View>
+        <View style={styles.searchContainer}>
+          <TextInput
+            placeholder="Company Phone"
+            placeholderTextColor="#6d6e72"
+            value={companyPhone}
+            onChangeText={(text) => setCompanyPhone(formatPhoneNumber(text))}
+            keyboardType="phone-pad"
+            style={styles.searchInput}
+          />
+        </View>
+        <View style={styles.searchContainer}>
+          <TextInput
+            placeholder="Web URL"
+            placeholderTextColor="#6d6e72"
+            value={webUrl}
+            onChangeText={setWebUrl}
+            style={styles.searchInput}
+          />
+        </View>
 
         <View style={styles.buttonRow}>
           <TouchableOpacity onPress={() => router.push('/(tabs)/menu')}>
@@ -158,13 +168,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#324E58',
   },
-  input: {
-    backgroundColor: '#f5f7f6',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    height: 48,
-    fontSize: 14,
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    paddingHorizontal: 10,
     marginBottom: 16,
+  },
+  searchInput: {
+    flex: 1,
+    height: 48,
+    fontSize: 16,
     color: '#324E58',
   },
   buttonRow: {

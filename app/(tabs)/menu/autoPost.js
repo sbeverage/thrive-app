@@ -27,7 +27,7 @@ export default function AutoPost() {
 
   return (
     <ScrollView style={styles.container}>
-      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+      <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)/menu/settings')}>
         <AntDesign name="arrowleft" size={24} color="#324E58" />
         <Text style={styles.header}>Auto Post</Text>
       </TouchableOpacity>

@@ -7,6 +7,7 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { AntDesign, Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -20,15 +21,15 @@ export default function ChangePassword() {
 
   const handleUpdate = () => {
     if (!newPassword || !confirmPassword) {
-      alert('Please fill in both fields.');
+      Alert.alert('Please fill in both fields.');
       return;
     }
     if (newPassword !== confirmPassword) {
-      alert('Passwords do not match.');
+      Alert.alert('Passwords do not match.');
       return;
     }
 
-    alert('✅ Password Updated!');
+    Alert.alert('✅ Password Updated!');
     router.back();
   };
 
@@ -37,16 +38,16 @@ export default function ChangePassword() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+      <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)/menu/settings')}>
         <AntDesign name="arrowleft" size={24} color="#324E58" />
         <Text style={styles.header}>Change Password</Text>
       </TouchableOpacity>
 
-      <View style={styles.inputWrapper}>
+      <View style={styles.searchContainer}>
         <TextInput
-          style={styles.input}
+          style={styles.searchInput}
           placeholder="New Password"
-          placeholderTextColor="#888"
+          placeholderTextColor="#6d6e72"
           secureTextEntry={!showNew}
           value={newPassword}
           onChangeText={setNewPassword}
@@ -56,11 +57,11 @@ export default function ChangePassword() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.inputWrapper}>
+      <View style={styles.searchContainer}>
         <TextInput
-          style={styles.input}
+          style={styles.searchInput}
           placeholder="Confirm Password"
-          placeholderTextColor="#888"
+          placeholderTextColor="#6d6e72"
           secureTextEntry={!showConfirm}
           value={confirmPassword}
           onChangeText={setConfirmPassword}
@@ -70,8 +71,8 @@ export default function ChangePassword() {
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={styles.button} onPress={handleUpdate}>
-        <Text style={styles.buttonText}>Update Password</Text>
+      <TouchableOpacity style={styles.submitButton} onPress={handleUpdate}>
+        <Text style={styles.submitText}>Update Password</Text>
       </TouchableOpacity>
     </KeyboardAvoidingView>
   );
@@ -95,39 +96,39 @@ const styles = StyleSheet.create({
     color: '#21555B',
     marginLeft: 16,
   },
-  inputWrapper: {
-    position: 'relative',
-    marginBottom: 20,
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    paddingHorizontal: 10,
+    marginBottom: 16,
   },
-  input: {
-    backgroundColor: '#F4F4F6',
-    borderRadius: 12,
-    paddingHorizontal: 16,
+  searchInput: {
+    flex: 1,
     height: 48,
-    fontSize: 14,
+    fontSize: 16,
     color: '#324E58',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 5,
   },
   eyeIcon: {
     position: 'absolute',
     right: 16,
     top: 14,
   },
-  button: {
-    marginTop: 20,
+  submitButton: {
     backgroundColor: '#DB8633',
-    paddingVertical: 14,
     borderRadius: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     alignItems: 'center',
     shadowColor: '#DB8633',
     shadowOpacity: 0.2,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
   },
-  buttonText: {
+  submitText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',

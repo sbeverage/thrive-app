@@ -7,8 +7,8 @@ import MonthlyImpactCard from '../../components/MonthlyImpactCard';
 
 export default function MainHome() {
   const router = useRouter();
-  const monthlyDonation = 30;
-  const monthlySavings = 30;
+  const monthlyDonation = 15;
+  const monthlySavings = 0;
 
   let [fontsLoaded] = useFonts({
     Figtree_400Regular,
@@ -37,7 +37,7 @@ export default function MainHome() {
             <View style={styles.headerTopRow}>
               <Image source={require('../../assets/logos/thrive-logo-white.png')} style={styles.logo} resizeMode="contain" />
               <View style={styles.rightIcons}>
-                <TouchableOpacity style={styles.iconButton}>
+                <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/menu/notifications')}>
                   <Image source={require('../../assets/icons/notification.png')} style={styles.iconWhite} />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/menu')}>
@@ -53,7 +53,7 @@ export default function MainHome() {
               </View>
               <View style={styles.coinsContainer}>
                 <Image source={require('../../assets/icons/coin.png')} style={{ width: 18, height: 18, marginRight: 6 }} />
-                <Text style={styles.coinsText}>50</Text>
+                <Text style={styles.coinsText}>25</Text>
               </View>
             </View>
 
@@ -81,7 +81,7 @@ export default function MainHome() {
           {/* Discounts */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Discounts Near You</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/discounts')}>
               <Text style={styles.viewDetailsText}>View All</Text>
             </TouchableOpacity>
           </View>
@@ -105,7 +105,7 @@ export default function MainHome() {
           {/* Rank */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Rank</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/leaderboard')}>
               <Text style={styles.viewDetailsText}>View Leaderboard</Text>
             </TouchableOpacity>
           </View>
@@ -117,10 +117,7 @@ export default function MainHome() {
           <View style={styles.inviteBannerWrapper}>
             <View style={styles.inviteInnerWrapper}>
               <View style={styles.inviteImageContainer}>
-                <Image
-                  source={require('../../assets/images/invite-kids.png')}
-                  style={styles.inviteBannerImage}
-                />
+                <Image source={require('../../assets/images/invite-kids.png')} style={styles.inviteBannerImage} />
               </View>
               <View style={styles.inviteTextBlock}>
                 <Text style={styles.inviteBannerHeadline}>
@@ -233,8 +230,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
   },
   placeholderText: { fontSize: 16, color: '#A0AAB7' },
-
-  // ✅ Invite Banner Styles
   inviteBannerWrapper: {
     marginHorizontal: 20,
     borderRadius: 20,

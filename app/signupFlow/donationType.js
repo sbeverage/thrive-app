@@ -1,16 +1,14 @@
-// app/donationType.js
-
 import React from 'react';
 import { View, Text, TouchableOpacity, Image, ScrollView, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
-import HeartBackground from '../components/HeartBackground'; // 🌟 Import Heart Background
+import HeartBackground from '../../components/HeartBackground';
 
 export default function DonationType() {
   const router = useRouter();
 
   const handleContinue = () => {
-    router.push('/donationAmount'); // 🌟 Next page
+    router.push('/signupFlow/donationAmount');
   };
 
   const handleSkip = () => {
@@ -19,10 +17,8 @@ export default function DonationType() {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* 💖 Heart Background behind everything */}
       <HeartBackground />
 
-      {/* Everything else */}
       <View style={{ flex: 1, backgroundColor: 'transparent' }}>
         {/* Top Navigation */}
         <View style={styles.topNav}>
@@ -30,16 +26,21 @@ export default function DonationType() {
             <AntDesign name="arrowleft" size={24} color="#324E58" />
           </TouchableOpacity>
 
-          {/* Progress Bar */}
-          <View style={styles.progressContainer}>
-            <View style={styles.progressActive} />
-            <View style={styles.progressInactive} />
-            <View style={styles.progressInactive} />
-            <View style={styles.progressInactive} />
-            <Image
-              source={require('../assets/images/walking-piggy.png')}
-              style={{ width: 30, height: 24, marginLeft: 5 }}
-            />
+          {/* Updated Progress Bar with walking piggy */}
+          <View style={styles.progressBarWrapper}>
+            <View style={styles.progressBar}>
+              <View style={styles.progressActive} />
+              <View style={styles.progressActive} />
+              <View style={styles.progressActive} />
+              <View style={styles.progressActive} />
+              <View style={styles.progressInactive} />
+            </View>
+            <View style={styles.piggyContainer}>
+              <Image
+                source={require('../../assets/images/walking-piggy.png')}
+                style={styles.walkingPiggy}
+              />
+            </View>
           </View>
 
           <TouchableOpacity onPress={handleSkip}>
@@ -47,7 +48,6 @@ export default function DonationType() {
           </TouchableOpacity>
         </View>
 
-        {/* Content */}
         <ScrollView
           contentContainerStyle={{
             flexGrow: 1,
@@ -56,21 +56,18 @@ export default function DonationType() {
             padding: 20,
           }}
         >
-          {/* Speech Bubble */}
           <View style={styles.speechBubble}>
             <Text style={styles.speechText}>
               A minimum of $15 per month is needed to keep your account active, but you can increase your donation to your desired amount.
             </Text>
           </View>
 
-          {/* Piggy Image */}
           <Image
-            source={require('../assets/images/piggy-with-coin.png')}
+            source={require('../../assets/images/piggy-with-coin.png')}
             style={styles.piggy}
           />
         </ScrollView>
 
-        {/* Bottom Button */}
         <View style={styles.footer}>
           <TouchableOpacity onPress={handleContinue} style={styles.continueButton}>
             <Text style={{ color: '#fff', fontSize: 16 }}>Got it!</Text>
@@ -86,14 +83,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 20,
+    paddingHorizontal: 20,
     paddingTop: 50,
+    marginBottom: 10,
   },
-  progressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  progressBarWrapper: {
     flex: 1,
+    position: 'relative',
+    alignItems: 'center',
     marginHorizontal: 10,
+  },
+  progressBar: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    height: 4,
+    width: '100%',
   },
   progressActive: {
     flex: 1,
@@ -108,6 +112,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5FA',
     borderRadius: 10,
     marginHorizontal: 2,
+  },
+  piggyContainer: {
+    position: 'absolute',
+    top: -18,
+    left: '65%', // Adjust this as needed for better placement
+  },
+  walkingPiggy: {
+    width: 30,
+    height: 24,
+    resizeMode: 'contain',
   },
   speechBubble: {
     backgroundColor: '#F5F5FA',

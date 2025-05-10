@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, Image, TextInput, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
-import SuccessModal from '../../components/SuccessModal';
+import SuccessModal from '../../../components/SuccessModal';
 import ConfettiCannon from 'react-native-confetti-cannon';
 
 export default function BeneficiaryScreen() {
@@ -19,10 +19,10 @@ export default function BeneficiaryScreen() {
   const [activeTab, setActiveTab] = useState('Beneficiaries');
 
   const [beneficiaries, setBeneficiaries] = useState([
-    { id: 1, name: 'NPCF', category: 'Childhood Illness', image: require('../../assets/images/child-cancer.jpg') },
-    { id: 2, name: 'Humane Society', category: 'Animal Welfare', image: require('../../assets/images/humane-society.jpg') },
-    { id: 3, name: 'Charity Water', category: 'Low Income Families', image: require('../../assets/images/charity-water.jpg') },
-    { id: 4, name: 'Dog Trust', category: 'Animal Welfare', image: require('../../assets/images/humane-society.jpg') },
+    { id: 1, name: 'NPCF', category: 'Childhood Illness', image: require('../../../assets/images/child-cancer.jpg') },
+    { id: 2, name: 'Humane Society', category: 'Animal Welfare', image: require('../../../assets/images/humane-society.jpg') },
+    { id: 3, name: 'Charity Water', category: 'Low Income Families', image: require('../../../assets/images/charity-water.jpg') },
+    { id: 4, name: 'Dog Trust', category: 'Animal Welfare', image: require('../../../assets/images/humane-society.jpg') },
   ]);
 
   const toggleFavorite = (id) => {
@@ -79,7 +79,7 @@ export default function BeneficiaryScreen() {
 
         {/* Speech Bubble */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
-          <Image source={require('../../assets/images/bolt-piggy.png')} style={{ width: 60, height: 60, resizeMode: 'contain' }} />
+          <Image source={require('../../../assets/images/bolt-piggy.png')} style={{ width: 60, height: 60, resizeMode: 'contain' }} />
           <View style={{ backgroundColor: '#F5F5FA', padding: 12, borderRadius: 10, marginLeft: 10, flex: 1, borderWidth: 1, borderColor: '#E1E1E5' }}>
             <Text style={{ color: '#324E58', fontSize: 14 }}>
               Select only one to donate to. Favorite as many as you’d like to see their updates on your newsfeed. 

@@ -1,10 +1,12 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet, Animated, Dimensions } from 'react-native';
+import { View, Text, Image, StyleSheet, Animated, Dimensions, TouchableOpacity } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 export default function MonthlyImpactCard({ monthlyDonation = 15, monthlySavings = 7.5, nextDonationDate = 'Sep 17, 2025' }) {
   const flowerSeed = require('../assets/growth/seed.png');
   const piggyWithCoins = require('../assets/images/piggy-money.png');
+  const router = useRouter();
 
   const fadeAnim = new Animated.Value(0);
   Animated.timing(fadeAnim, {
@@ -21,7 +23,9 @@ export default function MonthlyImpactCard({ monthlyDonation = 15, monthlySavings
           <Feather name="calendar" size={16} color="#324E58" style={{ marginRight: 6 }} />
           <Text style={styles.dateText}>{nextDonationDate}</Text>
         </View>
-        <Feather name="edit-3" size={16} color="#7A8D9C" />
+        <TouchableOpacity onPress={() => router.push('/menu/beneficiaryPreferences')}>
+          <Feather name="edit-3" size={16} color="#7A8D9C" />
+        </TouchableOpacity>
       </View>
 
       {/* Main Content Row */}
@@ -86,13 +90,12 @@ const styles = StyleSheet.create({
   },
   verticalDivider: {
     width: 1,
-    height: 150,               // Adjust as needed
+    height: 150,
     backgroundColor: '#E0E0E0',
     marginHorizontal: 10,
-    alignSelf: 'center',      // Ensures it's vertically centered
-    marginTop: -10,           // 👈 Pulls it up higher
+    alignSelf: 'center',
+    marginTop: -10,
   },
-  
   icon: {
     width: 100,
     height: 100,
