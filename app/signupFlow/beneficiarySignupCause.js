@@ -34,6 +34,10 @@ export default function BeneficiaryPreferences() {
     { id: 2, name: 'Humane Society', category: 'Animal Welfare', size: 'Medium', image: require('../../assets/images/humane-society.jpg') },
     { id: 3, name: 'Charity Water', category: 'Low Income Families', size: 'Large', image: require('../../assets/images/charity-water.jpg') },
     { id: 4, name: 'Dog Trust', category: 'Animal Welfare', size: 'Small', image: require('../../assets/images/humane-society.jpg') },
+    { id: 5, name: 'NPCF', category: 'Childhood Illness', size: 'Large', image: require('../../assets/images/child-cancer.jpg') },
+    { id: 6, name: 'Humane Society', category: 'Animal Welfare', size: 'Medium', image: require('../../assets/images/humane-society.jpg') },
+    { id: 7, name: 'Charity Water', category: 'Low Income Families', size: 'Large', image: require('../../assets/images/charity-water.jpg') },
+    { id: 8, name: 'Dog Trust', category: 'Animal Welfare', size: 'Small', image: require('../../assets/images/humane-society.jpg') },
   ];
 
   const filteredBeneficiaries = beneficiaries.filter(b =>

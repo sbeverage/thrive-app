@@ -145,7 +145,7 @@ export default function BeneficiaryFilter() {
       </View>
 
       {/* Continue Button */}
-      <TouchableOpacity style={styles.button} onPress={() => router.push('/signupFlow/beneficiarySignupCause')}>
+      <TouchableOpacity style={styles.button} onPress={() => router.push('/(tabs)/beneficiary')}>
         <Text style={styles.buttonText}>Apply Filters</Text>
       </TouchableOpacity>
     </ScrollView>

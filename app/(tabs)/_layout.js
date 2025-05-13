@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { Tabs, useRouter, usePathname } from 'expo-router';
+import { Tabs, Slot, useRouter, usePathname } from 'expo-router';
 import { View, TouchableOpacity, Image, StyleSheet, Text } from 'react-native';
+import { BeneficiaryProvider } from '../context/BeneficiaryContext'; // ✅ your context
 
-export default function TabsLayout() {
+export default function AppLayout() {
   const [activeTab, setActiveTab] = useState('home');
   const router = useRouter();
   const pathname = usePathname();
 
-  // ✅ Check if on a dynamic vendor detail screen like /discounts/123
   const isDetailPage = /^\/discounts\/[^\/]+$/.test(pathname);
 
   const tabs = [
@@ -19,54 +19,49 @@ export default function TabsLayout() {
   ];
 
   return (
-    <View style={{ flex: 1 }}>
-      <Tabs
-        screenOptions={{
-          headerShown: false,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
+    <BeneficiaryProvider>
+      <View style={{ flex: 1 }}>
+        <Slot />
 
-      {/* ✅ Show footer only if not on detail page */}
-      {!isDetailPage && (
-        <>
-          <View style={styles.footerNavWrapper}>
-            <View style={styles.footerNav}>
-              {tabs.map((tab) => {
-                const focused = pathname.includes(tab.name);
-                return (
-                  <TouchableOpacity
-                    key={tab.name}
-                    style={styles.footerItem}
-                    onPress={() => {
-                      setActiveTab(tab.name);
-                      router.push(`/${tab.name}`);
-                    }}
-                  >
-                    <Image
-                      source={tab.icon}
-                      style={{
-                        width: focused ? 28 : 24,
-                        height: focused ? 28 : 24,
-                        tintColor: focused ? '#DB8633' : '#6D6E72',
+        {!isDetailPage && (
+          <>
+            <View style={styles.footerNavWrapper}>
+              <View style={styles.footerNav}>
+                {tabs.map((tab) => {
+                  const focused = pathname.includes(tab.name);
+                  return (
+                    <TouchableOpacity
+                      key={tab.name}
+                      style={styles.footerItem}
+                      onPress={() => {
+                        setActiveTab(tab.name);
+                        router.push(`/${tab.name}`);
                       }}
-                    />
-                    <Text style={focused ? styles.footerTextActive : styles.footerText}>
-                      {tab.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+                    >
+                      <Image
+                        source={tab.icon}
+                        style={{
+                          width: focused ? 28 : 24,
+                          height: focused ? 28 : 24,
+                          tintColor: focused ? '#DB8633' : '#6D6E72',
+                        }}
+                      />
+                      <Text style={focused ? styles.footerTextActive : styles.footerText}>
+                        {tab.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
-          </View>
 
-          {/* Floating Search Button */}
-          <TouchableOpacity style={styles.searchButton}>
-            <Image source={require('../../assets/icons/search.png')} style={{ width: 28, height: 28 }} />
-          </TouchableOpacity>
-        </>
-      )}
-    </View>
+            <TouchableOpacity style={styles.searchButton}>
+              <Image source={require('../../assets/icons/search.png')} style={{ width: 28, height: 28 }} />
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+    </BeneficiaryProvider>
   );
 }
 
@@ -122,4 +117,3 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
 });
-
