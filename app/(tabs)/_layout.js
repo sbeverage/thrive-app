@@ -1,14 +1,21 @@
 import React, { useState } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Tabs, Slot, useRouter, usePathname } from 'expo-router';
 import { View, TouchableOpacity, Image, StyleSheet, Text } from 'react-native';
-import { BeneficiaryProvider } from '../context/BeneficiaryContext'; // ✅ your context
+import { BeneficiaryProvider } from '../context/BeneficiaryContext';
 
 export default function AppLayout() {
   const [activeTab, setActiveTab] = useState('home');
   const router = useRouter();
   const pathname = usePathname();
 
+  // Hide footer on detail and fullscreen pages
   const isDetailPage = /^\/discounts\/[^\/]+$/.test(pathname);
+  const hideFooterPages = [
+    '/discounts/globalSearch',
+    '/discounts/globalSearchFilter',
+  ];
+  const hideFooter = isDetailPage || hideFooterPages.includes(pathname);
 
   const tabs = [
     { name: 'home', label: 'Home', icon: require('../../assets/icons/home.png') },
@@ -19,14 +26,17 @@ export default function AppLayout() {
   ];
 
   return (
-    <BeneficiaryProvider>
-      <View style={{ flex: 1 }}>
-        <Slot />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <BeneficiaryProvider>
+        <View style={{ flex: 1, backgroundColor: '#fff' }}>
+          {/* Only apply paddingBottom if footer is visible */}
+          <View style={{ flex: 1, paddingBottom: hideFooter ? 0 : 80 }}>
+            <Slot />
+          </View>
 
-        {!isDetailPage && (
-          <>
-            <View style={styles.footerNavWrapper}>
-              <View style={styles.footerNav}>
+          {!hideFooter && (
+            <>
+              <View style={styles.footerNavWrapper}>
                 {tabs.map((tab) => {
                   const focused = pathname.includes(tab.name);
                   return (
@@ -53,36 +63,35 @@ export default function AppLayout() {
                   );
                 })}
               </View>
-            </View>
 
-            <TouchableOpacity style={styles.searchButton}>
-              <Image source={require('../../assets/icons/search.png')} style={{ width: 28, height: 28 }} />
-            </TouchableOpacity>
-          </>
-        )}
-      </View>
-    </BeneficiaryProvider>
+              <TouchableOpacity
+                style={styles.searchButton}
+                onPress={() => router.push('/discounts/globalSearch')}
+              >
+                <Image source={require('../../assets/icons/search.png')} style={{ width: 28, height: 28 }} />
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </BeneficiaryProvider>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
   footerNavWrapper: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     backgroundColor: '#ffffff',
-    paddingTop: 10,
-    paddingBottom: 10,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  footerNav: {
+    height: 80,
+    borderTopWidth: 0.5,
+    borderColor: '#e1e1e5',
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    height: 60,
+    zIndex: 99,
   },
   footerItem: {
     alignItems: 'center',
@@ -109,11 +118,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'absolute',
     right: 30,
-    bottom: 70,
+    bottom: 68,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 10,
+    zIndex: 100,
   },
 });

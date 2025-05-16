@@ -1,36 +1,28 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet, Animated, Dimensions, TouchableOpacity } from 'react-native';
+import { View, Text, Image, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 
-export default function MonthlyImpactCard({ monthlyDonation = 15, monthlySavings = 7.5, nextDonationDate = 'Sep 17, 2025' }) {
+export default function MonthlyImpactCard({
+  monthlyDonation = 15,
+  monthlySavings = 7.5,
+  nextDonationDate = 'Sep 17, 2025',
+}) {
   const flowerSeed = require('../assets/growth/seed.png');
   const piggyWithCoins = require('../assets/images/piggy-money.png');
-  const router = useRouter();
-
-  const fadeAnim = new Animated.Value(0);
-  Animated.timing(fadeAnim, {
-    toValue: 1,
-    duration: 1500,
-    useNativeDriver: true,
-  }).start();
 
   return (
-    <Animated.View style={[styles.card, { opacity: fadeAnim }]}>
-      {/* Top row */}
+    <View style={styles.card}>
+      {/* Top Row */}
       <View style={styles.headerRow}>
         <View style={styles.dateRow}>
           <Feather name="calendar" size={16} color="#324E58" style={{ marginRight: 6 }} />
           <Text style={styles.dateText}>{nextDonationDate}</Text>
         </View>
-        <TouchableOpacity onPress={() => router.push('/menu/beneficiaryPreferences')}>
-          <Feather name="edit-3" size={16} color="#7A8D9C" />
-        </TouchableOpacity>
       </View>
 
       {/* Main Content Row */}
       <View style={styles.impactRow}>
-        {/* Donation */}
+        {/* Monthly Donation */}
         <View style={styles.impactBox}>
           <Image source={flowerSeed} style={styles.icon} resizeMode="contain" />
           <Text style={styles.amount}>${monthlyDonation}</Text>
@@ -47,7 +39,7 @@ export default function MonthlyImpactCard({ monthlyDonation = 15, monthlySavings
           <Text style={styles.caption}>Savings</Text>
         </View>
       </View>
-    </Animated.View>
+    </View>
   );
 }
 

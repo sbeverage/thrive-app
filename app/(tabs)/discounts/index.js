@@ -1,279 +1,256 @@
-import React, { useState, useRef } from 'react';
+// Full Airbnb-style Discounts Screen Implementation using BottomSheet with corrected voucher styling and consistent search UI
+import React, { useRef, useMemo, useState } from 'react';
 import {
   View,
   Text,
   TextInput,
-  FlatList,
   TouchableOpacity,
-  StyleSheet,
   ScrollView,
-  Animated,
   Image,
-  Dimensions,
-  PanResponder,
+  StyleSheet,
+  FlatList,
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
 import MapView, { Marker, Circle } from 'react-native-maps';
-import VoucherCard from '../../../components/VoucherCard';
+import BottomSheet from '@gorhom/bottom-sheet';
+import { Feather, AntDesign } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const MINIMIZED_HEIGHT = SCREEN_HEIGHT * 0.45;
-const MAXIMIZED_HEIGHT = 0;
-
-const vendors = [
-  {
-    id: '1',
-    brandName: 'Starbucks',
-    category: 'Coffee Shop',
-    imageUrl: require('../../../assets/logos/starbucks.png'),
-    discountText: '3 discounts available',
-    latitude: 37.78825,
-    longitude: -122.4324,
-  },
-  {
-    id: '2',
-    brandName: 'Apple Store',
-    category: 'Electronics',
-    imageUrl: require('../../../assets/logos/apple.png'),
-    discountText: '3 discounts available',
-    latitude: 37.78845,
-    longitude: -122.435,
-  },
-  {
-    id: '3',
-    brandName: 'Amazon On-Site Store',
-    category: 'Shopping Store',
-    imageUrl: require('../../../assets/logos/amazon.png'),
-    discountText: '3 discounts available',
-    latitude: 37.78885,
-    longitude: -122.431,
-  },
-];
+import VoucherCard from '../../../components/VoucherCard';
 
 export default function DiscountsScreen() {
-  const [activeCategory, setActiveCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [dragEnabled, setDragEnabled] = useState(false);
-
-  const pan = useRef(new Animated.Value(MINIMIZED_HEIGHT)).current;
-  const flatListRef = useRef(null);
+  const [activeCategory, setActiveCategory] = useState('All');
+  const [businessName, setBusinessName] = useState('');
+  const [businessUrl, setBusinessUrl] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+  const sheetRef = useRef(null);
   const router = useRouter();
-  const scrollOffsetY = useRef(0);
-  const gestureStartY = useRef(0);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: (_, gestureState) => {
-        const isTouchingDragHandle = gestureState.y0 - pan._value <= 40;
-        setDragEnabled(isTouchingDragHandle);
-        return isTouchingDragHandle;
-      },
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        return dragEnabled && Math.abs(gestureState.dy) > 10;
-      },
-      onPanResponderMove: Animated.event([null, { dy: pan }], {
-        useNativeDriver: false,
-      }),
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dy > 50) {
-          Animated.spring(pan, {
-            toValue: MINIMIZED_HEIGHT,
-            useNativeDriver: false,
-          }).start();
-        } else if (gesture.dy < -50) {
-          Animated.spring(pan, {
-            toValue: MAXIMIZED_HEIGHT,
-            useNativeDriver: false,
-          }).start();
-        } else {
-          Animated.spring(pan, {
-            toValue:
-              pan._value > SCREEN_HEIGHT * 0.2 ? MINIMIZED_HEIGHT : MAXIMIZED_HEIGHT,
-            useNativeDriver: false,
-          }).start();
-        }
-      },
-    })
-  ).current;
+  const snapPoints = useMemo(() => ['25%', '95%'], []);
 
-  const filteredVendors = vendors.filter(vendor => {
-    const matchesCategory =
-      activeCategory === 'All' || vendor.category === activeCategory;
-    const matchesSearch = vendor.brandName
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
+  const vendors = [
+    {
+      id: '1',
+      brandName: 'Starbucks',
+      category: 'Coffee Shop',
+      imageUrl: require('../../../assets/logos/starbucks.png'),
+      discountText: '3 discounts available',
+      latitude: 37.78825,
+      longitude: -122.4324,
+    },
+    {
+      id: '2',
+      brandName: 'Apple Store',
+      category: 'Electronics',
+      imageUrl: require('../../../assets/logos/apple.png'),
+      discountText: '3 discounts available',
+      latitude: 37.78845,
+      longitude: -122.435,
+    },
+    {
+      id: '3',
+      brandName: 'Amazon On-Site Store',
+      category: 'Shopping Store',
+      imageUrl: require('../../../assets/logos/amazon.png'),
+      discountText: '3 discounts available',
+      latitude: 37.78885,
+      longitude: -122.431,
+    },
+    {
+      id: '4',
+      brandName: 'Starbucks',
+      category: 'Coffee Shop',
+      imageUrl: require('../../../assets/logos/starbucks.png'),
+      discountText: '3 discounts available',
+      latitude: 37.78825,
+      longitude: -122.4324,
+    },
+    {
+      id: '5',
+      brandName: 'Apple Store',
+      category: 'Electronics',
+      imageUrl: require('../../../assets/logos/apple.png'),
+      discountText: '3 discounts available',
+      latitude: 37.78845,
+      longitude: -122.435,
+    },
+    {
+      id: '6',
+      brandName: 'Amazon On-Site Store',
+      category: 'Shopping Store',
+      imageUrl: require('../../../assets/logos/amazon.png'),
+      discountText: '3 discounts available',
+      latitude: 37.78885,
+      longitude: -122.431,
+    },
+  ];
+
+  const filteredVendors = vendors.filter(v => {
+    const matchesSearch = v.brandName.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = activeCategory === 'All' || v.category === activeCategory;
+    return matchesSearch && matchesCategory;
   });
 
   return (
-    <View style={{ flex: 1 }}>
-      <MapView
-        style={StyleSheet.absoluteFillObject}
-        customMapStyle={[
-          { featureType: 'all', elementType: 'geometry', stylers: [{ color: '#fdf7f1' }] },
-          { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#f0e6db' }] },
-          { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-          { featureType: 'administrative', elementType: 'geometry', stylers: [{ color: '#D0861F' }] },
-          { featureType: 'water', stylers: [{ color: '#e6f2f3' }] },
-        ]}
-        initialRegion={{
-          latitude: 37.78825,
-          longitude: -122.4324,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }}
-      >
-        <Circle
-          center={{ latitude: 37.78825, longitude: -122.4324 }}
-          radius={700}
-          strokeColor="#D0861F"
-          fillColor="rgba(208,134,31,0.1)"
-        />
-        {filteredVendors.map(vendor => (
-          <Marker
-            key={vendor.id}
-            coordinate={{ latitude: vendor.latitude, longitude: vendor.longitude }}
-            title={vendor.brandName}
-            description={vendor.discountText}
+    <SafeAreaView style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
+        <MapView
+          style={StyleSheet.absoluteFill}
+          initialRegion={{
+            latitude: 37.78825,
+            longitude: -122.4324,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          }}
+        >
+          <Circle
+            center={{ latitude: 37.78825, longitude: -122.4324 }}
+            radius={700}
+            strokeColor="#D0861F"
+            fillColor="rgba(208,134,31,0.1)"
           />
-        ))}
-      </MapView>
-
-      <Animated.View
-        style={[
-          styles.overlay,
-          {
-            transform: [
-              {
-                translateY: pan.interpolate({
-                  inputRange: [MAXIMIZED_HEIGHT, MINIMIZED_HEIGHT],
-                  outputRange: [MAXIMIZED_HEIGHT, MINIMIZED_HEIGHT],
-                  extrapolate: 'clamp',
-                }),
-              },
-            ],
-          },
-        ]}
-        {...panResponder.panHandlers}
-      >
-        <View style={styles.dragHandle} />
-        <View style={styles.contentWrapper}>
-          <View style={styles.searchWrapper}>
-            <TextInput
-              placeholder="Search Business"
-              placeholderTextColor="#aaa"
-              style={styles.searchInput}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
+          {filteredVendors.map(v => (
+            <Marker
+              key={v.id}
+              coordinate={{ latitude: v.latitude, longitude: v.longitude }}
+              title={v.brandName}
+              description={v.discountText}
             />
-            <TouchableOpacity
-              style={styles.filterButton}
-              onPress={() => router.push('/(tabs)/discounts/filter')}
-            >
-              <Image
-                source={require('../../../assets/icons/filter.png')}
-                style={styles.filterIcon}
-              />
-            </TouchableOpacity>
-          </View>
+          ))}
+        </MapView>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.tagsRow}
-          >
-            {['All', 'Coffee Shop', 'Electronics', 'Shopping Store', 'Tech'].map(tag => (
-              <TouchableOpacity
-                key={tag}
-                style={[styles.tag, activeCategory === tag && styles.tagActive]}
-                onPress={() => setActiveCategory(tag)}
-              >
-                <Text style={[styles.tagText, activeCategory === tag && styles.tagTextActive]}>
-                  {tag}
+        <BottomSheet
+          ref={sheetRef}
+          index={0}
+          snapPoints={snapPoints}
+          enablePanDownToClose={false}
+          backgroundStyle={{ borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
+        >
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+            <View style={{ paddingHorizontal: 20, paddingTop: 20, backgroundColor: '#f5f5fa' }}>
+              <View style={styles.searchRow}>
+                <AntDesign name="search1" size={18} color="#6d6e72" style={{ marginRight: 8 }} />
+                <TextInput
+                  placeholder="Search Business"
+                  placeholderTextColor="#6d6e72"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  style={styles.searchInput}
+                />
+                <TouchableOpacity onPress={() => router.push('/(tabs)/discounts/filter')} style={{ marginLeft: 10 }}>
+                  <Feather name="filter" size={22} color="#DB8633" />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagsRow}>
+                {['All', 'Coffee Shop', 'Electronics', 'Shopping Store'].map(tag => (
+                  <TouchableOpacity
+                    key={tag}
+                    style={[styles.tag, activeCategory === tag && styles.tagActive]}
+                    onPress={() => setActiveCategory(tag)}
+                  >
+                    <Text style={[styles.tagText, activeCategory === tag && styles.tagTextActive]}>{tag}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {filteredVendors.length > 0 ? (
+              <FlatList
+                data={filteredVendors}
+                keyExtractor={item => item.id}
+                contentContainerStyle={{
+                  paddingHorizontal: 20,
+                  paddingBottom: 60,
+                  backgroundColor: '#f5f5fa',
+                  flexGrow: 1,
+                  justifyContent: 'flex-start',
+                }}
+                renderItem={({ item }) => (
+                  <VoucherCard
+                    brand={item.brandName}
+                    logo={item.imageUrl}
+                    discounts={3}
+                    onPress={() => router.push(`/discounts/${item.id}`)}
+                  />
+                )}
+                showsVerticalScrollIndicator={false}
+              />
+            ) : (
+              <ScrollView contentContainerStyle={{ padding: 20, backgroundColor: '#f5f5fa' }}>
+                <Text style={{ fontSize: 16, color: '#aaa', marginBottom: 10, textAlign: 'center' }}>
+                  No results found for “{searchQuery}”
                 </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#324E58', textAlign: 'center', marginBottom: 20 }}>
+                  Want to see “{searchQuery}” here? Drop their info below!
+                </Text>
 
-        <View style={styles.fixedVoucherListHeight}>
-          <FlatList
-            ref={flatListRef}
-            data={filteredVendors}
-            keyExtractor={item => item.id}
-            renderItem={({ item }) => (
-              <VoucherCard
-                brand={item.brandName}
-                logo={item.imageUrl}
-                discounts={3}
-                onPress={() => router.push(`/discounts/${item.id}`)}
-              />
+                {submitted ? (
+                  <Text style={{ color: '#324E58', fontWeight: '600', marginTop: 20, textAlign: 'center' }}>
+                    ✅ Request submitted! Thank you — we’ll review and add them soon.
+                  </Text>
+                ) : (
+                  <>
+                    <TextInput
+                      value={businessName}
+                      onChangeText={setBusinessName}
+                      placeholder="Full Business Name"
+                      placeholderTextColor="#999"
+                      style={styles.input}
+                    />
+                    <TextInput
+                      value={businessUrl}
+                      onChangeText={setBusinessUrl}
+                      placeholder="Website URL"
+                      placeholderTextColor="#999"
+                      autoCapitalize="none"
+                      style={styles.input}
+                    />
+                    <TouchableOpacity
+                      style={styles.requestButton}
+                      onPress={() => {
+                        if (businessName.trim() && businessUrl.trim()) {
+                          setSubmitted(true);
+                        } else {
+                          alert('Please fill out both fields.');
+                        }
+                      }}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '600' }}>Submit Request</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </ScrollView>
             )}
-            contentContainerStyle={styles.voucherListWithBackground}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            bounces={false}
-            onScroll={e => {
-              scrollOffsetY.current = e.nativeEvent.contentOffset.y;
-            }}
-            scrollEventThrottle={16}
-          />
-        </View>
-      </Animated.View>
-    </View>
+          </KeyboardAvoidingView>
+        </BottomSheet>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    position: 'absolute',
-    bottom: 0,
-    width: '100%',
-    backgroundColor: '#F5F5FA',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: SCREEN_HEIGHT * 0.7,
-    height: SCREEN_HEIGHT * 0.55,
-    paddingTop: 10,
-    paddingHorizontal: 0,
-  },
-  dragHandle: {
-    width: 40,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: '#ccc',
-    alignSelf: 'center',
-    marginBottom: 8,
-  },
-  contentWrapper: {
-    paddingHorizontal: 16,
-  },
-  searchWrapper: {
+  searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginBottom: 10,
+    backgroundColor: '#f5f5fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    paddingHorizontal: 10,
+    marginBottom: 16,
   },
   searchInput: {
     flex: 1,
-    fontSize: 15,
-    color: '#000',
-  },
-  filterButton: {
-    marginLeft: 10,
-  },
-  filterIcon: {
-    width: 20,
-    height: 20,
-    tintColor: '#324E58',
+    fontSize: 16,
+    color: '#324E58',
+    height: 48,
   },
   tagsRow: {
-    paddingVertical: 8,
-    paddingLeft: 20,
+    paddingBottom: 10,
+    paddingLeft: 4,
   },
   tag: {
     paddingVertical: 6,
@@ -281,7 +258,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f2f2f2',
     borderRadius: 12,
     marginRight: 8,
-    alignSelf: 'flex-start',
   },
   tagActive: {
     backgroundColor: '#FFF5EB',
@@ -290,23 +266,30 @@ const styles = StyleSheet.create({
   },
   tagText: {
     fontSize: 13,
-    lineHeight: 16,
     color: '#666',
     fontWeight: '500',
   },
   tagTextActive: {
     fontSize: 13,
-    lineHeight: 16,
     color: '#D0861F',
     fontWeight: '600',
   },
-  voucherListWithBackground: {
-    paddingBottom: 100,
-    paddingHorizontal: 16,
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    fontSize: 14,
+    color: '#324E58',
+    width: '100%',
   },
-  fixedVoucherListHeight: {
-    flexGrow: 1,
-    maxHeight: SCREEN_HEIGHT * 0.55 - 120,
+  requestButton: {
+    backgroundColor: '#DB8633',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 10,
   },
 });
-

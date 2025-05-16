@@ -1,3 +1,5 @@
+// File: app/(tabs)/beneficiaryDetails.js
+
 import React, { useState } from 'react';
 import { View, StyleSheet, Dimensions } from 'react-native';
 import { useLocalSearchParams, useRouter, useSegments } from 'expo-router';

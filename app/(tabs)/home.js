@@ -1,3 +1,4 @@
+// file: app/(tabs)/home.js
 import React from 'react';
 import { useFonts, Figtree_400Regular, Figtree_700Bold } from '@expo-google-fonts/figtree';
 import { View, Text, StyleSheet, ScrollView, SafeAreaView, Image, TouchableOpacity } from 'react-native';
@@ -27,7 +28,6 @@ export default function MainHome() {
     <>
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          {/* Header */}
           <LinearGradient
             colors={['#2C3E50', '#4CA1AF']}
             start={{ x: 0, y: 0 }}
@@ -61,24 +61,21 @@ export default function MainHome() {
             <Text style={styles.locationText}>Home — Alpharetta, GA, USA</Text>
           </LinearGradient>
 
-          {/* Monthly Impact Card */}
           <View style={styles.monthlyCardWrapper}>
             <MonthlyImpactCard monthlyDonation={monthlyDonation} monthlySavings={monthlySavings} />
           </View>
 
-          {/* Beneficiary */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>My Beneficiary</Text>
           </View>
-          <View style={styles.beneficiaryCard}>
+          <TouchableOpacity onPress={() => router.push('/(tabs)/beneficiary/beneficiaryDetail')} style={styles.beneficiaryCard}>
             <Image source={require('../../assets/images/child-cancer.jpg')} style={styles.beneficiaryImage} />
             <View style={styles.beneficiaryOverlay}>
               <Text style={styles.beneficiaryName}>St. Jude</Text>
               <Text style={styles.beneficiaryDesc}>Helping children fight cancer and other life-threatening diseases.</Text>
             </View>
-          </View>
+          </TouchableOpacity>
 
-          {/* Discounts */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Discounts Near You</Text>
             <TouchableOpacity onPress={() => router.push('/discounts')}>
@@ -102,7 +99,6 @@ export default function MainHome() {
             ))}
           </ScrollView>
 
-          {/* Rank */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Rank</Text>
             <TouchableOpacity onPress={() => router.push('/leaderboard')}>
@@ -113,7 +109,6 @@ export default function MainHome() {
             <Text style={styles.placeholderText}>Coming Soon</Text>
           </View>
 
-          {/* Invite A Friend - Fixed Layout */}
           <View style={styles.inviteBannerWrapper}>
             <View style={styles.inviteInnerWrapper}>
               <View style={styles.inviteImageContainer}>
