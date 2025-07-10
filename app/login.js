@@ -26,12 +26,8 @@ export default function LoginScreen() {
 
     try {
       const response = await API.post('/auth/login', { email, password });
-
-      if (response.data.is_verified) {
-        router.replace('/home');
-      } else {
-        router.push({ pathname: '/verifyEmail', params: { email } });
-      }
+      // Skip verification check and go directly to home
+      router.replace('/home');
     } catch (error) {
       Alert.alert('Login Error', error.response?.data?.message || 'Something went wrong.');
       console.error('❌ Login error:', error.response?.data || error.message);
@@ -91,7 +87,7 @@ export default function LoginScreen() {
 
       {/* Link to Signup */}
       <TouchableOpacity onPress={() => router.push('/signup')}>
-        <Text style={styles.signupLink}>I don’t have an account</Text>
+        <Text style={styles.signupLink}>I don't have an account</Text>
       </TouchableOpacity>
     </ScrollView>
   );

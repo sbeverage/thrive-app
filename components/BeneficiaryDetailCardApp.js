@@ -25,7 +25,7 @@ export default function BeneficiaryDetailCardApp({ data, onSelect }) {
   const posts = data.posts || [];
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={styles.containerNoFlex} contentContainerStyle={{ paddingBottom: 40 }}>
       {/* Header */}
       <View style={styles.headerRow}>
         <TouchableOpacity onPress={router.back}>
@@ -125,6 +125,7 @@ export default function BeneficiaryDetailCardApp({ data, onSelect }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
+  containerNoFlex: { backgroundColor: '#fff' },
   headerRow: { flexDirection: 'row', alignItems: 'center', padding: 16 },
   header: { fontSize: 18, fontWeight: '600', marginLeft: 12, color: '#21555b' },
   imageCarousel: { width: '100%', height: 200 },

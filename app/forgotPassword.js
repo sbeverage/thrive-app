@@ -24,7 +24,8 @@ export default function ForgotPassword() {
 
     try {
       await API.post('/auth/forgot-password', { email });
-      router.push({ pathname: '/verifyEmail', params: { email } });
+      Alert.alert('✅ Reset Link Sent!', 'Check your email for password reset instructions.');
+      router.back();
     } catch (error) {
       Alert.alert('Error', 'Failed to send reset link. Please try again.');
       console.error('❌ Error sending reset link:', error.response?.data || error.message);
@@ -43,7 +44,7 @@ export default function ForgotPassword() {
       <Image source={require('../assets/images/bolt-piggy.png')} style={styles.logo} />
 
       <Text style={styles.tagline}>
-        Enter your email we’ll <Text style={styles.highlight}>send you a reset link</Text>
+        Enter your email we'll <Text style={styles.highlight}>send you a reset link</Text>
       </Text>
 
       <TextInput
@@ -65,7 +66,7 @@ export default function ForgotPassword() {
 
 const styles = StyleSheet.create({
   container: {
-    paddingTop: 80,
+    paddingTop: 60,
     alignItems: 'center',
     backgroundColor: '#fff',
     flexGrow: 1,
@@ -73,7 +74,7 @@ const styles = StyleSheet.create({
   },
   backButton: {
     position: 'absolute',
-    top: 60,
+    top: 40,
     left: 20,
     zIndex: 10,
   },

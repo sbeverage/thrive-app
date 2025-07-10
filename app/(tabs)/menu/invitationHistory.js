@@ -67,9 +67,8 @@ export default function InvitationHistory() {
 
   return (
     <ScrollView style={styles.container}>
-      <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)/menu')}>
+      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
         <AntDesign name="arrowleft" size={24} color="#324E58" />
-        <Text style={styles.header}>Invitation History</Text>
       </TouchableOpacity>
 
       {invitations.map((invite, index) => (
@@ -112,14 +111,25 @@ export default function InvitationHistory() {
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     backgroundColor: '#fff',
-    paddingTop: 48,
+    paddingTop: 60,
     paddingHorizontal: 20,
   },
   backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    zIndex: 100,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderRadius: 20,
+    padding: 6,
+    marginBottom: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   header: {
     fontSize: 22,

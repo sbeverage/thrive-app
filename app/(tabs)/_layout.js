@@ -35,42 +35,56 @@ export default function AppLayout() {
           </View>
 
           {!hideFooter && (
-            <>
-              <View style={styles.footerNavWrapper}>
-                {tabs.map((tab) => {
-                  const focused = pathname.includes(tab.name);
-                  return (
-                    <TouchableOpacity
-                      key={tab.name}
-                      style={styles.footerItem}
-                      onPress={() => {
-                        setActiveTab(tab.name);
-                        router.push(`/${tab.name}`);
-                      }}
-                    >
-                      <Image
-                        source={tab.icon}
-                        style={{
-                          width: focused ? 28 : 24,
-                          height: focused ? 28 : 24,
-                          tintColor: focused ? '#DB8633' : '#6D6E72',
-                        }}
-                      />
-                      <Text style={focused ? styles.footerTextActive : styles.footerText}>
-                        {tab.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              <TouchableOpacity
-                style={styles.searchButton}
-                onPress={() => router.push('/discounts/globalSearch')}
-              >
-                <Image source={require('../../assets/icons/search.png')} style={{ width: 28, height: 28 }} />
-              </TouchableOpacity>
-            </>
+            <View style={styles.footerNavWrapper}>
+              {tabs.map((tab, idx) => {
+                const focused = pathname.includes(tab.name);
+                const isDiscounts = tab.name === 'discounts';
+                
+                return (
+                  <TouchableOpacity
+                    key={tab.name}
+                    style={[
+                      styles.footerItem,
+                      isDiscounts && styles.discountsItem
+                    ]}
+                    onPress={() => {
+                      setActiveTab(tab.name);
+                      router.push(`/${tab.name}`);
+                    }}
+                  >
+                    {isDiscounts ? (
+                      <View style={styles.discountsButton}>
+                        <Image
+                          source={tab.icon}
+                          style={{
+                            width: focused ? 28 : 24,
+                            height: focused ? 28 : 24,
+                            tintColor: '#fff',
+                          }}
+                        />
+                        <Text style={styles.discountsText}>
+                          {tab.label}
+                        </Text>
+                      </View>
+                    ) : (
+                      <>
+                        <Image
+                          source={tab.icon}
+                          style={{
+                            width: focused ? 28 : 24,
+                            height: focused ? 28 : 24,
+                            tintColor: focused ? '#DB8633' : '#6D6E72',
+                          }}
+                        />
+                        <Text style={focused ? styles.footerTextActive : styles.footerText}>
+                          {tab.label}
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           )}
         </View>
       </BeneficiaryProvider>
@@ -86,27 +100,36 @@ const styles = StyleSheet.create({
     right: 0,
     backgroundColor: '#ffffff',
     height: 80,
-    borderTopWidth: 0.5,
-    borderColor: '#e1e1e5',
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
     zIndex: 99,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 8,
   },
   footerItem: {
     alignItems: 'center',
     justifyContent: 'center',
+    flex: 1,
+    height: 60,
+    paddingVertical: 8,
   },
   footerText: {
     fontSize: 10,
     color: '#6D6E72',
-    marginTop: 4,
+    marginTop: 2,
     fontFamily: 'Figtree_400Regular',
   },
   footerTextActive: {
     fontSize: 10,
     color: '#DB8633',
-    marginTop: 4,
+    marginTop: 2,
     fontFamily: 'Figtree_700Bold',
   },
   searchButton: {
@@ -117,13 +140,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'absolute',
-    right: 30,
-    bottom: 68,
+    right: 0,
+    bottom: 32,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 10,
     zIndex: 100,
+  },
+  discountsItem: {
+    marginTop: -25,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  discountsButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#DB8633',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 12,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  discountsText: {
+    color: '#fff',
+    fontSize: 10,
+    marginTop: 2,
+    fontFamily: 'Figtree_700Bold',
+    fontWeight: '700',
   },
 });

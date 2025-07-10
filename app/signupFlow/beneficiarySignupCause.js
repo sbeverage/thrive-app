@@ -1,6 +1,6 @@
 // File: app/signupFlow/beneficiarySignupCause.js
 
-import React, { useRef, useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -11,16 +11,32 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Dimensions,
 } from 'react-native';
-import MapView, { Marker, Circle } from 'react-native-maps';
 import { AntDesign, Feather } from '@expo/vector-icons';
-import BottomSheet from '@gorhom/bottom-sheet';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const categories = [
+  'Childhood Illness',
+  'Foster Care', 
+  'Disabilities',
+  'Mental Health',
+  'Animal Welfare',
+  'Anti-Human Trafficking',
+  'Rehabilitation',
+  'Low Income Families',
+  'Education',
+];
+
+const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function BeneficiaryPreferences() {
   const router = useRouter();
-
   const [searchText, setSearchText] = useState('');
+  const [location, setLocation] = useState('');
+  const [radius, setRadius] = useState(10);
+  const [selectedCategory, setSelectedCategory] = useState('');
   const [favorites, setFavorites] = useState([]);
   const [businessName, setBusinessName] = useState('');
   const [businessUrl, setBusinessUrl] = useState('');
@@ -37,9 +53,12 @@ export default function BeneficiaryPreferences() {
     { id: 8, name: 'Dog Trust', category: 'Animal Welfare', image: require('../../assets/images/humane-society.jpg') },
   ];
 
-  const filtered = beneficiaries.filter(b =>
-    b.name.toLowerCase().includes(searchText.toLowerCase())
-  );
+  const filtered = beneficiaries.filter(b => {
+    const matchesSearch = b.name.toLowerCase().includes(searchText.toLowerCase());
+    const matchesCategory = !selectedCategory || b.category === selectedCategory;
+    const matchesLocation = !location || b.location.toLowerCase().includes(location.toLowerCase());
+    return matchesSearch && matchesCategory && matchesLocation;
+  });
 
   const toggleFavorite = id => {
     setFavorites(prev =>
@@ -47,271 +66,448 @@ export default function BeneficiaryPreferences() {
     );
   };
 
-  const sheetRef = useRef(null);
-  const snapPoints = useMemo(() => ['25%', '95%'], []);
-
   return (
-    <View style={{ flex: 1 }}>
-      <MapView
-        style={StyleSheet.absoluteFill}
-        initialRegion={{
-          latitude: 37.78825,
-          longitude: -122.4324,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }}
+    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      {/* Sticky Header */}
+      <View style={styles.stickyHeader}>
+        <View style={styles.searchSection}>
+          <View style={styles.searchRow}>
+            <AntDesign name="search1" size={18} color="#324E58" style={{ marginRight: 8 }} />
+            <TextInput
+              placeholder="Search beneficiary by name"
+              placeholderTextColor="#6d6e72"
+              value={searchText}
+              onChangeText={setSearchText}
+              style={styles.searchInput}
+            />
+          </View>
+        </View>
+        <View style={styles.locationFieldWrapper}>
+          <TouchableOpacity
+            style={styles.locationField}
+            onPress={() => {
+              // Focus or open a modal for location input
+            }}
+            activeOpacity={0.8}
+          >
+            <Feather name="map-pin" size={20} color="#324E58" style={{ marginRight: 10 }} />
+            <Text style={location ? styles.locationText : styles.locationPlaceholder}>
+              {location ? location : 'Add a location (optional)'}
+            </Text>
+            {location ? (
+              <TouchableOpacity
+                onPress={() => setLocation('')}
+                style={styles.clearLocationButton}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <AntDesign name="close" size={18} color="#888" />
+              </TouchableOpacity>
+            ) : null}
+          </TouchableOpacity>
+        </View>
+        <View style={styles.categorySection}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
+            <TouchableOpacity
+              style={[styles.categoryChip, !selectedCategory && styles.categoryChipSelected]}
+              onPress={() => setSelectedCategory('')}
+            >
+              <Text style={[styles.categoryText, !selectedCategory && styles.categoryTextSelected]}>
+                All
+              </Text>
+            </TouchableOpacity>
+            {categories.map((category) => (
+              <TouchableOpacity
+                key={category}
+                style={[styles.categoryChip, selectedCategory === category && styles.categoryChipSelected]}
+                onPress={() => setSelectedCategory(category)}
+              >
+                <Text style={[styles.categoryText, selectedCategory === category && styles.categoryTextSelected]}>
+                  {category}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+      {/* Scrollable Cards Section */}
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <Circle
-          center={{ latitude: 37.78825, longitude: -122.4324 }}
-          radius={700}
-          strokeColor="#D0861F"
-          fillColor="rgba(208,134,31,0.1)"
-        />
-        {beneficiaries.map(b => (
-          <Marker
-            key={b.id}
-            coordinate={{ latitude: 37.78825 + b.id * 0.001, longitude: -122.4324 }}
-            title={b.name}
-            description={b.category}
-          />
-        ))}
-      </MapView>
-
-      <BottomSheet
-        ref={sheetRef}
-        index={0}
-        snapPoints={snapPoints}
-        enablePanDownToClose={false}
-        backgroundStyle={{ borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      >
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-          <View style={{ flex: 1 }}>
-            {/* Sticky top section */}
-            <View style={{ padding: 20 }}>
-              <View style={styles.header}>
-                <TouchableOpacity onPress={router.back}>
-                  <AntDesign name="arrowleft" size={24} color="#324E58" />
-                </TouchableOpacity>
-                <Text style={styles.title}>Beneficiaries</Text>
-                <View style={{ width: 24 }} />
-              </View>
-
-              <View style={styles.tipRow}>
-                <Image source={require('../../assets/images/bolt-piggy.png')} style={styles.piggy} />
-                <View style={styles.tipBox}>
-                  <Text style={styles.tipText}>
-                    Pick one to donate to. Follow many. Just tap the heart to stay in the loop!
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.searchRow}>
-                <AntDesign name="search1" size={18} color="#6d6e72" style={{ marginRight: 8 }} />
-                <TextInput
-                  placeholder="Search Beneficiaries"
-                  placeholderTextColor="#6d6e72"
-                  value={searchText}
-                  onChangeText={setSearchText}
-                  style={styles.searchInput}
-                />
-                <TouchableOpacity onPress={() => router.push('/signupFlow/beneficiarySignupFilter')}>
-                  <Feather name="filter" size={22} color="#6d6e72" style={{ marginLeft: 8 }} />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Scrollable card list */}
-            <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
-              {filtered.length > 0 ? (
-                <View style={styles.cardGrid}>
-                  {filtered.map((b) => (
-                    <TouchableOpacity
-                      key={b.id}
+        <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+          {/* Beneficiary Cards */}
+          <View style={styles.cardsSection}>
+            {filtered.length > 0 ? (
+              filtered.map((b) => (
+                <View key={b.id} style={styles.card}>
+                  <TouchableOpacity
+                    onPress={() =>
+                      router.push({ pathname: '/signupFlow/beneficiarySignupDetails', params: { id: b.id.toString() } })
+                    }
+                    style={styles.cardImageContainer}
+                  >
+                    <Image source={b.image} style={styles.cardImage} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => toggleFavorite(b.id)}
+                    style={styles.heartIcon}
+                  >
+                    <AntDesign name={favorites.includes(b.id) ? 'heart' : 'hearto'} size={20} color="#DB8633" />
+                  </TouchableOpacity>
+                  <View style={styles.cardContent}>
+                    <View style={styles.cardText}>
+                      <Text style={styles.cardTitle}>{b.name}</Text>
+                      <Text style={styles.cardSubtitle}>{b.category}</Text>
+                    </View>
+                    <TouchableOpacity 
+                      style={styles.viewButton}
                       onPress={() =>
                         router.push({ pathname: '/signupFlow/beneficiarySignupDetails', params: { id: b.id.toString() } })
                       }
-                      style={styles.card}
                     >
-                      <Image source={b.image} style={styles.cardImage} />
-                      <TouchableOpacity
-                        onPress={() => toggleFavorite(b.id)}
-                        style={styles.heartIcon}
-                      >
-                        <AntDesign name={favorites.includes(b.id) ? 'heart' : 'hearto'} size={20} color="#DB8633" />
-                      </TouchableOpacity>
-                      <View style={styles.cardText}>
-                        <Text style={styles.cardTitle}>{b.name}</Text>
-                        <Text style={styles.cardSubtitle}>{b.category}</Text>
-                      </View>
+                      <Text style={styles.viewButtonText}>View Details</Text>
                     </TouchableOpacity>
-                  ))}
+                  </View>
                 </View>
-              ) : (
-                <View style={{ alignItems: 'center', marginTop: 20 }}>
-                  <Text style={styles.noResultsText}>No results found for “{searchText}”</Text>
-                  <Text style={styles.inviteText}>
-                    Want to see “{searchText}” here? Drop their info below!
+              ))
+            ) : (
+              <View style={styles.noResultsContainer}>
+                <Text style={styles.noResultsText}>
+                  {searchText ? `No results found for "${searchText}"` : 'No results found'}
+                </Text>
+                <Text style={styles.inviteText}>
+                  {searchText 
+                    ? `Want to see "${searchText}" here? Drop their info below!`
+                    : 'Want to request a charity? Drop their info below.'}
+                </Text>
+                {submitted ? (
+                  <Text style={styles.submittedText}>
+                    ✅ Request submitted! Thank you — we'll review and add them soon.
                   </Text>
-
-                  {submitted ? (
-                    <Text style={{ color: '#324E58', fontWeight: '600', marginTop: 20 }}>
-                      ✅ Request submitted! Thank you — we’ll review and add them soon.
-                    </Text>
-                  ) : (
-                    <>
-                      <TextInput
-                        value={businessName}
-                        onChangeText={setBusinessName}
-                        placeholder="Full Business Name"
-                        placeholderTextColor="#999"
-                        style={styles.input}
-                      />
-                      <TextInput
-                        value={businessUrl}
-                        onChangeText={setBusinessUrl}
-                        placeholder="Website URL"
-                        placeholderTextColor="#999"
-                        autoCapitalize="none"
-                        style={styles.input}
-                      />
-                      <TouchableOpacity
-                        style={styles.requestButton}
-                        onPress={() => {
-                          if (businessName.trim() && businessUrl.trim()) {
-                            setSubmitted(true);
-                          } else {
-                            alert('Please fill out both fields.');
-                          }
-                        }}
-                      >
-                        <Text style={{ color: '#fff', fontWeight: '600' }}>Submit Request</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              )}
-            </ScrollView>
+                ) : (
+                  <View style={styles.requestForm}>
+                    <TextInput
+                      value={businessName}
+                      onChangeText={setBusinessName}
+                      placeholder="Full Business Name"
+                      placeholderTextColor="#999"
+                      style={styles.requestInput}
+                    />
+                    <TextInput
+                      value={businessUrl}
+                      onChangeText={setBusinessUrl}
+                      placeholder="Website URL"
+                      placeholderTextColor="#999"
+                      autoCapitalize="none"
+                      style={styles.requestInput}
+                    />
+                    <TouchableOpacity
+                      style={styles.requestButton}
+                      onPress={() => {
+                        if (businessName.trim() && businessUrl.trim()) {
+                          setSubmitted(true);
+                        } else {
+                          alert('Please fill out both fields.');
+                        }
+                      }}
+                    >
+                      <Text style={styles.requestButtonText}>Submit Request</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            )}
           </View>
-        </KeyboardAvoidingView>
-      </BottomSheet>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#324E58',
-  },
-  tipRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  piggy: {
-    width: 60,
-    height: 60,
-    resizeMode: 'contain',
-  },
-  tipBox: {
-    backgroundColor: '#F5F5FA',
-    padding: 12,
-    borderRadius: 10,
-    marginLeft: 10,
+  container: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: '#E1E1E5',
+    backgroundColor: '#fff',
+    paddingTop: 30,
   },
-  tipText: {
+  backButton: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    zIndex: 100,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderRadius: 20,
+    padding: 6,
+    marginBottom: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  locationGradientWrapper: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  locationSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
+  locationSectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginBottom: 12,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    paddingHorizontal: 15,
+    marginBottom: 15,
+  },
+  locationInput: {
+    flex: 1,
+    height: 48,
+    fontSize: 16,
     color: '#324E58',
+  },
+  locationButton: {
+    padding: 8,
+  },
+  radiusSection: {
+    marginBottom: 10,
+  },
+  radiusLabel: {
     fontSize: 14,
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  radiusSlider: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  radiusOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  radiusOptionSelected: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
+  },
+  radiusText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+  },
+  radiusTextSelected: {
+    color: '#2C3E50',
+    fontWeight: '600',
+  },
+  searchSection: {
+    paddingHorizontal: 20,
+    marginBottom: 6,
   },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f5f5fa',
+    backgroundColor: '#fff',
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e1e1e5',
-    paddingHorizontal: 10,
-    height: 48,
+    paddingHorizontal: 15,
+    height: 38,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
     color: '#324E58',
   },
-  cardGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+  categorySection: {
+    marginBottom: 25,
+  },
+  categoryScroll: {
+    paddingHorizontal: 20,
+  },
+  categoryChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    backgroundColor: '#f2f2f2',
+    borderRadius: 12,
+    marginRight: 8,
+  },
+  categoryChipSelected: {
+    backgroundColor: '#FFF5EB',
+    borderColor: '#D0861F',
+    borderWidth: 1,
+  },
+  categoryText: {
+    fontSize: 16,
+    color: '#666',
+    fontWeight: '500',
+  },
+  categoryTextSelected: {
+    fontSize: 16,
+    color: '#D0861F',
+    fontWeight: '600',
+  },
+  cardsSection: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
   },
   card: {
-    width: '48%',
-    backgroundColor: '#F5F5FA',
-    borderRadius: 10,
-    marginBottom: 20,
-    overflow: 'hidden',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    position: 'relative',
+  },
+  cardImageContainer: {
+    width: '100%',
   },
   cardImage: {
     width: '100%',
-    height: 100,
+    height: 200,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
     resizeMode: 'cover',
   },
   heartIcon: {
     position: 'absolute',
-    top: 8,
-    right: 8,
+    top: 12,
+    right: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 20,
+    padding: 8,
+  },
+  cardContent: {
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   cardText: {
-    padding: 10,
+    flex: 1,
   },
   cardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '600',
     color: '#324E58',
     marginBottom: 4,
   },
   cardSubtitle: {
-    fontSize: 12,
-    color: '#6d6e72',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
     fontSize: 14,
-    color: '#324E58',
-    width: '100%',
+    color: '#666',
   },
-  requestButton: {
+  viewButton: {
     backgroundColor: '#DB8633',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  viewButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  noResultsContainer: {
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 20,
   },
   noResultsText: {
     fontSize: 16,
-    color: '#aaa',
-    marginBottom: 10,
-    textAlign: 'center',
+    color: '#324E58',
+    marginBottom: 8,
   },
   inviteText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#324E58',
+    fontSize: 14,
+    color: '#666',
     textAlign: 'center',
     marginBottom: 20,
+  },
+  submittedText: {
+    color: '#324E58',
+    fontWeight: '600',
+    marginTop: 20,
+  },
+  requestForm: {
+    width: '100%',
+  },
+  requestInput: {
+    backgroundColor: '#f5f5fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    paddingHorizontal: 15,
+    height: 48,
+    marginBottom: 12,
+    fontSize: 16,
+    color: '#324E58',
+  },
+  requestButton: {
+    backgroundColor: '#DB8633',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  requestButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  locationFieldWrapper: {
+    paddingHorizontal: 20,
+    marginBottom: 8,
+    marginTop: 8,
+  },
+  locationField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    paddingHorizontal: 15,
+    height: 38,
+    marginBottom: 16,
+    position: 'relative',
+  },
+  locationText: {
+    fontSize: 16,
+    color: '#324E58',
+    flex: 1,
+  },
+  locationPlaceholder: {
+    fontSize: 16,
+    color: '#b0b0b0',
+    flex: 1,
+  },
+  clearLocationButton: {
+    marginLeft: 8,
+    padding: 2,
+  },
+  stickyHeader: {
+    backgroundColor: '#fff',
+    zIndex: 10,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    paddingTop: 30,
   },
 });

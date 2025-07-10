@@ -12,6 +12,7 @@ import {
   Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { AntDesign } from '@expo/vector-icons';
 
 // ✅ Phone Formatter Function
 const formatPhoneNumber = (value) => {
@@ -52,6 +53,10 @@ export default function InviteCompany() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <AntDesign name="arrowleft" size={24} color="#324E58" />
+        </TouchableOpacity>
+
         <Text style={styles.header}>Send Invitation</Text>
 
         <View style={styles.speechWrapper}>
@@ -64,6 +69,7 @@ export default function InviteCompany() {
               Invite a vendor to offer discounts and get a chance to win extra +100 points
             </Text>
           </View>
+          <View style={styles.speechBubbleTail} />
         </View>
 
         <View style={styles.searchContainer}>
@@ -125,7 +131,7 @@ export default function InviteCompany() {
         </View>
 
         <Text style={styles.contactText}>
-          Don’t have enough data,{' '}
+          Don't have enough data,{' '}
           <Text style={styles.contactUs}>Contact Us</Text>
         </Text>
       </ScrollView>
@@ -135,9 +141,10 @@ export default function InviteCompany() {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 24,
+    flex: 1,
     backgroundColor: '#fff',
-    flexGrow: 1,
+    paddingTop: 60,
+    paddingHorizontal: 20,
   },
   header: {
     fontSize: 22,
@@ -157,16 +164,39 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   speechBubble: {
-    backgroundColor: '#fff',
+    backgroundColor: '#f5f5fa',
     borderWidth: 1,
-    borderColor: '#ccc',
-    padding: 12,
-    borderRadius: 12,
+    borderColor: '#e1e1e5',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 20,
     flex: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    position: 'relative',
+  },
+  speechBubbleTail: {
+    position: 'absolute',
+    left: -8,
+    top: 20,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 8,
+    borderRightWidth: 0,
+    borderBottomWidth: 8,
+    borderTopWidth: 8,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: '#f5f5fa',
+    borderTopColor: 'transparent',
   },
   speechText: {
-    fontSize: 14,
+    fontSize: 16,
     color: '#324E58',
+    lineHeight: 22,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -214,5 +244,20 @@ const styles = StyleSheet.create({
   contactUs: {
     color: '#DB8633',
     fontWeight: '600',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    zIndex: 100,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderRadius: 20,
+    padding: 6,
+    marginBottom: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
 });

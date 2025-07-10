@@ -15,7 +15,7 @@ import { useRouter, useSegments } from 'expo-router';
 
 const screenWidth = Dimensions.get('window').width;
 
-export default function BeneficiaryDetailCard({ data, onSelect }) {
+export default function BeneficiaryDetailCard({ data, onSelect, showBackArrow = true }) {
   const router = useRouter();
   const segments = useSegments();
 
@@ -35,13 +35,14 @@ export default function BeneficiaryDetailCard({ data, onSelect }) {
   const aboutPreview = data.about?.split(' ').slice(0, 35).join(' ') + '...';
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={styles.containerNoFlex} contentContainerStyle={{ paddingBottom: 40 }}>
       {/* Header */}
       <View style={styles.headerRow}>
-        <TouchableOpacity onPress={router.back}>
-          <AntDesign name="arrowleft" size={24} color="#21555b" />
-        </TouchableOpacity>
-        <Text style={styles.header}>{data.name}</Text>
+        {showBackArrow && (
+          <TouchableOpacity onPress={router.back}>
+            <AntDesign name="arrowleft" size={24} color="#21555b" />
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Image */}
@@ -52,9 +53,6 @@ export default function BeneficiaryDetailCard({ data, onSelect }) {
       {/* Profile Info */}
       <View style={styles.profileRow}>
         <Image source={data.image} style={styles.profileImage} />
-        <TouchableOpacity style={styles.shareIcon}>
-          <Feather name="share-2" size={20} color="#444" />
-        </TouchableOpacity>
       </View>
 
       <View style={styles.infoBox}>
@@ -77,7 +75,7 @@ export default function BeneficiaryDetailCard({ data, onSelect }) {
               style={[styles.iconLeft, { tintColor: '#fff' }]}
             />
             <Text style={styles.btnText}>
-              {isSignupFlow ? 'Select & Continue' : 'Select As My Beneficiary'}
+              {isSignupFlow ? 'Select to Donate' : 'Select As My Beneficiary'}
             </Text>
           </TouchableOpacity>
 
@@ -91,7 +89,7 @@ export default function BeneficiaryDetailCard({ data, onSelect }) {
               style={[styles.iconLeft, { color: liked ? '#DB8633' : '#666' }]}
             />
             <Text style={[styles.btnTextGray, liked && { color: '#DB8633' }]}>
-              {liked ? 'Liked' : 'Like Beneficiary'}
+              {liked ? 'Liked' : 'Favorite'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -164,16 +162,15 @@ export default function BeneficiaryDetailCard({ data, onSelect }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  headerRow: { flexDirection: 'row', alignItems: 'center', padding: 16 },
+  containerNoFlex: { backgroundColor: '#fff' },
+  headerRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 0, paddingBottom: 16 },
   header: { fontSize: 18, fontWeight: '600', marginLeft: 12, color: '#21555b' },
   imageCarousel: { width: '100%', height: 200 },
   mainImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   profileRow: { flexDirection: 'row', alignItems: 'center', marginTop: -40, marginLeft: 16 },
   profileImage: { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: '#fff' },
-  shareIcon: { marginLeft: 'auto', marginRight: 24 },
   infoBox: { paddingHorizontal: 24, paddingBottom: 120 },
   iconLeft: { width: 18, height: 18, marginRight: 8, resizeMode: 'contain' },
-  title: { fontSize: 20, fontWeight: '700', color: '#21555b', marginTop: 8 },
   likes: { fontSize: 14, color: '#666', marginTop: 4 },
   mutual: { fontSize: 12, color: '#888', marginVertical: 8 },
   buttonRow: {
@@ -285,4 +282,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   donateBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  title: { fontSize: 20, fontWeight: '700', color: '#21555b', marginTop: 8 },
 });

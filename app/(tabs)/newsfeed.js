@@ -30,6 +30,7 @@ const styles = StyleSheet.create({
   },
   contentWrapper: {
     alignItems: 'center',
+    padding: 24,
   },
   image: {
     width: 220,
@@ -40,7 +41,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '700',
     color: '#324E58',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   subtitle: {
     fontSize: 18,

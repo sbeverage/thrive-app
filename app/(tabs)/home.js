@@ -132,8 +132,8 @@ export default function MainHome() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#ffffff' },
-  scrollContent: { paddingBottom: 20 },
+  safeArea: { flex: 1, backgroundColor: '#F5F5F5' },
+  scrollContent: { paddingBottom: 20, backgroundColor: '#F5F5F5' },
   headerWrapper: {
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,

@@ -1,11 +1,37 @@
 // app/beneficiarySearch.js
 
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Image, TextInput, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, Image, TextInput, ScrollView, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
 import SuccessModal from '../components/SuccessModal';
 import ConfettiCannon from 'react-native-confetti-cannon';
+
+const styles = StyleSheet.create({
+  container: {
+    flexGrow: 1,
+    backgroundColor: '#fff',
+    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingBottom: 120,
+  },
+  backButton: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    zIndex: 100,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderRadius: 20,
+    padding: 6,
+    marginBottom: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  // ... keep other styles ...
+});
 
 export default function BeneficiarySearch() {
   const router = useRouter();
@@ -76,12 +102,12 @@ export default function BeneficiarySearch() {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 120 }}>
+    <View style={styles.container}>
+      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 120, paddingTop: 60 }}>
         
         {/* Top Navigation */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <TouchableOpacity onPress={router.back}>
+          <TouchableOpacity style={styles.backButton} onPress={router.back}>
             <AntDesign name="arrowleft" size={24} color="#324E58" />
           </TouchableOpacity>
           <TouchableOpacity onPress={handleSkip}>
@@ -89,22 +115,43 @@ export default function BeneficiarySearch() {
           </TouchableOpacity>
         </View>
 
-        {/* Progress Bar */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 30 }}>
-          <View style={{ flex: 1, height: 4, backgroundColor: '#324E58', borderRadius: 10, marginHorizontal: 2 }} />
-          <View style={{ flex: 1, height: 4, backgroundColor: '#324E58', borderRadius: 10, marginHorizontal: 2 }} />
-          <View style={{ flex: 1, height: 4, backgroundColor: '#324E58', borderRadius: 10, marginHorizontal: 2 }} />
-          <View style={{ flex: 1, height: 4, backgroundColor: '#324E58', borderRadius: 10, marginHorizontal: 2 }} />
-          <Image source={require('../assets/images/walking-piggy.png')} style={{ width: 30, height: 24 }} />
-        </View>
-
         {/* Speech Bubble */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 30 }}>
-          <Image source={require('../assets/images/bolt-piggy.png')} style={{ width: 60, height: 60, resizeMode: 'contain' }} />
-          <View style={{ backgroundColor: '#f5f5fa', padding: 12, borderRadius: 10, marginLeft: 10, flex: 1 }}>
-            <Text style={{ color: '#324E58', fontSize: 16 }}>
-              Select only one to donate to. Favorite as many as you’d like to see their updates on your newsfeed.
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 30 }}>
+          <Image source={require('../assets/images/bolt-piggy.png')} style={{ width: 60, height: 60, resizeMode: 'contain', marginRight: 12 }} />
+          <View style={{ 
+            backgroundColor: '#f5f5fa', 
+            paddingVertical: 16, 
+            paddingHorizontal: 20, 
+            borderRadius: 20, 
+            marginLeft: 0, 
+            flex: 1,
+            borderWidth: 1,
+            borderColor: '#e1e1e5',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+            elevation: 2,
+            position: 'relative',
+          }}>
+            <Text style={{ color: '#324E58', fontSize: 16, lineHeight: 22 }}>
+              Select only one to donate to. Favorite as many as you'd like to see their updates on your newsfeed.
             </Text>
+            <View style={{
+              position: 'absolute',
+              left: -8,
+              top: 20,
+              width: 0,
+              height: 0,
+              borderLeftWidth: 8,
+              borderRightWidth: 0,
+              borderBottomWidth: 8,
+              borderTopWidth: 8,
+              borderLeftColor: 'transparent',
+              borderRightColor: 'transparent',
+              borderBottomColor: '#f5f5fa',
+              borderTopColor: 'transparent',
+            }} />
           </View>
         </View>
 

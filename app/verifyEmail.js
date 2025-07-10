@@ -36,25 +36,18 @@ export default function VerifyEmailScreen() {
     }
   };
 
-  // 🛎️ Auto-check if email is verified every 5 seconds
+  // 🛎️ Auto-verify after 3 seconds for development
   useEffect(() => {
     if (!email) return;
 
     setCheckingStatus(true);
 
-    const interval = setInterval(async () => {
-      try {
-        const res = await API.get(`/api/auth/check-verification/${email}`);
-        if (res.data?.isVerified) {
-          clearInterval(interval);
-          router.replace({ pathname: '/signupProfile', params: { email } });
-        }
-      } catch (error) {
-        console.error('❌ Verification check error:', error?.message || JSON.stringify(error));
-      }      
-    }, 5000);
+    const timer = setTimeout(() => {
+      setCheckingStatus(false);
+      router.replace({ pathname: '/signupProfile', params: { email } });
+    }, 3000);
 
-    return () => clearInterval(interval);
+    return () => clearTimeout(timer);
   }, [email]);
 
   return (
@@ -92,7 +85,7 @@ export default function VerifyEmailScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    paddingTop: 80,
+    paddingTop: 60,
     backgroundColor: '#fff',
     alignItems: 'center',
     flex: 1,
@@ -100,7 +93,7 @@ const styles = StyleSheet.create({
   },
   backButton: {
     position: 'absolute',
-    top: 60,
+    top: 40,
     left: 20,
     zIndex: 10,
   },

@@ -21,6 +21,30 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MINIMIZED_HEIGHT = SCREEN_HEIGHT * 0.45;
 const MAXIMIZED_HEIGHT = 0;
 
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+    paddingTop: 60,
+    paddingHorizontal: 20,
+  },
+  backButton: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    zIndex: 100,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderRadius: 20,
+    padding: 6,
+    marginBottom: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+});
+
 export default function BeneficiaryPreferences() {
   const router = useRouter();
 
@@ -97,7 +121,7 @@ export default function BeneficiaryPreferences() {
   ).current;
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={styles.container}>
       <MapView
         style={{ ...StyleSheet.absoluteFillObject }}
         initialRegion={{
@@ -148,7 +172,7 @@ export default function BeneficiaryPreferences() {
 
         <ScrollView contentContainerStyle={{ padding: 20 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-            <TouchableOpacity onPress={router.back}>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
               <AntDesign name="arrowleft" size={24} color="#324E58" />
             </TouchableOpacity>
             <Text style={{ fontSize: 18, fontWeight: '700', color: '#324E58' }}>Beneficiaries</Text>
@@ -159,7 +183,7 @@ export default function BeneficiaryPreferences() {
             <Image source={require('../../../assets/images/bolt-piggy.png')} style={{ width: 60, height: 60, resizeMode: 'contain' }} />
             <View style={{ backgroundColor: '#F5F5FA', padding: 12, borderRadius: 10, marginLeft: 10, flex: 1, borderWidth: 1, borderColor: '#E1E1E5' }}>
               <Text style={{ color: '#324E58', fontSize: 14 }}>
-                Select only one to donate to. Favorite as many as you’d like to see their updates on your newsfeed.
+                Select only one to donate to. Favorite as many as you'd like to see their updates on your newsfeed.
               </Text>
             </View>
           </View>

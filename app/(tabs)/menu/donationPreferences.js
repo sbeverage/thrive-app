@@ -61,7 +61,7 @@ export default function DonationAmount() {
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
       {/* Top Navigation */}
       <View style={styles.topNav}>
-        <TouchableOpacity onPress={() => router.replace('/(tabs)/menu')}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/menu')}>
           <AntDesign name="arrowleft" size={24} color="#324E58" />
         </TouchableOpacity>
       </View>
@@ -78,6 +78,7 @@ export default function DonationAmount() {
             Set your giving vibes — how much will you donate monthly?”
             </Text>
           </View>
+          <View style={styles.speechBubbleTail} />
         </View>
 
         {/* Curvy Slider */}
@@ -133,25 +134,51 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-start',
     padding: 20,
-    paddingTop: 50,
+    paddingTop: 60,
+  },
+  backButton: {
+    padding: 10,
   },
   speechContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 30,
   },
   speechBubble: {
     backgroundColor: '#F5F5FA',
-    padding: 15,
-    borderRadius: 10,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 20,
     flex: 1,
     borderWidth: 1,
     borderColor: '#E1E1E5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    position: 'relative',
+  },
+  speechBubbleTail: {
+    position: 'absolute',
+    left: -8,
+    top: 20,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 8,
+    borderRightWidth: 0,
+    borderBottomWidth: 8,
+    borderTopWidth: 8,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: '#F5F5FA',
+    borderTopColor: 'transparent',
   },
   speechText: {
     color: '#324E58',
     fontSize: 16,
     textAlign: 'left',
+    lineHeight: 22,
   },
   sliderContainer: {
     marginTop: 10,

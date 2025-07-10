@@ -38,9 +38,8 @@ export default function ChangePassword() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)/menu/settings')}>
+      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
         <AntDesign name="arrowleft" size={24} color="#324E58" />
-        <Text style={styles.header}>Change Password</Text>
       </TouchableOpacity>
 
       <View style={styles.searchContainer}>
@@ -81,20 +80,24 @@ export default function ChangePassword() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 48,
-    paddingHorizontal: 24,
     backgroundColor: '#fff',
+    paddingTop: 60,
+    paddingHorizontal: 20,
   },
   backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  header: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: '#21555B',
-    marginLeft: 16,
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    zIndex: 100,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderRadius: 20,
+    padding: 6,
+    marginBottom: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   searchContainer: {
     flexDirection: 'row',
