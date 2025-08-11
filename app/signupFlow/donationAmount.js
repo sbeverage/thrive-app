@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, ScrollView, Animated, Easing, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions, KeyboardAvoidingView, Platform, ScrollView, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
@@ -14,71 +14,24 @@ export default function DonationAmount() {
   const MIN_AMOUNT = 15;
   const MAX_AMOUNT = 250;
 
-  // Animation values
-  const piggyAnim = useRef(new Animated.Value(0)).current;
-  const bubbleAnim = useRef(new Animated.Value(0)).current;
-  const cardAnim = useRef(new Animated.Value(0)).current;
-  const buttonAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.sequence([
-      Animated.parallel([
-        Animated.spring(piggyAnim, { toValue: 1, useNativeDriver: true, tension: 40, friction: 8 }),
-        Animated.timing(bubbleAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-      ]),
-      Animated.spring(cardAnim, { toValue: 1, useNativeDriver: true, tension: 50, friction: 8 }),
-      Animated.spring(buttonAnim, { toValue: 1, useNativeDriver: true, tension: 50, friction: 7 }),
-    ]).start();
-  }, []);
-
   const handleSliderChange = (value) => {
     setAmount(Math.round(value));
-    animatePiggy();
-  };
-
-  const handleInputChange = (text) => {
-    const numericValue = parseInt(text.replace(/[^0-9]/g, ''), 10);
-    if (!isNaN(numericValue)) {
-      if (numericValue >= MIN_AMOUNT && numericValue <= MAX_AMOUNT) {
-        setAmount(numericValue);
-      } else if (numericValue < MIN_AMOUNT) {
-        setAmount(MIN_AMOUNT);
-      } else {
-        setAmount(MAX_AMOUNT);
-      }
-    }
   };
 
   const handleSaveAndContinue = () => {
     router.push('/signupFlow/stripeIntegration');
   };
 
-  const handleSkip = () => {
-    router.replace('/guestHome');
-  };
-
-  const animatePiggy = () => {
-    Animated.sequence([
-      Animated.timing(piggyAnim, { toValue: 1, duration: 200, easing: Easing.linear, useNativeDriver: true }),
-      Animated.timing(piggyAnim, { toValue: -1, duration: 200, easing: Easing.linear, useNativeDriver: true }),
-      Animated.timing(piggyAnim, { toValue: 0, duration: 200, easing: Easing.linear, useNativeDriver: true }),
-    ]).start();
-  };
-
-  const piggyRotate = piggyAnim.interpolate({
-    inputRange: [-1, 0, 1],
-    outputRange: ['-10deg', '0deg', '10deg'],
-  });
-
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      {/* Blue gradient as absolute background for top half */}
-      <View style={styles.gradientAbsoluteBg} pointerEvents="none">
+      {/* Modern blue gradient background for slider area with curved bottom */}
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 0 }}>
         <LinearGradient
           colors={["#2C3E50", "#4CA1AF"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={styles.gradientBg}
+          style={styles.gradientCurvedBg}
+          pointerEvents="none"
         />
       </View>
       <KeyboardAvoidingView
@@ -92,78 +45,50 @@ export default function DonationAmount() {
             <AntDesign name="arrowleft" size={24} color="#324E58" />
           </TouchableOpacity>
           {/* Piggy and Speech Bubble in blue area */}
-          <Animated.View style={{
+          <View style={{
             alignItems: 'center',
             justifyContent: 'center',
             marginTop: 36,
             marginBottom: 6,
             zIndex: 1,
-            opacity: piggyAnim,
-            transform: [{ translateY: piggyAnim.interpolate({ inputRange: [0, 1], outputRange: [-40, 0] }) }],
           }}>
-            <Animated.Image
-              source={require('../../assets/images/bolt-piggy.png')}
-              style={[styles.piggyLarge, { opacity: piggyAnim }]}
+            {/* Piggy Icon (image) */}
+            <Image
+              source={require('../../assets/images/piggy-coin.png')}
+              style={{ width: 130, height: 130, marginBottom: 10, resizeMode: 'contain' }}
             />
-            <Animated.View style={{
-              opacity: bubbleAnim,
-              transform: [{ translateY: bubbleAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
-            }}>
-              <View style={styles.speechBubbleCard}>
-                <Text style={styles.speechTextCard}>
-                  A minimum of $15 per month is needed to keep your account active, but you can increase your donation to your desired amount.
-                </Text>
+            <View style={{ marginBottom: 8 }}>
+              <Text style={{ fontWeight: 'bold', fontSize: 20, marginBottom: 2, color: '#fff', textAlign: 'center' }}>Choose Your Impact.</Text>
+              <Text style={{ fontWeight: '400', fontSize: 16, marginTop: 2, color: '#fff', textAlign: 'center', maxWidth: 320, alignSelf: 'center' }}>Set your monthly donation amount. Every dollar makes a difference!</Text>
+            </View>
+          </View>
+
+          {/* Donation amount, slider, and button directly on the gradient */}
+          <View style={styles.infoCardCurved}>
+            <View style={styles.amountCardProminentCurved}>
+              <Text style={styles.amountProminent}>${amount}</Text>
+              <Text style={styles.perMonthProminent}>per month</Text>
+            </View>
+            <View style={styles.sliderRowWrapCurved}>
+              <Text style={styles.amountLabelCard}>$15</Text>
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                <Slider
+                  style={styles.sliderCentered}
+                  minimumValue={MIN_AMOUNT}
+                  maximumValue={MAX_AMOUNT}
+                  value={amount}
+                  onValueChange={handleSliderChange}
+                  minimumTrackTintColor="#4CA1AF"
+                  maximumTrackTintColor="#e0e0e0"
+                  thumbTintColor="#2C3E50"
+                />
               </View>
-            </Animated.View>
-          </Animated.View>
-          {/* White Card for form and button */}
-          <Animated.View style={{
-            ...styles.infoCard,
-            opacity: cardAnim,
-            transform: [{ translateY: cardAnim.interpolate({ inputRange: [0, 1], outputRange: [60, 0] }) }],
-          }}>
-            {/* Slider */}
-            <View style={styles.sliderContainerCard}>
-              <Image
-                source={require('../../assets/images/slider.png')}
-                style={styles.sliderBackground}
-              />
-              <Slider
-                style={styles.slider}
-                minimumValue={MIN_AMOUNT}
-                maximumValue={MAX_AMOUNT}
-                value={amount}
-                onValueChange={handleSliderChange}
-                minimumTrackTintColor="transparent"
-                maximumTrackTintColor="transparent"
-                thumbTintColor="#DB8633"
-              />
+              <Text style={styles.amountLabelCard}>$250</Text>
             </View>
-            <View style={styles.sliderLabelsCard}>
-              <Text style={styles.amountLabelCard}>${MIN_AMOUNT}</Text>
-              <Text style={styles.amountLabelCard}>${MAX_AMOUNT}</Text>
-            </View>
-            <View style={styles.inputContainerCard}>
-              <TextInput
-                value={amount.toString()}
-                onChangeText={handleInputChange}
-                placeholder="Enter fixed amount"
-                placeholderTextColor="#A0A0A0"
-                keyboardType="numeric"
-                style={styles.inputCard}
-              />
-            </View>
-            {/* Button inside card */}
-            <Animated.View style={{
-              opacity: buttonAnim,
-              transform: [{ scale: buttonAnim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) }],
-              width: '100%',
-            }}>
-              <TouchableOpacity onPress={handleSaveAndContinue} style={styles.continueButtonCard}>
-                <Text style={styles.continueButtonTextCard}>Done! I'm Feeling Generous</Text>
-              </TouchableOpacity>
-            </Animated.View>
-          </Animated.View>
+            <TouchableOpacity onPress={handleSaveAndContinue} style={styles.continueButtonCard}>
+              <Text style={styles.continueButtonTextCard}>Set monthly giving</Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -172,8 +97,6 @@ export default function DonationAmount() {
 
 const styles = StyleSheet.create({
   gradientAbsoluteBg: { position: 'absolute', top: 0, left: 0, right: 0, height: SCREEN_HEIGHT * 0.45, zIndex: 0, overflow: 'hidden' },
-  gradientBg: { width: SCREEN_WIDTH, height: '100%', borderBottomLeftRadius: 40, borderBottomRightRadius: 40 },
-  piggySpeechColumn: { alignItems: 'center', justifyContent: 'center', marginTop: 36, marginBottom: 6, zIndex: 1 },
   piggyLarge: { width: 90, height: 90, resizeMode: 'contain', marginBottom: 10 },
   speechBubbleCard: {
     backgroundColor: '#F5F5FA',
@@ -222,13 +145,6 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
   },
-  sliderBackground: {
-    width: '90%',
-    height: 60,
-    resizeMode: 'contain',
-    position: 'absolute',
-    left: '5%',
-  },
   sliderLabelsCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -263,6 +179,11 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     width: '100%',
     marginTop: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    shadowOffset: { width: 0, height: 2 },
   },
   continueButtonTextCard: {
     color: '#fff',
@@ -278,11 +199,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 6,
     marginBottom: 25,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   slider: {
     width: '90%',
@@ -290,5 +206,93 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     position: 'relative',
     zIndex: 2,
+  },
+  amountCardProminent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    paddingVertical: 18,
+    paddingHorizontal: 40,
+    alignItems: 'center',
+    marginBottom: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.10,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+    alignSelf: 'center',
+    marginTop: 10,
+  },
+  amountProminent: {
+    color: '#2C3E50',
+    fontSize: 38,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
+  perMonthProminent: {
+    color: '#4CA1AF',
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 2,
+    letterSpacing: 0.5,
+  },
+  sliderRowWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    gap: 0,
+  },
+  gradientCurvedBg: {
+    height: SCREEN_HEIGHT * 0.6,
+    borderBottomLeftRadius: 48,
+    borderBottomRightRadius: 48,
+    overflow: 'hidden',
+  },
+  infoCardCurved: {
+    backgroundColor: '#fff',
+    borderRadius: 28,
+    padding: 28,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
+    width: '90%',
+    maxWidth: 360,
+    alignSelf: 'center',
+    marginTop: 30, // Lower the card to avoid overlap with piggy and chat bubble
+    marginBottom: 30,
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  amountCardProminentCurved: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    paddingVertical: 18,
+    paddingHorizontal: 40,
+    alignItems: 'center',
+    marginBottom: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.10,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+    alignSelf: 'center',
+    marginTop: 0,
+  },
+  sliderRowWrapCurved: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    gap: 0,
+  },
+  sliderCentered: {
+    width: '100%',
+    minWidth: 120,
+    maxWidth: 200,
+    alignSelf: 'center',
   },
 });

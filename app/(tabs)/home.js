@@ -53,7 +53,7 @@ export default function MainHome() {
               </View>
               <View style={styles.coinsContainer}>
                 <Image source={require('../../assets/icons/coin.png')} style={{ width: 18, height: 18, marginRight: 6 }} />
-                <Text style={styles.coinsText}>25</Text>
+                <Text style={styles.coinsText}>847</Text>
               </View>
             </View>
 
@@ -65,8 +65,9 @@ export default function MainHome() {
             <MonthlyImpactCard monthlyDonation={monthlyDonation} monthlySavings={monthlySavings} />
           </View>
 
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>My Beneficiary</Text>
+          {/* My Beneficiary Section */}
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeader}>My Beneficiary</Text>
           </View>
           <TouchableOpacity onPress={() => router.push('/(tabs)/beneficiary/beneficiaryDetail')} style={styles.beneficiaryCard}>
             <Image source={require('../../assets/images/child-cancer.jpg')} style={styles.beneficiaryImage} />
@@ -76,11 +77,12 @@ export default function MainHome() {
             </View>
           </TouchableOpacity>
 
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Discounts Near You</Text>
-            <TouchableOpacity onPress={() => router.push('/discounts')}>
-              <Text style={styles.viewDetailsText}>View All</Text>
-            </TouchableOpacity>
+          {/* Divider */}
+          <View style={{ height: 1, backgroundColor: '#E5E7EB', opacity: 0.7, marginVertical: 8, width: '100%' }} />
+
+          {/* Discounts Near You Section */}
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeader}>Discounts Near You</Text>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.discountScroll} contentContainerStyle={styles.discountScrollContent}>
             {vouchers.map((voucher, index) => (
@@ -99,15 +101,30 @@ export default function MainHome() {
             ))}
           </ScrollView>
 
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Rank</Text>
-            <TouchableOpacity onPress={() => router.push('/leaderboard')}>
-              <Text style={styles.viewDetailsText}>View Leaderboard</Text>
-            </TouchableOpacity>
+          {/* Divider */}
+          <View style={{ height: 1, backgroundColor: '#E5E7EB', opacity: 0.7, marginVertical: 8, width: '100%' }} />
+
+          {/* Rank Section */}
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeader}>Rank</Text>
           </View>
-          <View style={styles.placeholderBox}>
-            <Text style={styles.placeholderText}>Coming Soon</Text>
+          <View style={[styles.leaderboardItem, styles.yourRankingCard, { marginHorizontal: 20, marginBottom: 30 }]}>
+            <View style={styles.leaderboardRankBox}>
+              <Text style={[styles.leaderboardRank, styles.leaderboardRankYou]}>42</Text>
+            </View>
+            <Image source={require('../../assets/images/profile.jpg')} style={styles.leaderboardProfile} />
+            <View style={styles.leaderboardInfo}>
+              <Text style={styles.leaderboardName}>Stephanie Beverage</Text>
+              <Text style={styles.leaderboardLocation}>Alpharetta, GA</Text>
+            </View>
+            <View style={styles.leaderboardPointsRow}>
+              <Text style={styles.leaderboardPoints}>847</Text>
+              <Image source={require('../../assets/icons/coin.png')} style={styles.leaderboardCoin} />
+            </View>
           </View>
+
+          {/* Divider below Rank */}
+          <View style={{ height: 1, backgroundColor: '#E5E7EB', opacity: 0.7, marginVertical: 8, width: '100%' }} />
 
           <View style={styles.inviteBannerWrapper}>
             <View style={styles.inviteInnerWrapper}>
@@ -162,15 +179,8 @@ const styles = StyleSheet.create({
   affirmationText: { fontSize: 16, color: '#E5E8EA', fontStyle: 'italic', marginTop: 12 },
   locationText: { fontSize: 14, color: '#C7D0D8', marginTop: 6, marginBottom: 80 },
   monthlyCardWrapper: { marginTop: -90, marginHorizontal: 20, zIndex: 10 },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 30,
-    marginBottom: 10,
-    paddingHorizontal: 20,
-  },
-  sectionTitle: { fontSize: 20, fontWeight: '700', color: '#324E58' },
+  sectionHeader: { fontSize: 20, fontWeight: '700', color: '#324E58' },
+  sectionHeaderRow: { marginTop: 30, marginBottom: 10, paddingHorizontal: 20 },
   viewDetailsText: { fontSize: 14, fontWeight: '700', color: '#DB8633' },
   beneficiaryCard: {
     backgroundColor: '#F4F6F8',
@@ -194,7 +204,7 @@ const styles = StyleSheet.create({
   discountScrollContent: { paddingLeft: 20, paddingBottom: 10 },
   discountCardWrapper: { marginRight: 15 },
   cardCream: {
-    backgroundColor: '#FFF5EB',
+    backgroundColor: '#FFFFFF',
     padding: 16,
     borderRadius: 20,
     width: 160,
@@ -271,5 +281,72 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 14,
     fontWeight: '700',
+  },
+  leaderboardItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 14,
+    marginBottom: 10,
+    borderRadius: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  yourRankingCard: {
+    borderWidth: 2,
+    borderColor: '#DB8633',
+    backgroundColor: '#FFF5EB',
+  },
+  leaderboardRankBox: {
+    width: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  leaderboardRank: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#B0B0B0',
+  },
+  leaderboardRankYou: {
+    color: '#DB8633',
+  },
+  leaderboardProfile: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    marginRight: 12,
+    borderWidth: 2,
+    borderColor: '#fff',
+    backgroundColor: '#fff',
+  },
+  leaderboardInfo: {
+    flex: 1,
+  },
+  leaderboardName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#324E58',
+  },
+  leaderboardLocation: {
+    fontSize: 13,
+    color: '#888',
+  },
+  leaderboardPointsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  leaderboardPoints: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#DB8633',
+  },
+  leaderboardCoin: {
+    width: 16,
+    height: 16,
+    marginLeft: 2,
   },
 });

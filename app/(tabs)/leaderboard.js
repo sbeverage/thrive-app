@@ -76,20 +76,6 @@ export default function LeaderboardScreen() {
             {/* Removed Leaderboard title and share icon */}
           </View>
 
-          {/* Segmented Control */}
-          <View style={styles.segmentedControlWrapper}>
-            {['Friends', 'Global', 'Local'].map((type) => (
-              <TouchableOpacity
-                key={type}
-                style={[styles.segmentButton, segment === type && styles.segmentButtonActive]}
-                onPress={() => handleSegment(type)}
-                activeOpacity={0.85}
-              >
-                <Text style={[styles.segmentText, segment === type && styles.segmentTextActive]}>{type}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
           {/* Top 3 Winners Arc Layout */}
           <View style={styles.arcRow}>
             {/* 2nd Place - left */}
@@ -187,7 +173,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5fa',
   },
   gradientHeader: {
-    paddingBottom: 40,
+    paddingBottom: 32,
     paddingTop: 0,
   },
   header: {
@@ -209,11 +195,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 10,
     marginBottom: 30,
-    gap: 16,
+    gap: 0, // Remove gap for flush alignment
   },
   segmentButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 6,
-    paddingHorizontal: 24,
     borderRadius: 20,
     backgroundColor: 'transparent',
   },
@@ -224,6 +212,8 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '500',
+    textAlign: 'center',
+    width: '100%',
   },
   segmentTextActive: {
     color: '#fff',

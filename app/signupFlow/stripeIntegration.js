@@ -5,18 +5,23 @@ import { AntDesign } from '@expo/vector-icons';
 import ProfileCompleteModal from '../../components/ProfileCompleteModal';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Animated } from 'react-native';
+import ConfettiCannon from 'react-native-confetti-cannon';
+import { useLocalSearchParams } from 'expo-router';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function StripeIntegration() {
   const router = useRouter();
-
+  const params = useLocalSearchParams();
+  const baseAmount = params.amount ? parseFloat(params.amount) : 15;
   const [cardNumber, setCardNumber] = useState('');
   const [holderName, setHolderName] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [cvv, setCvv] = useState('');
   const [saveCard, setSaveCard] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [coverFees, setCoverFees] = useState(false);
+  const [confettiTrigger, setConfettiTrigger] = useState(false);
 
   // Animation values
   const piggyAnim = useRef(new Animated.Value(0)).current;
@@ -43,6 +48,9 @@ export default function StripeIntegration() {
     router.replace('/guestHome');
   };
 
+  // Calculate total with fees
+  const totalAmount = coverFees ? (baseAmount * 1.03).toFixed(2) : baseAmount.toFixed(2);
+
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
       {/* Blue gradient as absolute background for top half */}
@@ -64,7 +72,7 @@ export default function StripeIntegration() {
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <AntDesign name="arrowleft" size={24} color="#324E58" />
           </TouchableOpacity>
-          {/* Piggy and Speech Bubble in blue area */}
+          {/* Piggy and Amount Display in blue area */}
           <Animated.View style={{
             alignItems: 'center',
             justifyContent: 'center',
@@ -79,9 +87,14 @@ export default function StripeIntegration() {
               opacity: bubbleAnim,
               transform: [{ translateY: bubbleAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
             }}>
-              <View style={styles.speechBubbleCard}>
-                <Text style={styles.speechBubbleHeading}>You're almost done!</Text>
-                <Text style={styles.speechTextCard}>Finish up by adding your credit card to process the payments each month.</Text>
+              <View style={styles.amountBubbleCard}>
+                <Text style={styles.amountBubbleHeading}>Your Monthly Donation</Text>
+                <Text style={styles.amountBubbleAmount}>${baseAmount.toFixed(2)}</Text>
+                {coverFees ? (
+                  <Text style={styles.amountBubbleTotal}>Total with fees: <Text style={{ fontWeight: 'bold' }}>${totalAmount}</Text></Text>
+                ) : (
+                  <Text style={styles.amountBubbleTotal}>Total: <Text style={{ fontWeight: 'bold' }}>${totalAmount}</Text></Text>
+                )}
               </View>
             </Animated.View>
           </Animated.View>
@@ -91,11 +104,6 @@ export default function StripeIntegration() {
             opacity: cardAnim,
             transform: [{ translateY: cardAnim.interpolate({ inputRange: [0, 1], outputRange: [60, 0] }) }],
           }}>
-            <Image
-              source={require('../../assets/images/stripe-logo.png')}
-              style={styles.stripeLogo}
-              resizeMode="contain"
-            />
             <View style={{ width: '100%', marginTop: 10 }}>
               <TextInput
                 style={styles.input}
@@ -130,20 +138,60 @@ export default function StripeIntegration() {
                 />
               </View>
             </View>
-            <TouchableOpacity
-              onPress={() => setSaveCard(!saveCard)}
-              style={styles.saveCardContainer}
-            >
-              <AntDesign
-                name={saveCard ? "checkcircle" : "checkcircleo"}
-                size={20}
-                color="#DB8633"
-                style={{ marginRight: 8 }}
+            {/* Options Section: Cover Fees & Save Card */}
+            <View style={{ marginTop: 18, marginBottom: 8, alignItems: 'flex-start' }}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (!coverFees) setConfettiTrigger(true);
+                  setCoverFees(!coverFees);
+                }}
+                style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, paddingVertical: 6, alignSelf: 'stretch' }}
+                activeOpacity={0.7}
+              >
+                <AntDesign
+                  name={coverFees ? 'checkcircle' : 'checkcircleo'}
+                  size={22}
+                  color={coverFees ? '#2C3E50' : '#aaa'}
+                  style={{ marginRight: 10 }}
+                />
+                <Text style={{ fontSize: 15, color: '#222', flexShrink: 1 }}>
+                  Cover the 3% card fee so 100% goes to charity.
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setSaveCard(!saveCard)}
+                style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6, alignSelf: 'stretch' }}
+                activeOpacity={0.7}
+              >
+                <AntDesign
+                  name={saveCard ? 'checkcircle' : 'checkcircleo'}
+                  size={22}
+                  color={saveCard ? '#2C3E50' : '#aaa'}
+                  style={{ marginRight: 10 }}
+                />
+                <Text style={{ fontSize: 15, color: '#222', flexShrink: 1 }}>
+                  Save card for monthly billing
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {/* Gratitude message and confetti for covering fees */}
+            {coverFees && (
+              <View style={{ marginBottom: 8, alignSelf: 'stretch' }}>
+                <Text style={{ color: '#2C3E50', fontWeight: 'bold', fontSize: 16, textAlign: 'center' }}>
+                  🎉 Thank you for covering the fees!
+                </Text>
+              </View>
+            )}
+            {confettiTrigger && (
+              <ConfettiCannon
+                count={100}
+                origin={{ x: SCREEN_WIDTH / 2, y: 0 }}
+                fadeOut
+                explosionSpeed={350}
+                fallSpeed={3000}
+                onAnimationEnd={() => setConfettiTrigger(false)}
               />
-              <Text style={{ color: '#324E58', fontSize: 16 }}>
-                Save card for <Text style={{ fontWeight: '700' }}>monthly billing</Text>
-              </Text>
-            </TouchableOpacity>
+            )}
             <Animated.View style={{
               opacity: buttonAnim,
               transform: [{ scale: buttonAnim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) }],
@@ -322,5 +370,40 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  amountBubbleCard: {
+    backgroundColor: '#F5F5FA',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E1E1E5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    position: 'relative',
+    marginBottom: 8,
+    maxWidth: 340,
+    alignItems: 'center',
+  },
+  amountBubbleHeading: {
+    color: '#324E58',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  amountBubbleAmount: {
+    color: '#2C3E50',
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  amountBubbleTotal: {
+    color: '#6d6e72',
+    fontSize: 14,
+    textAlign: 'center',
   },
 });

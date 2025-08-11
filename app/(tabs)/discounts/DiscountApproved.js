@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ScrollView, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 export default function DiscountApproved() {
   const router = useRouter();
@@ -19,66 +20,98 @@ export default function DiscountApproved() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      {/* Top Navigation */}
-      <View style={styles.headerWrapper}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <AntDesign name="arrowleft" size={24} color="#324E58" />
+    <>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: '#fff' }}
+      contentContainerStyle={[styles.scrollContainer, { paddingBottom: 120 }]}
+      keyboardShouldPersistTaps="handled"
+    >
+      {/* Top Navigation & Gradient Header */}
+      <LinearGradient
+        colors={["#2C3E50", "#4CA1AF"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradientHeader}
+      >
+        <View style={styles.headerWrapper}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <AntDesign name="arrowleft" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: '#fff' }]}>Discount Details</Text>
+        </View>
+        {/* Business Info */}
+        <Image source={require('../../../assets/logos/starbucks.png')} style={styles.logo} />
+        <Text style={[styles.business, { color: '#fff' }]}>Starbucks coffee shop</Text>
+        <Text style={[styles.discountText, { color: '#E5E8EA' }]}>Free appetizer | up to 4x per month</Text>
+        <TouchableOpacity>
+          <Text style={[styles.readTerms, { color: '#fff', textDecorationLine: 'underline' }]}>Read Discount Terms</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Discount Details</Text>
+        <Text style={[styles.approvedBy, { color: '#fff', marginBottom: 0 }]}><Text style={{ fontWeight: 'bold' }}>Approved By:</Text> Carlos Montoya, Owner</Text>
+      </LinearGradient>
+
+      {/* Discount Code - Centered, Large, Bold */}
+      <View style={styles.codeBox}>
+        <Text style={styles.codeText}>DEALFREE</Text>
+      </View>
+      <Text style={styles.showCodeText}>Show this code at checkout</Text>
+
+      {/* Divider */}
+      <View style={{ height: 1, backgroundColor: '#E5E7EB', opacity: 0.7, marginVertical: 24, width: '100%' }} />
+
+      {/* Points Section */}
+      <View style={styles.pointsCard}>
+        <Text style={styles.pointsCardTitle}>Want extra points?</Text>
+        <Text style={styles.pointsCardSub}>Enter your bill and savings below!</Text>
+        <View style={styles.inputSection}>
+          <Text style={styles.inputLabel}>Total Bill</Text>
+          <TextInput
+            placeholder="$0.00"
+            style={styles.input}
+            keyboardType="numeric"
+            value={totalBill}
+            onChangeText={setTotalBill}
+            placeholderTextColor="#A0B4C8"
+          />
+          <Text style={styles.inputLabel}>Total Savings</Text>
+          <TextInput
+            placeholder="$0.00"
+            style={styles.input}
+            keyboardType="numeric"
+            value={totalDiscount}
+            onChangeText={setTotalDiscount}
+            placeholderTextColor="#A0B4C8"
+          />
+        </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Discount Approved!</Text>
-        <Text style={styles.subtitle}>Show or enter this code to get your discount!</Text>
-        <Image source={require('../../../assets/logos/starbucks.png')} style={styles.logo} />
-        <Text style={styles.business}>Starbucks coffee shop</Text>
-        <View style={styles.codeBox}>
-          <Text style={styles.codeText}>Code: DEALFREE</Text>
-        </View>
-        <Text style={styles.discountText}>Free appetizer | up to 4x per month</Text>
-        <TouchableOpacity>
-          <Text style={styles.readTerms}>Read Discount Terms</Text>
-        </TouchableOpacity>
-        <Text style={styles.approvedBy}><Text style={{ fontWeight: 'bold' }}>Approved By:</Text> Carlos Montoya, Owner</Text>
-        <Image source={require('../../../assets/images/piggy-coin.png')} style={styles.piggy} />
-        <Text style={styles.pointsInfo}>Add your saving and total bill amount to get <Text style={{ color: '#DB8633', fontWeight: 'bold' }}>extra +25 points</Text></Text>
-        <TextInput
-          placeholder="Enter Total Bill"
-          style={styles.input}
-          keyboardType="numeric"
-          value={totalBill}
-          onChangeText={setTotalBill}
-        />
-        <TextInput
-          placeholder="Enter Total Discount"
-          style={styles.input}
-          keyboardType="numeric"
-          value={totalDiscount}
-          onChangeText={setTotalDiscount}
-        />
+      {/* Spacer for button */}
+      <View style={{ height: 32 }} />
+
+      {/* Button Area (now scrolls with content, but always visible at bottom) */}
+      <View style={styles.stickyButtonArea}>
         <TouchableOpacity style={styles.getPointsButton} onPress={handleGetPoints}>
           <Text style={styles.getPointsText}>Get Points</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.noThanksButton} onPress={handleClose}>
           <Text style={styles.noThanksText}>No Thanks</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </View>
+    </ScrollView>
 
-      {/* Modal Popup */}
-      <Modal visible={showModal} transparent animationType="fade">
-        <View style={styles.modalBackground}>
-          <View style={styles.modalContent}>
-            <Image source={require('../../../assets/images/piggy-confetti.png')} style={{ width: 250, height: 250, resizeMode: 'contain' }} />
-            <Text style={styles.modalTitle}>Cha-ching!</Text>
-            <Text style={styles.modalMessage}><Text style={{ color: '#DB8633', fontWeight: 'bold' }}>Extra +25 Points </Text>Just Landed in Your Piggy Bank</Text>
-            <TouchableOpacity style={styles.modalButtonPrimary} onPress={handleClose}>
-              <Text style={styles.modalButtonPrimaryText}>Wow, Thanks</Text>
-            </TouchableOpacity>
-          </View>
+    {/* Modal Popup */}
+    <Modal visible={showModal} transparent animationType="fade">
+      <View style={styles.modalBackground}>
+        <View style={styles.modalContent}>
+          <Image source={require('../../../assets/images/piggy-confetti.png')} style={{ width: 250, height: 250, resizeMode: 'contain' }} />
+          <Text style={styles.modalTitle}>Cha-ching!</Text>
+          <Text style={styles.modalMessage}><Text style={{ color: '#DB8633', fontWeight: 'bold' }}>Extra +25 Points </Text>Just Landed in Your Piggy Bank</Text>
+          <TouchableOpacity style={styles.modalButtonPrimary} onPress={handleClose}>
+            <Text style={styles.modalButtonPrimaryText}>Wow, Thanks</Text>
+          </TouchableOpacity>
         </View>
-      </Modal>
-    </View>
+      </View>
+    </Modal>
+    </>
   );
 }
 
@@ -236,5 +269,50 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  pointsCard: {
+    backgroundColor: '#F7F7FC',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 0,
+  },
+  pointsCardTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#324E58',
+    marginBottom: 2,
+    textAlign: 'center',
+  },
+  pointsCardSub: {
+    fontSize: 14,
+    color: '#888',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  inputLabel: {
+    fontSize: 13,
+    color: '#888',
+    marginBottom: 2,
+    marginLeft: 2,
+  },
+  stickyButtonArea: {
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+    backgroundColor: '#fff',
+  },
+  gradientHeader: {
+    paddingBottom: 24,
+    paddingTop: 44,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    alignItems: 'center',
+    marginBottom: 0,
+  },
+  inputSection: {
+    width: '100%',
+    marginTop: 16,
+    marginBottom: 0,
   },
 });

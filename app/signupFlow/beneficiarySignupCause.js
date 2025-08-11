@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
+  Modal,
 } from 'react-native';
 import { AntDesign, Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -35,6 +36,8 @@ export default function BeneficiaryPreferences() {
   const router = useRouter();
   const [searchText, setSearchText] = useState('');
   const [location, setLocation] = useState('');
+  const [locationModalVisible, setLocationModalVisible] = useState(false);
+  const [tempLocation, setTempLocation] = useState(location);
   const [radius, setRadius] = useState(10);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [favorites, setFavorites] = useState([]);
@@ -86,25 +89,60 @@ export default function BeneficiaryPreferences() {
           <TouchableOpacity
             style={styles.locationField}
             onPress={() => {
-              // Focus or open a modal for location input
+              setTempLocation(location);
+              setLocationModalVisible(true);
             }}
             activeOpacity={0.8}
           >
-            <Feather name="map-pin" size={20} color="#324E58" style={{ marginRight: 10 }} />
-            <Text style={location ? styles.locationText : styles.locationPlaceholder}>
+            <Feather name="map-pin" size={18} color="#324E58" style={{ marginRight: 8 }} />
+            <Text style={{ color: location ? '#111' : '#888', flex: 1 }}>
               {location ? location : 'Add a location (optional)'}
             </Text>
-            {location ? (
-              <TouchableOpacity
-                onPress={() => setLocation('')}
-                style={styles.clearLocationButton}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <AntDesign name="close" size={18} color="#888" />
-              </TouchableOpacity>
-            ) : null}
           </TouchableOpacity>
         </View>
+        <Modal
+          visible={locationModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setLocationModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Add a location</Text>
+              <View style={styles.modalInputRow}>
+                <Feather name="map-pin" size={20} color="#324E58" style={{ marginRight: 8 }} />
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Enter location"
+                  value={tempLocation}
+                  onChangeText={setTempLocation}
+                  autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={() => {
+                    setLocation(tempLocation);
+                    setLocationModalVisible(false);
+                  }}
+                  placeholderTextColor="#888"
+                  fontWeight="500"
+                />
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 16 }}>
+                <TouchableOpacity onPress={() => setLocationModalVisible(false)} style={{ marginRight: 16 }}>
+                  <Text style={{ color: '#888', fontSize: 16 }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    setLocation(tempLocation);
+                    setLocationModalVisible(false);
+                  }}
+                  disabled={!tempLocation.trim()}
+                >
+                  <Text style={{ color: !tempLocation.trim() ? '#ccc' : '#007AFF', fontWeight: 'bold', fontSize: 16 }}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
         <View style={styles.categorySection}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
             <TouchableOpacity
@@ -509,5 +547,55 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     paddingTop: 30,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)', // slightly lighter overlay for a modern look
+    padding: 0,
+    margin: 0,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 18, // more rounded corners
+    padding: 22,
+    width: '90%',
+    maxWidth: 400,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 8,
+    marginBottom: 30, // helps avoid keyboard overlap
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 18,
+  },
+  modalInput: {
+    width: '100%',
+    height: 50,
+    borderColor: '#ccc',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    fontSize: 16,
+    color: '#333',
+    // marginBottom: 15, // remove to avoid extra space
+  },
+  modalInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    paddingHorizontal: 10,
+    marginBottom: 10,
+    height: 48,
   },
 });

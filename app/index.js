@@ -73,7 +73,7 @@ export default function Index() {
         renderItem={({ item }) => (
           <View style={styles.slide}>
             <View style={styles.circleWrapper}>
-              <Image source={item.image} style={styles.circleImage} resizeMode="contain" />
+              {/* Removed the image inside the gray circle */}
             </View>
             <Text style={styles.slideTitle}>{item.title}</Text>
             <Text style={styles.slideDescription}>{item.description}</Text>

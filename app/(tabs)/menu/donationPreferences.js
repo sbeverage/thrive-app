@@ -1,31 +1,33 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, ScrollView, Animated, Easing, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Alert, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
-import Slider from '@react-native-community/slider';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const { width } = Dimensions.get('window');
 
 export default function DonationAmount() {
   const router = useRouter();
 
   const [amount, setAmount] = useState(15);
   const MIN_AMOUNT = 15;
-  const MAX_AMOUNT = 250;
+  const MAX_AMOUNT = 500;
 
-  const piggyAnim = new Animated.Value(0);
+  // Predefined donation amounts
+  const presetAmounts = [15, 25, 50, 100, 250, 500];
 
-  const handleSliderChange = (value) => {
-    setAmount(Math.round(value));
-    animatePiggy();
+  const handlePresetSelect = (selectedAmount) => {
+    setAmount(selectedAmount);
   };
 
-  const handleInputChange = (text) => {
+  const handleCustomInput = (text) => {
     const numericValue = parseInt(text.replace(/[^0-9]/g, ''), 10);
     if (!isNaN(numericValue)) {
       if (numericValue >= MIN_AMOUNT && numericValue <= MAX_AMOUNT) {
         setAmount(numericValue);
       } else if (numericValue < MIN_AMOUNT) {
         setAmount(MIN_AMOUNT);
-      } else {
+      } else if (numericValue > MAX_AMOUNT) {
         setAmount(MAX_AMOUNT);
       }
     }
@@ -33,206 +35,320 @@ export default function DonationAmount() {
 
   const handleSaveAndContinue = () => {
     Alert.alert(
-      '🎉 Changes Saved!',
-      'Your donation preferences were successfully updated!',
+      '🎉 Monthly Donation Set!',
+      `You've committed to donating $${amount} monthly. Thank you for your generosity!`,
       [
         {
-          text: 'OK',
+          text: 'Continue',
           onPress: () => router.replace('/(tabs)/menu'),
         },
       ]
     );
   };
 
-  const animatePiggy = () => {
-    Animated.sequence([
-      Animated.timing(piggyAnim, { toValue: 1, duration: 200, easing: Easing.linear, useNativeDriver: true }),
-      Animated.timing(piggyAnim, { toValue: -1, duration: 200, easing: Easing.linear, useNativeDriver: true }),
-      Animated.timing(piggyAnim, { toValue: 0, duration: 200, easing: Easing.linear, useNativeDriver: true }),
-    ]).start();
-  };
-
-  const piggyRotate = piggyAnim.interpolate({
-    inputRange: [-1, 0, 1],
-    outputRange: ['-10deg', '0deg', '10deg'],
-  });
-
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      {/* Top Navigation */}
-      <View style={styles.topNav}>
+    <LinearGradient
+      colors={['#2C3E50', '#4CA1AF']}
+      style={styles.container}
+    >
+      {/* Header */}
+      <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/menu')}>
-          <AntDesign name="arrowleft" size={24} color="#324E58" />
+          <AntDesign name="arrowleft" size={24} color="#fff" />
         </TouchableOpacity>
+        <Text style={styles.headerTitle}>Monthly Donation</Text>
+        <View style={styles.placeholder} />
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 120 }}>
-        {/* Speech Bubble */}
-        <View style={styles.speechContainer}>
-          <Animated.Image
-            source={require('../../../assets/images/bolt-piggy.png')}
-            style={{ width: 50, height: 50, resizeMode: 'contain', marginRight: 10, transform: [{ rotate: piggyRotate }] }}
-          />
-          <View style={styles.speechBubble}>
-            <Text style={styles.speechText}>
-            Set your giving vibes — how much will you donate monthly?”
-            </Text>
-          </View>
-          <View style={styles.speechBubbleTail} />
-        </View>
-
-        {/* Curvy Slider */}
-        <View style={styles.sliderContainer}>
+      {/* Main Content */}
+      <View style={styles.content}>
+        {/* Hero Section */}
+        <View style={styles.heroSection}>
           <Image
-            source={require('../../../assets/images/slider.png')}
-            style={styles.sliderBackground}
+            source={require('../../../assets/images/bolt-piggy.png')}
+            style={styles.heroImage}
           />
-          <Slider
-            style={styles.slider}
-            minimumValue={MIN_AMOUNT}
-            maximumValue={MAX_AMOUNT}
-            value={amount}
-            onValueChange={handleSliderChange}
-            minimumTrackTintColor="transparent"
-            maximumTrackTintColor="transparent"
-            thumbTintColor="#DB8633"
-          />
+          <Text style={styles.heroTitle}>Choose Your Impact</Text>
+          <Text style={styles.heroSubtitle}>
+            Set your monthly donation amount. Every dollar makes a difference!
+          </Text>
         </View>
 
-        {/* Min/Max Labels */}
-        <View style={styles.sliderLabels}>
-          <Text style={styles.amountLabel}>${MIN_AMOUNT}</Text>
-          <Text style={styles.amountLabel}>${MAX_AMOUNT}</Text>
+        {/* Current Selection Card */}
+        <View style={styles.selectionCard}>
+          <Text style={styles.selectionLabel}>Your Monthly Donation</Text>
+          <View style={styles.amountDisplay}>
+            <Text style={styles.currencySymbol}>$</Text>
+            <Text style={styles.amountText}>{amount}</Text>
+          </View>
+          <Text style={styles.perMonth}>per month</Text>
         </View>
 
-        {/* Fixed Amount Input */}
-        <View style={styles.inputContainer}>
-          <TextInput
-            value={amount.toString()}
-            onChangeText={handleInputChange}
-            placeholder="Enter fixed amount"
-            placeholderTextColor="#A0A0A0"
-            keyboardType="numeric"
-            style={styles.input}
-          />
+        {/* Preset Amounts */}
+        <View style={styles.presetSection}>
+          <Text style={styles.sectionTitle}>Quick Select</Text>
+          <View style={styles.presetGrid}>
+            {presetAmounts.map((presetAmount) => (
+              <TouchableOpacity
+                key={presetAmount}
+                style={[
+                  styles.presetButton,
+                  amount === presetAmount && styles.presetButtonActive
+                ]}
+                onPress={() => handlePresetSelect(presetAmount)}
+              >
+                <Text style={[
+                  styles.presetText,
+                  amount === presetAmount && styles.presetTextActive
+                ]}>
+                  ${presetAmount}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
-      </ScrollView>
 
-      {/* Bottom Button */}
+        {/* Custom Amount */}
+        <View style={styles.customSection}>
+          <Text style={styles.sectionTitle}>Custom Amount</Text>
+          <View style={styles.customInputContainer}>
+            <Text style={styles.inputPrefix}>$</Text>
+            <TextInput
+              value={amount.toString()}
+              onChangeText={handleCustomInput}
+              placeholder="Enter amount"
+              placeholderTextColor="#A0A0A0"
+              keyboardType="numeric"
+              style={styles.customInput}
+              autoCorrect={false}
+              autoCapitalize="none"
+              spellCheck={false}
+            />
+          </View>
+          <Text style={styles.inputHint}>
+            Minimum: ${MIN_AMOUNT} • Maximum: ${MAX_AMOUNT}
+          </Text>
+        </View>
+
+        {/* Impact Preview */}
+        <View style={styles.impactCard}>
+          <Text style={styles.impactTitle}>Your Impact</Text>
+          <View style={styles.impactRow}>
+            <Text style={styles.impactLabel}>Monthly:</Text>
+            <Text style={styles.impactValue}>${amount}</Text>
+          </View>
+          <View style={styles.impactRow}>
+            <Text style={styles.impactLabel}>Yearly:</Text>
+            <Text style={styles.impactValue}>${amount * 12}</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Footer */}
       <View style={styles.footer}>
         <TouchableOpacity onPress={handleSaveAndContinue} style={styles.continueButton}>
-          <Text style={{ color: '#fff', fontSize: 16 }}>Done & Feeling Generous</Text>
+          <Text style={styles.continueButtonText}>Set Monthly Donation</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  topNav: {
+  container: {
+    flex: 1,
+    paddingTop: 60,
+  },
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    padding: 20,
-    paddingTop: 60,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
   },
   backButton: {
     padding: 10,
   },
-  speechContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 30,
-  },
-  speechBubble: {
-    backgroundColor: '#F5F5FA',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 20,
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    textAlign: 'center',
     flex: 1,
-    borderWidth: 1,
-    borderColor: '#E1E1E5',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    position: 'relative',
   },
-  speechBubbleTail: {
-    position: 'absolute',
-    left: -8,
-    top: 20,
-    width: 0,
-    height: 0,
-    borderLeftWidth: 8,
-    borderRightWidth: 0,
-    borderBottomWidth: 8,
-    borderTopWidth: 8,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: '#F5F5FA',
-    borderTopColor: 'transparent',
+  placeholder: {
+    width: 40, // Adjust as needed to center the title
   },
-  speechText: {
-    color: '#324E58',
+  content: {
+    flex: 1,
+    padding: 20,
+    paddingTop: 0, // Adjust to make space for header
+  },
+  heroSection: {
+    alignItems: 'center',
+    marginBottom: 30,
+    paddingHorizontal: 20,
+  },
+  heroImage: {
+    width: 100,
+    height: 100,
+    resizeMode: 'contain',
+    marginBottom: 15,
+  },
+  heroTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  heroSubtitle: {
     fontSize: 16,
-    textAlign: 'left',
+    color: '#fff',
+    textAlign: 'center',
     lineHeight: 22,
   },
-  sliderContainer: {
-    marginTop: 10,
-    marginBottom: 30,
-    height: 60,
-    justifyContent: 'center',
-  },
-  sliderBackground: {
-    width: '100%',
-    height: 60,
-    resizeMode: 'contain',
-    position: 'absolute',
-  },
-  slider: {
-    width: '100%',
-    height: 60,
-  },
-  sliderLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  selectionCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 15,
+    padding: 20,
     marginBottom: 20,
-    paddingHorizontal: 5,
+    alignItems: 'center',
   },
-  amountLabel: {
-    fontSize: 16,
+  selectionLabel: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 10,
+  },
+  amountDisplay: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginBottom: 5,
+  },
+  currencySymbol: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  amountText: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  perMonth: {
+    fontSize: 14,
+    color: '#fff',
+    opacity: 0.8,
+  },
+  presetSection: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 15,
+  },
+  presetGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+  },
+  presetButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    marginVertical: 5,
+    marginHorizontal: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+  },
+  presetButtonActive: {
+    backgroundColor: '#fff',
+    borderColor: '#fff',
+  },
+  presetText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  presetTextActive: {
     color: '#324E58',
   },
-  inputContainer: {
-    backgroundColor: '#F5F5FA',
+  customSection: {
+    marginBottom: 20,
+  },
+  customInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderRadius: 10,
     paddingHorizontal: 15,
-    marginTop: 10,
     borderWidth: 1,
-    borderColor: '#E1E1E5',
+    borderColor: 'rgba(255, 255, 255, 0.5)',
   },
-  input: {
-    height: 50,
+  customInput: {
+    flex: 1,
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    paddingVertical: 10,
+  },
+  inputPrefix: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginRight: 5,
+  },
+  inputHint: {
+    fontSize: 12,
+    color: '#fff',
+    opacity: 0.7,
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  impactCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 15,
+    padding: 20,
+    marginTop: 20,
+  },
+  impactTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 15,
+  },
+  impactRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  impactLabel: {
     fontSize: 16,
-    color: '#324E58',
+    color: '#fff',
+    opacity: 0.8,
+  },
+  impactValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
   },
   footer: {
-    backgroundColor: '#fff',
     padding: 20,
-    borderTopWidth: 1,
-    borderColor: '#E1E1E5',
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    paddingBottom: 40, // Add more padding to the bottom
   },
   continueButton: {
-    backgroundColor: '#DB8633',
+    backgroundColor: '#fff',
     paddingVertical: 15,
     borderRadius: 10,
     alignItems: 'center',
+  },
+  continueButtonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#324E58',
   },
 });
