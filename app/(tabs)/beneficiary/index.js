@@ -142,21 +142,21 @@ export default function BeneficiaryScreen() {
           ))}
         </ScrollView>
 
-        {/* Map/List Toggle */}
+        {/* List/Map Toggle */}
         <View style={styles.toggleRow}>
-          <TouchableOpacity 
-            style={[styles.toggleBtn, showMap && styles.toggleActive]} 
-            onPress={() => setShowMap(true)}
-          >
-            <Feather name="map" size={16} color={showMap ? "#fff" : "#666"} />
-            <Text style={[styles.toggleText, showMap && styles.toggleTextActive]}>Map</Text>
-          </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.toggleBtn, !showMap && styles.toggleActive]} 
             onPress={() => setShowMap(false)}
           >
             <Feather name="list" size={16} color={!showMap ? "#fff" : "#666"} />
             <Text style={[styles.toggleText, !showMap && styles.toggleTextActive]}>List</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.toggleBtn, showMap && styles.toggleActive]} 
+            onPress={() => setShowMap(true)}
+          >
+            <Feather name="map" size="16" color={showMap ? "#fff" : "#666"} />
+            <Text style={[styles.toggleText, showMap && styles.toggleTextActive]}>Map</Text>
           </TouchableOpacity>
         </View>
       </View>

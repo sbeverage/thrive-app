@@ -24,7 +24,7 @@ export default function DiscountsScreen() {
   const [businessName, setBusinessName] = useState('');
   const [businessUrl, setBusinessUrl] = useState('');
   const [submitted, setSubmitted] = useState(false);
-  const [showMap, setShowMap] = useState(true);
+  const [showMap, setShowMap] = useState(false);
   const [location, setLocation] = useState('San Francisco, CA');
   const [isEditingLocation, setIsEditingLocation] = useState(false);
   const router = useRouter();
@@ -147,21 +147,21 @@ export default function DiscountsScreen() {
           ))}
         </ScrollView>
 
-        {/* Map/List Toggle */}
+        {/* List/Map Toggle */}
         <View style={styles.toggleRow}>
-          <TouchableOpacity 
-            style={[styles.toggleBtn, showMap && styles.toggleActive]} 
-            onPress={() => setShowMap(true)}
-          >
-            <Feather name="map" size={16} color={showMap ? "#fff" : "#666"} />
-            <Text style={[styles.toggleText, showMap && styles.toggleTextActive]}>Map</Text>
-          </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.toggleBtn, !showMap && styles.toggleActive]} 
             onPress={() => setShowMap(false)}
           >
             <Feather name="list" size={16} color={!showMap ? "#fff" : "#666"} />
             <Text style={[styles.toggleText, !showMap && styles.toggleTextActive]}>List</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.toggleBtn, showMap && styles.toggleActive]} 
+            onPress={() => setShowMap(true)}
+          >
+            <Feather name="map" size="16" color={showMap ? "#fff" : "#666"} />
+            <Text style={[styles.toggleText, showMap && styles.toggleTextActive]}>Map</Text>
           </TouchableOpacity>
         </View>
       </View>

@@ -37,9 +37,6 @@ export default function MainHome() {
             <View style={styles.headerTopRow}>
               <Image source={require('../../assets/logos/thrive-logo-white.png')} style={styles.logo} resizeMode="contain" />
               <View style={styles.rightIcons}>
-                <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/menu/notifications')}>
-                  <Image source={require('../../assets/icons/notification.png')} style={styles.iconWhite} />
-                </TouchableOpacity>
                 <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/menu')}>
                   <Image source={require('../../assets/icons/menu.png')} style={styles.iconWhite} />
                 </TouchableOpacity>

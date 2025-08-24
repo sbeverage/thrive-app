@@ -18,17 +18,7 @@ export default function Settings() {
         <Text style={styles.header}>Settings</Text>
       </TouchableOpacity>
 
-      {/* Change Password */}
-      <TouchableOpacity
-        style={styles.row}
-        onPress={() => router.push('/(tabs)/menu/changePassword')}
-      >
-        <View style={styles.rowLeft}>
-          <Feather name="key" size={18} color="#888" />
-          <Text style={styles.text}>Change Password</Text>
-        </View>
-        <AntDesign name="right" size={16} color="#888" />
-      </TouchableOpacity>
+
 
       {/* Notifications */}
       <TouchableOpacity

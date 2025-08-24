@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ScrollView, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ScrollView, Modal, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign, Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function DiscountApproved() {
   const router = useRouter();
@@ -21,154 +24,197 @@ export default function DiscountApproved() {
   };
 
   return (
-    <>
-    <ScrollView
-      style={{ flex: 1, backgroundColor: '#fff' }}
-      contentContainerStyle={[styles.scrollContainer, { paddingBottom: 120 }]}
-      keyboardShouldPersistTaps="handled"
-    >
-      {/* Top Navigation */}
-      <View style={styles.headerWrapper}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <AntDesign name="arrowleft" size={24} color="#324E58" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Discount Redeemed!</Text>
-        <View style={{ width: 24 }} />
+    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      {/* Blue gradient as absolute background for top half */}
+      <View style={styles.gradientAbsoluteBg} pointerEvents="none">
+        <LinearGradient
+          colors={["#2C3E50", "#4CA1AF"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradientBg}
+        />
       </View>
 
-      {/* Hero Section with Company Info */}
-      <View style={styles.heroSection}>
-        <View style={styles.heroContent}>
-          <Image source={require('../../../assets/logos/starbucks.png')} style={styles.heroLogo} />
-          <View style={styles.heroText}>
-            <Text style={styles.heroCompany}>Starbucks Coffee</Text>
-            <Text style={styles.heroDiscount}>Free Appetizer</Text>
-            <Text style={styles.heroApprovedBy}>Approved By: Carlos Montoya, Owner</Text>
-            <View style={styles.heroBadge}>
-              <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-              <Text style={styles.heroBadgeText}>Approved</Text>
-            </View>
-          </View>
-        </View>
-      </View>
-
-      {/* Discount Code - Floating Card */}
-      <View style={styles.codeFloatingCard}>
-        <View style={styles.codeHeader}>
-          <Text style={styles.codeLabel}>Your Discount Code</Text>
-          <TouchableOpacity style={styles.copyButton}>
-            <AntDesign name="copy1" size={18} color="#DB8633" />
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={[styles.scrollContainer, { paddingBottom: 120 }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Top Navigation */}
+        <View style={styles.headerWrapper}>
+          <View style={{ width: 24 }} />
+          <Text style={styles.headerTitle}>Discount Redeemed!</Text>
+          <TouchableOpacity onPress={() => router.push('/(tabs)/home')} style={styles.closeButton}>
+            <AntDesign name="close" size={24} color="#fff" />
           </TouchableOpacity>
         </View>
-        <View style={styles.codeDisplay}>
-          <Text style={styles.codeText}>DEALFREE</Text>
-        </View>
-        <Text style={styles.codeInstructions}>Show this code at checkout</Text>
-      </View>
 
-      {/* What You Get - Highlight Section */}
-      <View style={styles.highlightSection}>
-        <View style={styles.highlightIcon}>
-          <Ionicons name="gift" size={32} color="#DB8633" />
-        </View>
-        <Text style={styles.highlightTitle}>What You Get</Text>
-        <Text style={styles.highlightDiscount}>FREE APPETIZER</Text>
-        <Text style={styles.highlightSubtext}>Show this to your waiter</Text>
-      </View>
-
-      {/* Points Earning Section */}
-      <View style={styles.pointsSection}>
-        <View style={styles.pointsHeader}>
-          <View style={styles.pointsIconContainer}>
-            <Image source={require('../../../assets/images/piggy-coin.png')} style={styles.pointsIcon} />
-          </View>
-          <View style={styles.pointsText}>
-            <Text style={styles.pointsTitle}>Earn Extra Points!</Text>
-            <Text style={styles.pointsSubtitle}>Track your savings and earn rewards</Text>
-          </View>
-        </View>
-        
-        <View style={styles.inputContainer}>
-          <View style={styles.inputRow}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Total Bill</Text>
-              <View style={styles.inputWrapper}>
-                <Text style={styles.currencySymbol}>$</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="0.00"
-                  placeholderTextColor="#A0B4C8"
-                  keyboardType="numeric"
-                  value={totalBill}
-                  onChangeText={setTotalBill}
-                />
+        {/* Combined Company Info & Discount Code Card */}
+        <View style={styles.combinedCard}>
+          {/* Company Info Section */}
+          <View style={styles.companySection}>
+            <View style={styles.companyLeft}>
+              <Image source={require('../../../assets/logos/starbucks.png')} style={styles.companyLogo} />
+              <View style={styles.companyText}>
+                <Text style={styles.companyName}>Starbucks Coffee</Text>
+                <View style={styles.approvedBadge}>
+                  <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                  <Text style={styles.approvedText}>Approved by Carlos Montoya, Owner</Text>
+                </View>
               </View>
             </View>
+            <View style={styles.companyRight}>
+              <View style={styles.statusIndicator}>
+                <View style={styles.statusDot} />
+                <Text style={styles.statusText}>Active</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Divider */}
+          <View style={styles.cardDivider} />
+
+          {/* Discount Code Section */}
+          <View style={styles.codeSection}>
+            <View style={styles.codeHeader}>
+              <Text style={styles.codeLabel}>Your Discount Code</Text>
+              <TouchableOpacity style={styles.copyButton}>
+                <AntDesign name="copy1" size={18} color="#DB8633" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.codeDisplay}>
+              <Text style={styles.codeText}>DEALFREE</Text>
+            </View>
+            <Text style={styles.codeInstructions}>Show this code at checkout</Text>
+          </View>
+        </View>
+
+        {/* What You Get - Highlight Section */}
+        <View style={styles.highlightSection}>
+          <View style={styles.highlightIcon}>
+            <Ionicons name="gift" size={32} color="#DB8633" />
+          </View>
+          <Text style={styles.highlightTitle}>What You Get</Text>
+          <Text style={styles.highlightDiscount}>FREE APPETIZER</Text>
+          <Text style={styles.highlightSubtext}>Show this to your waiter</Text>
+        </View>
+
+        {/* Points Earning Section */}
+        <View style={styles.pointsSection}>
+          <View style={styles.pointsHeader}>
+            <View style={styles.pointsIconContainer}>
+              <Image source={require('../../../assets/images/piggy-coin.png')} style={styles.pointsIcon} />
+            </View>
+            <View style={styles.pointsText}>
+              <Text style={styles.pointsTitle}>Earn Extra Points!</Text>
+              <Text style={styles.pointsSubtitle}>Track your savings and earn rewards</Text>
+            </View>
+          </View>
+          
+          <View style={styles.inputContainer}>
+            <View style={styles.inputRow}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Total Bill</Text>
+                <View style={styles.inputWrapper}>
+                  <Text style={styles.currencySymbol}>$</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="0.00"
+                    placeholderTextColor="#A0B4C8"
+                    keyboardType="numeric"
+                    value={totalBill}
+                    onChangeText={setTotalBill}
+                  />
+                </View>
+              </View>
+              
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Total Savings</Text>
+                <View style={styles.inputWrapper}>
+                  <Text style={styles.currencySymbol}>$</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="0.00"
+                    placeholderTextColor="#A0B4C8"
+                    keyboardType="numeric"
+                    value={totalDiscount}
+                    onChangeText={setTotalDiscount}
+                  />
+                </View>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.pointsButtonRow}>
+            <TouchableOpacity 
+              style={styles.skipButton}
+              onPress={() => router.push('/(tabs)')}
+            >
+              <Text style={styles.skipButtonText}>Skip</Text>
+            </TouchableOpacity>
             
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Total Savings</Text>
-              <View style={styles.inputWrapper}>
-                <Text style={styles.currencySymbol}>$</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="0.00"
-                  placeholderTextColor="#A0B4C8"
-                  keyboardType="numeric"
-                  value={totalDiscount}
-                  onChangeText={setTotalDiscount}
-                />
-              </View>
-            </View>
+            <TouchableOpacity 
+              style={[
+                styles.earnPointsButton, 
+                (!totalBill || !totalDiscount) && styles.earnPointsButtonDisabled
+              ]} 
+              onPress={handleGetPoints}
+              disabled={!totalBill || !totalDiscount}
+            >
+              <Text style={styles.earnPointsButtonText}>Earn +25 Points</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        <TouchableOpacity 
-          style={[
-            styles.earnPointsButton, 
-            (!totalBill || !totalDiscount) && styles.earnPointsButtonDisabled
-          ]} 
-          onPress={handleGetPoints}
-          disabled={!totalBill || !totalDiscount}
-        >
-          <Text style={styles.earnPointsButtonText}>Earn +25 Points</Text>
+        {/* Terms Link */}
+        <TouchableOpacity style={styles.termsLink}>
+          <Text style={styles.termsText}>Read Discount Terms & Conditions</Text>
+          <AntDesign name="right" size={14} color="#8E9BAE" />
         </TouchableOpacity>
-      </View>
 
-      {/* Terms Link */}
-      <TouchableOpacity style={styles.termsLink}>
-        <Text style={styles.termsText}>Read Discount Terms & Conditions</Text>
-        <AntDesign name="right" size={14} color="#8E9BAE" />
-      </TouchableOpacity>
 
-      {/* Spacer */}
-      <View style={{ height: 32 }} />
-    </ScrollView>
+      </ScrollView>
 
-    {/* Success Modal */}
-    <Modal visible={showModal} transparent animationType="fade">
-      <View style={styles.modalBackground}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalIconContainer}>
-            <Image source={require('../../../assets/images/piggy-confetti.png')} style={styles.modalIcon} />
+      {/* Success Modal */}
+      <Modal visible={showModal} transparent animationType="fade">
+        <View style={styles.modalBackground}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalIconContainer}>
+              <Image source={require('../../../assets/images/piggy-confetti.png')} style={styles.modalIcon} />
+            </View>
+            <Text style={styles.modalTitle}>Cha-ching!</Text>
+            <Text style={styles.modalMessage}>
+              <Text style={styles.modalHighlight}>+25 Points</Text> added to your piggy bank!
+            </Text>
+            <Text style={styles.modalSubtitle}>
+              Your savings will now appear on your home page
+            </Text>
+            <TouchableOpacity style={styles.modalButton} onPress={handleClose}>
+              <Text style={styles.modalButtonText}>Awesome!</Text>
+            </TouchableOpacity>
           </View>
-          <Text style={styles.modalTitle}>Cha-ching!</Text>
-          <Text style={styles.modalMessage}>
-            <Text style={styles.modalHighlight}>+25 Points</Text> added to your piggy bank!
-          </Text>
-          <Text style={styles.modalSubtitle}>
-            Your savings will now appear on your home page
-          </Text>
-          <TouchableOpacity style={styles.modalButton} onPress={handleClose}>
-            <Text style={styles.modalButtonText}>Awesome!</Text>
-          </TouchableOpacity>
         </View>
-      </View>
-    </Modal>
-    </>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  gradientAbsoluteBg: { 
+    position: 'absolute', 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    height: SCREEN_HEIGHT * 0.45, 
+    zIndex: 0, 
+    overflow: 'hidden' 
+  },
+  gradientBg: { 
+    width: SCREEN_WIDTH, 
+    height: '100%', 
+    borderBottomLeftRadius: 40, 
+    borderBottomRightRadius: 40 
+  },
   headerWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -176,79 +222,23 @@ const styles = StyleSheet.create({
     paddingTop: 50,
     paddingHorizontal: 20,
     paddingBottom: 20,
-    backgroundColor: '#fff',
+    zIndex: 1,
   },
-  backButton: {
+  closeButton: {
     padding: 8,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#324E58',
+    color: '#fff',
   },
   scrollContainer: {
     padding: 20,
-    backgroundColor: '#fff',
+    zIndex: 1,
   },
   
-  // Hero Section
-  heroSection: {
-    backgroundColor: '#F8F9FA',
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 24,
-    borderLeftWidth: 4,
-    borderLeftColor: '#DB8633',
-  },
-  heroContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  heroLogo: {
-    width: 70,
-    height: 70,
-    resizeMode: 'contain',
-    marginRight: 20,
-  },
-  heroText: {
-    flex: 1,
-  },
-  heroCompany: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#324E58',
-    marginBottom: 6,
-  },
-  heroDiscount: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#DB8633',
-    marginBottom: 8,
-  },
-  heroApprovedBy: {
-    fontSize: 14,
-    color: '#64748B',
-    marginBottom: 8,
-    fontStyle: 'italic',
-  },
-  heroBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F0FDF4',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 16,
-    alignSelf: 'flex-start',
-  },
-  heroBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#10B981',
-    marginLeft: 4,
-  },
-
-  // Floating Code Card
-  codeFloatingCard: {
+  // Combined Company & Discount Code Card
+  combinedCard: {
     backgroundColor: '#fff',
     borderRadius: 20,
     padding: 24,
@@ -260,6 +250,83 @@ const styles = StyleSheet.create({
     elevation: 10,
     borderWidth: 2,
     borderColor: '#F1F5F9',
+    zIndex: 2,
+  },
+  
+  // Company Section
+  companySection: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  companyLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  companyRight: {
+    alignItems: 'flex-end',
+  },
+  companyLogo: {
+    width: 56,
+    height: 56,
+    resizeMode: 'contain',
+    marginRight: 16,
+    borderRadius: 12,
+  },
+  companyText: {
+    flex: 1,
+    paddingTop: 2,
+  },
+  companyName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 6,
+  },
+  approvedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+  },
+  approvedText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#64748B',
+    marginLeft: 6,
+  },
+  statusIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+    marginRight: 6,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#10B981',
+  },
+
+  // Card Divider
+  cardDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 20,
+  },
+
+  // Discount Code Section
+  codeSection: {
+    alignItems: 'center',
   },
   codeHeader: {
     flexDirection: 'row',
@@ -305,6 +372,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#FED7AA',
+    zIndex: 2,
   },
   highlightIcon: {
     backgroundColor: '#fff',
@@ -340,43 +408,56 @@ const styles = StyleSheet.create({
 
   // Points Section
   pointsSection: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#fff',
     borderRadius: 20,
     padding: 24,
     marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 6,
+    zIndex: 2,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    borderTopWidth: 3,
+    borderTopColor: '#DB8633',
   },
   pointsHeader: {
-    flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 24,
   },
   pointsIconContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FFF7ED',
     borderRadius: 50,
-    padding: 12,
-    marginRight: 16,
+    padding: 16,
+    marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
+    borderWidth: 2,
+    borderColor: '#FED7AA',
   },
   pointsIcon: {
-    width: 32,
-    height: 32,
+    width: 40,
+    height: 40,
   },
   pointsText: {
-    flex: 1,
+    alignItems: 'center',
   },
   pointsTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: '#324E58',
     marginBottom: 4,
+    textAlign: 'center',
   },
   pointsSubtitle: {
     fontSize: 14,
-    color: '#64748B',
+    color: '#8E9BAE',
+    textAlign: 'center',
   },
   inputContainer: {
     marginBottom: 24,
@@ -397,7 +478,7 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: '#F8F9FA',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -415,11 +496,31 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#324E58',
   },
+  pointsButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  skipButton: {
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    flex: 1,
+  },
+  skipButtonText: {
+    color: '#64748B',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   earnPointsButton: {
     backgroundColor: '#DB8633',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
+    flex: 2,
   },
   earnPointsButtonDisabled: {
     backgroundColor: '#E2E8F0',
@@ -436,10 +537,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 16,
+    zIndex: 2,
   },
   termsText: {
     fontSize: 14,
-    color: '#64748B',
+    color: '#8E9BAE',
     marginRight: 8,
   },
 
@@ -487,7 +589,7 @@ const styles = StyleSheet.create({
   },
   modalSubtitle: {
     fontSize: 14,
-    color: '#64748B',
+    color: '#8E9BAE',
     textAlign: 'center',
     marginBottom: 24,
     lineHeight: 20,

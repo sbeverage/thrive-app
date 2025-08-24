@@ -13,30 +13,18 @@ export default function MenuScreen() {
       { title: 'My Profile', icon: 'user', page: 'menu/profile' },
       { title: 'Friends', icon: 'users', page: 'menu/friends' },
     ]},
-    { section: 'Donations', data: [
-      { title: 'Change Donation Preferences', icon: 'sliders', page: 'menu/donationPreferences' },
-      { title: 'View Donation Summary', icon: 'rotate-ccw', page: 'menu/donationSummary' },
-      { title: 'Transaction History', icon: 'dollar-sign', page: 'menu/transactionHistory' },
-      { title: 'Manage Cards', icon: 'credit-card', page: 'menu/manageCards' },
+    { section: 'Donations & Savings', data: [
+      { title: 'Donation Summary', icon: 'bar-chart-2', page: 'menu/donationSummary' },
+      { title: 'Transaction History', icon: 'credit-card', page: 'menu/transactionHistory' },
+      { title: 'Manage Billing', icon: 'credit-card', page: 'menu/manageCards' },
     ]},
-    { section: 'Beneficiary', data: [
-      { title: 'Change Beneficiary Preferences', icon: 'sliders', page: 'menu/beneficiaryPreferences' },
-      { title: 'Volunteered Events', icon: 'calendar', page: 'menu/events' },
-    ]},
-    { section: "Help + FAQ's", data: [
+    { section: 'App', data: [
       { title: 'Send Feedback', icon: 'message-square', page: 'menu/feedback' },
-      { title: "FAQ's", icon: 'file-text', page: 'menu/faqs' },
-    ]},
-    { section: 'More', data: [
-      { title: 'Invite Company', icon: 'briefcase', page: 'menu/inviteCompany' },
-      { title: 'Invite Beneficiary', icon: 'user-plus', page: 'menu/inviteBeneficiary' },
-      { title: 'Invitation History', icon: 'users', page: 'menu/invitationHistory' },
-      { title: 'Settings', icon: 'settings', page: 'menu/settings' },
     ]},
   ];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
+    <ScrollView style={styles.container}>
       <View style={styles.header}>
         <Image source={require('../../../assets/images/profile.jpg')} style={styles.avatar} />
         <Text style={styles.name}>Stephanie Beverage</Text>

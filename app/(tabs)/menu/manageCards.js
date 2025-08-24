@@ -11,6 +11,10 @@ export default function CardManagement() {
     { id: 2, type: 'Master', last4: '6578', active: false, logo: require('../../../assets/logos/mastercard.png') },
   ]);
 
+  // Apple Pay status - replace with actual detection logic
+  const [applePayEnabled, setApplePayEnabled] = useState(true);
+  const [applePayActive, setApplePayActive] = useState(false);
+
   const handleDelete = (id) => {
     Alert.alert(
       'Delete Card',
@@ -33,6 +37,17 @@ export default function CardManagement() {
     setCards((prevCards) =>
       prevCards.map((card) => ({ ...card, active: card.id === id }))
     );
+    setApplePayActive(false);
+  };
+
+  const handleApplePayToggle = () => {
+    if (applePayEnabled) {
+      setApplePayActive(!applePayActive);
+      // Deactivate all cards when Apple Pay is selected
+      setCards((prevCards) =>
+        prevCards.map((card) => ({ ...card, active: false }))
+      );
+    }
   };
 
   return (
@@ -42,33 +57,69 @@ export default function CardManagement() {
         <TouchableOpacity onPress={() => router.replace('/(tabs)/menu')}>
           <AntDesign name="arrowleft" size={24} color="#324E58" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Card Management</Text>
+        <Text style={styles.headerTitle}>Manage Billing</Text>
         <Feather name="more-horizontal" size={24} color="transparent" />
       </View>
 
-      {/* Card List */}
-      <View style={styles.cardList}>
-        {cards.map((card) => (
+      {/* Apple Pay Section */}
+      {applePayEnabled && (
+        <View style={styles.applePaySection}>
+          <Text style={styles.sectionTitle}>Digital Wallets</Text>
           <TouchableOpacity
-            key={card.id}
-            style={[styles.cardItem, card.active && styles.activeCard]}
-            onPress={() => handleSetPrimary(card.id)}
+            style={[styles.applePayItem, applePayActive && styles.activeApplePay]}
+            onPress={handleApplePayToggle}
           >
-            <View style={styles.cardDetails}>
+            <View style={styles.applePayDetails}>
               <View style={styles.radioCircle}>
-                <View style={[styles.innerCircle, card.active && styles.innerCircleActive]} />
+                <View style={[styles.innerCircle, applePayActive && styles.innerCircleActive]} />
               </View>
-              <Image source={card.logo} style={styles.cardLogo} />
+              <View style={styles.applePayLogo}>
+                <Text style={styles.applePayText}>Apple Pay</Text>
+              </View>
               <View>
-                <Text style={styles.cardType}>{card.type} card</Text>
-                <Text style={styles.cardNumber}>{card.last4}******</Text>
+                <Text style={styles.applePayTitle}>Apple Pay</Text>
+                <Text style={styles.applePaySubtitle}>Secure digital payments</Text>
               </View>
             </View>
-            <TouchableOpacity onPress={() => handleDelete(card.id)}>
-              <Feather name="trash-2" size={22} color="red" />
-            </TouchableOpacity>
+            <View style={styles.applePayStatus}>
+              {applePayActive ? (
+                <View style={styles.activeBadge}>
+                  <Text style={styles.activeBadgeText}>Active</Text>
+                </View>
+              ) : (
+                <Text style={styles.inactiveText}>Inactive</Text>
+              )}
+            </View>
           </TouchableOpacity>
-        ))}
+        </View>
+      )}
+
+      {/* Credit Cards Section */}
+      <View style={styles.creditCardSection}>
+        <Text style={styles.sectionTitle}>Credit & Debit Cards</Text>
+        <View style={styles.cardList}>
+          {cards.map((card) => (
+            <TouchableOpacity
+              key={card.id}
+              style={[styles.cardItem, card.active && styles.activeCard]}
+              onPress={() => handleSetPrimary(card.id)}
+            >
+              <View style={styles.cardDetails}>
+                <View style={styles.radioCircle}>
+                  <View style={[styles.innerCircle, card.active && styles.innerCircleActive]} />
+                </View>
+                <Image source={card.logo} style={styles.cardLogo} />
+                <View>
+                  <Text style={styles.cardType}>{card.type} card</Text>
+                  <Text style={styles.cardNumber}>{card.last4}******</Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => handleDelete(card.id)}>
+                <Feather name="trash-2" size={22} color="red" />
+              </TouchableOpacity>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
       {/* Add New Card */}
@@ -144,4 +195,83 @@ const styles = StyleSheet.create({
     right: 0,
   },
   addButtonText: { color: '#fff', fontSize: 16, fontWeight: '600', textAlign: 'center' },
+  applePaySection: {
+    backgroundColor: '#f5f5f5',
+    padding: 20,
+    borderRadius: 10,
+    marginHorizontal: 20,
+    marginTop: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#324E58',
+    marginBottom: 15,
+  },
+  applePayItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+    position: 'relative',
+  },
+  activeApplePay: {
+    borderWidth: 1,
+    borderColor: '#DB8633',
+  },
+  applePayDetails: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  applePayLogo: {
+    width: 80,
+    height: 32,
+    borderRadius: 6,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  applePayText: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  applePayTitle: { fontSize: 16, fontWeight: '600', color: '#324E58' },
+  applePaySubtitle: { fontSize: 12, color: '#666', marginTop: 2 },
+  applePayStatus: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+  },
+  activeBadge: {
+    backgroundColor: '#DB8633',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 5,
+  },
+  activeBadgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  inactiveText: { 
+    fontSize: 12, 
+    color: '#666',
+    fontWeight: '500',
+  },
+  creditCardSection: {
+    marginTop: 20,
+    paddingHorizontal: 20,
+  },
 });

@@ -1,100 +1,155 @@
 // File: app/(tabs)/menu/transactionHistory.js
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   Image,
-  ActivityIndicator,
   TouchableOpacity,
+  ScrollView,
 } from 'react-native';
-import { AntDesign } from '@expo/vector-icons';
+import { AntDesign, Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 const transactions = [
   {
     id: '1',
     brand: 'Starbucks',
-    date: '17 July, 2023',
-    discount: 'Free appetizer | up to 4x per month',
-    spending: '$200',
-    savings: '$15',
+    date: 'July 17, 2024',
+    discount: 'Free Appetizer',
+    spending: '$45.50',
+    savings: '$12.99',
     logo: require('../../../assets/logos/starbucks.png'),
+    status: 'completed',
   },
   {
     id: '2',
     brand: 'Apple Store',
-    date: '17 July, 2023',
-    discount: '10% discount on entire bill | unlimited',
-    spending: '$200',
-    savings: '$15',
+    date: 'July 15, 2024',
+    discount: '10% Off Entire Bill',
+    spending: '$1,299.00',
+    savings: '$129.90',
     logo: require('../../../assets/logos/apple.png'),
+    status: 'completed',
   },
   {
     id: '3',
-    brand: 'Amazon On-Site Store',
-    date: '17 July, 2023',
-    discount: '$25 off entire order, with a minimum spend',
-    spending: '$200',
-    savings: '$20',
+    brand: 'Amazon',
+    date: 'July 12, 2024',
+    discount: '$25 Off Order',
+    spending: '$89.99',
+    savings: '$25.00',
     logo: require('../../../assets/logos/amazon.png'),
+    status: 'completed',
   },
   {
     id: '4',
     brand: 'Cisco',
-    date: '17 July, 2023',
-    discount: '10% discount on entire bill | unlimited',
-    spending: '$200',
-    savings: '$15',
+    date: 'July 10, 2024',
+    discount: '10% Off Entire Bill',
+    spending: '$2,500.00',
+    savings: '$250.00',
     logo: require('../../../assets/logos/cisco.png'),
+    status: 'completed',
   },
   {
     id: '5',
     brand: 'Zara',
-    date: '17 July, 2023',
-    discount: '10% discount on entire bill | unlimited',
-    spending: '$200',
-    savings: '$5',
+    date: 'July 8, 2024',
+    discount: '10% Off Entire Bill',
+    spending: '$89.50',
+    savings: '$8.95',
     logo: require('../../../assets/logos/zara.png'),
+    status: 'completed',
   },
 ];
 
 export default function TransactionHistory() {
   const router = useRouter();
+  const [selectedFilter, setSelectedFilter] = useState('all');
+
+  const totalSavings = transactions.reduce((sum, item) => sum + parseFloat(item.savings.replace('$', '')), 0);
+  const totalSpent = transactions.reduce((sum, item) => sum + parseFloat(item.spending.replace('$', '')), 0);
 
   const renderItem = ({ item }) => (
-    <View style={styles.itemContainer}>
-      <Image source={item.logo} style={styles.logo} />
-      <View style={styles.details}>
-        <Text style={styles.brand}>{item.brand}</Text>
-        <Text style={styles.text}>Date  <Text style={styles.dim}>{item.date}</Text></Text>
-        <Text style={styles.text}>Discount  <Text style={styles.dim}>{item.discount}</Text></Text>
-        <Text style={styles.text}>Total spending  <Text style={styles.dim}>{item.spending}</Text></Text>
+    <View style={styles.transactionCard}>
+      <View style={styles.cardHeader}>
+        <View style={styles.brandSection}>
+          <Image source={item.logo} style={styles.brandLogo} />
+          <View style={styles.brandInfo}>
+            <Text style={styles.brandName}>{item.brand}</Text>
+            <Text style={styles.transactionDate}>{item.date}</Text>
+          </View>
+        </View>
+        <View style={styles.statusBadge}>
+          <Feather name="check-circle" size={14} color="#10B981" />
+          <Text style={styles.statusText}>Completed</Text>
+        </View>
       </View>
-      <View style={styles.savingsContainer}>
-        <Text style={styles.discountLabel}>Discount</Text>
-        <Text style={styles.savings}>{item.savings}</Text>
+
+      <View style={styles.discountSection}>
+        <Text style={styles.discountLabel}>Discount Used</Text>
+        <Text style={styles.discountValue}>{item.discount}</Text>
+      </View>
+
+      <View style={styles.financialSection}>
+        <View style={styles.financialItem}>
+          <Text style={styles.financialLabel}>Spent</Text>
+          <Text style={styles.spentAmount}>{item.spending}</Text>
+        </View>
+        <View style={styles.financialDivider} />
+        <View style={styles.financialItem}>
+          <Text style={styles.financialLabel}>Saved</Text>
+          <Text style={styles.savedAmount}>{item.savings}</Text>
+        </View>
       </View>
     </View>
   );
 
   return (
     <View style={styles.container}>
-      {/* Back Button */}
-      <TouchableOpacity onPress={() => router.push('/(tabs)/menu')} style={styles.backRow}>
-        <AntDesign name="arrowleft" size={24} color="#324E58" />
-        <Text style={styles.header}>Transaction History</Text>
-      </TouchableOpacity>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.push('/(tabs)/menu')} style={styles.backButton}>
+          <AntDesign name="arrowleft" size={24} color="#324E58" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Transaction History</Text>
+        <View style={{ width: 24 }} />
+      </View>
 
-      <FlatList
-        data={transactions}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-        ListFooterComponent={<ActivityIndicator size="small" color="#ccc" style={{ marginVertical: 24 }} />}
-      />
+      {/* Summary Cards */}
+      <View style={styles.summarySection}>
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryIcon}>
+            <Feather name="dollar-sign" size={20} color="#DB8633" />
+          </View>
+          <Text style={styles.summaryValue}>${totalSpent.toFixed(2)}</Text>
+          <Text style={styles.summaryLabel}>Total Spent</Text>
+        </View>
+        
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryIcon}>
+            <Feather name="trending-up" size={20} color="#10B981" />
+          </View>
+          <Text style={styles.summaryValue}>${totalSavings.toFixed(2)}</Text>
+          <Text style={styles.summaryLabel}>Total Saved</Text>
+        </View>
+      </View>
+
+      {/* Transactions List */}
+      <View style={styles.transactionsSection}>
+        <Text style={styles.sectionTitle}>Recent Transactions</Text>
+        <FlatList
+          data={transactions}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContainer}
+          style={styles.transactionsList}
+        />
+      </View>
     </View>
   );
 }
@@ -105,60 +160,151 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     padding: 20,
   },
-  backRow: {
+  header: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
-    gap: 12,
   },
-  header: {
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: '#324E58',
+    flex: 1,
+    textAlign: 'center',
   },
-  itemContainer: {
+  summarySection: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    paddingVertical: 12,
+    justifyContent: 'space-between',
+    marginBottom: 20,
   },
-  logo: {
+  summaryCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 15,
+    alignItems: 'center',
+    flex: 1,
+    marginHorizontal: 5,
+  },
+  summaryIcon: {
+    marginBottom: 10,
+  },
+  summaryValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#324E58',
+    marginBottom: 5,
+  },
+  summaryLabel: {
+    fontSize: 12,
+    color: '#888',
+  },
+  transactionsSection: {
+    marginTop: 20,
+    flex: 1,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#324E58',
+    marginBottom: 15,
+  },
+  transactionsList: {
+    flex: 1,
+  },
+  listContainer: {
+    paddingBottom: 40,
+  },
+  transactionCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 15,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  brandSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  brandLogo: {
     width: 40,
     height: 40,
     resizeMode: 'contain',
     borderRadius: 8,
+    marginRight: 10,
   },
-  details: {
+  brandInfo: {
     flex: 1,
   },
-  brand: {
+  brandName: {
     fontSize: 16,
     fontWeight: '700',
     color: '#324E58',
-    marginBottom: 4,
   },
-  text: {
-    fontSize: 13,
-    color: '#324E58',
-  },
-  dim: {
+  transactionDate: {
+    fontSize: 12,
     color: '#888',
   },
-  savingsContainer: {
-    alignItems: 'flex-end',
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E0F2F7',
+    borderRadius: 10,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  statusText: {
+    fontSize: 12,
+    color: '#10B981',
+    marginLeft: 5,
+  },
+  discountSection: {
+    marginBottom: 10,
   },
   discountLabel: {
     fontSize: 12,
     color: '#999',
+    marginBottom: 5,
   },
-  savings: {
+  discountValue: {
     fontSize: 16,
     fontWeight: '700',
     color: '#324E58',
   },
-  separator: {
-    height: 1,
+  financialSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  financialItem: {
+    alignItems: 'center',
+  },
+  financialLabel: {
+    fontSize: 12,
+    color: '#999',
+  },
+  spentAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#324E58',
+  },
+  financialDivider: {
+    width: 1,
+    height: '80%',
     backgroundColor: '#eee',
-    marginVertical: 8,
+  },
+  savedAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#324E58',
   },
 });

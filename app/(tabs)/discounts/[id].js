@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Linking,
   Dimensions,
   SafeAreaView,
+  Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
@@ -18,6 +19,8 @@ const HEADER_HEIGHT = height * 0.3;
 
 export default function VendorDetails() {
   const router = useRouter();
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [selectedDiscount, setSelectedDiscount] = useState(null);
 
   const vendor = {
     name: 'Starbucks',
@@ -108,7 +111,10 @@ export default function VendorDetails() {
               </View>
               <TouchableOpacity
                 style={styles.redeemBtn}
-                onPress={() => router.push('/discounts/DiscountApproved')}
+                onPress={() => {
+                  setSelectedDiscount(discount);
+                  setShowConfirmModal(true);
+                }}
               >
                 <Text style={styles.redeemText}>Redeem</Text>
               </TouchableOpacity>
@@ -116,6 +122,47 @@ export default function VendorDetails() {
           ))}
         </View>
       </ScrollView>
+
+      {/* Confirmation Modal */}
+      <Modal visible={showConfirmModal} transparent animationType="fade">
+        <View style={styles.modalBackground}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalIconContainer}>
+              <AntDesign name="questioncircleo" size={48} color="#DB8633" />
+            </View>
+            <Text style={styles.modalTitle}>Ready to Redeem?</Text>
+            <Text style={styles.modalMessage}>
+              Are you sure you want to redeem the{' '}
+              <Text style={styles.modalHighlight}>
+                {selectedDiscount?.title}
+              </Text>{' '}
+              discount?
+            </Text>
+            <Text style={styles.modalSubtitle}>
+              This will generate your discount code
+            </Text>
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={styles.modalCancelButton} 
+                onPress={() => setShowConfirmModal(false)}
+              >
+                <Text style={styles.modalCancelText}>No</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.modalConfirmButton} 
+                onPress={() => {
+                  setShowConfirmModal(false);
+                  router.push('/discounts/DiscountApproved');
+                }}
+              >
+                <Text style={styles.modalConfirmText}>Yes</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -241,5 +288,83 @@ const styles = StyleSheet.create({
   redeemText: {
     color: '#fff',
     fontWeight: '600',
+  },
+
+  // Modal Styles
+  modalBackground: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 32,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 320,
+  },
+  modalIconContainer: {
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#324E58',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: '#324E58',
+    textAlign: 'center',
+    marginBottom: 8,
+    lineHeight: 24,
+  },
+  modalHighlight: {
+    color: '#DB8633',
+    fontWeight: '700',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#8E9BAE',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalCancelButton: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  modalCancelText: {
+    color: '#64748B',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalConfirmButton: {
+    flex: 1,
+    backgroundColor: '#DB8633',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalConfirmText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });

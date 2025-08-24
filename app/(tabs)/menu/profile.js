@@ -42,6 +42,10 @@ export default function UserProfile() {
         <Text style={styles.editText}>Edit Profile</Text>
       </TouchableOpacity>
 
+      <TouchableOpacity style={styles.changePasswordButton} onPress={() => router.push('/menu/changePassword')}>
+        <Text style={styles.changePasswordText}>Change Password</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
         <Text style={styles.deleteText}>Delete Account</Text>
       </TouchableOpacity>
@@ -113,6 +117,20 @@ const styles = StyleSheet.create({
   },
   editText: {
     color: 'white',
+    fontSize: 16,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  changePasswordButton: {
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 14,
+    borderRadius: 10,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  changePasswordText: {
+    color: '#324E58',
     fontSize: 16,
     textAlign: 'center',
     fontWeight: '600',

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { Video, ResizeMode } from 'expo-av';
 
 const { width } = Dimensions.get('window');
 
@@ -22,18 +23,21 @@ const slides = [
     title: 'SHOP',
     description: 'Discover great deals from local merchants and online retailers.',
     image: require('../assets/images/slider-image-1.png'),
+    video: require('../assets/videos/shop-loop.mp4'), // Add your video file here
   },
   {
     key: '2',
     title: 'SAVE',
     description: 'Earn rewards and savings every time you shop.',
     image: require('../assets/images/slider-image-2.png'),
+    video: require('../assets/videos/save-loop.mp4'), // Add your video file here
   },
   {
     key: '3',
     title: 'GIVE',
     description: 'Support causes that matter to you through everyday purchases.',
     image: require('../assets/images/slider-image-3.png'),
+    video: require('../assets/videos/give-loop.mp4'), // Add your video file here
   },
 ];
 
@@ -41,11 +45,48 @@ export default function Index() {
   const router = useRouter();
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef(null);
+  const videoRefs = useRef([]);
+  const [videoLoading, setVideoLoading] = useState({});
 
   const handleScroll = (event) => {
     const index = Math.round(event.nativeEvent.contentOffset.x / width);
     setCurrentIndex(index);
   };
+
+  const onVideoLoad = (index) => {
+    // Video loaded successfully
+    console.log(`Video ${index + 1} loaded`);
+    setVideoLoading(prev => ({ ...prev, [index]: false }));
+  };
+
+  const onVideoError = (index, error) => {
+    // Fallback to static image if video fails to load
+    console.log(`Video ${index + 1} error:`, error);
+    setVideoLoading(prev => ({ ...prev, [index]: false }));
+  };
+
+  // Set initial loading state for videos and add timeout fallback
+  React.useEffect(() => {
+    const initialLoading = {};
+    slides.forEach((_, index) => {
+      initialLoading[index] = true;
+    });
+    setVideoLoading(initialLoading);
+
+    // Add timeout fallback to hide loading after 3 seconds
+    const timeoutIds = slides.map((_, index) => 
+      setTimeout(() => {
+        setVideoLoading(prev => ({ ...prev, [index]: false }));
+      }, 3000)
+    );
+
+    // Cleanup timeouts
+    return () => {
+      timeoutIds.forEach(id => clearTimeout(id));
+    };
+  }, []);
+
+
 
   return (
     <SafeAreaView style={styles.container}>
@@ -70,10 +111,43 @@ export default function Index() {
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onScroll={handleScroll}
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <View style={styles.slide}>
             <View style={styles.circleWrapper}>
-              {/* Removed the image inside the gray circle */}
+              {item.video ? (
+                <View style={styles.videoContainer}>
+                  <Video
+                    ref={(ref) => (videoRefs.current[index] = ref)}
+                    source={item.video}
+                    style={styles.circleVideo}
+                    resizeMode={ResizeMode.COVER}
+                    shouldPlay={true}
+                    isLooping={true}
+                    isMuted={true}
+                    onLoad={() => onVideoLoad(index)}
+                    onError={(error) => onVideoError(index, error)}
+                    onPlaybackStatusUpdate={(status) => {
+                      if (status.isLoaded && status.isPlaying) {
+                        // Video is loaded and playing, hide loading
+                        setVideoLoading(prev => ({ ...prev, [index]: false }));
+                      }
+                    }}
+                    useNativeControls={false}
+                  />
+                  {videoLoading[index] && (
+                    <View style={styles.videoLoadingOverlay}>
+                      <Text style={styles.videoLoadingText}>Loading...</Text>
+                    </View>
+                  )}
+                </View>
+              ) : (
+                // Fallback to static image if video is not available
+                <Image 
+                  source={item.image} 
+                  style={styles.circleVideo} 
+                  resizeMode="contain"
+                />
+              )}
             </View>
             <Text style={styles.slideTitle}>{item.title}</Text>
             <Text style={styles.slideDescription}>{item.description}</Text>
@@ -138,7 +212,7 @@ const styles = StyleSheet.create({
   circleWrapper: {
     width: 300,
     height: 300,
-    borderRadius: 140,
+    borderRadius: 150,
     backgroundColor: '#DADADA',
     justifyContent: 'center',
     alignItems: 'center',
@@ -147,11 +221,39 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 5 },
     marginBottom: 30,
+    overflow: 'hidden', // Ensure video stays within circle bounds
   },
-  circleImage: {
-    width: 400,
-    height: 400,
-  },
+      circleVideo: {
+      width: 300,
+      height: 300,
+      borderRadius: 150,
+    },
+    videoContainer: {
+      position: 'relative',
+      width: 300,
+      height: 300,
+      borderRadius: 150,
+    },
+    videoLoadingOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderRadius: 150,
+    },
+    videoLoadingText: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    circleImage: {
+      width: 400,
+      height: 400,
+    },
   slideTitle: {
     fontSize: 22,
     fontWeight: '700',

@@ -7,35 +7,32 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Modal,
-  Pressable,
-  Alert,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign, Feather } from '@expo/vector-icons';
-import ScrollPicker from '../../../components/ScrollPicker'; 
-
-const YEARS = ['2023', '2024', '2025'];
-const MONTHS = ['NOV', 'DEC', 'JAN', 'FEB', 'MAR'];
 
 export default function DonationSummary() {
   const router = useRouter();
 
-  const [viewMode, setViewMode] = useState('monthly');
-  const [isFilterModalVisible, setFilterModalVisible] = useState(false);
-  const [isYearModalVisible, setIsYearModalVisible] = useState(false);
-  const [isMonthModalVisible, setIsMonthModalVisible] = useState(false);
+  // Sample data - replace with actual data from your backend
+  const monthlyDonations = [
+    { month: 'January 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
+    { month: 'February 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
+    { month: 'March 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
+    { month: 'April 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
+    { month: 'May 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
+    { month: 'June 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
+    { month: 'July 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
+    { month: 'August 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
+    { month: 'September 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
+    { month: 'October 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
+    { month: 'November 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
+    { month: 'December 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'pending' },
+  ];
 
-  const [viewType, setViewType] = useState('monthly');
-  const [selectedYear, setSelectedYear] = useState('2023');
-  const [selectedMonth, setSelectedMonth] = useState('JAN');
-
-  const handleDownloadIconPress = () => setFilterModalVisible(true);
-
-  const applyFilter = () => {
-    setFilterModalVisible(false);
-    setTimeout(() => setIsYearModalVisible(true), 300);
-  };
+  const totalDonated = monthlyDonations.filter(d => d.status === 'completed').reduce((sum, d) => sum + d.amount, 0);
+  const currentCharity = monthlyDonations[0]?.charity || 'No charity selected';
 
   return (
     <View style={styles.container}>
@@ -45,97 +42,92 @@ export default function DonationSummary() {
           <AntDesign name="arrowleft" size={24} color="#324E58" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Donation Summary</Text>
-        <TouchableOpacity onPress={handleDownloadIconPress}>
-          <Feather name="download" size={24} color="#324E58" />
+        <TouchableOpacity style={styles.downloadButton}>
+          <Feather name="download" size={20} color="#DB8633" />
         </TouchableOpacity>
       </View>
 
-      {/* Totals */}
-      <View style={styles.summaryRow}>
-        <TouchableOpacity
-          onPress={() => setViewMode('monthly')}
-          style={[styles.summaryCard, viewMode === 'monthly' ? styles.cardActive : styles.cardInactive]}
-        >
-          <Text style={[styles.summaryAmount, viewMode !== 'monthly' && styles.cardInactiveText]}>$596</Text>
-          <Text style={[styles.summaryLabel, viewMode !== 'monthly' && styles.cardInactiveText]}>Total Donation</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setViewMode('oneTime')}
-          style={[styles.summaryCard, viewMode === 'oneTime' ? styles.cardActive : styles.cardInactive]}
-        >
-          <Text style={[styles.summaryAmount, viewMode !== 'oneTime' && styles.cardInactiveText]}>$100</Text>
-          <Text style={[styles.summaryLabel, viewMode !== 'oneTime' && styles.cardInactiveText]}>Total One Time Gifts</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* List */}
-      <ScrollView contentContainerStyle={styles.listContent}>
-        {Array.from({ length: 12 }).map((_, i) => (
-          <View style={styles.row} key={i}>
-            <Text style={styles.rowLabel}>Month {i + 1}</Text>
-            <View style={styles.rowRight}>
-              <Text style={styles.rowAmount}>$15</Text>
-              <AntDesign name="right" size={16} color="#324E58" style={{ marginLeft: 5 }} />
+      {/* Scrollable Content */}
+      <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+        {/* Current Charity Card */}
+        <View style={styles.charityCard}>
+          <View style={styles.charityHeader}>
+            <Image 
+              source={require('../../../assets/images/child-cancer.jpg')} 
+              style={styles.charityLogo} 
+            />
+            <View style={styles.charityInfo}>
+              <Text style={styles.charityTitle}>Current Beneficiary</Text>
+              <Text style={styles.charityName}>{currentCharity}</Text>
             </View>
           </View>
-        ))}
+          <View style={styles.charityStats}>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>${totalDonated}</Text>
+              <Text style={styles.statLabel}>Total Donated</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>${15}</Text>
+              <Text style={styles.statLabel}>Monthly Amount</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{monthlyDonations.filter(d => d.status === 'completed').length}</Text>
+              <Text style={styles.statLabel}>Months Active</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Monthly Breakdown */}
+        <View style={styles.breakdownSection}>
+          <Text style={styles.sectionTitle}>Monthly Breakdown</Text>
+          {monthlyDonations.map((donation, index) => (
+            <View key={index} style={styles.donationRow}>
+              <View style={styles.donationInfo}>
+                <Text style={styles.donationMonth}>{donation.month}</Text>
+                <Text style={styles.donationCharity}>{donation.charity}</Text>
+              </View>
+              <View style={styles.donationRight}>
+                <Text style={styles.donationAmount}>${donation.amount}</Text>
+                <View style={[
+                  styles.statusDot, 
+                  { backgroundColor: donation.status === 'completed' ? '#10B981' : '#F59E0B' }
+                ]} />
+              </View>
+            </View>
+          ))}
+        </View>
+
+        {/* Tax Summary */}
+        <View style={styles.taxSection}>
+          <Text style={styles.sectionTitle}>Tax Summary</Text>
+          <View style={styles.taxCard}>
+            <View style={styles.taxRow}>
+              <Text style={styles.taxLabel}>Total Donations (2024)</Text>
+              <Text style={styles.taxValue}>${totalDonated}</Text>
+            </View>
+            <View style={styles.taxRow}>
+              <Text style={styles.taxLabel}>Charity Name</Text>
+              <Text style={styles.taxValue}>{currentCharity}</Text>
+            </View>
+            <View style={styles.taxRow}>
+              <Text style={styles.taxLabel}>EIN Number</Text>
+              <Text style={styles.taxValue}>13-1351653</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Bottom Spacer */}
+        <View style={{ height: 40 }} />
       </ScrollView>
-
-      {/* Filter Modal */}
-      <Modal visible={isFilterModalVisible} transparent animationType="slide">
-        <Pressable style={styles.modalBackdrop} onPress={() => setFilterModalVisible(false)}>
-          <Pressable style={styles.modalContainer} onPress={() => {}}>
-            <View style={styles.handleBar} />
-            <Text style={styles.modalTitle}>Filters</Text>
-            {['monthly', 'yearly'].map((type) => (
-              <TouchableOpacity key={type} style={styles.checkboxRow} onPress={() => setViewType(type)}>
-                <View style={[styles.checkbox, viewType === type && styles.checkboxSelected]}>
-                  {viewType === type && <AntDesign name="check" size={14} color="#fff" />}
-                </View>
-                <Text style={styles.checkboxLabel}>{type === 'monthly' ? 'Monthly View' : 'Yearly View'}</Text>
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity style={styles.modalButton} onPress={applyFilter}>
-              <Text style={styles.modalButtonText}>Apply Filters</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* Year Scroll Picker */}
-      <ScrollPicker
-        visible={isYearModalVisible}
-        title="Select Year"
-        options={YEARS}
-        selectedValue={selectedYear}
-        onSelect={setSelectedYear}
-        onConfirm={() => {
-          setIsYearModalVisible(false);
-          if (viewType === 'monthly') setIsMonthModalVisible(true);
-          else Alert.alert('📄 Downloading PDF', `Yearly report for ${selectedYear}`);
-        }}
-        onClose={() => setIsYearModalVisible(false)}
-      />
-
-      {/* Month Scroll Picker */}
-      <ScrollPicker
-        visible={isMonthModalVisible}
-        title="Select Month"
-        options={MONTHS}
-        selectedValue={selectedMonth}
-        onSelect={setSelectedMonth}
-        onConfirm={() => {
-          setIsMonthModalVisible(false);
-          Alert.alert('📄 Downloading PDF', `Monthly report for ${selectedMonth} ${selectedYear}`);
-        }}
-        onClose={() => setIsMonthModalVisible(false)}
-      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff', paddingTop: 60 },
+  scrollContainer: { flex: 1 },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -143,25 +135,81 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   headerTitle: { fontSize: 18, fontWeight: '600', color: '#324E58' },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    padding: 16,
+  downloadButton: {
+    padding: 8,
   },
-  summaryCard: {
-    flex: 1,
-    padding: 16,
-    marginHorizontal: 8,
+  charityCard: {
+    backgroundColor: '#F5F5FA',
     borderRadius: 12,
+    marginHorizontal: 20,
+    marginTop: 20,
+    padding: 20,
     alignItems: 'center',
   },
-  cardActive: { backgroundColor: '#DB8633' },
-  cardInactive: { backgroundColor: '#F5F5FA' },
-  cardInactiveText: { color: '#324E58' },
-  summaryAmount: { fontSize: 24, fontWeight: '700', color: '#fff' },
-  summaryLabel: { fontSize: 14, color: '#fff' },
-  listContent: { padding: 20 },
-  row: {
+  charityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  charityLogo: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 15,
+  },
+  charityInfo: {
+    flex: 1,
+  },
+  charityTitle: {
+    fontSize: 14,
+    color: '#324E58',
+    marginBottom: 2,
+  },
+  charityName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#DB8633',
+  },
+  charityStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#DB8633',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#324E58',
+    marginTop: 5,
+  },
+  statDivider: {
+    width: 1,
+    height: '80%',
+    backgroundColor: '#eee',
+  },
+  breakdownSection: {
+    marginHorizontal: 20,
+    marginTop: 20,
+    padding: 20,
+    backgroundColor: '#F5F5FA',
+    borderRadius: 12,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#324E58',
+    marginBottom: 15,
+  },
+  donationsList: {
+    // No specific styles needed for ScrollView, content is handled by donationRow
+  },
+  donationRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -169,70 +217,59 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
-  rowLabel: { fontSize: 16, color: '#324E58' },
-  rowRight: { flexDirection: 'row', alignItems: 'center' },
-  rowAmount: { fontSize: 16, fontWeight: '500', color: '#324E58' },
-
-  modalBackdrop: {
+  donationInfo: {
     flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.4)',
   },
-  modalContainer: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 40,
-  },
-  handleBar: {
-    width: 40,
-    height: 4,
-    backgroundColor: '#ccc',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 12,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 12,
+  donationMonth: {
+    fontSize: 16,
     color: '#324E58',
+    marginBottom: 2,
   },
-  checkboxRow: {
+  donationCharity: {
+    fontSize: 14,
+    color: '#666',
+  },
+  donationRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 8,
   },
-  checkbox: {
-    height: 20,
-    width: 20,
-    borderWidth: 2,
-    borderColor: '#DB8633',
-    borderRadius: 4,
-    marginRight: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkboxSelected: {
-    backgroundColor: '#DB8633',
-  },
-  checkboxLabel: {
+  donationAmount: {
     fontSize: 16,
+    fontWeight: '500',
+    color: '#324E58',
+    marginRight: 10,
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  taxSection: {
+    marginHorizontal: 20,
+    marginTop: 20,
+    padding: 20,
+    backgroundColor: '#F5F5FA',
+    borderRadius: 12,
+  },
+  taxCard: {
+    padding: 15,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#eee',
+  },
+  taxRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  taxLabel: {
+    fontSize: 14,
     color: '#324E58',
   },
-  modalButton: {
-    marginTop: 20,
-    backgroundColor: '#DB8633',
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  modalButtonText: {
-    color: '#fff',
+  taxValue: {
+    fontSize: 14,
     fontWeight: '600',
-    fontSize: 16,
+    color: '#DB8633',
   },
 });
