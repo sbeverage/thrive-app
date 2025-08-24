@@ -35,6 +35,7 @@ export default function BeneficiaryFilter() {
   const [type, setType] = useState('');
   const [cause, setCause] = useState('');
   const [emergency, setEmergency] = useState('');
+  const [showFavorites, setShowFavorites] = useState(false);
   const [isCauseDropdownOpen, setIsCauseDropdownOpen] = useState(false);
   const [isEmergencyDropdownOpen, setIsEmergencyDropdownOpen] = useState(false);
   const router = useRouter();
@@ -78,6 +79,26 @@ export default function BeneficiaryFilter() {
           />
           <Feather name="crosshair" size={20} color="#666" style={styles.icon} />
         </View>
+      </View>
+
+      {/* Favorites Filter */}
+      <View style={styles.fieldGroup}>
+        <Text style={styles.label}>Show favorites only</Text>
+        <TouchableOpacity
+          style={[styles.favoritesToggle, showFavorites && styles.favoritesToggleActive]}
+          onPress={() => setShowFavorites(!showFavorites)}
+        >
+          <View style={styles.favoritesToggleContent}>
+            <AntDesign 
+              name={showFavorites ? 'heart' : 'hearto'} 
+              size={20} 
+              color={showFavorites ? '#D0861F' : '#D0861F'} 
+            />
+            <Text style={[styles.favoritesToggleText, showFavorites && styles.favoritesToggleTextActive]}>
+              {showFavorites ? 'Showing Favorites Only' : 'Show All Favorites'}
+            </Text>
+          </View>
+        </TouchableOpacity>
       </View>
 
       {/* Cause Dropdown */}
@@ -272,6 +293,35 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  
+  // Favorites Toggle Styles
+  favoritesToggle: {
+    backgroundColor: '#f5f5fa',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+  },
+  favoritesToggleActive: {
+    backgroundColor: '#FFF5EB',
+    borderColor: '#D0861F',
+  },
+  favoritesToggleContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  favoritesToggleText: {
+    fontSize: 16,
+    color: '#324E58',
+    fontWeight: '500',
+  },
+  favoritesToggleTextActive: {
+    color: '#D0861F',
     fontWeight: '600',
   },
 });

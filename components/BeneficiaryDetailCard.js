@@ -7,10 +7,9 @@ import {
   TouchableOpacity,
   Image,
   ScrollView,
-  FlatList,
   Dimensions,
 } from 'react-native';
-import { AntDesign, Feather } from '@expo/vector-icons';
+import { AntDesign, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useSegments } from 'expo-router';
 
 const screenWidth = Dimensions.get('window').width;
@@ -27,21 +26,17 @@ export default function BeneficiaryDetailCard({ data, onSelect, showBackArrow = 
 
   const isSignupFlow = segments.includes('signupFlow');
   const presetAmounts = [5, 10, 15];
-  const posts = [
-    { id: '1', image: data.image, text: 'Lorem ipsum dolor sit amet...' },
-    { id: '2', image: data.image, text: 'Lorem ipsum dolor sit amet...' },
-  ];
 
-  const aboutPreview = data.about?.split(' ').slice(0, 35).join(' ') + '...';
+  const aboutPreview = data.about?.split(' ').slice(0, 60).join(' ') + '...';
 
   return (
-    <ScrollView style={styles.containerNoFlex} contentContainerStyle={{ paddingBottom: 40 }}>
+    <ScrollView style={styles.containerNoFlex} contentContainerStyle={{ paddingBottom: 20 }}>
       {/* Header */}
       <View style={styles.headerRow}>
         {showBackArrow && (
-          <TouchableOpacity onPress={router.back}>
-            <AntDesign name="arrowleft" size={24} color="#21555b" />
-          </TouchableOpacity>
+        <TouchableOpacity onPress={router.back}>
+          <AntDesign name="arrowleft" size={24} color="#21555b" />
+        </TouchableOpacity>
         )}
       </View>
 
@@ -57,8 +52,8 @@ export default function BeneficiaryDetailCard({ data, onSelect, showBackArrow = 
 
       <View style={styles.infoBox}>
         <Text style={styles.title}>{data.name}</Text>
-        <Text style={styles.likes}>500 likes</Text>
-        <Text style={styles.mutual}>+20 others friends like this beneficiary</Text>
+        <Text style={styles.likes}>500+ supporters</Text>
+        <Text style={styles.mutual}>Join our community of changemakers</Text>
 
         {/* Buttons */}
         <View style={styles.buttonRow}>
@@ -75,7 +70,7 @@ export default function BeneficiaryDetailCard({ data, onSelect, showBackArrow = 
               style={[styles.iconLeft, { tintColor: '#fff' }]}
             />
             <Text style={styles.btnText}>
-              {isSignupFlow ? 'Select to Donate' : 'Select As My Beneficiary'}
+              {isSignupFlow ? 'Select This Cause' : 'Select As My Beneficiary'}
             </Text>
           </TouchableOpacity>
 
@@ -98,12 +93,12 @@ export default function BeneficiaryDetailCard({ data, onSelect, showBackArrow = 
         <View style={styles.tabRow}>
           <TouchableOpacity onPress={() => setActiveTab('about')}>
             <Text style={activeTab === 'about' ? styles.tabActive : styles.tabInactive}>
-              About Beneficiary
+              About & Impact
             </Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setActiveTab('volunteer')}>
             <Text style={activeTab === 'volunteer' ? styles.tabActive : styles.tabInactive}>
-              Volunteer Opportunities
+              Get Involved
             </Text>
           </TouchableOpacity>
         </View>
@@ -111,49 +106,122 @@ export default function BeneficiaryDetailCard({ data, onSelect, showBackArrow = 
         {/* Tab Content */}
         {activeTab === 'about' ? (
           <>
-            <Text style={styles.sectionTitle}>About</Text>
-            <Text style={styles.aboutText}>
-              {showFullAbout ? data.about : aboutPreview}
-              {!showFullAbout && (
-                <Text onPress={() => setShowFullAbout(true)} style={styles.readMore}>
-                  {' '}Read More
-                </Text>
-              )}
-            </Text>
-
-            <Text style={styles.infoLine}><Text style={styles.label}>EIN:</Text> {data.ein}</Text>
-            <Text style={styles.infoLine}><Text style={styles.label}>Website:</Text> {data.website}</Text>
-            <Text style={styles.infoLine}><Text style={styles.label}>Phone:</Text> {data.phone}</Text>
-            <Text style={styles.infoLine}><Text style={styles.label}>Social Media:</Text> {data.social}</Text>
-
-            <View style={styles.activityHeader}>
-              <Text style={styles.sectionTitle}>Activity</Text>
-              <TouchableOpacity>
-                <Text style={styles.viewAll}>View All Posts</Text>
-              </TouchableOpacity>
+            {/* Enhanced About Section */}
+            <View style={styles.aboutSection}>
+              <Text style={styles.sectionTitle}>About</Text>
+              <Text style={styles.aboutText}>
+                {showFullAbout ? data.about : aboutPreview}
+                {!showFullAbout && (
+                  <Text onPress={() => setShowFullAbout(true)} style={styles.readMore}>
+                    {' '}Read More
+                  </Text>
+                )}
+              </Text>
             </View>
 
-            <FlatList
-              data={posts}
-              keyExtractor={item => item.id}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <View style={styles.postCard}>
-                  <Image source={item.image} style={styles.postImage} />
-                  <Text style={styles.postText}>{item.text}</Text>
-                  <View style={styles.iconRow}>
-                    <Feather name="repeat" size={18} color="#324E58" />
-                    <Feather name="share-2" size={18} color="#324E58" style={{ marginLeft: 16 }} />
-                  </View>
+            {/* Why This Matters Section */}
+            <View style={styles.impactSection}>
+              <Text style={styles.sectionTitle}>Why This Matters</Text>
+              <Text style={styles.impactText}>
+                Every donation directly supports families in need, providing immediate relief and long-term solutions. Your generosity creates real change in our community.
+              </Text>
+            </View>
+
+            {/* Impact Metrics */}
+            <View style={styles.metricsSection}>
+              <Text style={styles.sectionTitle}>Our Impact</Text>
+              <View style={styles.metricsGrid}>
+                <View style={styles.metricCard}>
+                  <MaterialIcons name="people" size={24} color="#DB8633" />
+                  <Text style={styles.metricNumber}>10,000+</Text>
+                  <Text style={styles.metricLabel}>Families Helped</Text>
                 </View>
-              )}
-            />
+                <View style={styles.metricCard}>
+                  <MaterialIcons name="location-on" size={24} color="#DB8633" />
+                  <Text style={styles.metricNumber}>25</Text>
+                  <Text style={styles.metricLabel}>Communities Served</Text>
+                </View>
+                <View style={styles.metricCard}>
+                  <MaterialIcons name="volunteer-activism" size={24} color="#DB8633" />
+                  <Text style={styles.metricNumber}>95%</Text>
+                  <Text style={styles.metricLabel}>Direct to Programs</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Success Story */}
+            <View style={styles.storySection}>
+              <Text style={styles.sectionTitle}>Success Story</Text>
+              <View style={styles.storyCard}>
+                <Text style={styles.storyText}>
+                  "Thanks to generous donors like you, we were able to provide emergency housing for the Johnson family during their crisis. Your support makes these miracles possible." 
+                </Text>
+                <Text style={styles.storyAuthor}>- Sarah M., Program Director</Text>
+              </View>
+            </View>
+
+            {/* Your Impact */}
+            <View style={styles.yourImpactSection}>
+              <Text style={styles.sectionTitle}>Your Impact</Text>
+              <View style={styles.impactCard}>
+                <MaterialIcons name="favorite" size={20} color="#DB8633" />
+                <Text style={styles.impactText}>
+                  Every $25 provides a family with essential supplies for one week
+                </Text>
+              </View>
+              <View style={styles.impactCard}>
+                <MaterialIcons name="home" size={20} color="#DB8633" />
+                <Text style={styles.impactText}>
+                  Every $100 helps provide emergency housing for families in crisis
+                </Text>
+              </View>
+            </View>
+
+            {/* Trust & Transparency */}
+            <View style={styles.trustSection}>
+              <Text style={styles.sectionTitle}>Trust & Transparency</Text>
+              <View style={styles.trustRow}>
+                <MaterialIcons name="verified" size={20} color="#4CA1AF" />
+                <Text style={styles.trustText}>Verified 501(c)(3) Nonprofit</Text>
+              </View>
+              <View style={styles.trustRow}>
+                <MaterialIcons name="account-balance" size={20} color="#4CA1AF" />
+                <Text style={styles.trustText}>EIN: {data.ein}</Text>
+              </View>
+              <View style={styles.trustRow}>
+                <MaterialIcons name="language" size={20} color="#4CA1AF" />
+                <Text style={styles.trustText}>Website: {data.website}</Text>
+              </View>
+              <View style={styles.trustRow}>
+                <MaterialIcons name="phone" size={20} color="#4CA1AF" />
+                <Text style={styles.trustText}>Phone: {data.phone}</Text>
+              </View>
+            </View>
           </>
         ) : (
-          <Text style={{ color: '#888', fontSize: 16, marginTop: 24, textAlign: 'center' }}>
-            Volunteer opportunities coming soon.
-          </Text>
+          <View style={styles.volunteerSection}>
+            <Text style={styles.sectionTitle}>Get Involved</Text>
+            <Text style={styles.volunteerText}>
+              Beyond financial support, there are many ways to make a difference:
+            </Text>
+            <View style={styles.volunteerOptions}>
+              <View style={styles.volunteerOption}>
+                <MaterialIcons name="volunteer-activism" size={24} color="#DB8633" />
+                <Text style={styles.volunteerOptionText}>Volunteer at events</Text>
+              </View>
+              <View style={styles.volunteerOption}>
+                <MaterialIcons name="share" size={24} color="#DB8633" />
+                <Text style={styles.volunteerOptionText}>Spread awareness</Text>
+              </View>
+              <View style={styles.volunteerOption}>
+                <MaterialIcons name="groups" size={24} color="#DB8633" />
+                <Text style={styles.volunteerOptionText}>Join committees</Text>
+              </View>
+            </View>
+            <Text style={styles.volunteerNote}>
+              Contact us to learn more about volunteer opportunities and how you can get involved in our mission.
+            </Text>
+          </View>
         )}
       </View>
     </ScrollView>
@@ -162,22 +230,39 @@ export default function BeneficiaryDetailCard({ data, onSelect, showBackArrow = 
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  containerNoFlex: { backgroundColor: '#fff' },
+  containerNoFlex: { 
+    backgroundColor: '#fff',
+    width: '100%',
+  },
   headerRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 0, paddingBottom: 16 },
   header: { fontSize: 18, fontWeight: '600', marginLeft: 12, color: '#21555b' },
   imageCarousel: { width: '100%', height: 200 },
   mainImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   profileRow: { flexDirection: 'row', alignItems: 'center', marginTop: -40, marginLeft: 16 },
   profileImage: { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: '#fff' },
-  infoBox: { paddingHorizontal: 24, paddingBottom: 120 },
+  infoBox: { 
+    paddingBottom: 20,
+    width: '100%',
+  },
   iconLeft: { width: 18, height: 18, marginRight: 8, resizeMode: 'contain' },
-  likes: { fontSize: 14, color: '#666', marginTop: 4 },
-  mutual: { fontSize: 12, color: '#888', marginVertical: 8 },
+  likes: { 
+    fontSize: 14, 
+    color: '#666', 
+    marginTop: 4,
+    paddingLeft: 24,
+  },
+  mutual: { 
+    fontSize: 12, 
+    color: '#888', 
+    marginVertical: 8,
+    paddingLeft: 24,
+  },
   buttonRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 12,
     marginBottom: 16,
+    paddingHorizontal: 24,
   },
   primaryBtn: {
     flex: 1,
@@ -205,6 +290,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderColor: '#eee',
+    paddingHorizontal: 24,
   },
   tabActive: {
     fontWeight: '700',
@@ -282,5 +368,131 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   donateBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  title: { fontSize: 20, fontWeight: '700', color: '#21555b', marginTop: 8 },
+  title: { 
+    fontSize: 20, 
+    fontWeight: '700', 
+    color: '#21555b', 
+    marginTop: 8,
+    paddingHorizontal: 24,
+  },
+  aboutSection: { 
+    marginTop: 24,
+    paddingHorizontal: 24,
+  },
+  impactSection: { 
+    marginTop: 24,
+    paddingHorizontal: 24,
+  },
+  impactText: { fontSize: 14, color: '#444', lineHeight: 20, marginTop: 8 },
+  metricsSection: { 
+    marginTop: 24,
+    paddingHorizontal: 24,
+  },
+  metricsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 16,
+  },
+  metricCard: {
+    alignItems: 'center',
+    width: screenWidth * 0.25,
+    textAlign: 'center',
+  },
+  metricNumber: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#DB8633',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  metricLabel: { 
+    fontSize: 12, 
+    color: '#666', 
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  storySection: { 
+    marginTop: 24,
+    paddingHorizontal: 24,
+  },
+  storyCard: {
+    backgroundColor: '#F2F2F5',
+    borderRadius: 10,
+    padding: 16,
+    marginTop: 16,
+  },
+  storyText: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  storyAuthor: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'right',
+  },
+  yourImpactSection: { 
+    marginTop: 24,
+    paddingHorizontal: 24,
+  },
+  impactCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F2F2F5',
+    borderRadius: 10,
+    padding: 16,
+    marginTop: 16,
+  },
+  impactText: {
+    fontSize: 14,
+    color: '#333',
+    marginLeft: 12,
+    flex: 1,
+  },
+  trustSection: { 
+    marginTop: 24,
+    paddingHorizontal: 24,
+    marginBottom: 0,
+  },
+  trustRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  trustText: {
+    fontSize: 14,
+    color: '#4CA1AF',
+    marginLeft: 8,
+  },
+  volunteerSection: { 
+    marginTop: 24,
+    paddingHorizontal: 24,
+    marginBottom: 0,
+  },
+  volunteerText: {
+    fontSize: 14,
+    color: '#444',
+    lineHeight: 20,
+    marginTop: 12,
+  },
+  volunteerOptions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 16,
+  },
+  volunteerOption: {
+    alignItems: 'center',
+  },
+  volunteerOptionText: {
+    fontSize: 12,
+    color: '#DB8633',
+    marginTop: 8,
+  },
+  volunteerNote: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 16,
+    textAlign: 'center',
+  },
 });

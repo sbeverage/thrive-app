@@ -46,7 +46,7 @@ export default function ExplainerDonate() {
           {/* Nonprofit Badge */}
           <View style={styles.nonprofitBadge}>
             <AntDesign name="heart" size={16} color="#fff" />
-            <Text style={styles.nonprofitText}>Nonprofit Organization</Text>
+            <Text style={styles.nonprofitText}>Watch Video</Text>
           </View>
 
           {/* Main Headline */}
@@ -63,7 +63,7 @@ export default function ExplainerDonate() {
               <View style={styles.benefitText}>
                 <Text style={styles.benefitTitle}>100% to Charity</Text>
                 <Text style={styles.benefitDescription}>
-                  All proceeds go directly to your chosen beneficiary and our nonprofit organization
+                  All proceeds go directly to our nonprofit organization and your chosen beneficiary
                 </Text>
               </View>
             </View>

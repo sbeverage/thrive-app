@@ -8,10 +8,16 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Dimensions,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { AntDesign } from '@expo/vector-icons'; // ✅ Added for back arrow
+import { AntDesign } from '@expo/vector-icons';
 import API from './lib/api';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -35,96 +41,158 @@ export default function LoginScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {/* Back Arrow */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <AntDesign name="arrowleft" size={24} color="#324E58" />
-        </TouchableOpacity>
+    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      {/* Blue gradient as absolute background for top half */}
+      <View style={styles.gradientAbsoluteBg} pointerEvents="none">
+        <LinearGradient
+          colors={["#2C3E50", "#4CA1AF"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradientBg}
+        />
       </View>
-
-      {/* Piggy and Brand */}
-      <Image
-        source={require('../assets/images/piggy-with-flowers.png')}
-        style={styles.logo}
-      />
-      <Image
-        source={require('../assets/images/thrive-logo.png')}
-        style={styles.brand}
-      />
-      <Text style={styles.tagline}>Doing good is simple & rewarding.</Text>
-
-      {/* Email and Password Inputs */}
-      <TextInput
-        placeholder="Email Address"
-        style={styles.input}
-        placeholderTextColor="#6d6e72"
-        autoCapitalize="none"
-        value={email}
-        onChangeText={setEmail}
-      />
-      <TextInput
-        placeholder="Password"
-        style={styles.input}
-        placeholderTextColor="#6d6e72"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
-
-      {/* Forgot Password Link */}
-      <TouchableOpacity
-        style={styles.forgotPassword}
-        onPress={() => router.push('/forgotPassword')}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
       >
-        <Text style={styles.forgotText}>Forgot Password</Text>
-      </TouchableOpacity>
+        <ScrollView contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'flex-start' }} keyboardShouldPersistTaps="handled">
+          <TouchableOpacity style={styles.backArrow} onPress={() => router.back()}>
+            <AntDesign name="arrowleft" size={24} color="#324E58" />
+          </TouchableOpacity>
+          <View style={styles.piggyLogoColumn}>
+            <Image source={require('../assets/images/piggy-with-flowers.png')} style={styles.logo} />
+            <Image source={require('../assets/logos/thrive-logo-white.png')} style={styles.brand} />
+            <Text style={styles.welcomeMessage}>Welcome Back! 🎉</Text>
+          </View>
+          <View style={styles.infoCard}>
+            <TextInput
+              placeholder="Email Address"
+              style={styles.input}
+              placeholderTextColor="#6d6e72"
+              autoCapitalize="none"
+              value={email}
+              onChangeText={setEmail}
+            />
+            <TextInput
+              placeholder="Password"
+              style={styles.input}
+              placeholderTextColor="#6d6e72"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+            />
+            
+            {/* Forgot Password Link */}
+            <TouchableOpacity
+              style={styles.forgotPassword}
+              onPress={() => router.push('/forgotPassword')}
+            >
+              <Text style={styles.forgotText}>Forgot Password?</Text>
+            </TouchableOpacity>
 
-      {/* Login Button */}
-      <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-        <Text style={styles.loginButtonText}>Login</Text>
-      </TouchableOpacity>
+            {/* Login Button */}
+            <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
+              <Text style={styles.loginButtonText}>Login</Text>
+            </TouchableOpacity>
 
-      {/* Link to Signup */}
-      <TouchableOpacity onPress={() => router.push('/signup')}>
-        <Text style={styles.signupLink}>I don't have an account</Text>
-      </TouchableOpacity>
-    </ScrollView>
+            <Text style={styles.orText}>Or login with</Text>
+            <View style={styles.socialIconsContainer}>
+              <TouchableOpacity style={styles.socialIconButton}>
+                <Image source={require('../assets/images/Facebook-icon.png')} style={styles.socialIcon} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.socialIconButton}>
+                <Image source={require('../assets/images/Google-icon.png')} style={styles.socialIcon} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.socialIconButton}>
+                <Image source={require('../assets/images/Apple-icon.png')} style={styles.socialIcon} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Link to Signup */}
+            <TouchableOpacity onPress={() => router.push('/signup')}>
+              <Text style={styles.signupLink}>I don't have an account</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    paddingTop: 60,
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    flexGrow: 1,
-    paddingHorizontal: 20,
+  gradientAbsoluteBg: { 
+    position: 'absolute', 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    height: SCREEN_HEIGHT * 0.45, 
+    zIndex: 0, 
+    overflow: 'hidden' 
   },
-  header: {
-    width: '100%',
-    marginBottom: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
+  gradientBg: { 
+    width: SCREEN_WIDTH, 
+    height: '100%', 
+    borderBottomLeftRadius: 40, 
+    borderBottomRightRadius: 40 
+  },
+  piggyLogoColumn: { 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    marginTop: 50, 
+    marginBottom: 10, 
+    zIndex: 1 
   },
   logo: {
-    width: 90,
-    height: 99,
+    width: 120,
+    height: 140,
     resizeMode: 'contain',
     marginBottom: 10,
   },
   brand: {
-    width: 200,
-    height: 35,
+    width: 163,
+    height: 29,
     resizeMode: 'contain',
-    marginBottom: 20,
+    marginBottom: 10,
   },
-  tagline: {
-    fontSize: 20,
-    color: '#6d6e72',
-    marginBottom: 30,
+  welcomeMessage: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginTop: 20,
     textAlign: 'center',
-    lineHeight: 28, // ✅ Same as beneficiary line spacing
+  },
+  infoCard: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 28,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
+    width: '90%',
+    maxWidth: 340,
+    alignSelf: 'center',
+    marginTop: 20,
+    marginBottom: 10,
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  backArrow: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    zIndex: 100,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderRadius: 20,
+    padding: 6,
+    marginBottom: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   input: {
     height: 48,
@@ -138,10 +206,12 @@ const styles = StyleSheet.create({
   },
   forgotPassword: {
     alignSelf: 'flex-end',
-    marginBottom: 30,
+    marginBottom: 20,
   },
   forgotText: {
     color: '#6d6e72',
+    fontSize: 14,
+    fontWeight: '500',
   },
   loginButton: {
     backgroundColor: '#db8633',
@@ -155,10 +225,38 @@ const styles = StyleSheet.create({
   loginButtonText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  orText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#6d6e72',
+    marginBottom: 20,
+  },
+  socialIconsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 25,
+  },
+  socialIconButton: {
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    borderRadius: 8,
+    marginHorizontal: 8,
+  },
+  socialIcon: {
+    width: 32,
+    height: 32,
+    resizeMode: 'contain',
   },
   signupLink: {
     textDecorationLine: 'underline',
     color: '#324e58',
     marginBottom: 20,
+    fontSize: 16,
+    fontWeight: '500',
   },
 });

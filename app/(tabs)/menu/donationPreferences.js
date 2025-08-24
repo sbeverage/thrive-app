@@ -71,7 +71,7 @@ export default function DonationAmount() {
           <Text style={styles.heroTitle}>Choose Your Impact</Text>
           <Text style={styles.heroSubtitle}>
             Set your monthly donation amount. Every dollar makes a difference!
-          </Text>
+            </Text>
         </View>
 
         {/* Current Selection Card */}
@@ -105,7 +105,7 @@ export default function DonationAmount() {
                 </Text>
               </TouchableOpacity>
             ))}
-          </View>
+        </View>
         </View>
 
         {/* Custom Amount */}
@@ -113,12 +113,12 @@ export default function DonationAmount() {
           <Text style={styles.sectionTitle}>Custom Amount</Text>
           <View style={styles.customInputContainer}>
             <Text style={styles.inputPrefix}>$</Text>
-            <TextInput
-              value={amount.toString()}
+          <TextInput
+            value={amount.toString()}
               onChangeText={handleCustomInput}
               placeholder="Enter amount"
-              placeholderTextColor="#A0A0A0"
-              keyboardType="numeric"
+            placeholderTextColor="#A0A0A0"
+            keyboardType="numeric"
               style={styles.customInput}
               autoCorrect={false}
               autoCapitalize="none"

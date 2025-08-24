@@ -72,7 +72,7 @@ export default function LeaderboardScreen() {
           <View style={styles.header}>
             <TouchableOpacity onPress={() => router.back()}>
               <AntDesign name="arrowleft" size={24} color="#fff" />
-            </TouchableOpacity>
+      </TouchableOpacity>
             {/* Removed Leaderboard title and share icon */}
           </View>
 
@@ -161,7 +161,7 @@ export default function LeaderboardScreen() {
               <Image source={COIN_ICON} style={styles.leaderboardCoin} />
             </View>
           </View>
-        </View>
+    </View>
       </ScrollView>
     </SafeAreaView>
   );

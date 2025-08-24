@@ -1,6 +1,6 @@
 // app/signupProfile.js
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
-  Animated,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign, Feather } from '@expo/vector-icons';
@@ -28,65 +27,8 @@ export default function SignupProfile() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [profileImage, setProfileImage] = useState(null);
 
-  // Enhanced animation values
-  const piggyAnim = useRef(new Animated.Value(0)).current;
-  const welcomeAnim = useRef(new Animated.Value(0)).current;
-  const cardAnim = useRef(new Animated.Value(0)).current;
-  const cardScale = useRef(new Animated.Value(0.8)).current;
-  const gradientAnim = useRef(new Animated.Value(0)).current;
-  const buttonScale = useRef(new Animated.Value(1)).current;
-  const buttonOpacity = useRef(new Animated.Value(0)).current;
-  const inputAnim = useRef(new Animated.Value(0)).current;
-
   // Use static gradient colors for now
   const gradientColors = ["#2C3E50", "#4CA1AF"];
-
-  useEffect(() => {
-    // Sophisticated entrance animation sequence
-    Animated.sequence([
-      // Piggy slides up with bounce and rotation
-      Animated.spring(piggyAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-        tension: 40,
-        friction: 8,
-      }),
-      // Welcome text with typewriter effect simulation
-      Animated.timing(welcomeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      // Card slides up with scale and shadow
-      Animated.parallel([
-        Animated.spring(cardAnim, {
-          toValue: 1,
-          useNativeDriver: true,
-          tension: 50,
-          friction: 8,
-        }),
-        Animated.spring(cardScale, {
-          toValue: 1,
-          useNativeDriver: true,
-          tension: 50,
-          friction: 8,
-        }),
-      ]),
-      // Input fields fade in
-      Animated.timing(inputAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      // Button appears with bounce
-      Animated.spring(buttonOpacity, {
-        toValue: 1,
-        useNativeDriver: true,
-        tension: 50,
-        friction: 7,
-      }),
-    ]).start();
-  }, []);
 
   const handlePhoneChange = (text) => {
     const cleaned = ('' + text).replace(/\D/g, '');
@@ -105,73 +47,7 @@ export default function SignupProfile() {
   };
 
   const handleContinue = () => {
-    // Enhanced exit animation
-    Animated.parallel([
-      // Button scales and fades
-      Animated.parallel([
-        Animated.timing(buttonScale, {
-          toValue: 1.1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(buttonOpacity, {
-          toValue: 0.8,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]),
-      // Card slides out with scale
-      Animated.parallel([
-        Animated.timing(cardAnim, {
-          toValue: 0,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-        Animated.timing(cardScale, {
-          toValue: 0.9,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-      ]),
-      // Elements fade out
-      Animated.parallel([
-        Animated.timing(piggyAnim, {
-          toValue: 0,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-        Animated.timing(welcomeAnim, {
-          toValue: 0,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-        Animated.timing(inputAnim, {
-          toValue: 0,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-      ]),
-    ]).start(() => {
-      router.push('/signupFlow/explainerDonate');
-    });
-  };
-
-  const handleButtonPressIn = () => {
-    Animated.spring(buttonScale, {
-      toValue: 0.95,
-      useNativeDriver: true,
-      tension: 100,
-      friction: 5,
-    }).start();
-  };
-
-  const handleButtonPressOut = () => {
-    Animated.spring(buttonScale, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 100,
-      friction: 5,
-    }).start();
+    router.push('/signupFlow/explainerDonate');
   };
 
   // Helper to get initials
@@ -195,157 +71,77 @@ export default function SignupProfile() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      {/* Animated gradient background */}
-      <Animated.View style={styles.gradientAbsoluteBg} pointerEvents="none">
+      {/* Static gradient background */}
+      <View style={styles.gradientAbsoluteBg} pointerEvents="none">
         <LinearGradient
           colors={gradientColors}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.gradientBg}
         />
-      </Animated.View>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      </View>
+    <KeyboardAvoidingView 
+      style={{ flex: 1 }} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
-      >
+    >
         <ScrollView contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'flex-start' }} keyboardShouldPersistTaps="handled">
           <View style={styles.piggyWelcomeColumn}>
-            <Animated.View
-              style={{
-                transform: [
-                  {
-                    translateY: piggyAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [150, 0],
-                    }),
-                  },
-                  {
-                    scale: piggyAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.3, 1],
-                    }),
-                  },
-                  {
-                    rotate: piggyAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['-10deg', '0deg'],
-                    }),
-                  },
-                ],
-                opacity: piggyAnim,
-              }}
-            >
-              <Image source={require('../assets/images/bolt-piggy.png')} style={styles.piggyLarge} />
-            </Animated.View>
-            <Animated.View
-              style={{
-                opacity: welcomeAnim,
-                transform: [
-                  {
-                    translateY: welcomeAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [30, 0],
-                    }),
-                  },
-                  {
-                    scale: welcomeAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.8, 1],
-                    }),
-                  },
-                ],
-              }}
-            >
-              <Text style={styles.headerTextWhite}>WELCOME</Text>
-              <Text style={styles.subheaderTextWhite}>We're so excited to meet you.</Text>
-            </Animated.View>
+            <Image source={require('../assets/images/bolt-piggy.png')} style={styles.piggyLarge} />
+            <Text style={styles.headerTextWhite}>WELCOME</Text>
+            <Text style={styles.subheaderTextWhite}>We're so excited to meet you.</Text>
+        </View>
+          <View style={styles.infoCard}>
+      <TouchableOpacity style={styles.profileImageWrapper} onPress={pickImage} activeOpacity={0.8}>
+        {profileImage ? (
+          <Image source={{ uri: profileImage }} style={styles.profileImage} />
+        ) : (
+          <View style={styles.profilePlaceholder}>
+            <Text style={styles.initials}>{getInitials() || <Feather name="user" size={40} color="#324E58" />}</Text>
           </View>
-          <Animated.View
-            style={[
-              styles.infoCard,
-              {
-                transform: [
-                  {
-                    translateY: cardAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [300, 0],
-                    }),
-                  },
-                  {
-                    scale: cardScale,
-                  },
-                ],
-                opacity: cardAnim,
-                shadowOpacity: cardAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, 0.15],
-                }),
-                shadowRadius: cardAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, 12],
-                }),
-              },
-            ]}
-          >
-            <TouchableOpacity style={styles.profileImageWrapper} onPress={pickImage} activeOpacity={0.8}>
-              {profileImage ? (
-                <Image source={{ uri: profileImage }} style={styles.profileImage} />
-              ) : (
-                <View style={styles.profilePlaceholder}>
-                  <Text style={styles.initials}>{getInitials() || <Feather name="user" size={40} color="#324E58" />}</Text>
-                </View>
-              )}
-              <View style={styles.plusIconWrapper}>
-                <AntDesign name="pluscircle" size={32} color="#db8633" />
-              </View>
-            </TouchableOpacity>
-            <Animated.View style={{ width: '100%', opacity: inputAnim }}>
-              <TextInput
-                placeholder="First Name"
-                value={firstName}
-                onChangeText={setFirstName}
-                style={styles.input}
-                placeholderTextColor="#6d6e72"
-                autoCapitalize="words"
-              />
-              <TextInput
-                placeholder="Last Name"
-                value={lastName}
-                onChangeText={setLastName}
-                style={styles.input}
-                placeholderTextColor="#6d6e72"
-                autoCapitalize="words"
-              />
-              <TextInput
-                placeholder="Phone Number"
-                value={phoneNumber}
-                onChangeText={handlePhoneChange}
-                style={styles.input}
-                placeholderTextColor="#6d6e72"
-                keyboardType="phone-pad"
-              />
-            </Animated.View>
-            <Animated.View
-              style={{
-                opacity: buttonOpacity,
-                transform: [{ scale: buttonScale }],
-                width: '100%',
-              }}
-            >
+        )}
+        <View style={styles.plusIconWrapper}>
+          <AntDesign name="pluscircle" size={32} color="#db8633" />
+        </View>
+      </TouchableOpacity>
+            <View style={{ width: '100%' }}>
+      <TextInput
+        placeholder="First Name"
+        value={firstName}
+        onChangeText={setFirstName}
+        style={styles.input}
+        placeholderTextColor="#6d6e72"
+        autoCapitalize="words"
+      />
+      <TextInput
+        placeholder="Last Name"
+        value={lastName}
+        onChangeText={setLastName}
+        style={styles.input}
+        placeholderTextColor="#6d6e72"
+        autoCapitalize="words"
+      />
+      <TextInput
+        placeholder="Phone Number"
+        value={phoneNumber}
+        onChangeText={handlePhoneChange}
+        style={styles.input}
+        placeholderTextColor="#6d6e72"
+        keyboardType="phone-pad"
+      />
+            </View>
+            <View style={{ width: '100%' }}>
               <TouchableOpacity 
                 style={styles.continueButton} 
                 onPress={handleContinue}
-                onPressIn={handleButtonPressIn}
-                onPressOut={handleButtonPressOut}
-                activeOpacity={1}
+                activeOpacity={0.8}
               >
-                <Text style={styles.continueButtonText}>Continue</Text>
-              </TouchableOpacity>
-            </Animated.View>
-          </Animated.View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        <Text style={styles.continueButtonText}>Continue</Text>
+      </TouchableOpacity>
+            </View>
+          </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
     </View>
   );
 }

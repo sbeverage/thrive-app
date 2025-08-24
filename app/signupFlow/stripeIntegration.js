@@ -22,6 +22,7 @@ export default function StripeIntegration() {
   const [showModal, setShowModal] = useState(false);
   const [coverFees, setCoverFees] = useState(false);
   const [confettiTrigger, setConfettiTrigger] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('card'); // 'card' or 'applepay'
 
   // Animation values
   const piggyAnim = useRef(new Animated.Value(0)).current;
@@ -41,6 +42,14 @@ export default function StripeIntegration() {
   }, []);
 
   const handleContinue = () => {
+    setShowModal(true);
+  };
+
+  const handleApplePay = () => {
+    setSelectedPaymentMethod('applepay');
+    // Here you would integrate with Apple Pay
+    // For now, we'll just show a success message
+    // setSuccessMessage("Apple Pay selected! Processing payment..."); // This line was not in the new_code, so it's removed.
     setShowModal(true);
   };
 
@@ -68,15 +77,15 @@ export default function StripeIntegration() {
         keyboardVerticalOffset={0}
       >
         <ScrollView contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 60, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
-          {/* Top Navigation */}
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <AntDesign name="arrowleft" size={24} color="#324E58" />
-          </TouchableOpacity>
+      {/* Top Navigation */}
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <AntDesign name="arrowleft" size={24} color="#324E58" />
+        </TouchableOpacity>
           {/* Piggy and Amount Display in blue area */}
           <Animated.View style={{
             alignItems: 'center',
             justifyContent: 'center',
-            marginTop: 36,
+            marginTop: 20,
             marginBottom: 6,
             zIndex: 1,
             opacity: piggyAnim,
@@ -88,10 +97,10 @@ export default function StripeIntegration() {
               transform: [{ translateY: bubbleAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
             }}>
               <View style={styles.amountBubbleCard}>
-                <Text style={styles.amountBubbleHeading}>Your Monthly Donation</Text>
+                <Text style={styles.amountBubbleHeading}>Monthly Donation</Text>
                 <Text style={styles.amountBubbleAmount}>${baseAmount.toFixed(2)}</Text>
                 {coverFees ? (
-                  <Text style={styles.amountBubbleTotal}>Total with fees: <Text style={{ fontWeight: 'bold' }}>${totalAmount}</Text></Text>
+                  <Text style={styles.amountBubbleTotal}>Total: <Text style={{ fontWeight: 'bold' }}>${totalAmount}</Text></Text>
                 ) : (
                   <Text style={styles.amountBubbleTotal}>Total: <Text style={{ fontWeight: 'bold' }}>${totalAmount}</Text></Text>
                 )}
@@ -104,84 +113,116 @@ export default function StripeIntegration() {
             opacity: cardAnim,
             transform: [{ translateY: cardAnim.interpolate({ inputRange: [0, 1], outputRange: [60, 0] }) }],
           }}>
-            <View style={{ width: '100%', marginTop: 10 }}>
-              <TextInput
-                style={styles.input}
-                placeholder="Card number"
-                placeholderTextColor="#6d6e72"
-                keyboardType="numeric"
-                value={cardNumber}
-                onChangeText={setCardNumber}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Holder name"
-                placeholderTextColor="#6d6e72"
-                value={holderName}
-                onChangeText={setHolderName}
-              />
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <TextInput
-                  style={[styles.input, { width: '48%' }]}
-                  placeholder="Expiry date"
-                  placeholderTextColor="#6d6e72"
-                  value={expiryDate}
-                  onChangeText={setExpiryDate}
-                />
-                <TextInput
-                  style={[styles.input, { width: '48%' }]}
-                  placeholder="CVV"
-                  placeholderTextColor="#6d6e72"
-                  secureTextEntry
-                  value={cvv}
-                  onChangeText={setCvv}
-                />
-              </View>
-            </View>
-            {/* Options Section: Cover Fees & Save Card */}
-            <View style={{ marginTop: 18, marginBottom: 8, alignItems: 'flex-start' }}>
+            {/* Fee Coverage Option - Made More Prominent */}
+            <View style={styles.feeCoverageSection}>
               <TouchableOpacity
                 onPress={() => {
                   if (!coverFees) setConfettiTrigger(true);
                   setCoverFees(!coverFees);
                 }}
-                style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, paddingVertical: 6, alignSelf: 'stretch' }}
+                style={styles.feeCoverageButton}
                 activeOpacity={0.7}
               >
-                <AntDesign
-                  name={coverFees ? 'checkcircle' : 'checkcircleo'}
-                  size={22}
-                  color={coverFees ? '#2C3E50' : '#aaa'}
-                  style={{ marginRight: 10 }}
-                />
-                <Text style={{ fontSize: 15, color: '#222', flexShrink: 1 }}>
-                  Cover the 3% card fee so 100% goes to charity.
-                </Text>
+                <View style={styles.feeCoverageCheckbox}>
+                  <AntDesign
+                    name={coverFees ? 'checkcircle' : 'checkcircleo'}
+                    size={24}
+                    color={coverFees ? '#DB8633' : '#aaa'}
+                  />
+                </View>
+                <View style={styles.feeCoverageTextContainer}>
+                  <Text style={styles.feeCoverageMainText}>
+                    Cover 3% processing fee
+                  </Text>
+                  <Text style={styles.feeCoverageSubText}>
+                    100% goes to charity
+                  </Text>
+                </View>
               </TouchableOpacity>
+              
+              {/* Simple gratitude message */}
+              {coverFees && (
+                <View style={styles.feeCoverageGratitude}>
+                  <Text style={styles.feeCoverageGratitudeText}>
+                    🎉 Thank you!
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* Payment Method Selection */}
+            <View style={styles.paymentMethodSection}>
+              <Text style={styles.paymentMethodTitle}>Payment Method</Text>
+              
+              {/* Apple Pay Option */}
+              <TouchableOpacity style={styles.applePayButton} onPress={() => handleApplePay()}>
+                <AntDesign name="apple1" size={24} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.applePayText}>Apple Pay</Text>
+              </TouchableOpacity>
+              
+              {/* Divider */}
+              <View style={styles.dividerContainer}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or</Text>
+                <View style={styles.dividerLine} />
+              </View>
+              
+              {/* Card Payment Option */}
+              <Text style={styles.cardPaymentTitle}>Credit/Debit Card</Text>
+            </View>
+
+            <View style={{ width: '100%', marginTop: 10 }}>
+          <TextInput
+            style={styles.input}
+            placeholder="Card number"
+            placeholderTextColor="#6d6e72"
+            keyboardType="numeric"
+            value={cardNumber}
+            onChangeText={setCardNumber}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Holder name"
+            placeholderTextColor="#6d6e72"
+            value={holderName}
+            onChangeText={setHolderName}
+          />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <TextInput
+              style={[styles.input, { width: '48%' }]}
+              placeholder="Expiry date"
+              placeholderTextColor="#6d6e72"
+              value={expiryDate}
+              onChangeText={setExpiryDate}
+            />
+            <TextInput
+              style={[styles.input, { width: '48%' }]}
+              placeholder="CVV"
+              placeholderTextColor="#6d6e72"
+              secureTextEntry
+              value={cvv}
+              onChangeText={setCvv}
+            />
+          </View>
+        </View>
+            {/* Options Section: Cover Fees & Save Card */}
+            <View style={{ marginTop: 18, marginBottom: 8, alignItems: 'flex-start' }}>
               <TouchableOpacity
                 onPress={() => setSaveCard(!saveCard)}
                 style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6, alignSelf: 'stretch' }}
                 activeOpacity={0.7}
-              >
-                <AntDesign
+        >
+          <AntDesign
                   name={saveCard ? 'checkcircle' : 'checkcircleo'}
                   size={22}
                   color={saveCard ? '#2C3E50' : '#aaa'}
                   style={{ marginRight: 10 }}
-                />
+          />
                 <Text style={{ fontSize: 15, color: '#222', flexShrink: 1 }}>
                   Save card for monthly billing
-                </Text>
-              </TouchableOpacity>
-            </View>
-            {/* Gratitude message and confetti for covering fees */}
-            {coverFees && (
-              <View style={{ marginBottom: 8, alignSelf: 'stretch' }}>
-                <Text style={{ color: '#2C3E50', fontWeight: 'bold', fontSize: 16, textAlign: 'center' }}>
-                  🎉 Thank you for covering the fees!
-                </Text>
-              </View>
-            )}
+          </Text>
+        </TouchableOpacity>
+      </View>
             {confettiTrigger && (
               <ConfettiCannon
                 count={100}
@@ -197,9 +238,9 @@ export default function StripeIntegration() {
               transform: [{ scale: buttonAnim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) }],
               width: '100%',
             }}>
-              <TouchableOpacity onPress={handleContinue} style={styles.continueButton}>
+        <TouchableOpacity onPress={handleContinue} style={styles.continueButton}>
                 <Text style={styles.continueButtonText}>Save and continue</Text>
-              </TouchableOpacity>
+        </TouchableOpacity>
             </Animated.View>
           </Animated.View>
         </ScrollView>
@@ -248,6 +289,60 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     marginBottom: 4,
+  },
+  paymentMethodSection: {
+    width: '100%',
+    marginBottom: 20,
+  },
+  paymentMethodTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#21555b',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  applePayButton: {
+    backgroundColor: '#000',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  applePayText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E1E1E5',
+  },
+  dividerText: {
+    color: '#888',
+    fontSize: 14,
+    fontWeight: '500',
+    marginHorizontal: 16,
+  },
+  cardPaymentTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#21555b',
+    marginBottom: 16,
+    textAlign: 'center',
   },
   infoCard: {
     backgroundColor: '#fff',
@@ -404,6 +499,54 @@ const styles = StyleSheet.create({
   amountBubbleTotal: {
     color: '#6d6e72',
     fontSize: 14,
+    textAlign: 'center',
+  },
+  feeCoverageSection: {
+    width: '100%',
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  feeCoverageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: '#f5f5fa',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    width: '100%',
+    maxWidth: 340,
+    alignSelf: 'center',
+  },
+  feeCoverageCheckbox: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  feeCoverageTextContainer: {
+    flex: 1,
+  },
+  feeCoverageMainText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2C3E50',
+    marginBottom: 4,
+  },
+  feeCoverageSubText: {
+    fontSize: 14,
+    color: '#6d6e72',
+  },
+  feeCoverageGratitude: {
+    marginTop: 15,
+    marginBottom: 20,
+  },
+  feeCoverageGratitudeText: {
+    color: '#2C3E50',
+    fontWeight: 'bold',
+    fontSize: 16,
     textAlign: 'center',
   },
 });

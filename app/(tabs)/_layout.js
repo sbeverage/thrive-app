@@ -22,7 +22,7 @@ export default function AppLayout() {
     { name: 'beneficiary', label: 'Beneficiary', icon: require('../../assets/icons/beneficiary.png') },
     { name: 'discounts', label: 'Discounts', icon: require('../../assets/icons/discounts.png') },
     { name: 'newsfeed', label: 'Newsfeed', icon: require('../../assets/icons/newsfeed.png') },
-    { name: 'leaderboard', label: 'Leaderboard', icon: require('../../assets/icons/leaderboard.png') },
+    { name: 'leaderboard', label: 'Rank', icon: require('../../assets/icons/leaderboard.png') },
   ];
 
   return (
@@ -30,56 +30,43 @@ export default function AppLayout() {
       <BeneficiaryProvider>
         <View style={{ flex: 1, backgroundColor: '#fff' }}>
           {/* Only apply paddingBottom if footer is visible */}
-          <View style={{ flex: 1, paddingBottom: hideFooter ? 0 : 80 }}>
+          <View style={{ flex: 1, paddingBottom: hideFooter ? 0 : 70 }}>
             <Slot />
           </View>
 
           {!hideFooter && (
             <View style={styles.footerNavWrapper}>
               {tabs.map((tab, idx) => {
-                const focused = pathname.includes(tab.name);
-                const isDiscounts = tab.name === 'discounts';
+                const focused = activeTab === tab.name;
                 
                 return (
                   <TouchableOpacity
                     key={tab.name}
-                    style={[
-                      styles.footerItem,
-                      isDiscounts && styles.discountsItem
-                    ]}
+                    style={styles.footerItem}
                     onPress={() => {
                       setActiveTab(tab.name);
                       router.push(`/${tab.name}`);
                     }}
                   >
-                    {isDiscounts ? (
-                      <View style={styles.discountsButton}>
-                        <Image
-                          source={tab.icon}
-                          style={{
-                            width: focused ? 28 : 24,
-                            height: focused ? 28 : 24,
-                            tintColor: '#fff',
-                          }}
-                        />
-                        <Text style={styles.discountsText}>
-                          {tab.label}
-                        </Text>
-                      </View>
-                    ) : (
-                      <>
-                        <Image
-                          source={tab.icon}
-                          style={{
-                            width: focused ? 28 : 24,
-                            height: focused ? 28 : 24,
-                            tintColor: focused ? '#DB8633' : '#6D6E72',
-                          }}
-                        />
-                        <Text style={focused ? styles.footerTextActive : styles.footerText}>
-                          {tab.label}
-                        </Text>
-                      </>
+                    <View style={[
+                      styles.iconContainer,
+                      focused && styles.iconContainerActive
+                    ]}>
+                      <Image
+                        source={tab.icon}
+                        style={[
+                          styles.tabIcon,
+                          focused && styles.tabIconActive
+                        ]}
+                      />
+                    </View>
+                    {focused && (
+                      <Text style={[
+                        styles.tabLabel,
+                        focused && styles.tabLabelActive
+                      ]}>
+                        {tab.label}
+                      </Text>
                     )}
                   </TouchableOpacity>
                 );
@@ -99,81 +86,63 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: '#ffffff',
-    height: 80,
+    height: 70,
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
     zIndex: 99,
-    paddingBottom: 4,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    paddingBottom: 16,
+    paddingTop: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
-    elevation: 8,
+    elevation: 6,
   },
   footerItem: {
     alignItems: 'center',
     justifyContent: 'center',
     flex: 1,
-    height: 60,
-    paddingVertical: 8,
+    height: 50,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    marginTop: -8,
   },
-  footerText: {
-    fontSize: 10,
-    color: '#6D6E72',
-    marginTop: 2,
-    fontFamily: 'Figtree_400Regular',
-  },
-  footerTextActive: {
-    fontSize: 10,
-    color: '#DB8633',
-    marginTop: 2,
-    fontFamily: 'Figtree_700Bold',
-  },
-  searchButton: {
-    backgroundColor: '#DB8633',
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: 'center',
+  iconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'transparent',
     justifyContent: 'center',
-    position: 'absolute',
-    right: 0,
-    bottom: 32,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
+    alignItems: 'center',
+    transition: 'all 0.2s ease',
+  },
+  iconContainerActive: {
+    backgroundColor: '#DB8633',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    shadowColor: '#DB8633',
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 10,
-    zIndex: 100,
+    shadowRadius: 6,
+    elevation: 5,
   },
-  discountsItem: {
-    marginTop: -25,
-    alignItems: 'center',
-    justifyContent: 'center',
+  tabIcon: {
+    width: 22,
+    height: 22,
+    tintColor: '#8E9BAE',
   },
-  discountsButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#DB8633',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 12,
-    borderWidth: 2,
-    borderColor: '#fff',
+  tabIconActive: {
+    tintColor: '#FFFFFF',
   },
-  discountsText: {
-    color: '#fff',
-    fontSize: 10,
-    marginTop: 2,
-    fontFamily: 'Figtree_700Bold',
-    fontWeight: '700',
+  tabLabel: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#8E9BAE',
+    fontWeight: 'bold',
+  },
+  tabLabelActive: {
+    color: '#DB8633',
   },
 });

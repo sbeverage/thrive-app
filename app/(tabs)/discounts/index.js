@@ -169,30 +169,30 @@ export default function DiscountsScreen() {
       {/* Content Area */}
       <View style={styles.content}>
         {showMap ? (
-          <MapView
-            style={StyleSheet.absoluteFill}
-            initialRegion={{
-              latitude: 37.78825,
-              longitude: -122.4324,
-              latitudeDelta: 0.01,
-              longitudeDelta: 0.01,
-            }}
-          >
-            <Circle
-              center={{ latitude: 37.78825, longitude: -122.4324 }}
-              radius={700}
-              strokeColor="#D0861F"
-              fillColor="rgba(208,134,31,0.1)"
+        <MapView
+          style={StyleSheet.absoluteFill}
+          initialRegion={{
+            latitude: 37.78825,
+            longitude: -122.4324,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          }}
+        >
+          <Circle
+            center={{ latitude: 37.78825, longitude: -122.4324 }}
+            radius={700}
+            strokeColor="#D0861F"
+            fillColor="rgba(208,134,31,0.1)"
+          />
+          {filteredVendors.map(v => (
+            <Marker
+              key={v.id}
+              coordinate={{ latitude: v.latitude, longitude: v.longitude }}
+              title={v.brandName}
+              description={v.discountText}
             />
-            {filteredVendors.map(v => (
-              <Marker
-                key={v.id}
-                coordinate={{ latitude: v.latitude, longitude: v.longitude }}
-                title={v.brandName}
-                description={v.discountText}
-              />
-            ))}
-          </MapView>
+          ))}
+        </MapView>
         ) : (
           <ScrollView 
             style={styles.listContainer}
@@ -204,8 +204,8 @@ export default function DiscountsScreen() {
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>Nearby Discounts</Text>
                   <Text style={styles.sectionSubtitle}>{filteredVendors.length} businesses found</Text>
-                </View>
-                
+              </View>
+
                 {filteredVendors.map((item) => (
                   <VoucherCard
                     key={item.id}
@@ -219,8 +219,8 @@ export default function DiscountsScreen() {
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>All Discounts</Text>
                   <Text style={styles.sectionSubtitle}>Browse all available offers</Text>
-                </View>
-                
+            </View>
+
                 {filteredVendors.map((item) => (
                   <VoucherCard
                     key={`all-${item.id}`}
@@ -242,40 +242,40 @@ export default function DiscountsScreen() {
                   <View style={styles.requestSection}>
                     <Text style={styles.requestTitle}>Want to see "{searchQuery}" here?</Text>
                     <Text style={styles.requestSubtitle}>Drop their info below and we'll add them soon!</Text>
-                    
-                    {submitted ? (
+
+                {submitted ? (
                       <View style={styles.successMessage}>
                         <Text style={styles.successText}>✅ Request submitted! Thank you — we'll review and add them soon.</Text>
                       </View>
-                    ) : (
+                ) : (
                       <View style={styles.requestForm}>
-                        <TextInput
-                          value={businessName}
-                          onChangeText={setBusinessName}
-                          placeholder="Full Business Name"
-                          placeholderTextColor="#999"
-                          style={styles.input}
-                        />
-                        <TextInput
-                          value={businessUrl}
-                          onChangeText={setBusinessUrl}
-                          placeholder="Website URL"
-                          placeholderTextColor="#999"
-                          autoCapitalize="none"
-                          style={styles.input}
-                        />
-                        <TouchableOpacity
-                          style={styles.requestButton}
-                          onPress={() => {
-                            if (businessName.trim() && businessUrl.trim()) {
-                              setSubmitted(true);
-                            } else {
-                              alert('Please fill out both fields.');
-                            }
-                          }}
-                        >
+                    <TextInput
+                      value={businessName}
+                      onChangeText={setBusinessName}
+                      placeholder="Full Business Name"
+                      placeholderTextColor="#999"
+                      style={styles.input}
+                    />
+                    <TextInput
+                      value={businessUrl}
+                      onChangeText={setBusinessUrl}
+                      placeholder="Website URL"
+                      placeholderTextColor="#999"
+                      autoCapitalize="none"
+                      style={styles.input}
+                    />
+                    <TouchableOpacity
+                      style={styles.requestButton}
+                      onPress={() => {
+                        if (businessName.trim() && businessUrl.trim()) {
+                          setSubmitted(true);
+                        } else {
+                          alert('Please fill out both fields.');
+                        }
+                      }}
+                    >
                           <Text style={styles.requestButtonText}>Submit Request</Text>
-                        </TouchableOpacity>
+                    </TouchableOpacity>
                       </View>
                     )}
                   </View>

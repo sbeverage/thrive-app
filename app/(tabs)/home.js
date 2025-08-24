@@ -126,19 +126,44 @@ export default function MainHome() {
           {/* Divider below Rank */}
           <View style={{ height: 1, backgroundColor: '#E5E7EB', opacity: 0.7, marginVertical: 8, width: '100%' }} />
 
-          <View style={styles.inviteBannerWrapper}>
-            <View style={styles.inviteInnerWrapper}>
-              <View style={styles.inviteImageContainer}>
-                <Image source={require('../../assets/images/invite-kids.png')} style={styles.inviteBannerImage} />
+          {/* Enhanced Invite Section */}
+          <View style={styles.inviteSectionWrapper}>
+            <View style={styles.inviteSectionHeader}>
+              <Text style={styles.inviteSectionTitle}>Grow Your Impact</Text>
+              <Text style={styles.inviteSectionSubtitle}>Invite friends and earn rewards together</Text>
+            </View>
+            
+            <View style={styles.inviteCard}>
+              <View style={styles.inviteStatsContainer}>
+                <View style={styles.inviteStatItem}>
+                  <Text style={styles.inviteStatNumber}>3</Text>
+                  <Text style={styles.inviteStatLabel}>Friends Invited</Text>
+                </View>
+                <View style={styles.inviteStatDivider} />
+                <View style={styles.inviteStatItem}>
+                  <Text style={styles.inviteStatNumber}>+150</Text>
+                  <Text style={styles.inviteStatLabel}>Points Earned</Text>
+                </View>
               </View>
-              <View style={styles.inviteTextBlock}>
-                <Text style={styles.inviteBannerHeadline}>
-                  Together we can do more! – share the love.
-                </Text>
-                <TouchableOpacity style={styles.inviteBannerButton}>
-                  <Text style={styles.inviteBannerButtonText}>Invite A Friend</Text>
-                </TouchableOpacity>
+              
+              <View style={styles.inviteProgressContainer}>
+                <Text style={styles.inviteProgressText}>Next milestone: 5 friends</Text>
+                <View style={styles.inviteProgressBar}>
+                  <View style={[styles.inviteProgressFill, { width: '60%' }]} />
+                </View>
+                <Text style={styles.inviteProgressReward}>🎁 +50 bonus points</Text>
               </View>
+              
+              <TouchableOpacity style={styles.inviteCardButton}>
+                <Text style={styles.inviteCardButtonText}>Invite Friends</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.inviteSocialProof}>
+              <Text style={styles.inviteSocialProofText}>
+                "My friends love the discounts and we're all making a difference together!" 
+                <Text style={styles.inviteSocialProofAuthor}> — Sarah M.</Text>
+              </Text>
             </View>
           </View>
         </ScrollView>
@@ -235,53 +260,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
   },
   placeholderText: { fontSize: 16, color: '#A0AAB7' },
-  inviteBannerWrapper: {
-    marginHorizontal: 20,
-    borderRadius: 20,
-    overflow: 'hidden',
-    marginBottom: 40,
-    backgroundColor: '#F0B500',
-    height: 130,
-  },
-  inviteInnerWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: '100%',
-  },
-  inviteImageContainer: {
-    width: 180,
-    height: '100%',
-    overflow: 'hidden',
-  },
-  inviteBannerImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  inviteTextBlock: {
-    flex: 1,
-    paddingHorizontal: 12,
-    justifyContent: 'center',
-  },
-  inviteBannerHeadline: {
-    color: '#1F2E35',
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 6,
-    lineHeight: 20,
-  },
-  inviteBannerButton: {
-    backgroundColor: '#1F2E35',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-  },
-  inviteBannerButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '700',
-  },
+
   leaderboardItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -348,5 +327,117 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     marginLeft: 2,
+  },
+  inviteSectionWrapper: {
+    marginHorizontal: 20,
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 40,
+    backgroundColor: '#F4F6F8',
+    padding: 20,
+  },
+  inviteSectionHeader: {
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  inviteSectionTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#324E58',
+    marginBottom: 5,
+  },
+  inviteSectionSubtitle: {
+    fontSize: 16,
+    color: '#7A8D9C',
+    textAlign: 'center',
+  },
+  inviteCard: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  inviteStatsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 15,
+    paddingHorizontal: 20,
+  },
+  inviteStatItem: {
+    alignItems: 'center',
+  },
+  inviteStatNumber: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#DB8633',
+  },
+  inviteStatLabel: {
+    fontSize: 14,
+    color: '#7A8D9C',
+    marginTop: 5,
+  },
+  inviteStatDivider: {
+    width: 1,
+    height: '80%',
+    backgroundColor: '#E5E7EB',
+    marginHorizontal: 20,
+  },
+  inviteProgressContainer: {
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  inviteProgressText: {
+    fontSize: 14,
+    color: '#7A8D9C',
+    marginBottom: 5,
+  },
+  inviteProgressBar: {
+    width: '100%',
+    height: 8,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  inviteProgressFill: {
+    height: '100%',
+    backgroundColor: '#DB8633',
+    borderRadius: 4,
+  },
+  inviteProgressReward: {
+    fontSize: 14,
+    color: '#DB8633',
+    fontWeight: '700',
+    marginTop: 5,
+  },
+
+  inviteCardButton: {
+    backgroundColor: '#DB8633',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 16,
+    marginTop: 15,
+    shadowColor: '#DB8633',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  inviteCardButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  inviteSocialProof: {
+    backgroundColor: '#F0F2F5',
+    padding: 15,
+    borderRadius: 12,
+    marginTop: 10,
+  },
+  inviteSocialProofText: {
+    fontSize: 14,
+    color: '#324E58',
+    lineHeight: 20,
+  },
+  inviteSocialProofAuthor: {
+    fontWeight: '700',
+    color: '#DB8633',
   },
 });

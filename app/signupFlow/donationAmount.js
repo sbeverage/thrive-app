@@ -19,7 +19,10 @@ export default function DonationAmount() {
   };
 
   const handleSaveAndContinue = () => {
-    router.push('/signupFlow/stripeIntegration');
+    router.push({
+      pathname: '/signupFlow/stripeIntegration',
+      params: { amount: amount.toString() }
+    });
   };
 
   return (
@@ -40,10 +43,10 @@ export default function DonationAmount() {
         keyboardVerticalOffset={0}
       >
         <ScrollView contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 60, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
-          {/* Top Navigation */}
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <AntDesign name="arrowleft" size={24} color="#324E58" />
-          </TouchableOpacity>
+      {/* Top Navigation */}
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <AntDesign name="arrowleft" size={24} color="#324E58" />
+        </TouchableOpacity>
           {/* Piggy and Speech Bubble in blue area */}
           <View style={{
             alignItems: 'center',
@@ -60,7 +63,7 @@ export default function DonationAmount() {
             <View style={{ marginBottom: 8 }}>
               <Text style={{ fontWeight: 'bold', fontSize: 20, marginBottom: 2, color: '#fff', textAlign: 'center' }}>Choose Your Impact.</Text>
               <Text style={{ fontWeight: '400', fontSize: 16, marginTop: 2, color: '#fff', textAlign: 'center', maxWidth: 320, alignSelf: 'center' }}>Set your monthly donation amount. Every dollar makes a difference!</Text>
-            </View>
+      </View>
           </View>
 
           {/* Donation amount, slider, and button directly on the gradient */}
@@ -68,28 +71,28 @@ export default function DonationAmount() {
             <View style={styles.amountCardProminentCurved}>
               <Text style={styles.amountProminent}>${amount}</Text>
               <Text style={styles.perMonthProminent}>per month</Text>
-            </View>
+        </View>
             <View style={styles.sliderRowWrapCurved}>
               <Text style={styles.amountLabelCard}>$15</Text>
               <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                <Slider
+          <Slider
                   style={styles.sliderCentered}
-                  minimumValue={MIN_AMOUNT}
-                  maximumValue={MAX_AMOUNT}
-                  value={amount}
-                  onValueChange={handleSliderChange}
+            minimumValue={MIN_AMOUNT}
+            maximumValue={MAX_AMOUNT}
+            value={amount}
+            onValueChange={handleSliderChange}
                   minimumTrackTintColor="#4CA1AF"
                   maximumTrackTintColor="#e0e0e0"
                   thumbTintColor="#2C3E50"
-                />
-              </View>
+          />
+        </View>
               <Text style={styles.amountLabelCard}>$250</Text>
-            </View>
+        </View>
             <TouchableOpacity onPress={handleSaveAndContinue} style={styles.continueButtonCard}>
               <Text style={styles.continueButtonTextCard}>Set monthly giving</Text>
             </TouchableOpacity>
-          </View>
-        </ScrollView>
+        </View>
+      </ScrollView>
       </KeyboardAvoidingView>
     </View>
   );
