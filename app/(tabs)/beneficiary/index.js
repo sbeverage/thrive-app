@@ -231,7 +231,20 @@ export default function BeneficiaryScreen() {
                         <Ionicons name="location" size={14} color="#8E9BAE" />
                         <Text style={styles.beneficiaryLocationText}>{b.location} • {b.distance}</Text>
                       </View>
-
+                      
+                      {/* View Details Button */}
+                      <TouchableOpacity
+                        style={styles.viewDetailsButton}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          router.push({ 
+                            pathname: '/(tabs)/beneficiary/beneficiaryDetail', 
+                            params: { id: b.id.toString() } 
+                          });
+                        }}
+                      >
+                        <Text style={styles.viewDetailsButtonText}>View Details</Text>
+                      </TouchableOpacity>
                     </View>
                   </TouchableOpacity>
                 ))}
@@ -608,6 +621,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#8E9BAE',
     marginLeft: 4,
+  },
+  viewDetailsButton: {
+    backgroundColor: '#f5f5fa',
+    borderWidth: 1,
+    borderColor: '#DB8633',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  viewDetailsButtonText: {
+    fontSize: 12,
+    color: '#DB8633',
+    fontWeight: '500',
   },
   changeToThisButton: {
     backgroundColor: 'transparent',

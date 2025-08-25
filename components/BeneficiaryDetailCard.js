@@ -70,7 +70,7 @@ export default function BeneficiaryDetailCard({ data, onSelect, showBackArrow = 
               style={[styles.iconLeft, { tintColor: '#fff' }]}
             />
             <Text style={styles.btnText}>
-              {isSignupFlow ? 'Select This Cause' : 'Select As My Beneficiary'}
+              Select This Cause
             </Text>
           </TouchableOpacity>
 
@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
     marginTop: 24,
     paddingHorizontal: 24,
   },
-  impactText: { fontSize: 14, color: '#444', lineHeight: 20, marginTop: 8 },
+  impactText: { fontSize: 14, color: '#444', lineHeight: 20 },
   metricsSection: { 
     marginTop: 24,
     paddingHorizontal: 24,
@@ -474,7 +474,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#444',
     lineHeight: 20,
-    marginTop: 12,
   },
   volunteerOptions: {
     flexDirection: 'row',

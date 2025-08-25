@@ -12,6 +12,7 @@ import {
   SafeAreaView,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from 'react-native';
 import MapView, { Marker, Circle } from 'react-native-maps';
 import { Feather, AntDesign } from '@expo/vector-icons';
@@ -27,6 +28,7 @@ export default function DiscountsScreen() {
   const [showMap, setShowMap] = useState(false);
   const [location, setLocation] = useState('San Francisco, CA');
   const [isEditingLocation, setIsEditingLocation] = useState(false);
+  const [selectedMarker, setSelectedMarker] = useState(null);
   const router = useRouter();
 
   const vendors = [
@@ -91,6 +93,21 @@ export default function DiscountsScreen() {
     const matchesCategory = activeCategory === 'All' || v.category === activeCategory;
     return matchesSearch && matchesCategory;
   });
+
+  const handleMarkerPress = (vendor) => {
+    setSelectedMarker(vendor);
+  };
+
+  const handleViewDetails = (vendorId) => {
+    setSelectedMarker(null); // Close info window
+    router.push(`/discounts/${vendorId}`);
+  };
+
+  const handleGetDirections = (vendor) => {
+    // Open maps app with directions
+    const url = `https://maps.apple.com/?daddr=${vendor.latitude},${vendor.longitude}`;
+    Linking.openURL(url);
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f5fa' }}>
@@ -169,30 +186,70 @@ export default function DiscountsScreen() {
       {/* Content Area */}
       <View style={styles.content}>
         {showMap ? (
-        <MapView
-          style={StyleSheet.absoluteFill}
-          initialRegion={{
-            latitude: 37.78825,
-            longitude: -122.4324,
-            latitudeDelta: 0.01,
-            longitudeDelta: 0.01,
-          }}
-        >
-          <Circle
-            center={{ latitude: 37.78825, longitude: -122.4324 }}
-            radius={700}
-            strokeColor="#D0861F"
-            fillColor="rgba(208,134,31,0.1)"
-          />
-          {filteredVendors.map(v => (
-            <Marker
-              key={v.id}
-              coordinate={{ latitude: v.latitude, longitude: v.longitude }}
-              title={v.brandName}
-              description={v.discountText}
-            />
-          ))}
-        </MapView>
+          <View style={styles.mapContainer}>
+            <MapView
+              style={StyleSheet.absoluteFill}
+              initialRegion={{
+                latitude: 37.78825,
+                longitude: -122.4324,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+              }}
+            >
+              <Circle
+                center={{ latitude: 37.78825, longitude: -122.4324 }}
+                radius={700}
+                strokeColor="#D0861F"
+                fillColor="rgba(208,134,31,0.1)"
+              />
+              {filteredVendors.map(v => (
+                <Marker
+                  key={v.id}
+                  coordinate={{ latitude: v.latitude, longitude: v.longitude }}
+                  onPress={() => handleMarkerPress(v)}
+                  pinColor={selectedMarker?.id === v.id ? '#DB8633' : '#DB8633'}
+                />
+              ))}
+            </MapView>
+            
+            {/* Custom Info Window */}
+            {selectedMarker && (
+              <View style={styles.infoWindow}>
+                <View style={styles.infoWindowHeader}>
+                  <Image source={selectedMarker.imageUrl} style={styles.infoWindowLogo} />
+                  <View style={styles.infoWindowText}>
+                    <Text style={styles.infoWindowTitle}>{selectedMarker.brandName}</Text>
+                    <Text style={styles.infoWindowCategory}>{selectedMarker.category}</Text>
+                    <Text style={styles.infoWindowDiscounts}>{selectedMarker.discountText}</Text>
+                  </View>
+                  <TouchableOpacity 
+                    style={styles.closeButton}
+                    onPress={() => setSelectedMarker(null)}
+                  >
+                    <AntDesign name="close" size={20} color="#666" />
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={styles.infoWindowActions}>
+                  <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={() => handleViewDetails(selectedMarker.id)}
+                  >
+                    <Feather name="info" size={16} color="#fff" />
+                    <Text style={styles.actionButtonText}>View Details</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.actionButtonSecondary}
+                    onPress={() => handleGetDirections(selectedMarker)}
+                  >
+                    <Feather name="map-pin" size={16} color="#DB8633" />
+                    <Text style={styles.actionButtonTextSecondary}>Get Directions</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
         ) : (
           <ScrollView 
             style={styles.listContainer}
@@ -401,6 +458,10 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
+  mapContainer: {
+    flex: 1,
+    position: 'relative',
+  },
   listContainer: {
     flex: 1,
     backgroundColor: '#f5f5fa',
@@ -499,6 +560,95 @@ const styles = StyleSheet.create({
   requestButtonText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  // Info Window Styles
+  infoWindow: {
+    position: 'absolute',
+    bottom: 100,
+    left: 20,
+    right: 20,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 1000,
+  },
+  infoWindowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  infoWindowLogo: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  infoWindowText: {
+    flex: 1,
+  },
+  infoWindowTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#324E58',
+    marginBottom: 4,
+  },
+  infoWindowCategory: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 2,
+  },
+  infoWindowDiscounts: {
+    fontSize: 13,
+    color: '#DB8633',
+    fontWeight: '600',
+  },
+  closeButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f5f5fa',
+  },
+  infoWindowActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DB8633',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    gap: 8,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  actionButtonSecondary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#DB8633',
+    gap: 8,
+  },
+  actionButtonTextSecondary: {
+    color: '#DB8633',
+    fontSize: 14,
     fontWeight: '600',
   },
 });

@@ -83,7 +83,7 @@ export default function MainHome() {
             onPress={handleNavigate}
             style={{ marginHorizontal: 20, borderColor: '#DB8633', borderWidth: 1, paddingVertical: 14, borderRadius: 10, alignItems: 'center' }}
           >
-            <Text style={{ color: '#DB8633', fontWeight: '600' }}>Select Beneficiary</Text>
+            <Text style={{ color: '#DB8633', fontWeight: '600' }}>Select This Cause</Text>
           </TouchableOpacity>
 
           {/* Discounts Near You */}

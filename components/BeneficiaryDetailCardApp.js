@@ -52,7 +52,7 @@ export default function BeneficiaryDetailCardApp({ data, onSelect }) {
               source={require('../assets/icons/donation-box.png')}
               style={[styles.iconLeft, { tintColor: '#fff' }]}
             />
-            <Text style={styles.btnText}>Select this Cause</Text>
+            <Text style={styles.btnText}>Select This Cause</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
