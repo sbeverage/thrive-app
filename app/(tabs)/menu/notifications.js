@@ -29,9 +29,14 @@ export default function Notifications() {
 
   return (
     <ScrollView style={styles.container}>
-      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-        <AntDesign name="arrowleft" size={24} color="#324E58" />
-      </TouchableOpacity>
+      {/* Standardized Header */}
+      <View style={styles.headerRow}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <AntDesign name="arrowleft" size={24} color="#324E58" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Notifications</Text>
+        <View style={styles.headerSpacer} />
+      </View>
 
       {[
         { key: 'all', label: 'All Notifications' },
@@ -61,23 +66,28 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    paddingTop: 60,
+    paddingTop: 20,
     paddingHorizontal: 20,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    paddingTop: 5,
+  },
   backButton: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    zIndex: 100,
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    borderRadius: 20,
-    padding: 6,
-    marginBottom: 25,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    // Standard back button with no custom styling
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#6d6e72',
+    textAlign: 'center',
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 32,
   },
   settingRow: {
     flexDirection: 'row',

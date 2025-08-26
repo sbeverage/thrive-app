@@ -29,12 +29,14 @@ export default function InvitationStatus() {
 
   return (
     <ScrollView style={styles.container}>
-      {/* Back Button */}
-      <TouchableOpacity onPress={() => router.push('/(tabs)/menu')} style={styles.backWrapper}>
-        <AntDesign name="arrowleft" size={24} color="#324E58" />
-      </TouchableOpacity>
-
-      <Text style={styles.header}>Invitation Status</Text>
+      {/* Standardized Header */}
+      <View style={styles.headerRow}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)/menu')}>
+          <AntDesign name="arrowleft" size={24} color="#324E58" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Invitation Status</Text>
+        <View style={styles.headerSpacer} />
+      </View>
 
       {/* Card Layout */}
       <View style={styles.card}>
@@ -76,17 +78,28 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-    paddingTop: 48,
+    paddingTop: 20,
     paddingHorizontal: 24,
   },
-  backWrapper: {
-    marginBottom: 16,
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    paddingTop: 5,
   },
-  header: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: '#21555B',
-    marginBottom: 24,
+  backButton: {
+    // Standard back button with no custom styling
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#6d6e72',
+    textAlign: 'center',
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 32,
   },
   card: {
     backgroundColor: '#fff',

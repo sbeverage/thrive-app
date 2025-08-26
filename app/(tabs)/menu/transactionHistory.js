@@ -110,13 +110,13 @@ export default function TransactionHistory() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Standardized Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.push('/(tabs)/menu')} style={styles.backButton}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)/menu')}>
           <AntDesign name="arrowleft" size={24} color="#324E58" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Transaction History</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.headerSpacer} />
       </View>
 
       {/* Summary Cards */}
@@ -165,16 +165,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
+    paddingTop: 5,
   },
   backButton: {
-    padding: 8,
+    // Standard back button with no custom styling
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#324E58',
+    color: '#6d6e72',
     flex: 1,
     textAlign: 'center',
+  },
+  headerSpacer: {
+    width: 32,
   },
   summarySection: {
     flexDirection: 'row',

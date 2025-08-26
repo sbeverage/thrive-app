@@ -2,14 +2,17 @@
 import { Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context'; // add this
 import { View, StyleSheet } from 'react-native';
+import { BeneficiaryProvider } from './context/BeneficiaryContext';
 
 export default function Layout() {
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <Stack initialRouteName="splashScreen" screenOptions={{ headerShown: false }} />
-      </View>
-    </SafeAreaView>
+    <BeneficiaryProvider>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.container}>
+          <Stack initialRouteName="splashScreen" screenOptions={{ headerShown: false }} />
+        </View>
+      </SafeAreaView>
+    </BeneficiaryProvider>
   );
 }
 

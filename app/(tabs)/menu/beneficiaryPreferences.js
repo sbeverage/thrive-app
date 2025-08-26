@@ -11,7 +11,9 @@ import {
   PanResponder,
   StyleSheet,
 } from 'react-native';
-import MapView, { Marker, Circle } from 'react-native-maps';
+import { Platform } from 'react-native';
+
+
 import { AntDesign } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import SuccessModal from '../../../components/SuccessModal';
@@ -42,6 +44,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  // Web fallback styles
+  webMapFallback: {
+    backgroundColor: '#f5f5fa',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  webMapText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#324E58',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  webMapSubtext: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 20,
   },
 });
 
@@ -122,30 +144,37 @@ export default function BeneficiaryPreferences() {
 
   return (
     <View style={styles.container}>
-      <MapView
-        style={{ ...StyleSheet.absoluteFillObject }}
-        initialRegion={{
-          latitude: 37.78825,
-          longitude: -122.4324,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }}
-      >
-        <Circle
-          center={{ latitude: 37.78825, longitude: -122.4324 }}
-          radius={700}
-          strokeColor="#D0861F"
-          fillColor="rgba(208,134,31,0.1)"
-        />
-        {beneficiaries.map(b => (
-          <Marker
-            key={b.id}
-            coordinate={{ latitude: 37.78825 + b.id * 0.001, longitude: -122.4324 }}
-            title={b.name}
-            description={b.category}
+      {Platform.OS === 'web' ? (
+        <View style={[StyleSheet.absoluteFillObject, styles.webMapFallback]}>
+          <Text style={styles.webMapText}>Map view is not available on web</Text>
+          <Text style={styles.webMapSubtext}>Please use the mobile app for full map functionality</Text>
+        </View>
+      ) : (
+        <MapView
+          style={{ ...StyleSheet.absoluteFillObject }}
+          initialRegion={{
+            latitude: 37.78825,
+            longitude: -122.4324,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          }}
+        >
+          <Circle
+            center={{ latitude: 37.78825, longitude: -122.4324 }}
+            radius={700}
+            strokeColor="#D0861F"
+            fillColor="rgba(208,134,31,0.1)"
           />
-        ))}
-      </MapView>
+          {beneficiaries.map(b => (
+            <Marker
+              key={b.id}
+              coordinate={{ latitude: 37.78825 + b.id * 0.001, longitude: -122.4324 }}
+              title={b.name}
+              description={b.category}
+            />
+          ))}
+        </MapView>
+      )}
 
       <Animated.View
         style={{

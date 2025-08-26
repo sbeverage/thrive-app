@@ -36,9 +36,9 @@ export default function DonationSummary() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Standardized Header */}
       <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => router.replace('/(tabs)/menu')}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/menu')}>
           <AntDesign name="arrowleft" size={24} color="#324E58" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Donation Summary</Text>
@@ -70,6 +70,12 @@ export default function DonationSummary() {
             <View style={styles.statItem}>
               <Text style={styles.statValue}>${15}</Text>
               <Text style={styles.statLabel}>Monthly Amount</Text>
+              <TouchableOpacity 
+                style={styles.editAmountButton}
+                onPress={() => router.push('/menu/editDonationAmount')}
+              >
+                <Text style={styles.editAmountText}>Edit</Text>
+              </TouchableOpacity>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
@@ -109,11 +115,11 @@ export default function DonationSummary() {
             </View>
             <View style={styles.taxRow}>
               <Text style={styles.taxLabel}>Charity Name</Text>
-              <Text style={styles.taxValue}>{currentCharity}</Text>
+              <Text style={styles.taxValue}>Thrive Initiative, Inc.</Text>
             </View>
             <View style={styles.taxRow}>
               <Text style={styles.taxLabel}>EIN Number</Text>
-              <Text style={styles.taxValue}>13-1351653</Text>
+              <Text style={styles.taxValue}>81-3223950</Text>
             </View>
           </View>
         </View>
@@ -126,15 +132,29 @@ export default function DonationSummary() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', paddingTop: 60 },
+  container: { flex: 1, backgroundColor: '#fff', paddingTop: 20 },
   scrollContainer: { flex: 1 },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
-  headerTitle: { fontSize: 18, fontWeight: '600', color: '#324E58' },
+  backButton: {
+    // Standard back button with no custom styling
+  },
+  headerTitle: { 
+    fontSize: 18, 
+    fontWeight: '700', 
+    color: '#6d6e72',
+    textAlign: 'center',
+    flex: 1,
+  },
   downloadButton: {
     padding: 8,
   },
@@ -187,6 +207,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#324E58',
     marginTop: 5,
+  },
+  editAmountButton: {
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    backgroundColor: '#DB8633',
+    borderRadius: 6,
+  },
+  editAmountText: {
+    fontSize: 10,
+    color: '#fff',
+    fontWeight: '600',
   },
   statDivider: {
     width: 1,

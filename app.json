@@ -15,13 +15,21 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.thrive-app"
+      "bundleIdentifier": "com.anonymous.thrive-app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "This app uses location to show nearby discounts and causes on the map.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location to show nearby discounts and causes on the map."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/piggy-with-flowers.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -30,7 +38,13 @@
     },
     "plugins": [
       "expo-router",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location to show nearby discounts and causes on the map."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

@@ -27,10 +27,14 @@ export default function EditProfileScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <TouchableOpacity onPress={() => router.back()} style={styles.backRow}>
-        <AntDesign name="arrowleft" size={24} color="#324E58" />
-        <Text style={styles.headerText}>Edit Profile</Text>
-      </TouchableOpacity>
+      {/* Standardized Header */}
+      <View style={styles.headerRow}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <AntDesign name="arrowleft" size={24} color="#324E58" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Edit Profile</Text>
+        <View style={styles.headerSpacer} />
+      </View>
 
       <View style={styles.imageContainer}>
         <Image
@@ -94,20 +98,29 @@ export default function EditProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 24,
-    paddingTop: 60,
+    paddingTop: 20,
     backgroundColor: '#fff',
     flexGrow: 1,
   },
-  backRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 30,
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    paddingTop: 5,
   },
-  headerText: {
+  backButton: {
+    // Standard back button with no custom styling
+  },
+  headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    marginLeft: 10,
-    color: '#324E58',
+    fontWeight: '700',
+    color: '#6d6e72',
+    textAlign: 'center',
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 32,
   },
   imageContainer: {
     alignSelf: 'center',

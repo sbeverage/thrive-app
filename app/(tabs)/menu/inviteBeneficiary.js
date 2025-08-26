@@ -53,11 +53,14 @@ export default function InviteCompany() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <AntDesign name="arrowleft" size={24} color="#324E58" />
-        </TouchableOpacity>
-
-        <Text style={styles.header}>Send Invitation</Text>
+        {/* Standardized Header */}
+        <View style={styles.headerRow}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <AntDesign name="arrowleft" size={24} color="#324E58" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Send Invitation</Text>
+          <View style={styles.headerSpacer} />
+        </View>
 
         <View style={styles.speechWrapper}>
           <Image
@@ -144,12 +147,24 @@ const styles = StyleSheet.create({
     padding: 24,
     backgroundColor: '#fff',
     flexGrow: 1,
+    paddingTop: 20,
   },
-  header: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: '#324E58',
-    marginBottom: 16,
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    paddingTop: 5,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#6d6e72',
+    textAlign: 'center',
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 32,
   },
   speechWrapper: {
     flexDirection: 'row',
@@ -245,9 +260,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   backButton: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    padding: 10,
+    // Standard back button with no custom styling
   },
 });

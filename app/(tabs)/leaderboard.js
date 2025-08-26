@@ -70,9 +70,9 @@ export default function LeaderboardScreen() {
           style={styles.gradientHeader}
         >
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()}>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/home')}>
               <AntDesign name="arrowleft" size={24} color="#fff" />
-      </TouchableOpacity>
+            </TouchableOpacity>
             {/* Removed Leaderboard title and share icon */}
           </View>
 

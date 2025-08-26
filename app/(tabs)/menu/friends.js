@@ -50,13 +50,13 @@ export default function FriendsScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Standardized Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <AntDesign name="arrowleft" size={24} color="#324E58" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Friends</Text>
-        <View style={{ width: 24 }} />
+        <View style={styles.headerSpacer} />
       </View>
 
       {/* Friends List */}
@@ -104,19 +104,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 60,
+    paddingTop: 20,
     paddingHorizontal: 20,
     paddingBottom: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
   backButton: {
-    padding: 8,
+    // Standard back button with no custom styling
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#324E58',
+    color: '#6d6e72',
+    textAlign: 'center',
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 32,
   },
   friendsList: {
     flex: 1,

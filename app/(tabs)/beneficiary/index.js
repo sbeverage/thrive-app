@@ -1,5 +1,5 @@
 // Updated to use superior design patterns from Discounts tab
-import React, { useRef, useMemo, useState } from 'react';
+import React, { useRef, useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,12 +13,14 @@ import {
   SafeAreaView,
   Modal,
 } from 'react-native';
-import MapView, { Marker, Circle } from 'react-native-maps';
+
 import { AntDesign, Feather, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import SuccessModal from '../../../components/SuccessModal';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { useBeneficiary } from '../../context/BeneficiaryContext';
+import MapView, { Marker, Circle } from 'react-native-maps';
+import { getCurrentLocation, getDefaultRegion } from '../../utils/locationService';
 
 export default function BeneficiaryScreen() {
   const router = useRouter();
@@ -36,6 +38,9 @@ export default function BeneficiaryScreen() {
   const [favorites, setFavorites] = useState([]);
   const [activeCategory, setActiveCategory] = useState('All');
   const [showMap, setShowMap] = useState(false);
+  const [mapRegion, setMapRegion] = useState(getDefaultRegion());
+  const [location, setLocation] = useState('Detecting location...');
+  const [isEditingLocation, setIsEditingLocation] = useState(false);
   
   // Add state for the mini popup
   const [miniPopupVisible, setMiniPopupVisible] = useState(false);
@@ -84,6 +89,64 @@ export default function BeneficiaryScreen() {
     );
   };
 
+  const updateMapRegion = async () => {
+    const userLocation = await getCurrentLocation();
+    if (userLocation) {
+      setMapRegion({
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      });
+    }
+  };
+
+  const updateUserLocation = async () => {
+    try {
+      const userLocation = await getCurrentLocation();
+      if (userLocation) {
+        // Check if user is in the Atlanta metro area and show friendly location names
+        const { latitude, longitude } = userLocation;
+        
+        // Alpharetta area (roughly)
+        if (latitude >= 34.05 && latitude <= 34.10 && longitude >= -84.35 && longitude <= -84.25) {
+          setLocation('Alpharetta, GA');
+        }
+        // Woodstock area (roughly)
+        else if (latitude >= 34.09 && latitude <= 34.12 && longitude >= -84.52 && longitude <= -84.50) {
+          setLocation('Woodstock, GA');
+        }
+        // Atlanta area (roughly)
+        else if (latitude >= 33.70 && latitude <= 33.80 && longitude >= -84.40 && longitude <= -84.35) {
+          setLocation('Atlanta, GA');
+        }
+        // General Atlanta metro area
+        else if (latitude >= 33.50 && latitude <= 34.50 && longitude >= -84.80 && longitude <= -84.00) {
+          setLocation('Atlanta Metro, GA');
+        }
+        else {
+          setLocation('Current Location');
+        }
+      } else {
+        setLocation('Location not available');
+      }
+    } catch (error) {
+      console.error('Error getting user location:', error);
+      setLocation('Location not available');
+    }
+  };
+
+  useEffect(() => {
+    if (showMap) {
+      updateMapRegion();
+    }
+  }, [showMap]);
+
+  // Auto-detect user location when component mounts
+  useEffect(() => {
+    updateUserLocation();
+  }, []);
+
   const closeModal = () => {
     setShowSuccessModal(false);
     setSearchText('');
@@ -93,26 +156,7 @@ export default function BeneficiaryScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f5fa' }}>
       {/* Header with Search and Toggle */}
       <View style={styles.header}>
-        {/* Current Beneficiary Display */}
-        {selectedBeneficiary ? (
-          <View style={styles.currentBeneficiaryRow}>
-            <Image source={selectedBeneficiary.image} style={styles.currentBeneficiaryImage} />
-            <View style={styles.currentBeneficiaryInfo}>
-              <Text style={styles.currentBeneficiaryLabel}>Your Current Cause</Text>
-              <Text style={styles.currentBeneficiaryName}>{selectedBeneficiary.name}</Text>
-              <Text style={styles.currentBeneficiaryCategory}>{selectedBeneficiary.category}</Text>
-              <View style={styles.currentBeneficiaryLocation}>
-                <Ionicons name="location" size={14} color="#DB8633" />
-                <Text style={styles.currentBeneficiaryLocationText}>{selectedBeneficiary.location} • {selectedBeneficiary.distance}</Text>
-              </View>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.noBeneficiaryRow}>
-            <Ionicons name="heart-outline" size={24} color="#DB8633" />
-            <Text style={styles.noBeneficiaryText}>No beneficiary selected</Text>
-          </View>
-        )}
+
 
         {/* Search Row */}
         <View style={styles.searchRow}>
@@ -126,6 +170,37 @@ export default function BeneficiaryScreen() {
           />
           <TouchableOpacity onPress={() => router.push('/(tabs)/beneficiary/beneficiaryFilter')} style={{ marginLeft: 10 }}>
             <Feather name="filter" size={22} color="#DB8633" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Location Input */}
+        <View style={styles.locationRow}>
+          <Feather name="map-pin" size={16} color="#6d6e72" style={{ marginRight: 8 }} />
+          {isEditingLocation ? (
+            <TextInput
+              placeholder="Enter your location"
+              placeholderTextColor="#6d6e72"
+              value={location}
+              onChangeText={setLocation}
+              style={styles.locationInput}
+              autoFocus
+              onBlur={() => setIsEditingLocation(false)}
+              onSubmitEditing={() => setIsEditingLocation(false)}
+            />
+          ) : (
+            <TouchableOpacity 
+              style={styles.locationDisplay}
+              onPress={() => setIsEditingLocation(true)}
+            >
+              <Text style={styles.locationText}>{location}</Text>
+              <Feather name="edit-2" size={14} color="#DB8633" style={{ marginLeft: 8 }} />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity 
+            style={styles.refreshLocationButton}
+            onPress={updateUserLocation}
+          >
+            <Feather name="refresh-cw" size={16} color="#DB8633" />
           </TouchableOpacity>
         </View>
 
@@ -164,30 +239,47 @@ export default function BeneficiaryScreen() {
       {/* Content Area */}
       <View style={styles.content}>
         {showMap ? (
-          <MapView
-            style={StyleSheet.absoluteFill}
-            initialRegion={{
-              latitude: 33.7490,
-              longitude: -84.3880,
-              latitudeDelta: 0.05,
-              longitudeDelta: 0.05,
-            }}
-          >
-            <Circle
-              center={{ latitude: 33.7490, longitude: -84.3880 }}
-              radius={15000}
-              strokeColor="#DB8633"
-              fillColor="rgba(219, 134, 51, 0.1)"
-            />
-            {filteredBeneficiaries.map(b => (
-              <Marker
-                key={b.id}
-                coordinate={{ latitude: b.latitude, longitude: b.longitude }}
-                title={b.name}
-                description={b.category}
+          Platform.OS === 'web' ? (
+            <View style={[StyleSheet.absoluteFill, styles.webMapFallback]}>
+              <Text style={styles.webMapText}>Map view is not available on web</Text>
+              <Text style={styles.webMapSubtext}>Please use the mobile app for full map functionality</Text>
+              <TouchableOpacity 
+                style={styles.switchToListButton}
+                onPress={() => setShowMap(false)}
+              >
+                <Text style={styles.switchToListButtonText}>Switch to List View</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <MapView
+              style={StyleSheet.absoluteFill}
+              initialRegion={mapRegion}
+              region={mapRegion}
+              showsUserLocation={true}
+              showsMyLocationButton={true}
+              onMapReady={updateMapRegion}
+            >
+              <Circle
+                center={{ latitude: mapRegion.latitude, longitude: mapRegion.longitude }}
+                radius={15000}
+                strokeColor="#DB8633"
+                fillColor="rgba(219, 134, 51, 0.1)"
               />
-            ))}
-          </MapView>
+              {filteredBeneficiaries.map(b => (
+                <Marker
+                  key={b.id}
+                  coordinate={{ latitude: b.latitude, longitude: b.longitude }}
+                  title={b.name}
+                  description={b.category}
+                  onPress={() => {
+                    setSelectedBeneficiaryForPopup(b);
+                    setMiniPopupVisible(true);
+                  }}
+                  pinColor="#DB8633"
+                />
+              ))}
+            </MapView>
+          )
         ) : (
           <ScrollView 
             style={styles.listContainer}
@@ -232,19 +324,35 @@ export default function BeneficiaryScreen() {
                         <Text style={styles.beneficiaryLocationText}>{b.location} • {b.distance}</Text>
                       </View>
                       
-                      {/* View Details Button */}
-                      <TouchableOpacity
-                        style={styles.viewDetailsButton}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          router.push({ 
-                            pathname: '/(tabs)/beneficiary/beneficiaryDetail', 
-                            params: { id: b.id.toString() } 
-                          });
-                        }}
-                      >
-                        <Text style={styles.viewDetailsButtonText}>View Details</Text>
-                      </TouchableOpacity>
+                      {/* Buttons Row */}
+                      <View style={styles.buttonsRow}>
+                        {/* View Details Button */}
+                        <TouchableOpacity
+                          style={styles.viewDetailsButton}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            router.push({ 
+                              pathname: '/(tabs)/beneficiary/beneficiaryDetail', 
+                              params: { id: b.id.toString() } 
+                            });
+                          }}
+                        >
+                          <Text style={styles.viewDetailsButtonText}>Details</Text>
+                        </TouchableOpacity>
+
+                        {/* Change to This Button - only show if not already selected */}
+                        {selectedBeneficiary?.id !== b.id && (
+                          <TouchableOpacity
+                            style={styles.changeToThisButton}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              setSelectedBeneficiary(b);
+                            }}
+                          >
+                            <Text style={styles.changeToThisButtonText}>Select</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     </View>
                   </TouchableOpacity>
                 ))}
@@ -407,71 +515,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
-  currentBeneficiaryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-    backgroundColor: '#FFF5EB',
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 2,
-    borderColor: '#DB8633',
-    shadowColor: '#DB8633',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  currentBeneficiaryImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    marginRight: 15,
-  },
-  currentBeneficiaryInfo: {
-    flex: 1,
-  },
-  currentBeneficiaryLabel: {
-    fontSize: 12,
-    color: '#DB8633',
-    marginBottom: 4,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  currentBeneficiaryName: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#324E58',
-    marginBottom: 4,
-  },
-  currentBeneficiaryCategory: {
-    fontSize: 16,
-    color: '#6d6e72',
-    marginBottom: 8,
-    fontWeight: '500',
-  },
-  currentBeneficiaryLocation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  currentBeneficiaryLocationText: {
-    fontSize: 14,
-    color: '#DB8633',
-    marginLeft: 4,
-    fontWeight: '600',
-  },
-  noBeneficiaryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  noBeneficiaryText: {
-    fontSize: 16,
-    color: '#6d6e72',
-    marginLeft: 5,
-  },
+
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -487,6 +531,36 @@ const styles = StyleSheet.create({
     height: 48,
     fontSize: 16,
     color: '#324E58',
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    paddingHorizontal: 10,
+    marginBottom: 10,
+    height: 48,
+  },
+  locationInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#324E58',
+  },
+  locationDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  locationText: {
+    fontSize: 16,
+    color: '#324E58',
+    fontWeight: '500',
+  },
+  refreshLocationButton: {
+    padding: 8,
+    marginLeft: 8,
   },
   tagsRow: {
     flexDirection: 'row',
@@ -579,16 +653,18 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
     minHeight: 100,
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
   selectedBeneficiaryCard: {
     borderColor: '#DB8633',
-    borderWidth: 2,
   },
   beneficiaryImage: {
     width: 120,
-    height: 120,
+    height: '100%',
     borderTopLeftRadius: 12,
     borderBottomLeftRadius: 12,
+    resizeMode: 'cover',
   },
   favoriteButton: {
     position: 'absolute',
@@ -629,8 +705,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingVertical: 6,
     paddingHorizontal: 12,
-    marginTop: 8,
-    alignSelf: 'flex-start',
+    flex: 1,
+    marginRight: 8,
+    alignItems: 'center',
   },
   viewDetailsButtonText: {
     fontSize: 12,
@@ -642,15 +719,22 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 6,
-    alignSelf: 'center',
-    marginTop: 8,
+    flex: 1,
     borderWidth: 1,
     borderColor: '#D1D5DB',
+    alignItems: 'center',
+    marginLeft: 8,
   },
   changeToThisButtonText: {
     color: '#6B7280',
     fontWeight: '600',
     fontSize: 13,
+  },
+  buttonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    marginTop: 8,
   },
   emptyState: {
     alignItems: 'center',
@@ -846,5 +930,36 @@ const styles = StyleSheet.create({
     color: '#4A5568',
     fontSize: 16,
     fontWeight: '500',
+  },
+  // Web fallback styles
+  webMapFallback: {
+    backgroundColor: '#f5f5fa',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  webMapText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#324E58',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  webMapSubtext: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  switchToListButton: {
+    backgroundColor: '#DB8633',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+  },
+  switchToListButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

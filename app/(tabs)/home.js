@@ -5,9 +5,11 @@ import { View, Text, StyleSheet, ScrollView, SafeAreaView, Image, TouchableOpaci
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, Tabs } from 'expo-router';
 import MonthlyImpactCard from '../../components/MonthlyImpactCard';
+import { useBeneficiary } from '../context/BeneficiaryContext';
 
 export default function MainHome() {
   const router = useRouter();
+  const { selectedBeneficiary } = useBeneficiary();
   const monthlyDonation = 15;
   const monthlySavings = 0;
 
@@ -66,13 +68,23 @@ export default function MainHome() {
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionHeader}>My Beneficiary</Text>
           </View>
-          <TouchableOpacity onPress={() => router.push('/(tabs)/beneficiary/beneficiaryDetail')} style={styles.beneficiaryCard}>
-            <Image source={require('../../assets/images/child-cancer.jpg')} style={styles.beneficiaryImage} />
-            <View style={styles.beneficiaryOverlay}>
-              <Text style={styles.beneficiaryName}>St. Jude</Text>
-              <Text style={styles.beneficiaryDesc}>Helping children fight cancer and other life-threatening diseases.</Text>
-            </View>
-          </TouchableOpacity>
+          {selectedBeneficiary ? (
+            <TouchableOpacity onPress={() => router.push('/(tabs)/beneficiary/beneficiaryDetail')} style={styles.beneficiaryCard}>
+              <Image source={selectedBeneficiary.image} style={styles.beneficiaryImage} />
+              <View style={styles.beneficiaryOverlay}>
+                <Text style={styles.beneficiaryName}>{selectedBeneficiary.name}</Text>
+                <Text style={styles.beneficiaryDesc}>{selectedBeneficiary.about}</Text>
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={() => router.push('/(tabs)/beneficiary')} style={styles.beneficiaryCard}>
+              <Image source={require('../../assets/images/child-cancer.jpg')} style={styles.beneficiaryImage} />
+              <View style={styles.beneficiaryOverlay}>
+                <Text style={styles.beneficiaryName}>Select Your Cause</Text>
+                <Text style={styles.beneficiaryDesc}>Choose a beneficiary to support during your signup.</Text>
+              </View>
+            </TouchableOpacity>
+          )}
 
           {/* Divider */}
           <View style={{ height: 1, backgroundColor: '#E5E7EB', opacity: 0.7, marginVertical: 8, width: '100%' }} />

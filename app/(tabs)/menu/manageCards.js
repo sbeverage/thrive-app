@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { AntDesign, Feather } from '@expo/vector-icons';
 
 export default function CardManagement() {
   const router = useRouter();
+  const params = useLocalSearchParams();
 
   const [cards, setCards] = useState([
     { id: 1, type: 'Visa', last4: '4475', active: true, logo: require('../../../assets/logos/visa.png') },
@@ -14,6 +15,21 @@ export default function CardManagement() {
   // Apple Pay status - replace with actual detection logic
   const [applePayEnabled, setApplePayEnabled] = useState(true);
   const [applePayActive, setApplePayActive] = useState(false);
+
+  // Handle new card data from Add New Card page
+  useEffect(() => {
+    if (params.newCard) {
+      try {
+        const newCardData = JSON.parse(params.newCard);
+        addNewCard(newCardData);
+        
+        // Clear the params to prevent re-adding on re-render
+        router.setParams({ newCard: undefined });
+      } catch (error) {
+        console.error('Error parsing new card data:', error);
+      }
+    }
+  }, [params.newCard]);
 
   const handleDelete = (id) => {
     Alert.alert(
@@ -50,15 +66,59 @@ export default function CardManagement() {
     }
   };
 
+  const addNewCard = (newCardData) => {
+    // Determine logo based on card type
+    let logo;
+    switch (newCardData.type) {
+      case 'Visa':
+        logo = require('../../../assets/logos/visa.png');
+        break;
+      case 'Master':
+        logo = require('../../../assets/logos/mastercard.png');
+        break;
+      case 'Amex':
+        logo = require('../../../assets/logos/visa.png'); // Using visa as placeholder for Amex
+        break;
+      default:
+        logo = require('../../../assets/logos/visa.png');
+    }
+
+    const newCard = {
+      id: Date.now(), // Generate unique ID
+      type: newCardData.type || 'Card',
+      last4: newCardData.last4 || '0000',
+      active: newCardData.setAsDefault, // Set as active if it should be default
+      logo,
+    };
+
+    if (newCardData.setAsDefault) {
+      // Deactivate all other cards when setting new one as default
+      setCards((prevCards) =>
+        prevCards.map((card) => ({ ...card, active: false }))
+      );
+      setApplePayActive(false); // Deactivate Apple Pay if card is set as default
+      
+      // Show success message for setting as default
+      setTimeout(() => {
+        Alert.alert(
+          '✅ Card Set as Default',
+          `Your new ${newCardData.type} card ending in ${newCardData.last4} is now your default payment method.`
+        );
+      }, 500);
+    }
+
+    setCards((prevCards) => [...prevCards, newCard]);
+  };
+
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Standardized Header */}
       <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => router.replace('/(tabs)/menu')}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/menu')}>
           <AntDesign name="arrowleft" size={24} color="#324E58" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Manage Billing</Text>
-        <Feather name="more-horizontal" size={24} color="transparent" />
+        <View style={styles.headerSpacer} />
       </View>
 
       {/* Apple Pay Section */}
@@ -131,14 +191,28 @@ export default function CardManagement() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', paddingTop: 60 },
+  container: { flex: 1, backgroundColor: '#fff', paddingTop: 20 },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
+    paddingTop: 5,
+    marginBottom: 20,
   },
-  headerTitle: { fontSize: 18, fontWeight: '600', color: '#324E58' },
+  backButton: {
+    // Standard back button with no custom styling
+  },
+  headerTitle: { 
+    fontSize: 18, 
+    fontWeight: '700', 
+    color: '#6d6e72',
+    textAlign: 'center',
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 32,
+  },
   cardList: { paddingHorizontal: 20, marginTop: 20 },
   cardItem: {
     flexDirection: 'row',

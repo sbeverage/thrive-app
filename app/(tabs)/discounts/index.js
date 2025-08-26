@@ -1,5 +1,5 @@
 // Full Airbnb-style Discounts Screen Implementation with improved UX flow
-import React, { useRef, useMemo, useState } from 'react';
+import React, { useRef, useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,10 +14,14 @@ import {
   Platform,
   Linking,
 } from 'react-native';
-import MapView, { Marker, Circle } from 'react-native-maps';
+
+
 import { Feather, AntDesign } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import VoucherCard from '../../../components/VoucherCard';
+import MapView, { Marker } from 'react-native-maps';
+import { getCurrentLocation, getDefaultRegion } from '../../utils/locationService';
+
 
 export default function DiscountsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -26,9 +30,10 @@ export default function DiscountsScreen() {
   const [businessUrl, setBusinessUrl] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [showMap, setShowMap] = useState(false);
-  const [location, setLocation] = useState('San Francisco, CA');
+  const [location, setLocation] = useState('Detecting location...');
   const [isEditingLocation, setIsEditingLocation] = useState(false);
   const [selectedMarker, setSelectedMarker] = useState(null);
+  const [mapRegion, setMapRegion] = useState(getDefaultRegion());
   const router = useRouter();
 
   const vendors = [
@@ -38,8 +43,9 @@ export default function DiscountsScreen() {
       category: 'Coffee Shop',
       imageUrl: require('../../../assets/logos/starbucks.png'),
       discountText: '3 discounts available',
-      latitude: 37.78825,
-      longitude: -122.4324,
+      latitude: 34.0754,
+      longitude: -84.2941,
+      location: 'Alpharetta, GA',
     },
     {
       id: '2',
@@ -47,8 +53,9 @@ export default function DiscountsScreen() {
       category: 'Electronics',
       imageUrl: require('../../../assets/logos/apple.png'),
       discountText: '3 discounts available',
-      latitude: 37.78845,
-      longitude: -122.435,
+      latitude: 34.0754,
+      longitude: -84.2942,
+      location: 'Alpharetta, GA',
     },
     {
       id: '3',
@@ -56,8 +63,9 @@ export default function DiscountsScreen() {
       category: 'Shopping Store',
       imageUrl: require('../../../assets/logos/amazon.png'),
       discountText: '3 discounts available',
-      latitude: 37.78885,
-      longitude: -122.431,
+      latitude: 34.0754,
+      longitude: -84.2940,
+      location: 'Alpharetta, GA',
     },
     {
       id: '4',
@@ -65,8 +73,9 @@ export default function DiscountsScreen() {
       category: 'Coffee Shop',
       imageUrl: require('../../../assets/logos/starbucks.png'),
       discountText: '3 discounts available',
-      latitude: 37.78825,
-      longitude: -122.4324,
+      latitude: 34.1015,
+      longitude: -84.5194,
+      location: 'Woodstock, GA',
     },
     {
       id: '5',
@@ -74,8 +83,9 @@ export default function DiscountsScreen() {
       category: 'Electronics',
       imageUrl: require('../../../assets/logos/apple.png'),
       discountText: '3 discounts available',
-      latitude: 37.78845,
-      longitude: -122.435,
+      latitude: 34.1015,
+      longitude: -84.5195,
+      location: 'Woodstock, GA',
     },
     {
       id: '6',
@@ -83,8 +93,9 @@ export default function DiscountsScreen() {
       category: 'Shopping Store',
       imageUrl: require('../../../assets/logos/amazon.png'),
       discountText: '3 discounts available',
-      latitude: 37.78885,
-      longitude: -122.431,
+      latitude: 34.1015,
+      longitude: -84.5193,
+      location: 'Woodstock, GA',
     },
   ];
 
@@ -95,8 +106,69 @@ export default function DiscountsScreen() {
   });
 
   const handleMarkerPress = (vendor) => {
+    console.log('Marker pressed:', vendor);
     setSelectedMarker(vendor);
   };
+
+  const updateMapRegion = async () => {
+    const userLocation = await getCurrentLocation();
+    if (userLocation) {
+      setMapRegion({
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude,
+        latitudeDelta: 0.0922,
+        longitudeDelta: 0.0421,
+      });
+    }
+  };
+
+  const updateUserLocation = async () => {
+    try {
+      const userLocation = await getCurrentLocation();
+      if (userLocation) {
+        // Check if user is in the Atlanta metro area and show friendly location names
+        const { latitude, longitude } = userLocation;
+        
+        // Alpharetta area (roughly)
+        if (latitude >= 34.05 && latitude <= 34.10 && longitude >= -84.35 && longitude <= -84.25) {
+          setLocation('Alpharetta, GA');
+        }
+        // Woodstock area (roughly)
+        else if (latitude >= 34.09 && latitude <= 34.12 && longitude >= -84.52 && longitude <= -84.50) {
+          setLocation('Woodstock, GA');
+        }
+        // Atlanta area (roughly)
+        else if (latitude >= 33.70 && latitude <= 33.80 && longitude >= -84.40 && longitude <= -84.35) {
+          setLocation('Atlanta, GA');
+        }
+        // General Atlanta metro area
+        else if (latitude >= 33.50 && latitude <= 34.50 && longitude >= -84.80 && longitude <= -84.00) {
+          setLocation('Atlanta Metro, GA');
+        }
+        else {
+          setLocation('Current Location');
+        }
+      } else {
+        setLocation('Location not available');
+      }
+    } catch (error) {
+      console.error('Error getting user location:', error);
+      setLocation('Location not available');
+    }
+  };
+
+  useEffect(() => {
+    if (showMap) {
+      updateMapRegion();
+      console.log('Map shown, vendors:', vendors);
+      console.log('Map region:', mapRegion);
+    }
+  }, [showMap]);
+
+  // Auto-detect user location when component mounts
+  useEffect(() => {
+    updateUserLocation();
+  }, []);
 
   const handleViewDetails = (vendorId) => {
     setSelectedMarker(null); // Close info window
@@ -150,6 +222,12 @@ export default function DiscountsScreen() {
               <Feather name="edit-2" size={14} color="#DB8633" style={{ marginLeft: 8 }} />
             </TouchableOpacity>
           )}
+          <TouchableOpacity 
+            style={styles.refreshLocationButton}
+            onPress={updateUserLocation}
+          >
+            <Feather name="refresh-cw" size={16} color="#DB8633" />
+          </TouchableOpacity>
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagsRow}>
@@ -185,32 +263,60 @@ export default function DiscountsScreen() {
 
       {/* Content Area */}
       <View style={styles.content}>
-        {showMap ? (
+                {showMap ? (
           <View style={styles.mapContainer}>
-            <MapView
-              style={StyleSheet.absoluteFill}
-              initialRegion={{
-                latitude: 37.78825,
-                longitude: -122.4324,
-                latitudeDelta: 0.01,
-                longitudeDelta: 0.01,
-              }}
-            >
-              <Circle
-                center={{ latitude: 37.78825, longitude: -122.4324 }}
-                radius={700}
-                strokeColor="#D0861F"
-                fillColor="rgba(208,134,31,0.1)"
-              />
-              {filteredVendors.map(v => (
+            {Platform.OS === 'web' ? (
+              <View style={[StyleSheet.absoluteFill, styles.webMapFallback]}>
+                <Text style={styles.webMapText}>Map view is not available on web</Text>
+                <Text style={styles.webMapSubtext}>Please use the mobile app for full map functionality</Text>
+                <TouchableOpacity 
+                  style={styles.webMapButton}
+                  onPress={() => setShowMap(false)}
+                >
+                  <Text style={styles.webMapButtonText}>Switch to List View</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <MapView
+                style={StyleSheet.absoluteFill}
+                initialRegion={mapRegion}
+                region={mapRegion}
+                showsUserLocation={true}
+                showsMyLocationButton={true}
+                onMapReady={updateMapRegion}
+                showsBuildings={true}
+                showsTraffic={false}
+                showsIndoors={false}
+              >
+                {/* Test marker to verify map is working */}
                 <Marker
-                  key={v.id}
-                  coordinate={{ latitude: v.latitude, longitude: v.longitude }}
-                  onPress={() => handleMarkerPress(v)}
-                  pinColor={selectedMarker?.id === v.id ? '#DB8633' : '#DB8633'}
+                  coordinate={{
+                    latitude: 34.0754,
+                    longitude: -84.2941,
+                  }}
+                  title="Test Marker - Alpharetta"
+                  description="This is a test marker in Alpharetta"
+                  pinColor="red"
                 />
-              ))}
-            </MapView>
+                
+                {filteredVendors.map((vendor) => {
+                  console.log('Rendering marker for:', vendor.brandName, 'at:', vendor.latitude, vendor.longitude);
+                  return (
+                    <Marker
+                      key={vendor.id}
+                      coordinate={{
+                        latitude: vendor.latitude || 34.0522,
+                        longitude: vendor.longitude || -118.2437,
+                      }}
+                      title={vendor.brandName}
+                      description={vendor.category}
+                      onPress={() => setSelectedMarker(vendor)}
+                      pinColor="#DB8633"
+                    />
+                  );
+                })}
+              </MapView>
+            )}
             
             {/* Custom Info Window */}
             {selectedMarker && (
@@ -220,6 +326,7 @@ export default function DiscountsScreen() {
                   <View style={styles.infoWindowText}>
                     <Text style={styles.infoWindowTitle}>{selectedMarker.brandName}</Text>
                     <Text style={styles.infoWindowCategory}>{selectedMarker.category}</Text>
+                    <Text style={styles.infoWindowLocation}>{selectedMarker.location}</Text>
                     <Text style={styles.infoWindowDiscounts}>{selectedMarker.discountText}</Text>
                   </View>
                   <TouchableOpacity 
@@ -400,6 +507,10 @@ const styles = StyleSheet.create({
     color: '#324E58',
     fontWeight: '500',
   },
+  refreshLocationButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
   tagsRow: {
     paddingBottom: 12,
     paddingLeft: 4,
@@ -565,7 +676,7 @@ const styles = StyleSheet.create({
   // Info Window Styles
   infoWindow: {
     position: 'absolute',
-    bottom: 100,
+    bottom: 120,
     left: 20,
     right: 20,
     backgroundColor: '#fff',
@@ -576,7 +687,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 8,
-    zIndex: 1000,
+    zIndex: 9999,
   },
   infoWindowHeader: {
     flexDirection: 'row',
@@ -602,6 +713,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginBottom: 2,
+  },
+  infoWindowLocation: {
+    fontSize: 12,
+    color: '#8E9BAE',
+    marginBottom: 4,
   },
   infoWindowDiscounts: {
     fontSize: 13,
@@ -650,6 +766,55 @@ const styles = StyleSheet.create({
     color: '#DB8633',
     fontSize: 14,
     fontWeight: '600',
+  },
+  // Web fallback styles
+  webMapFallback: {
+    backgroundColor: '#f5f5fa',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  webMapText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#324E58',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  webMapSubtext: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  webMapButton: {
+    backgroundColor: '#DB8633',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+  },
+  webMapButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  customMarker: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  markerImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
   },
 });
 

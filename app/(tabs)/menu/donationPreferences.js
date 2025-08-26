@@ -51,13 +51,13 @@ export default function DonationAmount() {
       colors={['#2C3E50', '#4CA1AF']}
       style={styles.container}
     >
-      {/* Header */}
+      {/* Standardized Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/menu')}>
           <AntDesign name="arrowleft" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Monthly Donation</Text>
-        <View style={styles.placeholder} />
+        <View style={styles.headerSpacer} />
       </View>
 
       {/* Main Content */}
@@ -157,7 +157,7 @@ export default function DonationAmount() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 60,
+    paddingTop: 20,
   },
   header: {
     flexDirection: 'row',
@@ -170,14 +170,14 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '700',
     color: '#fff',
     textAlign: 'center',
     flex: 1,
   },
-  placeholder: {
-    width: 40, // Adjust as needed to center the title
+  headerSpacer: {
+    width: 32,
   },
   content: {
     flex: 1,

@@ -20,7 +20,7 @@ export default function AddNewCard() {
   const [cardHolder, setCardHolder] = useState('');
   const [expiry, setExpiry] = useState('');
   const [cvv, setCvv] = useState('');
-  const [saveInfo, setSaveInfo] = useState(false);
+  const [setAsDefault, setSetAsDefault] = useState(true);
 
   const handleAddCard = () => {
     if (!cardNumber || !cardHolder || !expiry || !cvv) {
@@ -28,8 +28,32 @@ export default function AddNewCard() {
       return;
     }
 
+    // Extract last 4 digits from card number
+    const last4 = cardNumber.replace(/\s/g, '').slice(-4);
+    
+    // Determine card type based on first digit (simplified logic)
+    let cardType = 'Card';
+    if (cardNumber.startsWith('4')) cardType = 'Visa';
+    else if (cardNumber.startsWith('5')) cardType = 'Master';
+    else if (cardNumber.startsWith('3')) cardType = 'Amex';
+
+    const cardData = {
+      last4,
+      type: cardType,
+      setAsDefault,
+    };
+
     Alert.alert('✅ Card Added!', 'Your card has been saved.', [
-      { text: 'OK', onPress: () => router.replace('/menu/manageCards') },
+      { 
+        text: 'OK', 
+        onPress: () => {
+          // Navigate back with card data
+          router.replace({
+            pathname: '/menu/manageCards',
+            params: { newCard: JSON.stringify(cardData) }
+          });
+        }
+      },
     ]);
   };
 
@@ -39,13 +63,13 @@ export default function AddNewCard() {
       style={styles.container}
     >
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Header */}
+        {/* Standardized Header */}
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.replace('/menu/manageCards')}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/menu/manageCards')}>
             <AntDesign name="arrowleft" size={24} color="#324E58" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Add Card</Text>
-          <View style={{ width: 24 }} />
+          <View style={styles.headerSpacer} />
         </View>
 
         {/* Form */}
@@ -98,15 +122,15 @@ export default function AddNewCard() {
             </View>
           </View>
 
-          {/* Save Info */}
+          {/* Set as Default */}
           <View style={styles.checkboxRow}>
             <Switch
-              value={saveInfo}
-              onValueChange={setSaveInfo}
-              thumbColor={saveInfo ? '#DB8633' : '#ccc'}
+              value={setAsDefault}
+              onValueChange={setSetAsDefault}
+              thumbColor={setAsDefault ? '#DB8633' : '#ccc'}
               trackColor={{ false: '#ccc', true: '#f5c89e' }}
             />
-            <Text style={styles.checkboxLabel}>Use this information for my future use</Text>
+            <Text style={styles.checkboxLabel}>Set as default for future payments (recommended)</Text>
           </View>
         </View>
       </ScrollView>
@@ -126,19 +150,27 @@ const styles = StyleSheet.create({
   },
   scroll: {
     paddingHorizontal: 24,
-    paddingTop: 60,
+    paddingTop: 20,
     paddingBottom: 100,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 32,
+    marginBottom: 20,
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#324E58',
+    color: '#6d6e72',
+    flex: 1,
+    textAlign: 'center',
+  },
+  backButton: {
+    // Standard back button with no custom styling
+  },
+  headerSpacer: {
+    width: 32,
   },
   form: {
     gap: 24,
