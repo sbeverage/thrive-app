@@ -54,7 +54,11 @@ export default function MainHome() {
 
             <View style={styles.profileRow}>
               <View style={styles.profileLeft}>
-                <Image source={require('../assets/images/profile.jpg')} style={styles.profilePic} />
+                <View style={[styles.profilePic, { backgroundColor: '#DB8633', justifyContent: 'center', alignItems: 'center' }]}>
+                  <Text style={{ color: 'white', fontSize: 18, fontWeight: 'bold' }}>
+                    SB
+                  </Text>
+                </View>
                 <Text style={styles.greetingText}>Hey Stephanie!</Text>
               </View>
               <View style={styles.coinsContainer}>

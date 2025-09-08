@@ -3,9 +3,11 @@ import { View, Text, StyleSheet, Image, TouchableOpacity, Alert, ScrollView } fr
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useUser } from '../../context/UserContext';
 
 export default function UserProfile() {
   const router = useRouter();
+  const { user } = useUser();
 
   const handleDelete = () => {
     Alert.alert(
@@ -35,18 +37,44 @@ export default function UserProfile() {
         end={{ x: 1, y: 1 }}
         style={styles.profileGradient}
       >
-        <Image source={require('../../../assets/images/profile.jpg')} style={styles.avatar} />
-        <Text style={styles.name}>Stephanie Beverage</Text>
-        <Text style={styles.email}>stephanie@gmail.com</Text>
+        {user.profileImage ? (
+          <Image source={{ uri: user.profileImage }} style={styles.avatar} />
+        ) : user.firstName && user.lastName ? (
+          <View style={[styles.avatar, { backgroundColor: '#DB8633', justifyContent: 'center', alignItems: 'center' }]}>
+            <Text style={{ color: 'white', fontSize: 24, fontWeight: 'bold' }}>
+              {user.firstName[0]}{user.lastName[0]}
+            </Text>
+          </View>
+        ) : (
+          <View style={[styles.avatar, { backgroundColor: '#DB8633', justifyContent: 'center', alignItems: 'center' }]}>
+            <Text style={{ color: 'white', fontSize: 24, fontWeight: 'bold' }}>
+              ??
+            </Text>
+          </View>
+        )}
+        <Text style={styles.name}>
+          {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : 'User Name'}
+        </Text>
+        <Text style={styles.email}>{user.email || 'user@example.com'}</Text>
 
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Phone</Text>
-          <Text style={styles.infoValue}>(555) 1234 567</Text>
+          <Text style={styles.infoValue}>{user.phone || 'Not provided'}</Text>
         </View>
 
         <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Referral Code</Text>
-          <Text style={styles.infoValue}>HJY448</Text>
+          <Text style={styles.infoLabel}>Points</Text>
+          <Text style={styles.infoValue}>{user.points || 0}</Text>
+        </View>
+
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Total Savings</Text>
+          <Text style={styles.infoValue}>${user.totalSavings || 0}</Text>
+        </View>
+
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Monthly Donation</Text>
+          <Text style={styles.infoValue}>${user.monthlyDonation || 15}</Text>
         </View>
       </LinearGradient>
 

@@ -37,10 +37,11 @@ export default function EditProfileScreen() {
       </View>
 
       <View style={styles.imageContainer}>
-        <Image
-          source={require('../../../assets/images/profile.jpg')}
-          style={styles.profileImage}
-        />
+        <View style={[styles.profileImage, { backgroundColor: '#DB8633', justifyContent: 'center', alignItems: 'center' }]}>
+          <Text style={{ color: 'white', fontSize: 24, fontWeight: 'bold' }}>
+            SB
+          </Text>
+        </View>
         <TouchableOpacity style={styles.imageIcon}>
           <AntDesign name="picture" size={20} color="#888" />
         </TouchableOpacity>

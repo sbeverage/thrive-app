@@ -1,17 +1,214 @@
 // file: app/(tabs)/home.js
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useFonts, Figtree_400Regular, Figtree_700Bold } from '@expo-google-fonts/figtree';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, Image, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, Image, TouchableOpacity, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter, Tabs } from 'expo-router';
+import { useRouter, Tabs, useFocusEffect } from 'expo-router';
 import MonthlyImpactCard from '../../components/MonthlyImpactCard';
 import { useBeneficiary } from '../context/BeneficiaryContext';
+import { useUser } from '../context/UserContext';
+import API from '../lib/api';
 
 export default function MainHome() {
   const router = useRouter();
   const { selectedBeneficiary } = useBeneficiary();
-  const monthlyDonation = 15;
-  const monthlySavings = 0;
+  const { user, saveUserData, loadUserData, syncWithBackend, clearAllData, clearProfileImage, addPoints, addSavings, uploadProfilePicture, checkVerificationStatus } = useUser();
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  // Calculate monthly values based on user's donation amount
+  const monthlyDonation = user.monthlyDonation || 15;
+  const monthlySavings = user.totalSavings || 0; // Use total savings from discounts
+  
+  // Debug the values being passed to the card
+  console.log('🏠 Monthly card values:', { monthlyDonation, monthlySavings, userMonthlyDonation: user.monthlyDonation });
+
+  // Debug user data
+  console.log('🏠 Home page - User data:', user);
+  console.log('🏠 Home page - First name:', user.firstName);
+  console.log('🏠 Home page - Last name:', user.lastName);
+  console.log('🏠 Home page - Profile image:', user.profileImage);
+  console.log('🏠 Home page - Profile image URL:', user.profileImageUrl);
+  console.log('🏠 Home page - Image type:', typeof user.profileImage);
+  console.log('🏠 Home page - Is verified:', user.isVerified);
+
+  // Force re-render when user data changes
+  useEffect(() => {
+    console.log('🔄 Home page user data changed:', user);
+  }, [user, refreshTrigger]);
+
+  // Load user data when home page loads
+  useEffect(() => {
+    console.log('🏠 Home page useEffect - loading user data...');
+    const loadData = async () => {
+      const loadedData = await loadUserData();
+      console.log('🏠 Loaded data result:', loadedData);
+      // Force a re-render after loading data
+      setRefreshTrigger(prev => prev + 1);
+    };
+    loadData();
+  }, []);
+
+  // Refresh data when user navigates to home page
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('🏠 Home page focused - refreshing user data...');
+      const refreshData = async () => {
+        const loadedData = await loadUserData();
+        console.log('🏠 Focus refresh - loaded data:', loadedData);
+        setRefreshTrigger(prev => prev + 1);
+      };
+      refreshData();
+    }, [])
+  );
+
+  // Debug user data changes
+  useEffect(() => {
+    console.log('🔄 User data changed:', {
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      profileImage: user.profileImage,
+      isLoading: user.isLoading
+    });
+  }, [user]);
+
+  const handleTestBackend = async () => {
+    console.log('🧪 Test button clicked!');
+    console.log('Starting backend test...');
+    Alert.alert('Debug', 'Button clicked! Check console for logs.');
+    
+    try {
+      console.log('Fetching backend...');
+      Alert.alert('Testing Backend', 'Testing connection to your backend...');
+      
+      // Test basic connectivity to your backend
+      const response = await fetch('http://thrive-backend-final.eba-fxvg5pyf.us-east-1.elasticbeanstalk.com/api/health');
+      console.log('Response received:', response.status);
+      
+      if (response.ok) {
+        console.log('✅ Backend test successful!');
+        Alert.alert('✅ Success!', 'Backend connection is working perfectly!');
+      } else {
+        console.log('⚠️ Backend returned status:', response.status);
+        Alert.alert('⚠️ Partial Success', 'Backend is reachable but some endpoints may have issues.');
+      }
+    } catch (error) {
+      console.log('❌ Backend test failed:', error);
+      Alert.alert('❌ Test Failed', `Backend connection test failed: ${error.message}`);
+      console.error('Test error:', error);
+    }
+  };
+
+  const handleTestSignup = async () => {
+    try {
+      Alert.alert('Testing Signup', 'Testing signup API call...');
+      const response = await API.signup({ 
+        email: 'test@example.com', 
+        password: 'testpassword123' 
+      });
+      Alert.alert('✅ Signup Test Success', 'Signup API is working!');
+    } catch (error) {
+      Alert.alert('❌ Signup Test Failed', `Error: ${error.message}\n\nThis might be a network issue or backend problem.`);
+      console.error('Signup test error:', error);
+    }
+  };
+
+  const handleSyncWithBackend = async () => {
+    try {
+      Alert.alert('Syncing', 'Syncing user data with backend...');
+      await syncWithBackend();
+      Alert.alert('✅ Sync Complete', 'User data synced with backend successfully!');
+    } catch (error) {
+      Alert.alert('❌ Sync Failed', `Error: ${error.message}`);
+      console.error('Sync error:', error);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    Alert.alert(
+      'Delete User Account',
+      'Enter email to delete from database:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          onPress: async () => {
+            try {
+              await API.deleteUser('stephanie@phixsolutions.com');
+              Alert.alert('✅ User Deleted', 'User account deleted from database. You can now sign up again.');
+            } catch (error) {
+              Alert.alert('❌ Delete Failed', `Error: ${error.message}`);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleTestSavings = async () => {
+    try {
+      await addSavings(5.50); // Add $5.50 to test
+      Alert.alert('✅ Test Savings Added', 'Added $5.50 to your savings!');
+    } catch (error) {
+      Alert.alert('❌ Test Failed', `Error: ${error.message}`);
+    }
+  };
+
+  const handleTestS3Upload = async () => {
+    try {
+      console.log('📸 Testing S3 image upload...');
+      
+      // Test with a dummy image URI (you can replace this with actual image picker)
+      const testImageUri = 'file:///test/image.jpg';
+      
+      const result = await uploadProfilePicture(testImageUri);
+      console.log('✅ S3 image upload test result:', result);
+      
+      Alert.alert('S3 Test Result', `Image upload to S3 completed. Check console for details.`);
+    } catch (error) {
+      console.error('❌ S3 image upload test failed:', error);
+      Alert.alert('S3 Test Failed', `Image upload to S3 failed: ${error.message}`);
+    }
+  };
+
+  const handleDebugUserData = () => {
+    console.log('👤 Debug User Data:', user);
+    Alert.alert(
+      '👤 User Data Debug', 
+      `Name: ${user.firstName || 'EMPTY'} ${user.lastName || 'EMPTY'}\nEmail: ${user.email || 'EMPTY'}\nProfile Image: ${user.profileImage ? 'Set' : 'Not set'}\nTotal Savings: $${user.totalSavings || 0}\n\nRaw data: ${JSON.stringify(user, null, 2)}`,
+      [
+        { text: 'Test Save Data', onPress: async () => {
+          // Test saving some data
+          await saveUserData({ firstName: 'Test', lastName: 'User' });
+          Alert.alert('✅ Test Data Saved', 'Check if name changes to "Test User"');
+        }},
+        { text: 'Test Savings +$5.50', onPress: handleTestSavings},
+        { text: 'Test S3 Upload', onPress: handleTestS3Upload},
+        { text: 'Check Verification Status', onPress: checkVerificationStatus},
+        { text: 'Test Image Upload', onPress: async () => {
+          // Test with a sample image URI
+          const testImageUri = 'https://via.placeholder.com/150x150/DB8633/FFFFFF?text=TEST';
+          try {
+            await uploadProfilePicture(testImageUri);
+            Alert.alert('✅ Test Image Uploaded', 'Check if test image appears');
+          } catch (error) {
+            Alert.alert('❌ Image Upload Failed', error.message);
+          }
+        }},
+        { text: 'Clear All Data', onPress: () => {
+          clearAllData();
+          Alert.alert('✅ Data Cleared', 'All user data has been cleared. Please restart the app.');
+        }},
+        { text: 'Clear Profile Image', onPress: () => {
+          clearProfileImage();
+          Alert.alert('✅ Image Cleared', 'Profile image cleared from local storage.');
+        }},
+        { text: 'Sync Backend', onPress: handleSyncWithBackend},
+        { text: 'Delete User', onPress: handleDeleteUser, style: 'destructive'},
+        { text: 'OK' }
+      ]
+    );
+  };
 
   let [fontsLoaded] = useFonts({
     Figtree_400Regular,
@@ -30,6 +227,21 @@ export default function MainHome() {
     <>
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
+          {/* Email Verification Banner */}
+          {user.isLoggedIn && !user.isVerified && (
+            <View style={styles.verificationBanner}>
+              <Text style={styles.verificationText}>
+                📧 Please verify your email to access all features
+              </Text>
+              <TouchableOpacity 
+                style={styles.verifyButton}
+                onPress={() => router.push('/verifyEmail')}
+              >
+                <Text style={styles.verifyButtonText}>Verify Email</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          
           <LinearGradient
             colors={['#2C3E50', '#4CA1AF']}
             start={{ x: 0, y: 0 }}
@@ -39,20 +251,72 @@ export default function MainHome() {
             <View style={styles.headerTopRow}>
               <Image source={require('../../assets/logos/thrive-logo-white.png')} style={styles.logo} resizeMode="contain" />
               <View style={styles.rightIcons}>
+                <TouchableOpacity style={styles.iconButton} onPress={handleTestBackend}>
+                  <Text style={styles.testButtonText}>🧪</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconButton} onPress={handleTestSignup}>
+                  <Text style={styles.testButtonText}>S</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconButton} onPress={handleDebugUserData}>
+                  <Text style={styles.testButtonText}>👤</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconButton} onPress={async () => {
+                  try {
+                    console.log('🧪 Testing saveUserData...');
+                    const result = await saveUserData({ firstName: 'Test', lastName: 'User' });
+                    console.log('✅ saveUserData result:', result);
+                    setRefreshTrigger(prev => prev + 1);
+                    Alert.alert('✅ Test Data Saved', `Name should change to "Test User". Result: ${JSON.stringify(result)}`);
+                  } catch (error) {
+                    console.error('❌ saveUserData error:', error);
+                    Alert.alert('❌ Test Failed', `Error: ${error.message}`);
+                  }
+                }}>
+                  <Text style={styles.testButtonText}>T</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconButton} onPress={async () => {
+                  console.log('🔄 Refreshing user data...');
+                  const loadedData = await loadUserData();
+                  console.log('🔄 Loaded data:', loadedData);
+                  setRefreshTrigger(prev => prev + 1);
+                  Alert.alert('🔄 Refreshed', `Page should refresh. Loaded: ${JSON.stringify(loadedData)}`);
+                }}>
+                  <Text style={styles.testButtonText}>R</Text>
+                </TouchableOpacity>
                 <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/menu')}>
                   <Image source={require('../../assets/icons/menu.png')} style={styles.iconWhite} />
                 </TouchableOpacity>
               </View>
             </View>
+            {/* Debug: User data display */}
+            <Text style={{color: 'white', fontSize: 12, textAlign: 'center'}}>
+              DEBUG: Name={user.firstName || 'EMPTY'} | Image={user.profileImage ? 'SET' : 'NOT SET'}
+            </Text>
 
             <View style={styles.profileRow}>
               <View style={styles.profileLeft}>
-                <Image source={require('../../assets/images/profile.jpg')} style={styles.profilePic} />
-                <Text style={styles.greetingText}>Hey Stephanie!</Text>
+                {user.profileImage ? (
+                  <Image source={{ uri: user.profileImage }} style={styles.profilePic} />
+                ) : user.firstName && user.lastName ? (
+                  <View style={[styles.profilePic, { backgroundColor: '#DB8633', justifyContent: 'center', alignItems: 'center' }]}>
+                    <Text style={{ color: 'white', fontSize: 18, fontWeight: 'bold' }}>
+                      {user.firstName[0]}{user.lastName[0]}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={[styles.profilePic, { backgroundColor: '#DB8633', justifyContent: 'center', alignItems: 'center' }]}>
+                    <Text style={{ color: 'white', fontSize: 18, fontWeight: 'bold' }}>
+                      {user.firstName && user.lastName ? `${user.firstName[0]}${user.lastName[0]}` : '??'}
+                    </Text>
+                  </View>
+                )}
+                <Text style={styles.greetingText}>
+                  Hey {user.firstName || 'there'}!
+                </Text>
               </View>
               <View style={styles.coinsContainer}>
                 <Image source={require('../../assets/icons/coin.png')} style={{ width: 18, height: 18, marginRight: 6 }} />
-                <Text style={styles.coinsText}>847</Text>
+                <Text style={styles.coinsText}>{user.points || 0}</Text>
               </View>
             </View>
 
@@ -61,7 +325,11 @@ export default function MainHome() {
           </LinearGradient>
 
           <View style={styles.monthlyCardWrapper}>
-            <MonthlyImpactCard monthlyDonation={monthlyDonation} monthlySavings={monthlySavings} />
+            <MonthlyImpactCard 
+              key={`${monthlyDonation}-${monthlySavings}`}
+              monthlyDonation={monthlyDonation} 
+              monthlySavings={monthlySavings} 
+            />
           </View>
 
           {/* My Beneficiary Section */}
@@ -121,14 +389,26 @@ export default function MainHome() {
             <View style={styles.leaderboardRankBox}>
               <Text style={[styles.leaderboardRank, styles.leaderboardRankYou]}>42</Text>
             </View>
-            <Image source={require('../../assets/images/profile.jpg')} style={styles.leaderboardProfile} />
+            {user.profileImage ? (
+              <Image source={{ uri: user.profileImage }} style={styles.leaderboardProfile} />
+            ) : user.firstName && user.lastName ? (
+              <View style={[styles.leaderboardProfile, { backgroundColor: '#DB8633', justifyContent: 'center', alignItems: 'center' }]}>
+                <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold' }}>
+                  {user.firstName[0]}{user.lastName[0]}
+                </Text>
+              </View>
+            ) : (
+              <View style={[styles.leaderboardProfile, { backgroundColor: '#DB8633', justifyContent: 'center', alignItems: 'center' }]}>
+                <Text style={{ color: 'white', fontSize: 14, fontWeight: 'bold' }}>
+                  {user.firstName && user.lastName ? `${user.firstName[0]}${user.lastName[0]}` : '??'}
+                </Text>
+              </View>
+            )}
             <View style={styles.leaderboardInfo}>
-              <Text style={styles.leaderboardName}>Stephanie Beverage</Text>
+              <Text style={styles.leaderboardName}>
+                {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : 'Stephanie Beverage'}
+              </Text>
               <Text style={styles.leaderboardLocation}>Alpharetta, GA</Text>
-            </View>
-            <View style={styles.leaderboardPointsRow}>
-              <Text style={styles.leaderboardPoints}>847</Text>
-              <Image source={require('../../assets/icons/coin.png')} style={styles.leaderboardCoin} />
             </View>
           </View>
 
@@ -160,7 +440,7 @@ export default function MainHome() {
                 <View style={styles.inviteProgressBar}>
                   <View style={[styles.inviteProgressFill, { width: '60%' }]} />
                 </View>
-                <Text style={styles.inviteProgressReward}>🎁 +50 bonus points</Text>
+                <Text style={styles.inviteProgressReward}>🎁 +25 bonus points</Text>
               </View>
               
               <TouchableOpacity style={styles.inviteCardButton}>
@@ -448,5 +728,37 @@ const styles = StyleSheet.create({
   inviteSocialProofAuthor: {
     fontWeight: '700',
     color: '#DB8633',
+  },
+  testButtonText: {
+    fontSize: 20,
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  verificationBanner: {
+    backgroundColor: '#FF6B6B',
+    padding: 15,
+    margin: 10,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  verificationText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+  },
+  verifyButton: {
+    backgroundColor: 'white',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 6,
+    marginLeft: 10,
+  },
+  verifyButtonText: {
+    color: '#FF6B6B',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

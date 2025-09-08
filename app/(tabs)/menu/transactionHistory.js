@@ -1,6 +1,6 @@
 // File: app/(tabs)/menu/transactionHistory.js
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { AntDesign, Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useUser } from '../../context/UserContext';
 
 const transactions = [
   {
@@ -68,9 +69,23 @@ const transactions = [
 
 export default function TransactionHistory() {
   const router = useRouter();
+  const { user, loadUserData } = useUser();
   const [selectedFilter, setSelectedFilter] = useState('all');
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  const totalSavings = transactions.reduce((sum, item) => sum + parseFloat(item.savings.replace('$', '')), 0);
+  // Debug logging
+  useEffect(() => {
+    console.log('🔍 TransactionHistory - User data:', user);
+    console.log('🔍 TransactionHistory - Total savings:', user.totalSavings);
+  }, [user]);
+
+  // Load user data when component mounts
+  useEffect(() => {
+    loadUserData();
+  }, []);
+
+  // Use real user data for totals
+  const totalSavings = user.totalSavings || 0;
   const totalSpent = transactions.reduce((sum, item) => sum + parseFloat(item.spending.replace('$', '')), 0);
 
   const renderItem = ({ item }) => (
@@ -109,14 +124,22 @@ export default function TransactionHistory() {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} key={refreshTrigger}>
       {/* Standardized Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)/menu')}>
           <AntDesign name="arrowleft" size={24} color="#324E58" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Transaction History</Text>
-        <View style={styles.headerSpacer} />
+        <TouchableOpacity 
+          style={styles.refreshButton} 
+          onPress={() => {
+            loadUserData();
+            setRefreshTrigger(prev => prev + 1);
+          }}
+        >
+          <Feather name="refresh-cw" size={20} color="#DB8633" />
+        </TouchableOpacity>
       </View>
 
       {/* Summary Cards */}
@@ -179,6 +202,9 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: 32,
+  },
+  refreshButton: {
+    padding: 8,
   },
   summarySection: {
     flexDirection: 'row',

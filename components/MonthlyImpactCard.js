@@ -5,8 +5,23 @@ import { Feather } from '@expo/vector-icons';
 export default function MonthlyImpactCard({
   monthlyDonation = 15,
   monthlySavings = 7.5,
-  nextDonationDate = 'Sep 17, 2025',
+  nextDonationDate = null,
 }) {
+  // Debug the values received by the card
+  console.log('📊 MonthlyImpactCard received:', { monthlyDonation, monthlySavings, nextDonationDate });
+  
+  // Calculate next billing date (1 month from now)
+  const getNextBillingDate = () => {
+    if (nextDonationDate) return nextDonationDate;
+    
+    const today = new Date();
+    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate());
+    return nextMonth.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric' 
+    });
+  };
   const flowerSeed = require('../assets/growth/seed.png');
   const piggyWithCoins = require('../assets/images/piggy-money.png');
 
@@ -16,7 +31,7 @@ export default function MonthlyImpactCard({
       <View style={styles.headerRow}>
         <View style={styles.dateRow}>
           <Feather name="calendar" size={16} color="#324E58" style={{ marginRight: 6 }} />
-          <Text style={styles.dateText}>{nextDonationDate}</Text>
+          <Text style={styles.dateText}>Next Billing: {getNextBillingDate()}</Text>
         </View>
       </View>
 

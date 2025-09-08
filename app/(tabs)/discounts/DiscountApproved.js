@@ -3,18 +3,34 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ScrollView,
 import { useRouter } from 'expo-router';
 import { AntDesign, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useUser } from '../../context/UserContext';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function DiscountApproved() {
   const router = useRouter();
+  const { addPoints, addSavings } = useUser();
   const [totalBill, setTotalBill] = useState('');
   const [totalDiscount, setTotalDiscount] = useState('');
   const [showModal, setShowModal] = useState(false);
 
-  const handleGetPoints = () => {
+  const handleGetPoints = async () => {
     if (totalBill && totalDiscount) {
-      setShowModal(true);
+      try {
+        // Add 25 points for completing the discount redemption
+        await addPoints(25);
+        
+        // Add the savings amount to total savings
+        const savingsAmount = parseFloat(totalDiscount) || 0;
+        await addSavings(savingsAmount);
+        
+        console.log(`💰 Added $${savingsAmount} to savings and 25 points!`);
+        setShowModal(true);
+      } catch (error) {
+        console.error('❌ Error adding points and savings:', error);
+        // Still show modal even if there's an error
+        setShowModal(true);
+      }
     }
   };
 
@@ -187,7 +203,7 @@ export default function DiscountApproved() {
               <Text style={styles.modalHighlight}>+25 Points</Text> added to your piggy bank!
             </Text>
             <Text style={styles.modalSubtitle}>
-              Your savings will now appear on your home page
+              ${totalDiscount} added to your total savings! Check your home page.
             </Text>
             <TouchableOpacity style={styles.modalButton} onPress={handleClose}>
               <Text style={styles.modalButtonText}>Awesome!</Text>

@@ -12,14 +12,16 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
+import { useUser } from '../../context/UserContext';
 
 export default function EditDonationAmount() {
   const router = useRouter();
-  const [currentAmount, setCurrentAmount] = useState('15');
-  const [newAmount, setNewAmount] = useState('15');
+  const { user, saveUserData } = useUser();
+  const [currentAmount, setCurrentAmount] = useState(user.monthlyDonation?.toString() || '15');
+  const [newAmount, setNewAmount] = useState(user.monthlyDonation?.toString() || '15');
   const [isEditing, setIsEditing] = useState(false);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const amount = parseFloat(newAmount);
     if (isNaN(amount) || amount < 15) {
       Alert.alert('Invalid Amount', 'Please enter a valid amount of $15 or more.');
@@ -31,14 +33,22 @@ export default function EditDonationAmount() {
       return;
     }
 
-    setCurrentAmount(newAmount);
-    setIsEditing(false);
-    
-    Alert.alert(
-      '✅ Amount Updated!',
-      `Your monthly donation amount has been updated to $${newAmount}.`,
-      [{ text: 'OK' }]
-    );
+    try {
+      // Save the new donation amount to user context
+      await saveUserData({ monthlyDonation: amount });
+      
+      setCurrentAmount(newAmount);
+      setIsEditing(false);
+      
+      Alert.alert(
+        '✅ Amount Updated!',
+        `Your monthly donation amount has been updated to $${newAmount}.`,
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      console.error('❌ Error saving donation amount:', error);
+      Alert.alert('Error', 'Failed to save donation amount. Please try again.');
+    }
   };
 
   const handleCancel = () => {

@@ -9,6 +9,7 @@ import SuccessModal from '../../components/SuccessModal';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useBeneficiary } from '../context/BeneficiaryContext';
+import { useUser } from '../context/UserContext';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -147,9 +148,12 @@ export default function BeneficiarySignupDetails() {
     social: 'N/A',
   };
 
-  const handleBeneficiarySelect = () => {
+  const handleBeneficiarySelect = async () => {
     // Set the selected beneficiary in the context
     setSelectedBeneficiary(beneficiary);
+    
+    // Award 10 points for selecting a beneficiary
+    
     setSuccessMessage("Awesome! You've selected your cause!");
     setShowSuccessModal(true);
     setConfettiTrigger(true);

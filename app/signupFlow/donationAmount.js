@@ -1,14 +1,18 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions, KeyboardAvoidingView, Platform, ScrollView, Image } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions, KeyboardAvoidingView, Platform, ScrollView, Image, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useBeneficiary } from '../context/BeneficiaryContext';
+import { useUser } from '../context/UserContext';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function DonationAmount() {
   const router = useRouter();
+  const { selectedBeneficiary } = useBeneficiary();
+  const { saveUserData } = useUser();
 
   const [amount, setAmount] = useState(15);
   const MIN_AMOUNT = 15;
@@ -18,11 +22,22 @@ export default function DonationAmount() {
     setAmount(Math.round(value));
   };
 
-  const handleSaveAndContinue = () => {
-    router.push({
-      pathname: '/signupFlow/stripeIntegration',
-      params: { amount: amount.toString() }
-    });
+  const handleSaveAndContinue = async () => {
+    try {
+      console.log('🎉 Donation amount set!', amount);
+      
+      // Save the donation amount to user context
+      await saveUserData({ monthlyDonation: amount });
+      
+      // Navigate directly to card details page
+      router.push({
+        pathname: '/signupFlow/stripeIntegration',
+        params: { amount: amount.toString() }
+      });
+    } catch (error) {
+      console.error('❌ Error saving donation amount:', error);
+      Alert.alert('Error', 'Failed to save donation amount. Please try again.');
+    }
   };
 
   return (
@@ -61,8 +76,12 @@ export default function DonationAmount() {
               style={{ width: 130, height: 130, marginBottom: 10, resizeMode: 'contain' }}
             />
             <View style={{ marginBottom: 8 }}>
-              <Text style={{ fontWeight: 'bold', fontSize: 20, marginBottom: 2, color: '#fff', textAlign: 'center' }}>Choose Your Impact.</Text>
-              <Text style={{ fontWeight: '400', fontSize: 16, marginTop: 2, color: '#fff', textAlign: 'center', maxWidth: 320, alignSelf: 'center' }}>Set your monthly donation amount. Every dollar makes a difference!</Text>
+              <Text style={{ fontWeight: 'bold', fontSize: 22, marginBottom: 4, color: '#fff', textAlign: 'center' }}>
+                Give to {selectedBeneficiary?.name || 'Your Cause'}!
+              </Text>
+              <Text style={{ fontWeight: '400', fontSize: 16, color: '#fff', textAlign: 'center' }}>
+                Every dollar makes a difference
+              </Text>
       </View>
           </View>
 
@@ -89,7 +108,9 @@ export default function DonationAmount() {
               <Text style={styles.amountLabelCard}>$250</Text>
         </View>
             <TouchableOpacity onPress={handleSaveAndContinue} style={styles.continueButtonCard}>
-              <Text style={styles.continueButtonTextCard}>Set monthly giving</Text>
+              <Text style={styles.continueButtonTextCard}>
+                {selectedBeneficiary?.name ? `Support ${selectedBeneficiary.name}` : 'Set monthly giving'}
+              </Text>
             </TouchableOpacity>
         </View>
       </ScrollView>

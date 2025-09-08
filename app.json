@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/piggy-with-flowers.png",
-    "scheme": "myapp",
+    "scheme": "thriveapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -18,8 +18,15 @@
       "bundleIdentifier": "com.anonymous.thrive-app",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app uses location to show nearby discounts and causes on the map.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location to show nearby discounts and causes on the map."
-      }
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location to show nearby discounts and causes on the map.",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLName": "thriveapp",
+            "CFBundleURLSchemes": ["thriveapp"]
+          }
+        ]
+      },
+      "associatedDomains": ["applinks:thrive-web-jet.vercel.app"]
     },
     "android": {
       "adaptiveIcon": {
@@ -29,6 +36,29 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "thrive-web-jet.vercel.app",
+              "pathPrefix": "/verify"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "thriveapp"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
       ]
     },
     "web": {

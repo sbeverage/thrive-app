@@ -19,7 +19,7 @@ export default function LeaderboardScreen() {
       city: 'Atlanta, GA',
       points: 800,
       rank: 2,
-      profileImage: require('../../assets/images/profile.jpg'),
+      profileImage: require('../../assets/images/Avatar-large.png'),
     },
     {
       id: 2,
@@ -27,7 +27,7 @@ export default function LeaderboardScreen() {
       city: 'New York, NY',
       points: 1000,
       rank: 1,
-      profileImage: require('../../assets/images/profile.jpg'),
+      profileImage: require('../../assets/images/Avatar-large.png'),
     },
     {
       id: 3,
@@ -35,7 +35,7 @@ export default function LeaderboardScreen() {
       city: 'Los Angeles, CA',
       points: 700,
       rank: 3,
-      profileImage: require('../../assets/images/profile.jpg'),
+      profileImage: require('../../assets/images/Avatar-large.png'),
     },
   ];
 
@@ -44,16 +44,16 @@ export default function LeaderboardScreen() {
 
   // Top 10 winners data (replace with real data as needed)
   const top10 = [
-    { id: 1, name: 'Michael Johnson', city: 'New York, NY', points: 1000, profileImage: require('../../assets/images/profile.jpg') },
-    { id: 2, name: 'Sarah Johnson', city: 'Atlanta, GA', points: 800, profileImage: require('../../assets/images/profile.jpg') },
-    { id: 3, name: 'Jennifer Parker', city: 'Los Angeles, CA', points: 700, profileImage: require('../../assets/images/profile.jpg') },
-    { id: 4, name: 'David Thompson', city: 'Austin, TX', points: 650, profileImage: require('../../assets/images/profile.jpg') },
-    { id: 5, name: 'Lisa Wang', city: 'Seattle, WA', points: 600, profileImage: require('../../assets/images/profile.jpg') },
-    { id: 6, name: 'James Wilson', city: 'Denver, CO', points: 580, profileImage: require('../../assets/images/profile.jpg') },
-    { id: 7, name: 'Maria Garcia', city: 'Phoenix, AZ', points: 570, profileImage: require('../../assets/images/profile.jpg') },
-    { id: 8, name: 'Robert Kim', city: 'Portland, OR', points: 560, profileImage: require('../../assets/images/profile.jpg') },
-    { id: 9, name: 'Jennifer Lee', city: 'Nashville, TN', points: 550, profileImage: require('../../assets/images/profile.jpg') },
-    { id: 10, name: 'Christopher Brown', city: 'Charlotte, NC', points: 540, profileImage: require('../../assets/images/profile.jpg') },
+    { id: 1, name: 'Michael Johnson', city: 'New York, NY', points: 1000, profileImage: require('../../assets/images/Avatar-large.png') },
+    { id: 2, name: 'Sarah Johnson', city: 'Atlanta, GA', points: 800, profileImage: require('../../assets/images/Avatar-large.png') },
+    { id: 3, name: 'Jennifer Parker', city: 'Los Angeles, CA', points: 700, profileImage: require('../../assets/images/Avatar-large.png') },
+    { id: 4, name: 'David Thompson', city: 'Austin, TX', points: 650, profileImage: require('../../assets/images/Avatar-large.png') },
+    { id: 5, name: 'Lisa Wang', city: 'Seattle, WA', points: 600, profileImage: require('../../assets/images/Avatar-large.png') },
+    { id: 6, name: 'James Wilson', city: 'Denver, CO', points: 580, profileImage: require('../../assets/images/Avatar-large.png') },
+    { id: 7, name: 'Maria Garcia', city: 'Phoenix, AZ', points: 570, profileImage: require('../../assets/images/Avatar-large.png') },
+    { id: 8, name: 'Robert Kim', city: 'Portland, OR', points: 560, profileImage: require('../../assets/images/Avatar-large.png') },
+    { id: 9, name: 'Jennifer Lee', city: 'Nashville, TN', points: 550, profileImage: require('../../assets/images/Avatar-large.png') },
+    { id: 10, name: 'Christopher Brown', city: 'Charlotte, NC', points: 540, profileImage: require('../../assets/images/Avatar-large.png') },
   ];
 
   // Segmented control handler (for now, just keeps the same data)
@@ -151,7 +151,11 @@ export default function LeaderboardScreen() {
             <View style={styles.leaderboardRankBox}>
               <Text style={[styles.leaderboardRank, styles.leaderboardRankYou]}>42</Text>
             </View>
-            <Image source={require('../../assets/images/profile.jpg')} style={styles.leaderboardProfile} />
+            <View style={[styles.leaderboardProfile, { backgroundColor: '#DB8633', justifyContent: 'center', alignItems: 'center' }]}>
+              <Text style={{ color: 'white', fontSize: 14, fontWeight: 'bold' }}>
+                SB
+              </Text>
+            </View>
             <View style={styles.leaderboardInfo}>
               <Text style={styles.leaderboardName}>Stephanie Beverage</Text>
               <Text style={styles.leaderboardLocation}>Alpharetta, GA</Text>

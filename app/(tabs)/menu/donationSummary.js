@@ -1,6 +1,6 @@
 // Full donationSummary.js with ScrollPicker integrated + fixes
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,39 +11,65 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign, Feather } from '@expo/vector-icons';
+import { useUser } from '../../context/UserContext';
+import { useBeneficiary } from '../../context/BeneficiaryContext';
 
 export default function DonationSummary() {
   const router = useRouter();
+  const { user, loadUserData } = useUser();
+  const { selectedBeneficiary } = useBeneficiary();
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  // Sample data - replace with actual data from your backend
+  // Debug logging
+  useEffect(() => {
+    console.log('🔍 DonationSummary - User data:', user);
+    console.log('🔍 DonationSummary - Monthly donation:', user.monthlyDonation);
+    console.log('🔍 DonationSummary - Selected beneficiary:', selectedBeneficiary);
+  }, [user, selectedBeneficiary]);
+
+  // Load user data when component mounts
+  useEffect(() => {
+    loadUserData();
+  }, []);
+
+  // Use real user data for donation amount
+  const monthlyDonationAmount = user.monthlyDonation || 15;
+  const currentCharity = selectedBeneficiary?.name || 'No charity selected';
+
+  // Generate sample monthly data based on user's donation amount
   const monthlyDonations = [
-    { month: 'January 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
-    { month: 'February 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
-    { month: 'March 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
-    { month: 'April 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
-    { month: 'May 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
-    { month: 'June 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
-    { month: 'July 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
-    { month: 'August 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
-    { month: 'September 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
-    { month: 'October 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
-    { month: 'November 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'completed' },
-    { month: 'December 2024', amount: 15, charity: 'St. Jude Children\'s Hospital', status: 'pending' },
+    { month: 'January 2024', amount: monthlyDonationAmount, charity: currentCharity, status: 'completed' },
+    { month: 'February 2024', amount: monthlyDonationAmount, charity: currentCharity, status: 'completed' },
+    { month: 'March 2024', amount: monthlyDonationAmount, charity: currentCharity, status: 'completed' },
+    { month: 'April 2024', amount: monthlyDonationAmount, charity: currentCharity, status: 'completed' },
+    { month: 'May 2024', amount: monthlyDonationAmount, charity: currentCharity, status: 'completed' },
+    { month: 'June 2024', amount: monthlyDonationAmount, charity: currentCharity, status: 'completed' },
+    { month: 'July 2024', amount: monthlyDonationAmount, charity: currentCharity, status: 'completed' },
+    { month: 'August 2024', amount: monthlyDonationAmount, charity: currentCharity, status: 'completed' },
+    { month: 'September 2024', amount: monthlyDonationAmount, charity: currentCharity, status: 'completed' },
+    { month: 'October 2024', amount: monthlyDonationAmount, charity: currentCharity, status: 'completed' },
+    { month: 'November 2024', amount: monthlyDonationAmount, charity: currentCharity, status: 'completed' },
+    { month: 'December 2024', amount: monthlyDonationAmount, charity: currentCharity, status: 'pending' },
   ];
 
   const totalDonated = monthlyDonations.filter(d => d.status === 'completed').reduce((sum, d) => sum + d.amount, 0);
-  const currentCharity = monthlyDonations[0]?.charity || 'No charity selected';
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} key={refreshTrigger}>
       {/* Standardized Header */}
       <View style={styles.headerRow}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/menu')}>
           <AntDesign name="arrowleft" size={24} color="#324E58" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Donation Summary</Text>
-        <TouchableOpacity style={styles.downloadButton}>
-          <Feather name="download" size={20} color="#DB8633" />
+        <TouchableOpacity 
+          style={styles.downloadButton} 
+          onPress={() => {
+            loadUserData();
+            setRefreshTrigger(prev => prev + 1);
+          }}
+        >
+          <Feather name="refresh-cw" size={20} color="#DB8633" />
         </TouchableOpacity>
       </View>
 

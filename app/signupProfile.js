@@ -12,16 +12,21 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign, Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useUser } from './context/UserContext';
+import { useLocalSearchParams } from 'expo-router';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function SignupProfile() {
   const router = useRouter();
+  const { email } = useLocalSearchParams();
+  const { saveUserData, uploadProfilePicture, addPoints } = useUser();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -46,8 +51,69 @@ export default function SignupProfile() {
     setPhoneNumber(formattedNumber);
   };
 
-  const handleContinue = () => {
-    router.push('/signupFlow/explainerDonate');
+  const handleContinue = async () => {
+    // Validate required fields
+    if (!firstName.trim()) {
+      Alert.alert('Required Field', 'Please enter your first name.');
+      return;
+    }
+    
+    if (!lastName.trim()) {
+      Alert.alert('Required Field', 'Please enter your last name.');
+      return;
+    }
+    
+    if (!phoneNumber.trim()) {
+      Alert.alert('Required Field', 'Please enter your phone number.');
+      return;
+    }
+    
+    // Validate phone number format (should have at least 10 digits)
+    const phoneDigits = phoneNumber.replace(/\D/g, '');
+    if (phoneDigits.length < 10) {
+      Alert.alert('Invalid Phone', 'Please enter a valid 10-digit phone number.');
+      return;
+    }
+
+    try {
+      console.log('💾 Starting profile save process...');
+      
+      // Prepare profile data
+      const profileData = {
+        firstName,
+        lastName,
+        phone: phoneNumber,
+        email: email, // Get email from params
+      };
+      
+      // Upload profile picture if selected
+      if (profileImage) {
+        try {
+          console.log('📸 Uploading profile picture...');
+          const uploadResult = await uploadProfilePicture(profileImage);
+          profileData.profileImage = uploadResult.imageUrl; // Use profileImage instead of profileImageUrl
+          profileData.profileImageUrl = uploadResult.imageUrl; // Keep both for compatibility
+        } catch (uploadError) {
+          console.error('❌ Profile picture upload failed:', uploadError);
+          // Continue without image - user can add later
+        }
+      }
+      
+      // Save profile data (this will save both locally and to backend)
+      const savedUserData = await saveUserData(profileData, true);
+      
+      // Award 25 points for completing profile setup
+      await addPoints(25);
+      
+      // Navigate directly to email verification page with email
+      router.push({
+        pathname: '/verifyEmail',
+        params: { email: email }
+      });
+    } catch (error) {
+      console.error('❌ Error saving profile:', error);
+      Alert.alert('Error', 'Failed to save profile. Please try again.');
+    }
   };
 
   // Helper to get initials
@@ -104,28 +170,29 @@ export default function SignupProfile() {
           <AntDesign name="pluscircle" size={32} color="#db8633" />
         </View>
       </TouchableOpacity>
+      <Text style={styles.optionalText}>Profile photo (optional)</Text>
             <View style={{ width: '100%' }}>
       <TextInput
-        placeholder="First Name"
+        placeholder="First Name *"
         value={firstName}
         onChangeText={setFirstName}
-        style={styles.input}
+        style={[styles.input, !firstName.trim() && styles.inputRequired]}
         placeholderTextColor="#6d6e72"
         autoCapitalize="words"
       />
       <TextInput
-        placeholder="Last Name"
+        placeholder="Last Name *"
         value={lastName}
         onChangeText={setLastName}
-        style={styles.input}
+        style={[styles.input, !lastName.trim() && styles.inputRequired]}
         placeholderTextColor="#6d6e72"
         autoCapitalize="words"
       />
       <TextInput
-        placeholder="Phone Number"
+        placeholder="Phone Number *"
         value={phoneNumber}
         onChangeText={handlePhoneChange}
-        style={styles.input}
+        style={[styles.input, !phoneNumber.trim() && styles.inputRequired]}
         placeholderTextColor="#6d6e72"
         keyboardType="phone-pad"
       />
@@ -242,6 +309,18 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     fontSize: 16,
     color: '#324E58',
+  },
+  inputRequired: {
+    borderColor: '#db8633',
+    borderWidth: 2,
+  },
+  optionalText: {
+    color: '#6d6e72',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: -20,
+    marginBottom: 20,
+    fontStyle: 'italic',
   },
   continueButton: {
     backgroundColor: '#db8633',

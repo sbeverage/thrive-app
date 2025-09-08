@@ -13,16 +13,19 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { AntDesign } from '@expo/vector-icons';
+import { AntDesign, Feather } from '@expo/vector-icons';
 import API from './lib/api';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useUser } from './context/UserContext';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { updateUserProfile, syncVerificationFromLogin } = useUser();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -31,12 +34,22 @@ export default function LoginScreen() {
     }
 
     try {
-      const response = await API.post('/auth/login', { email, password });
-      // Skip verification check and go directly to home
+      console.log('🔐 Starting login process...');
+      const response = await API.login({ email, password });
+      console.log('✅ Login successful:', response);
+      
+      // Update user email in context (preserves existing data)
+      updateUserProfile({ email });
+      
+      // Sync verification status from login response
+      await syncVerificationFromLogin(response);
+      
+      // Navigate to home on successful login
       router.replace('/home');
     } catch (error) {
-      Alert.alert('Login Error', error.response?.data?.message || 'Something went wrong.');
-      console.error('❌ Login error:', error.response?.data || error.message);
+      console.error('❌ Login error:', error);
+      const errorMessage = error.message || 'Login failed. Please check your credentials.';
+      Alert.alert('Login Error', errorMessage);
     }
   };
 
@@ -74,14 +87,26 @@ export default function LoginScreen() {
               value={email}
               onChangeText={setEmail}
             />
-            <TextInput
-              placeholder="Password"
-              style={styles.input}
-              placeholderTextColor="#6d6e72"
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
-            />
+            <View style={styles.passwordContainer}>
+              <TextInput
+                placeholder="Password"
+                style={styles.passwordInput}
+                placeholderTextColor="#6d6e72"
+                secureTextEntry={!showPassword}
+                value={password}
+                onChangeText={setPassword}
+              />
+              <TouchableOpacity
+                style={styles.eyeButton}
+                onPress={() => setShowPassword(!showPassword)}
+              >
+                <Feather 
+                  name={showPassword ? "eye" : "eye-off"} 
+                  size={20} 
+                  color="#6d6e72" 
+                />
+              </TouchableOpacity>
+            </View>
             
             {/* Forgot Password Link */}
             <TouchableOpacity
@@ -203,6 +228,27 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderWidth: 1,
     borderColor: '#e1e1e5',
+  },
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    marginBottom: 20,
+    height: 48,
+  },
+  passwordInput: {
+    flex: 1,
+    height: 48,
+    paddingHorizontal: 15,
+    fontSize: 16,
+    color: '#324E58',
+  },
+  eyeButton: {
+    paddingHorizontal: 15,
+    paddingVertical: 12,
   },
   forgotPassword: {
     alignSelf: 'flex-end',

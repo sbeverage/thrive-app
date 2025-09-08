@@ -13,7 +13,7 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { AntDesign } from '@expo/vector-icons'; 
+import { AntDesign, Feather } from '@expo/vector-icons'; 
 import API from './lib/api';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -23,6 +23,7 @@ export default function SignupScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const socialLogins = [
     { name: 'Facebook', icon: require('../assets/images/Facebook-icon.png') },
@@ -36,12 +37,22 @@ export default function SignupScreen() {
       return;
     }
 
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters.');
+      return;
+    }
+
     try {
-      await API.post('/api/auth/signup', { email, password });
+      console.log('🚀 Starting signup process...');
+      const response = await API.signup({ email, password });
+      console.log('✅ Signup successful:', response);
+      
+      // Navigate to profile setup
       router.push({ pathname: '/signupProfile', params: { email } });
     } catch (error) {
-      Alert.alert('Signup Failed', 'Something went wrong. Try again.');
-      console.error('❌ Signup error:', error.response?.data || error.message);
+      console.error('❌ Signup error:', error);
+      const errorMessage = error.message || 'Signup failed. Please try again.';
+      Alert.alert('Signup Failed', errorMessage);
     }
   };
 
@@ -78,14 +89,26 @@ export default function SignupScreen() {
               placeholderTextColor="#6d6e72"
               autoCapitalize="none"
             />
-            <TextInput
-              placeholder="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              style={styles.input}
-              placeholderTextColor="#6d6e72"
-            />
+            <View style={styles.passwordContainer}>
+              <TextInput
+                placeholder="Password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                style={styles.passwordInput}
+                placeholderTextColor="#6d6e72"
+              />
+              <TouchableOpacity
+                style={styles.eyeButton}
+                onPress={() => setShowPassword(!showPassword)}
+              >
+                <Feather 
+                  name={showPassword ? "eye" : "eye-off"} 
+                  size={20} 
+                  color="#6d6e72" 
+                />
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity style={styles.signupButton} onPress={handleSignup}>
               <Text style={styles.signupButtonText}>Create Account</Text>
             </TouchableOpacity>
@@ -167,6 +190,27 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderWidth: 1,
     borderColor: '#e1e1e5',
+  },
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5fa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    marginBottom: 20,
+    height: 48,
+  },
+  passwordInput: {
+    flex: 1,
+    height: 48,
+    paddingHorizontal: 15,
+    fontSize: 16,
+    color: '#324E58',
+  },
+  eyeButton: {
+    paddingHorizontal: 15,
+    paddingVertical: 12,
   },
   signupButton: {
     backgroundColor: '#db8633',
