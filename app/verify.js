@@ -1,7 +1,7 @@
 // Universal verification handler - works for both mobile and web
 import { useEffect, useState } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Platform, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AntDesign } from '@expo/vector-icons';
 import API from './lib/api';
@@ -58,35 +58,44 @@ export default function UniversalVerifyHandler() {
         setVerificationStatus('success');
         console.log('✅ Email verified via universal link');
         
-        // Show success and navigate
+        // Original simple verification flow
+        // Resend email functionality is kept (button available for errors)
+        // If in app, navigate directly. If in Safari/web, try to open app automatically
         setTimeout(() => {
-          if (isMobile) {
-            router.replace('/(tabs)/home');
+          if (Platform.OS !== 'web') {
+            // Running in app - navigate directly (original simple flow)
+            console.log('🔗 Navigating to /signupFlow/explainerDonate (original simple flow)');
+            router.replace('/signupFlow/explainerDonate');
           } else {
-            // On web, show success and offer to open app
-            Alert.alert(
-              '✅ Email Verified!',
-              'Your email has been successfully verified. Would you like to open the Thrive app?',
-              [
-                { text: 'Stay on Web', style: 'cancel' },
-                { 
-                  text: 'Open Thrive App', 
-                  onPress: () => {
-                    if (Platform.OS === 'web') {
-                      // On web, redirect to the mobile app store or show instructions
-                      window.open('https://apps.apple.com/app/thrive-app', '_blank');
-                    } else {
-                      const deepLink = `thriveapp://verify?token=${token}&email=${email}`;
-                      Linking.openURL(deepLink).catch(() => {
-                        Alert.alert('App Not Found', 'Please install the Thrive app to continue.');
-                      });
-                    }
-                  }
+            // If in Safari/web, redirect to the same HTTPS Universal Link with verified=true
+            // This works with Resend emails because it's still an HTTPS link
+            // Universal Links will catch it and open the app automatically
+            console.log('🌐 Running in Safari/web - redirecting to Universal Link with verified=true');
+            setTimeout(() => {
+              try {
+                // Use the same HTTPS Universal Link format but with verified=true
+                // This is the same approach that worked with the original Gmail setup
+                const universalLink = `https://thrive-web-jet.vercel.app/verify?token=${token || ''}&email=${encodeURIComponent(email || '')}&verified=true`;
+                console.log('🔗 Redirecting to Universal Link:', universalLink);
+                
+                if (typeof window !== 'undefined') {
+                  // Redirect to the Universal Link - Universal Links will handle opening the app
+                  window.location.href = universalLink;
                 }
-              ]
-            );
+              } catch (error) {
+                console.error('❌ Redirect failed:', error);
+                // Fallback: Try custom scheme
+                try {
+                  const deepLink = `thriveapp://verify?token=${token || ''}&email=${email || ''}&verified=true`;
+                  window.location.href = deepLink;
+                } catch (fallbackError) {
+                  console.error('❌ Fallback redirect also failed:', fallbackError);
+                  // User will see the "Continue in App" button to manually open
+                }
+              }
+            }, 1500); // Wait 1.5 seconds before redirect
           }
-        }, 2000);
+        }, 1500);
       } else {
         throw new Error(response.message || 'Verification failed');
       }
@@ -116,16 +125,20 @@ export default function UniversalVerifyHandler() {
 
   const handleResendEmail = async () => {
     if (!email) {
-      Alert.alert('Oops!', 'No email provided.');
+      Alert.alert('Oops!', 'No email provided. Please make sure you are logged in.');
+      console.error('❌ No email available for resend');
       return;
     }
 
+    console.log('📧 Resending verification email to:', email);
     try {
-      await API.resendVerification(email);
+      const response = await API.resendVerification(email);
+      console.log('✅ Resend response:', response);
       Alert.alert('✅ Email Sent!', 'Check your inbox for a new verification link.');
     } catch (error) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
       console.error('❌ Resend error:', error);
+      const errorMessage = error.message || 'Something went wrong. Please try again.';
+      Alert.alert('Error', errorMessage);
     }
   };
 
@@ -156,11 +169,56 @@ export default function UniversalVerifyHandler() {
 
         {verificationStatus === 'success' && (
           <View style={styles.statusContainer}>
-            <AntDesign name="checkcircle" size={60} color="#4CAF50" />
+            <Image 
+              source={require('../assets/icons/check-circle.png')} 
+              style={{ width: 60, height: 60, tintColor: '#4CAF50' }} 
+            />
             <Text style={styles.successText}>Email Verified!</Text>
             <Text style={styles.successSubtext}>
-              {isMobile ? 'Redirecting to app...' : 'Your account is now verified.'}
+              {Platform.OS === 'web' 
+                ? 'Your email has been verified! Please open the Thrive app to continue.'
+                : 'Redirecting to app...'}
             </Text>
+            {Platform.OS === 'web' && typeof window !== 'undefined' && (
+              <>
+                <TouchableOpacity 
+                  style={styles.openAppButton}
+                  onPress={() => {
+                    // Use the same HTTPS Universal Link approach that worked with Gmail
+                    // This works with Resend emails because it's still an HTTPS link
+                    try {
+                      const universalLink = `https://thrive-web-jet.vercel.app/verify?token=${token || ''}&email=${encodeURIComponent(email || '')}&verified=true`;
+                      console.log('🔗 Redirecting to Universal Link:', universalLink);
+                      
+                      // Redirect to Universal Link - Universal Links will handle opening the app
+                      window.location.href = universalLink;
+                      
+                      // Fallback: Also try custom scheme if Universal Link doesn't work
+                      setTimeout(() => {
+                        try {
+                          const deepLink = `thriveapp://verify?token=${token || ''}&email=${email || ''}&verified=true`;
+                          window.open(deepLink, '_blank');
+                        } catch (fallbackError) {
+                          console.error('❌ Fallback redirect failed:', fallbackError);
+                        }
+                      }, 500);
+                    } catch (error) {
+                      console.error('❌ Error redirecting:', error);
+                      Alert.alert(
+                        'Email Verified!',
+                        'Your email has been verified. Please open the Thrive app on your device to continue.',
+                        [{ text: 'OK' }]
+                      );
+                    }
+                  }}
+                >
+                  <Text style={styles.openAppButtonText}>Continue in App</Text>
+                </TouchableOpacity>
+                <Text style={styles.helpText}>
+                  If the app doesn't open automatically, tap the button above or open the Thrive app manually.
+                </Text>
+              </>
+            )}
           </View>
         )}
 
@@ -174,14 +232,22 @@ export default function UniversalVerifyHandler() {
             
             <View style={styles.buttonContainer}>
               <TouchableOpacity style={styles.primaryButton} onPress={handleRetry}>
-                <AntDesign name={isMobile ? "arrowleft" : "mobile1"} size={20} color="#fff" style={{ marginRight: 8 }} />
+                {Platform.OS === 'web' ? (
+                  <Text style={{ marginRight: 8 }}>{isMobile ? '←' : '📱'}</Text>
+                ) : (
+                  <AntDesign name={isMobile ? "left" : "mobile1"} size={20} color="#fff" style={{ marginRight: 8 }} />
+                )}
                 <Text style={styles.primaryButtonText}>
                   {isMobile ? 'Back to App' : 'Open in Thrive App'}
                 </Text>
               </TouchableOpacity>
               
               <TouchableOpacity style={styles.secondaryButton} onPress={handleResendEmail}>
-                <AntDesign name="mail" size={20} color="#2C3E50" style={{ marginRight: 8 }} />
+                {Platform.OS === 'web' ? (
+                  <Text style={{ marginRight: 8 }}>✉️</Text>
+                ) : (
+                  <AntDesign name="mail" size={20} color="#2C3E50" style={{ marginRight: 8 }} />
+                )}
                 <Text style={styles.secondaryButtonText}>Resend Email</Text>
               </TouchableOpacity>
             </View>
@@ -193,8 +259,51 @@ export default function UniversalVerifyHandler() {
           <View style={styles.statusContainer}>
             <Text style={styles.pendingText}>Waiting for verification link...</Text>
             <TouchableOpacity style={styles.secondaryButton} onPress={handleResendEmail}>
-              <AntDesign name="mail" size={20} color="#2C3E50" style={{ marginRight: 8 }} />
+              {Platform.OS === 'web' ? (
+                <Text style={{ marginRight: 8 }}>✉️</Text>
+              ) : (
+                <AntDesign name="mail" size={20} color="#2C3E50" style={{ marginRight: 8 }} />
+              )}
               <Text style={styles.secondaryButtonText}>Resend Email</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Skip Verification Button (for testing) */}
+        {(verificationStatus === 'pending' || verificationStatus === 'verifying' || verificationStatus === 'error') && (
+          <View style={styles.skipContainer}>
+            <TouchableOpacity 
+              style={styles.skipButton}
+              onPress={() => {
+                Alert.alert(
+                  'Skip Verification',
+                  'This will skip email verification for testing purposes. Continue?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Skip',
+                      onPress: () => {
+                        console.log('⚠️ Skipping verification for testing');
+                        // Mark as verified for testing
+                        markAsVerified().then(() => {
+                          // Navigate to next screen
+                          if (Platform.OS !== 'web') {
+                            router.replace('/signupFlow/explainerDonate');
+                          } else {
+                            Alert.alert(
+                              'Verification Skipped',
+                              'Verification skipped for testing. Please open the app to continue.',
+                              [{ text: 'OK' }]
+                            );
+                          }
+                        });
+                      }
+                    }
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.skipButtonText}>Skip Verification (Testing)</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -327,6 +436,53 @@ const styles = StyleSheet.create({
     color: '#2C3E50',
     fontSize: 16,
     fontWeight: '700',
+  },
+  openAppButton: {
+    backgroundColor: '#DB8633',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    marginTop: 24,
+    shadowColor: '#DB8633',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  openAppButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  helpText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 16,
+    paddingHorizontal: 20,
+  },
+  skipContainer: {
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  skipButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#999',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  skipButtonText: {
+    color: '#999',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  emojiIcon: {
+    fontSize: 60,
+    textAlign: 'center',
   },
 });
 
