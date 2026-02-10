@@ -1,15 +1,22 @@
 // File: app/(tabs)/menu.js
 
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Image } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useCallback } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Image, SafeAreaView } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Entypo, Feather, FontAwesome, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from '../../context/UserContext';
 
 export default function MenuScreen() {
   const router = useRouter();
-  const { user } = useUser();
+  const { user, loadUserData, logout } = useUser();
+  
+  // Load user data when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      loadUserData();
+    }, [])
+  );
 
   const menuItems = [
     { section: 'Account', data: [
@@ -28,36 +35,50 @@ export default function MenuScreen() {
   ];
 
   return (
-    <ScrollView style={styles.container}>
-      <LinearGradient
-        colors={["#2C3E50", "#4CA1AF"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.header}
-      >
-        {user.profileImage ? (
-          <Image source={{ uri: user.profileImage }} style={styles.avatar} />
-        ) : user.firstName && user.lastName ? (
-          <View style={[styles.avatar, { backgroundColor: '#DB8633', justifyContent: 'center', alignItems: 'center' }]}>
-            <Text style={{ color: 'white', fontSize: 24, fontWeight: 'bold' }}>
-              {user.firstName[0]}{user.lastName[0]}
-            </Text>
-          </View>
-        ) : (
-          <View style={[styles.avatar, { backgroundColor: '#DB8633', justifyContent: 'center', alignItems: 'center' }]}>
-            <Text style={{ color: 'white', fontSize: 24, fontWeight: 'bold' }}>
-              ??
-            </Text>
-          </View>
-        )}
-        <Text style={styles.name}>
-          {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : 'User Name'}
-        </Text>
-        <Text style={styles.email}>{user.email || 'user@example.com'}</Text>
-        <View style={styles.coinsBox}>
-          <Text style={styles.coins}>🏆 {user.points || 0}</Text>
-        </View>
-      </LinearGradient>
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView style={styles.container}>
+        <View style={styles.card}>
+          <LinearGradient
+            colors={["#2C3E50", "#4CA1AF"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.header}
+          >
+            <TouchableOpacity 
+              style={styles.backButton} 
+              onPress={() => router.replace('/(tabs)/home')}
+            >
+              <Image 
+                source={require('../../../assets/icons/arrow-left.png')} 
+                style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+              />
+            </TouchableOpacity>
+          {user.profileImage ? (
+            <Image source={{ uri: user.profileImage }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, { backgroundColor: '#DB8633', justifyContent: 'center', alignItems: 'center' }]}>
+              <Text style={{ color: 'white', fontSize: 24, fontWeight: 'bold' }}>
+                {(() => {
+                  if (user.firstName && user.lastName) {
+                    return `${user.firstName[0].toUpperCase()}${user.lastName[0].toUpperCase()}`;
+                  } else if (user.firstName) {
+                    return user.firstName[0].toUpperCase();
+                  } else if (user.lastName) {
+                    return user.lastName[0].toUpperCase();
+                  } else if (user.email) {
+                    return user.email[0].toUpperCase();
+                  } else {
+                    return 'U';
+                  }
+                })()}
+              </Text>
+            </View>
+          )}
+          <Text style={styles.name}>
+            {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : 'User Name'}
+          </Text>
+          <Text style={styles.email}>{user.email || 'user@example.com'}</Text>
+          </LinearGradient>
 
       {menuItems.map((section, idx) => (
         <View key={idx} style={styles.sectionWrapper}>
@@ -66,7 +87,13 @@ export default function MenuScreen() {
             <TouchableOpacity
               key={i}
               style={styles.row}
-              onPress={() => router.push(`/${item.page}`)}
+              onPress={() => {
+                if (item.page) {
+                  // Handle routes that already start with / (like /(tabs)/...)
+                  const route = item.page.startsWith('/') ? item.page : `/${item.page}`;
+                  router.push(route);
+                }
+              }}
             >
               <Feather name={item.icon} size={20} color="#324E58" style={styles.icon} />
               <Text style={styles.rowText}>{item.title}</Text>
@@ -76,23 +103,54 @@ export default function MenuScreen() {
         </View>
       ))}
 
-      <TouchableOpacity style={styles.logoutButton}>
+      <TouchableOpacity
+        style={styles.logoutButton}
+        onPress={async () => {
+          await logout();
+          router.replace('/login');
+        }}
+      >
         <Text style={styles.logoutText}>Logout</Text>
       </TouchableOpacity>
+        </View>
     </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: 'white' },
   container: { backgroundColor: 'white', flex: 1 },
+  card: {
+    backgroundColor: '#fff',
+    padding: 20,
+    paddingBottom: 20,
+    paddingTop: 20,
+    flexGrow: 1,
+  },
   header: { 
     alignItems: 'center', 
-    marginTop: 30, 
+    marginTop: 0, 
     marginBottom: 20,
     paddingVertical: 30,
     paddingHorizontal: 20,
     borderRadius: 20,
-    marginHorizontal: 20,
+    marginHorizontal: 0,
+    position: 'relative',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    padding: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+    zIndex: 10,
   },
   avatar: { 
     width: 80, 
@@ -113,18 +171,7 @@ const styles = StyleSheet.create({
   email: { 
     fontSize: 14, 
     color: 'rgba(255, 255, 255, 0.9)',
-    marginBottom: 8,
   },
-  coinsBox: { 
-    marginTop: 10, 
-    backgroundColor: 'rgba(255, 255, 255, 0.2)', 
-    paddingHorizontal: 12, 
-    paddingVertical: 6, 
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  coins: { color: '#ffffff', fontWeight: '700' },
   sectionWrapper: { marginBottom: 20, paddingHorizontal: 20 },
   sectionTitle: { fontSize: 14, fontWeight: '600', color: '#324E58', marginBottom: 12 },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderColor: '#F0F0F0' },

@@ -7,7 +7,7 @@
     "icon": "./assets/images/piggy-with-flowers.png",
     "scheme": "thriveapp",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/images/piggy-with-flowers.png",
       "resizeMode": "contain",
@@ -22,13 +22,19 @@
         "CFBundleURLTypes": [
           {
             "CFBundleURLName": "thriveapp",
-            "CFBundleURLSchemes": ["thriveapp"]
+            "CFBundleURLSchemes": [
+              "thriveapp"
+            ]
           }
         ]
       },
-      "associatedDomains": ["applinks:thrive-web-jet.vercel.app"]
+      "associatedDomains": [
+        "applinks:thrive-web-jet.vercel.app"
+      ]
     },
     "android": {
+      "package": "com.thriveinitiative.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/piggy-with-flowers.png",
         "backgroundColor": "#ffffff"
@@ -46,9 +52,17 @@
               "scheme": "https",
               "host": "thrive-web-jet.vercel.app",
               "pathPrefix": "/verify"
+            },
+            {
+              "scheme": "https",
+              "host": "thrive-web-jet.vercel.app",
+              "pathPrefix": "/verify-email"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         },
         {
           "action": "VIEW",
@@ -57,7 +71,10 @@
               "scheme": "thriveapp"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -74,10 +91,18 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location to show nearby discounts and causes on the map."
         }
-      ]
+      ],
+      "expo-web-browser",
+      "expo-apple-authentication"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "8650ede9-cbf0-47a2-8b14-a47000acce94"
+      }
     }
   }
 }

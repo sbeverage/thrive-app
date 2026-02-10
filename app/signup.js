@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,24 +12,108 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { AntDesign, Feather } from '@expo/vector-icons'; 
 import API from './lib/api';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useLocation } from './context/LocationContext';
+import { signInWithApple, signInWithGoogle, signInWithFacebook } from './utils/socialLogin';
+import { useUser } from './context/UserContext';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function SignupScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const { locationAddress, checkLocationPermission } = useLocation();
+  const { updateUserProfile, syncVerificationFromLogin } = useUser();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isSocialLoading, setIsSocialLoading] = useState(false);
+  
+  // Capture referral token from URL params (?ref=USER_ID)
+  const referralToken = params.ref || null;
+
+  // Request location permission when component mounts
+  useEffect(() => {
+    checkLocationPermission();
+  }, []);
 
   const socialLogins = [
-    { name: 'Facebook', icon: require('../assets/images/Facebook-icon.png') },
-    { name: 'Google', icon: require('../assets/images/Google-icon.png') },
-    { name: 'Apple', icon: require('../assets/images/Apple-icon.png') },
+    { name: 'Facebook', icon: require('../assets/images/Facebook-icon.png'), handler: handleFacebookSignup },
+    { name: 'Google', icon: require('../assets/images/Google-icon.png'), handler: handleGoogleSignup },
+    { name: 'Apple', icon: require('../assets/images/Apple-icon.png'), handler: handleAppleSignup },
   ];
+
+  const handleSocialSignup = async (socialData) => {
+    if (!socialData) {
+      return; // User canceled
+    }
+
+    try {
+      setIsSocialLoading(true);
+      console.log('🚀 Starting social signup:', socialData.provider);
+
+      // Prepare signup data with location and referral token if available
+      const signupData = {
+        ...socialData,
+        ...(locationAddress?.city && { city: locationAddress.city }),
+        ...(locationAddress?.state && { state: locationAddress.state }),
+        ...(locationAddress?.zipCode && { zipCode: locationAddress.zipCode }),
+        ...(referralToken && { referralToken }),
+      };
+
+      // Call social login API (handles both signup and login)
+      const response = await API.socialLogin(signupData);
+      console.log('✅ Social signup successful:', response);
+
+      // Update user context
+      if (response.user?.email) {
+        updateUserProfile({ email: response.user.email });
+      }
+
+      // Sync verification status
+      await syncVerificationFromLogin(response);
+
+      // Check if user needs to complete profile
+      if (response.user?.needsProfileSetup) {
+        router.push({
+          pathname: '/signupProfile',
+          params: { email: response.user.email || socialData.email },
+        });
+      } else {
+        // User already has profile, go to home
+        router.replace('/home');
+      }
+    } catch (error) {
+      console.error('❌ Social signup error:', error);
+      Alert.alert('Signup Failed', error.message || 'Social signup failed. Please try again.');
+    } finally {
+      setIsSocialLoading(false);
+    }
+  };
+
+  const handleAppleSignup = async () => {
+    const result = await signInWithApple();
+    if (result) {
+      await handleSocialSignup(result);
+    }
+  };
+
+  const handleGoogleSignup = async () => {
+    const result = await signInWithGoogle();
+    if (result) {
+      await handleSocialSignup(result);
+    }
+  };
+
+  const handleFacebookSignup = async () => {
+    const result = await signInWithFacebook();
+    if (result) {
+      await handleSocialSignup(result);
+    }
+  };
 
   const handleSignup = async () => {
     if (!email || !password) {
@@ -44,11 +128,34 @@ export default function SignupScreen() {
 
     try {
       console.log('🚀 Starting signup process...');
-      const response = await API.signup({ email, password });
-      console.log('✅ Signup successful:', response);
       
-      // Navigate to profile setup
-      router.push({ pathname: '/signupProfile', params: { email } });
+      // Prepare signup data with location and referral token if available
+      const signupData = {
+        email,
+        password,
+        ...(locationAddress?.city && { city: locationAddress.city }),
+        ...(locationAddress?.state && { state: locationAddress.state }),
+        ...(locationAddress?.zipCode && { zipCode: locationAddress.zipCode }),
+        ...(referralToken && { referralToken }), // Include referral token if present
+      };
+      
+      console.log('📍 Signup data with location and referral:', signupData);
+      
+      const response = await API.signup(signupData);
+      console.log('✅ Signup successful:', response);
+      console.log('📧 Email from signup:', email);
+      console.log('📧 Email from API response:', response?.user?.email || response?.email);
+      
+      // Use email from API response if available, otherwise use the one from form
+      const userEmail = response?.user?.email || response?.email || email;
+      console.log('📧 Final email to use:', userEmail);
+      
+      // Navigate to profile setup (points will be reset to 0 in signupProfile)
+      // Pass email as a string to ensure it's preserved
+      router.push({ 
+        pathname: '/signupProfile', 
+        params: { email: userEmail } 
+      });
     } catch (error) {
       console.error('❌ Signup error:', error);
       const errorMessage = error.message || 'Signup failed. Please try again.';
@@ -74,7 +181,10 @@ export default function SignupScreen() {
       >
         <ScrollView contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'flex-start' }} keyboardShouldPersistTaps="handled">
           <TouchableOpacity style={styles.backArrow} onPress={() => router.replace('/')}> 
-            <AntDesign name="arrowleft" size={24} color="#324E58" />
+            <Image 
+              source={require('../assets/icons/arrow-left.png')} 
+              style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+            />
           </TouchableOpacity>
           <View style={styles.piggyLogoColumn}>
             <Image source={require('../assets/images/piggy-with-flowers.png')} style={styles.logo} />
@@ -102,11 +212,17 @@ export default function SignupScreen() {
                 style={styles.eyeButton}
                 onPress={() => setShowPassword(!showPassword)}
               >
-                <Feather 
-                  name={showPassword ? "eye" : "eye-off"} 
-                  size={20} 
-                  color="#6d6e72" 
-                />
+                {Platform.OS === 'web' ? (
+                  <Text style={{ fontSize: 20, color: '#6d6e72' }}>
+                    {showPassword ? '👁️' : '👁️‍🗨️'}
+                  </Text>
+                ) : (
+                  <Feather 
+                    name={showPassword ? "eye" : "eye-off"} 
+                    size={20} 
+                    color="#6d6e72" 
+                  />
+                )}
               </TouchableOpacity>
             </View>
             <TouchableOpacity style={styles.signupButton} onPress={handleSignup}>
@@ -115,7 +231,12 @@ export default function SignupScreen() {
             <Text style={styles.orText}>Or sign up with</Text>
             <View style={styles.socialIconsContainer}>
               {socialLogins.map((social, index) => (
-                <TouchableOpacity key={index} style={styles.socialIconButton}>
+                <TouchableOpacity
+                  key={index}
+                  style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
+                  onPress={social.handler}
+                  disabled={isSocialLoading}
+                >
                   <Image source={social.icon} style={styles.socialIcon} />
                 </TouchableOpacity>
               ))}
@@ -243,6 +364,9 @@ const styles = StyleSheet.create({
     borderColor: '#e1e1e5',
     borderRadius: 8,
     marginHorizontal: 8,
+  },
+  socialIconButtonDisabled: {
+    opacity: 0.5,
   },
   socialIcon: {
     width: 32,

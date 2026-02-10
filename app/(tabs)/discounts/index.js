@@ -1,5 +1,5 @@
 // Full Airbnb-style Discounts Screen Implementation with improved UX flow
-import React, { useRef, useMemo, useState, useEffect } from 'react';
+import React, { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,11 +17,18 @@ import {
 
 
 import { Feather, AntDesign } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import VoucherCard from '../../../components/VoucherCard';
 import MapView, { Marker } from 'react-native-maps';
 import { getCurrentLocation, getDefaultRegion } from '../../utils/locationService';
+import { useLocation } from '../../context/LocationContext';
+import { useDiscount } from '../../context/DiscountContext';
+import WalkthroughTutorial from '../../../components/WalkthroughTutorial';
+import { useTutorial } from '../../../hooks/useTutorial';
 
+
+// Note: Vendors should have logoUrl from the admin panel
+// If no logoUrl is provided, the component will handle it gracefully
 
 export default function DiscountsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -30,80 +37,180 @@ export default function DiscountsScreen() {
   const [businessUrl, setBusinessUrl] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [showMap, setShowMap] = useState(false);
-  const [location, setLocation] = useState('Detecting location...');
+  const [locationDisplay, setLocationDisplay] = useState('Detecting location...');
   const [isEditingLocation, setIsEditingLocation] = useState(false);
   const [selectedMarker, setSelectedMarker] = useState(null);
   const [mapRegion, setMapRegion] = useState(getDefaultRegion());
   const router = useRouter();
+  
+  // Location context
+  const { location: userLocation, locationAddress, locationPermission, checkLocationPermission, refreshLocation, isLoadingLocation } = useLocation();
+  
+  // Discount context
+  const { discounts, vendors, isLoading: isLoadingDiscounts, loadDiscounts } = useDiscount();
+  
+  // Tutorial
+  const discountsSectionRef = useRef(null);
+  const {
+    showTutorial,
+    currentStep,
+    highlightPosition,
+    elementRef: tutorialElementRef,
+    handleNext,
+    handleSkip,
+  } = useTutorial('discounts');
+  
+  // Set the ref for the tutorial to measure
+  useEffect(() => {
+    if (showTutorial && discountsSectionRef.current) {
+      tutorialElementRef.current = discountsSectionRef.current;
+    }
+  }, [showTutorial, tutorialElementRef]);
+  
+  // Check tutorial when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      const timer = setTimeout(() => {
+        if (showTutorial && discountsSectionRef.current) {
+          console.log('📚 Setting tutorial element ref for discounts');
+          tutorialElementRef.current = discountsSectionRef.current;
+        }
+      }, 800);
+      return () => clearTimeout(timer);
+    }, [showTutorial, tutorialElementRef])
+  );
+  
+  // Debug: Log vendors and discounts when they change
+  useEffect(() => {
+    console.log('📊 Vendors loaded:', vendors?.length || 0);
+    console.log('📊 Discounts loaded:', discounts?.length || 0);
+    if (vendors?.length > 0) {
+      console.log('📊 Vendors from API:', vendors.slice(0, 3).map(v => ({ id: v.id, name: v.name })));
+    }
+    if (discounts?.length > 0) {
+      console.log('📊 Discounts from API:', discounts.slice(0, 3).map(d => ({ id: d.id, vendorId: d.vendorId, title: d.title })));
+    }
+  }, [vendors, discounts]);
 
-  const vendors = [
-    {
-      id: '1',
-      brandName: 'Starbucks',
-      category: 'Coffee Shop',
-      imageUrl: require('../../../assets/logos/starbucks.png'),
-      discountText: '3 discounts available',
-      latitude: 34.0754,
-      longitude: -84.2941,
-      location: 'Alpharetta, GA',
-    },
-    {
-      id: '2',
-      brandName: 'Apple Store',
-      category: 'Electronics',
-      imageUrl: require('../../../assets/logos/apple.png'),
-      discountText: '3 discounts available',
-      latitude: 34.0754,
-      longitude: -84.2942,
-      location: 'Alpharetta, GA',
-    },
-    {
-      id: '3',
-      brandName: 'Amazon On-Site Store',
-      category: 'Shopping Store',
-      imageUrl: require('../../../assets/logos/amazon.png'),
-      discountText: '3 discounts available',
-      latitude: 34.0754,
-      longitude: -84.2940,
-      location: 'Alpharetta, GA',
-    },
-    {
-      id: '4',
-      brandName: 'Starbucks',
-      category: 'Coffee Shop',
-      imageUrl: require('../../../assets/logos/starbucks.png'),
-      discountText: '3 discounts available',
-      latitude: 34.1015,
-      longitude: -84.5194,
-      location: 'Woodstock, GA',
-    },
-    {
-      id: '5',
-      brandName: 'Apple Store',
-      category: 'Electronics',
-      imageUrl: require('../../../assets/logos/apple.png'),
-      discountText: '3 discounts available',
-      latitude: 34.1015,
-      longitude: -84.5195,
-      location: 'Woodstock, GA',
-    },
-    {
-      id: '6',
-      brandName: 'Amazon On-Site Store',
-      category: 'Shopping Store',
-      imageUrl: require('../../../assets/logos/amazon.png'),
-      discountText: '3 discounts available',
-      latitude: 34.1015,
-      longitude: -84.5193,
-      location: 'Woodstock, GA',
-    },
-  ];
+  // Note: keep discounts unfiltered so counts stay consistent with vendors list
 
-  const filteredVendors = vendors.filter(v => {
+  // Extract unique categories/tags from vendors dynamically
+  const availableCategories = useMemo(() => {
+    if (!vendors || vendors.length === 0) return ['All'];
+    
+    // Get all unique categories from vendors
+    const categories = new Set();
+    vendors.forEach(vendor => {
+      // Support both category field and tags array
+      if (vendor.category) {
+        categories.add(vendor.category);
+      }
+      if (vendor.tags && Array.isArray(vendor.tags)) {
+        vendor.tags.forEach(tag => {
+          if (tag && typeof tag === 'string') {
+            categories.add(tag);
+          }
+        });
+      }
+    });
+    
+    // Sort categories and add 'All' at the beginning
+    const sortedCategories = Array.from(categories).sort();
+    const result = ['All', ...sortedCategories];
+    console.log('🏷️ Available categories/tags from vendors:', result);
+    return result;
+  }, [vendors]);
+
+  // Transform vendors data to match the expected format
+  // Use useMemo to ensure vendors and discounts are properly matched
+  const transformedVendors = useMemo(() => {
+    if (!vendors || vendors.length === 0) {
+      console.log('⚠️ No vendors loaded yet');
+      return [];
+    }
+    
+    return vendors.map(vendor => {
+      // Find discounts for this vendor (match by vendorId)
+      const vendorDiscounts = discounts.filter(d => {
+        const discountVendorId = d.vendorId?.toString() || d.vendorId;
+        const vendorId = vendor.id?.toString() || vendor.id;
+        return discountVendorId === vendorId;
+      });
+      
+      // Handle logo - use logoUrl from admin panel if available
+      let logoSource = null;
+      if (vendor.logoUrl && typeof vendor.logoUrl === 'string' && vendor.logoUrl.trim() !== '') {
+        // Check if it's a valid HTTP URL
+        if (vendor.logoUrl.startsWith('http://') || vendor.logoUrl.startsWith('https://')) {
+          logoSource = vendor.logoUrl;
+        } else {
+          console.warn(`⚠️ Invalid logoUrl for ${vendor.name}:`, vendor.logoUrl);
+        }
+      } else if (vendor.imageUrl && typeof vendor.imageUrl === 'string' && vendor.imageUrl.trim() !== '') {
+        // Fallback to imageUrl if it's a valid HTTP URL
+        if (vendor.imageUrl.startsWith('http://') || vendor.imageUrl.startsWith('https://')) {
+          logoSource = vendor.imageUrl;
+        } else {
+          console.warn(`⚠️ Invalid imageUrl for ${vendor.name}:`, vendor.imageUrl);
+        }
+      }
+      // If no valid logoUrl/imageUrl, logoSource will be null and VoucherCard will use fallback
+      
+      return {
+        id: vendor.id,
+        brandName: vendor.name,
+        category: vendor.category,
+        tags: vendor.tags || [], // Include tags array
+        imageUrl: logoSource,
+        discountText: `${vendorDiscounts.length} discount${vendorDiscounts.length !== 1 ? 's' : ''} available`,
+        latitude: vendor.address?.latitude || 34.0754,
+        longitude: vendor.address?.longitude || -84.2941,
+        location: `${vendor.address?.city || 'Alpharetta'}, ${vendor.address?.state || 'GA'}`,
+        vendor: vendor, // Include full vendor data
+        discountId: vendorDiscounts.length > 0 ? vendorDiscounts[0].id : null // Use first discount ID
+      };
+    });
+  }, [vendors, discounts]);
+
+  const filteredVendors = transformedVendors.filter(v => {
     const matchesSearch = v.brandName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = activeCategory === 'All' || v.category === activeCategory;
+    
+    // Check if vendor matches the selected category
+    // Support both category field and tags array
+    let matchesCategory = true;
+    if (activeCategory !== 'All') {
+      matchesCategory = false;
+      
+      // Check category field (case-insensitive)
+      if (v.category && v.category.toLowerCase() === activeCategory.toLowerCase()) {
+        matchesCategory = true;
+      }
+      
+      // Check tags array (case-insensitive)
+      if (!matchesCategory && v.tags && Array.isArray(v.tags)) {
+        matchesCategory = v.tags.some(tag => 
+          tag && typeof tag === 'string' && tag.toLowerCase() === activeCategory.toLowerCase()
+        );
+      }
+      
+      // Also check the full vendor object for tags/category
+      if (!matchesCategory && v.vendor) {
+        if (v.vendor.category && v.vendor.category.toLowerCase() === activeCategory.toLowerCase()) {
+          matchesCategory = true;
+        }
+        if (!matchesCategory && v.vendor.tags && Array.isArray(v.vendor.tags)) {
+          matchesCategory = v.vendor.tags.some(tag => 
+            tag && typeof tag === 'string' && tag.toLowerCase() === activeCategory.toLowerCase()
+          );
+        }
+      }
+    }
+    
     return matchesSearch && matchesCategory;
   });
+
+  const highlightedVendors = filteredVendors.slice(0, 2);
+  const remainingVendors = filteredVendors.slice(2);
 
   const handleMarkerPress = (vendor) => {
     console.log('Marker pressed:', vendor);
@@ -123,37 +230,33 @@ export default function DiscountsScreen() {
   };
 
   const updateUserLocation = async () => {
-    try {
-      const userLocation = await getCurrentLocation();
-      if (userLocation) {
-        // Check if user is in the Atlanta metro area and show friendly location names
-        const { latitude, longitude } = userLocation;
-        
-        // Alpharetta area (roughly)
-        if (latitude >= 34.05 && latitude <= 34.10 && longitude >= -84.35 && longitude <= -84.25) {
-          setLocation('Alpharetta, GA');
-        }
-        // Woodstock area (roughly)
-        else if (latitude >= 34.09 && latitude <= 34.12 && longitude >= -84.52 && longitude <= -84.50) {
-          setLocation('Woodstock, GA');
-        }
-        // Atlanta area (roughly)
-        else if (latitude >= 33.70 && latitude <= 33.80 && longitude >= -84.40 && longitude <= -84.35) {
-          setLocation('Atlanta, GA');
-        }
-        // General Atlanta metro area
-        else if (latitude >= 33.50 && latitude <= 34.50 && longitude >= -84.80 && longitude <= -84.00) {
-          setLocation('Atlanta Metro, GA');
-        }
-        else {
-          setLocation('Current Location');
-        }
-      } else {
-        setLocation('Location not available');
-      }
-    } catch (error) {
-      console.error('Error getting user location:', error);
-      setLocation('Location not available');
+    if (locationPermission === 'granted') {
+      await refreshLocation();
+    } else {
+      checkLocationPermission();
+    }
+  };
+
+  // Helper function to get friendly location name from coordinates
+  const getFriendlyLocationName = (latitude, longitude) => {
+    // Alpharetta area (roughly)
+    if (latitude >= 34.05 && latitude <= 34.10 && longitude >= -84.35 && longitude <= -84.25) {
+      return 'Alpharetta, GA';
+    }
+    // Woodstock area (roughly)
+    else if (latitude >= 34.09 && latitude <= 34.12 && longitude >= -84.52 && longitude <= -84.50) {
+      return 'Woodstock, GA';
+    }
+    // Atlanta area (roughly)
+    else if (latitude >= 33.70 && latitude <= 33.80 && longitude >= -84.40 && longitude <= -84.35) {
+      return 'Atlanta, GA';
+    }
+    // General Atlanta metro area
+    else if (latitude >= 33.50 && latitude <= 34.50 && longitude >= -84.80 && longitude <= -84.00) {
+      return 'Atlanta Metro, GA';
+    }
+    else {
+      return 'Current Location';
     }
   };
 
@@ -167,12 +270,50 @@ export default function DiscountsScreen() {
 
   // Auto-detect user location when component mounts
   useEffect(() => {
-    updateUserLocation();
+    checkLocationPermission();
   }, []);
 
-  const handleViewDetails = (vendorId) => {
+  // Update location display when location context changes
+  useEffect(() => {
+    if (userLocation && locationPermission === 'granted') {
+      // Use locationAddress from context if available (more accurate)
+      if (locationAddress?.city && locationAddress?.state) {
+        const display = `${locationAddress.city}, ${locationAddress.state}`;
+        setLocationDisplay(display);
+      } else {
+        // Fallback to coordinates-based lookup
+        const friendlyName = getFriendlyLocationName(userLocation.latitude, userLocation.longitude);
+        setLocationDisplay(friendlyName);
+      }
+      
+      // Update map region
+      setMapRegion({
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude,
+        latitudeDelta: 0.0922,
+        longitudeDelta: 0.0421,
+      });
+    } else if (locationPermission === 'denied') {
+      setLocationDisplay('Location not available');
+    } else if (locationPermission === null) {
+      setLocationDisplay('Detecting location...');
+    }
+  }, [userLocation, locationAddress, locationPermission]);
+
+  const handleViewDetails = (vendor) => {
     setSelectedMarker(null); // Close info window
-    router.push(`/discounts/${vendorId}`);
+    // Find the discount for this vendor
+    const vendorDiscount = discounts.find(d => d.vendorId === vendor.id || d.vendorId === vendor.id.toString());
+    if (vendorDiscount) {
+      // Navigate to discount details page
+      router.push({
+        pathname: '/(tabs)/discounts/discountDetails',
+        params: { discountId: vendorDiscount.id }
+      });
+    } else {
+      // If no discount found, still navigate to vendor page as fallback
+      router.push(`/discounts/${vendor.id}`);
+    }
   };
 
   const handleGetDirections = (vendor) => {
@@ -186,7 +327,10 @@ export default function DiscountsScreen() {
       {/* Header with Search and Toggle */}
       <View style={styles.header}>
         <View style={styles.searchRow}>
-          <AntDesign name="search1" size={18} color="#6d6e72" style={{ marginRight: 8 }} />
+          <Image 
+            source={require('../../../assets/icons/search-icon.png')} 
+            style={{ width: 18, height: 18, tintColor: '#6d6e72', marginRight: 8 }} 
+          />
           <TextInput
             placeholder="Search Business"
             placeholderTextColor="#6d6e72"
@@ -195,19 +339,27 @@ export default function DiscountsScreen() {
             style={styles.searchInput}
           />
           <TouchableOpacity onPress={() => router.push('/(tabs)/discounts/filter')} style={{ marginLeft: 10 }}>
-            <Feather name="filter" size={22} color="#DB8633" />
+            {Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 22 }}>🔽</Text>
+            ) : (
+              <Feather name="filter" size={22} color="#DB8633" />
+            )}
           </TouchableOpacity>
         </View>
 
         {/* Location Input */}
         <View style={styles.locationRow}>
-          <Feather name="map-pin" size={16} color="#6d6e72" style={{ marginRight: 8 }} />
+          {Platform.OS === 'web' ? (
+            <Text style={{ fontSize: 16, color: '#6d6e72', marginRight: 8 }}>📍</Text>
+          ) : (
+            <Feather name="map-pin" size={16} color="#6d6e72" style={{ marginRight: 8 }} />
+          )}
           {isEditingLocation ? (
             <TextInput
               placeholder="Enter your location"
               placeholderTextColor="#6d6e72"
-              value={location}
-              onChangeText={setLocation}
+              value={locationDisplay}
+              onChangeText={setLocationDisplay}
               style={styles.locationInput}
               autoFocus
               onBlur={() => setIsEditingLocation(false)}
@@ -218,20 +370,34 @@ export default function DiscountsScreen() {
               style={styles.locationDisplay}
               onPress={() => setIsEditingLocation(true)}
             >
-              <Text style={styles.locationText}>{location}</Text>
-              <Feather name="edit-2" size={14} color="#DB8633" style={{ marginLeft: 8 }} />
+              <Text style={styles.locationText}>{locationDisplay}</Text>
+              {Platform.OS === 'web' ? (
+                <Text style={{ fontSize: 14, color: '#DB8633', marginLeft: 8 }}>✏️</Text>
+              ) : (
+                <Feather name="edit-2" size={14} color="#DB8633" style={{ marginLeft: 8 }} />
+              )}
             </TouchableOpacity>
           )}
           <TouchableOpacity 
             style={styles.refreshLocationButton}
             onPress={updateUserLocation}
+            disabled={isLoadingLocation}
           >
-            <Feather name="refresh-cw" size={16} color="#DB8633" />
+            {Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 16, color: isLoadingLocation ? '#ccc' : '#DB8633' }}>🔄</Text>
+            ) : (
+              <Feather 
+                name="refresh-cw" 
+                size={16} 
+                color={isLoadingLocation ? "#ccc" : "#DB8633"} 
+                style={isLoadingLocation ? { transform: [{ rotate: '180deg' }] } : {}}
+              />
+            )}
           </TouchableOpacity>
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagsRow}>
-          {['All', 'Coffee Shop', 'Electronics', 'Shopping Store'].map(tag => (
+          {availableCategories.map(tag => (
             <TouchableOpacity
               key={tag}
               style={[styles.tag, activeCategory === tag && styles.tagActive]}
@@ -248,14 +414,22 @@ export default function DiscountsScreen() {
             style={[styles.toggleBtn, !showMap && styles.toggleActive]} 
             onPress={() => setShowMap(false)}
           >
-            <Feather name="list" size={16} color={!showMap ? "#fff" : "#666"} />
+            {Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 16, color: !showMap ? '#fff' : '#666' }}>📋</Text>
+            ) : (
+              <Feather name="list" size={16} color={!showMap ? "#fff" : "#666"} />
+            )}
             <Text style={[styles.toggleText, !showMap && styles.toggleTextActive]}>List</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.toggleBtn, showMap && styles.toggleActive]} 
             onPress={() => setShowMap(true)}
           >
-            <Feather name="map" size="16" color={showMap ? "#fff" : "#666"} />
+            {Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 16, color: showMap ? '#fff' : '#666' }}>🗺️</Text>
+            ) : (
+              <Feather name="map" size="16" color={showMap ? "#fff" : "#666"} />
+            )}
             <Text style={[styles.toggleText, showMap && styles.toggleTextActive]}>Map</Text>
           </TouchableOpacity>
         </View>
@@ -333,16 +507,24 @@ export default function DiscountsScreen() {
                     style={styles.closeButton}
                     onPress={() => setSelectedMarker(null)}
                   >
-                    <AntDesign name="close" size={20} color="#666" />
+                    {Platform.OS === 'web' ? (
+                      <Text style={{ fontSize: 20, color: '#666' }}>✕</Text>
+                    ) : (
+                      <AntDesign name="close" size={20} color="#666" />
+                    )}
                   </TouchableOpacity>
                 </View>
                 
                 <View style={styles.infoWindowActions}>
                   <TouchableOpacity 
                     style={styles.actionButton}
-                    onPress={() => handleViewDetails(selectedMarker.id)}
+                    onPress={() => handleViewDetails(selectedMarker)}
                   >
-                    <Feather name="info" size={16} color="#fff" />
+                    {Platform.OS === 'web' ? (
+                      <Text style={{ fontSize: 16, color: '#fff', marginRight: 8 }}>ℹ️</Text>
+                    ) : (
+                      <Feather name="info" size={16} color="#fff" />
+                    )}
                     <Text style={styles.actionButtonText}>View Details</Text>
                   </TouchableOpacity>
                   
@@ -350,7 +532,11 @@ export default function DiscountsScreen() {
                     style={styles.actionButtonSecondary}
                     onPress={() => handleGetDirections(selectedMarker)}
                   >
-                    <Feather name="map-pin" size={16} color="#DB8633" />
+                    {Platform.OS === 'web' ? (
+                      <Text style={{ fontSize: 16, color: '#DB8633', marginRight: 8 }}>📍</Text>
+                    ) : (
+                      <Feather name="map-pin" size={16} color="#DB8633" />
+                    )}
                     <Text style={styles.actionButtonTextSecondary}>Get Directions</Text>
                   </TouchableOpacity>
                 </View>
@@ -365,35 +551,80 @@ export default function DiscountsScreen() {
           >
             {filteredVendors.length > 0 ? (
               <>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Nearby Discounts</Text>
-                  <Text style={styles.sectionSubtitle}>{filteredVendors.length} businesses found</Text>
-              </View>
+                <View ref={discountsSectionRef}>
+                  <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>Nearby Discounts</Text>
+                    <Text style={styles.sectionSubtitle}>{filteredVendors.length} businesses found</Text>
+                  </View>
 
-                {filteredVendors.map((item) => (
-                  <VoucherCard
-                    key={item.id}
-                    brand={item.brandName}
-                    logo={item.imageUrl}
-                    discounts={3}
-                    onPress={() => router.push(`/discounts/${item.id}`)}
-                  />
-                ))}
+                  {highlightedVendors.map((item) => {
+                    // Find discount for this vendor
+                    const vendorDiscount = discounts.find(d => {
+                      const discountVendorId = d.vendorId?.toString() || d.vendorId;
+                      const vendorId = item.id?.toString() || item.id;
+                      return discountVendorId === vendorId;
+                    });
+                    
+                    return (
+                      <VoucherCard
+                        key={item.id}
+                        brand={item.brandName}
+                        logo={item.imageUrl}
+                        discounts={item.discountText}
+                        discountId={vendorDiscount?.id || item.discountId}
+                        vendor={item.vendor}
+                        vendorId={item.id}
+                      />
+                    );
+                  })}
+                </View>
+
+                {remainingVendors.map((item) => {
+                  // Find discount for this vendor
+                  const vendorDiscount = discounts.find(d => {
+                    const discountVendorId = d.vendorId?.toString() || d.vendorId;
+                    const vendorId = item.id?.toString() || item.id;
+                    return discountVendorId === vendorId;
+                  });
+                  
+                  return (
+                    <VoucherCard
+                      key={item.id}
+                      brand={item.brandName}
+                      logo={item.imageUrl}
+                      discounts={item.discountText}
+                      discountId={vendorDiscount?.id || item.discountId}
+                      vendor={item.vendor}
+                      vendorId={item.id}
+                    />
+                  );
+                })}
 
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>All Discounts</Text>
                   <Text style={styles.sectionSubtitle}>Browse all available offers</Text>
             </View>
 
-                {filteredVendors.map((item) => (
-                  <VoucherCard
-                    key={`all-${item.id}`}
-                    brand={item.brandName}
-                    logo={item.imageUrl}
-                    discounts={3}
-                    onPress={() => router.push(`/discounts/${item.id}`)}
-                  />
-                ))}
+                {filteredVendors.map((item) => {
+                  // Find discount for this vendor
+                  const vendorDiscount = discounts.find(d => {
+                    const discountVendorId = d.vendorId?.toString() || d.vendorId;
+                    const vendorId = item.id?.toString() || item.id;
+                    return discountVendorId === vendorId;
+                  });
+                  
+                  return (
+                    <VoucherCard
+                      key={`all-${item.id}`}
+                      brand={item.brandName}
+                      logo={item.imageUrl}
+                      discounts={item.discountText}
+                      discountId={vendorDiscount?.id || item.discountId}
+                      vendor={item.vendor}
+                      vendorId={item.id}
+                    />
+                  );
+                })}
               </>
             ) : (
               <View style={styles.emptyState}>
@@ -449,6 +680,20 @@ export default function DiscountsScreen() {
           </ScrollView>
         )}
       </View>
+      
+      {/* Tutorial */}
+      {showTutorial && currentStep && (
+        <WalkthroughTutorial
+          visible={showTutorial}
+          currentStep={currentStep.stepNumber}
+          totalSteps={currentStep.totalSteps}
+          highlightPosition={highlightPosition}
+          title={currentStep.title}
+          description={currentStep.description}
+          onNext={handleNext}
+          onSkip={handleSkip}
+        />
+      )}
     </SafeAreaView>
   );
 }

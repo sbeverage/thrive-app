@@ -60,7 +60,10 @@ export default function DonationAmount() {
         <ScrollView contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 60, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
       {/* Top Navigation */}
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <AntDesign name="arrowleft" size={24} color="#324E58" />
+          <Image 
+            source={require('../../assets/icons/arrow-left.png')} 
+            style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+          />
         </TouchableOpacity>
           {/* Piggy and Speech Bubble in blue area */}
           <View style={{
@@ -88,7 +91,7 @@ export default function DonationAmount() {
           {/* Donation amount, slider, and button directly on the gradient */}
           <View style={styles.infoCardCurved}>
             <View style={styles.amountCardProminentCurved}>
-              <Text style={styles.amountProminent}>${amount}</Text>
+              <Text style={styles.amountProminent}>${Math.round(amount || 0)}</Text>
               <Text style={styles.perMonthProminent}>per month</Text>
         </View>
             <View style={styles.sliderRowWrapCurved}>

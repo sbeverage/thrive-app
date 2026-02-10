@@ -1,13 +1,35 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Tabs, Slot, useRouter, usePathname } from 'expo-router';
 import { View, TouchableOpacity, Image, StyleSheet, Text } from 'react-native';
 import { BeneficiaryProvider } from '../context/BeneficiaryContext';
 
 export default function AppLayout() {
-  const [activeTab, setActiveTab] = useState('home');
   const router = useRouter();
   const pathname = usePathname();
+
+  // Sync active tab with current pathname
+  const getActiveTab = () => {
+    if (pathname?.includes('/home') || pathname === '/' || pathname === '/(tabs)/home') {
+      return 'home';
+    } else if (pathname?.includes('/discounts') || pathname === '/(tabs)/discounts') {
+      return 'discounts';
+    } else if (pathname?.includes('/beneficiary') || pathname === '/(tabs)/beneficiary') {
+      return 'beneficiary';
+    }
+    return 'home'; // default
+  };
+
+  const [activeTab, setActiveTab] = useState(getActiveTab());
+
+  // Update active tab when pathname changes
+  useEffect(() => {
+    const newActiveTab = getActiveTab();
+    if (newActiveTab !== activeTab) {
+      console.log('📱 Tab switching from', activeTab, 'to', newActiveTab, 'pathname:', pathname);
+      setActiveTab(newActiveTab);
+    }
+  }, [pathname, activeTab]);
 
   // Hide footer on detail and fullscreen pages
   const isDetailPage = /^\/discounts\/[^\/]+$/.test(pathname);
@@ -19,10 +41,8 @@ export default function AppLayout() {
 
   const tabs = [
     { name: 'home', label: 'Home', icon: require('../../assets/icons/home.png') },
-    { name: 'beneficiary', label: 'Beneficiary', icon: require('../../assets/icons/beneficiary.png') },
     { name: 'discounts', label: 'Discounts', icon: require('../../assets/icons/discounts.png') },
-    { name: 'newsfeed', label: 'Newsfeed', icon: require('../../assets/icons/newsfeed.png') },
-    { name: 'leaderboard', label: 'Rank', icon: require('../../assets/icons/leaderboard.png') },
+    { name: 'beneficiary', label: 'Beneficiary', icon: require('../../assets/icons/beneficiary.png') },
   ];
 
   return (

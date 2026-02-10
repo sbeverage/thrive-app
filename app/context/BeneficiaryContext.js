@@ -14,15 +14,35 @@ export const BeneficiaryProvider = ({ children }) => {
       try {
         const saved = await AsyncStorage.getItem('selectedBeneficiary');
         if (saved) {
-          setSelectedBeneficiary(JSON.parse(saved));
+          const parsed = JSON.parse(saved);
+          console.log('✅ Loaded beneficiary from storage:', parsed?.name || parsed?.id);
+          setSelectedBeneficiary(parsed);
+        } else {
+          console.log('⚠️ No beneficiary found in storage');
         }
       } catch (error) {
-        console.error('Error loading saved beneficiary:', error);
+        console.error('❌ Error loading saved beneficiary:', error);
       }
     };
 
     loadSavedBeneficiary();
   }, []);
+
+  // Expose a reload function that can be called after login
+  const reloadBeneficiary = async () => {
+    try {
+      const saved = await AsyncStorage.getItem('selectedBeneficiary');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        console.log('🔄 Reloaded beneficiary from storage:', parsed?.name || parsed?.id);
+        setSelectedBeneficiary(parsed);
+        return parsed;
+      }
+    } catch (error) {
+      console.error('❌ Error reloading beneficiary:', error);
+    }
+    return null;
+  };
 
   // Save beneficiary when it changes
   const saveBeneficiary = async (beneficiary) => {
@@ -40,7 +60,7 @@ export const BeneficiaryProvider = ({ children }) => {
   };
 
   return (
-    <BeneficiaryContext.Provider value={{ selectedBeneficiary, setSelectedBeneficiary: saveBeneficiary }}>
+    <BeneficiaryContext.Provider value={{ selectedBeneficiary, setSelectedBeneficiary: saveBeneficiary, reloadBeneficiary }}>
       {children}
     </BeneficiaryContext.Provider>
   );

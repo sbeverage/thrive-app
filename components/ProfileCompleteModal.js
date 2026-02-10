@@ -10,27 +10,18 @@ export default function ProfileCompleteModal({ visible, onClose }) {
         <View style={styles.card}>
           <Image source={require('../assets/images/piggy-confetti.png')} style={styles.piggy} />
 
-          <Text style={styles.title}>Profile Complete!</Text>
+          <Text style={styles.title}>Welcome to Thrive!</Text>
 
-          <View style={styles.pointsContainer}>
-            <Text style={styles.pointsLabel}>You've earned</Text>
-            <Text style={styles.pointsValue}>+25 POINTS!</Text>
-            <Text style={styles.pointsSubtext}>Level 1 Achieved!</Text>
-          </View>
-
-                      <Text style={styles.message}>
-              <Text style={{ color: '#DB8633', fontWeight: '600' }}>Welcome to the THRIVE community!</Text>
-              {'\n'}Your journey to making a difference starts now.
-            </Text>
+          <Text style={styles.message}>
+            <Text style={{ color: '#DB8633', fontWeight: '600' }}>You're all set!</Text>
+            {'\n\n'}Thank you for joining our community of changemakers. Your generosity will make a real difference in the lives of those who need it most.
+            {'\n\n'}Don't forget to take advantage of the local deals and support the local businesses that are supporting this movement!
+          </Text>
 
           <View style={styles.buttonContainer}>
             <TouchableOpacity style={styles.filledButton} onPress={onClose}>
-              <Text style={styles.filledText}>Let's Get Started! 🚀</Text>
+              <Text style={styles.filledText}>Start Making a Difference</Text>
             </TouchableOpacity>
-          </View>
-
-          <View style={styles.badgeContainer}>
-            <Text style={styles.badgeText}>🏆 First Achievement Unlocked!</Text>
           </View>
         </View>
       </View>
@@ -70,42 +61,13 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     textAlign: 'center',
   },
-  pointsContainer: {
-    alignItems: 'center',
-    marginBottom: 20,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    backgroundColor: '#F8F9FA',
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: '#DB8633',
-    borderStyle: 'dashed',
-  },
-  pointsLabel: {
-    fontSize: 16,
-    color: '#6d6e72',
-    marginBottom: 8,
-  },
-  pointsValue: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#DB8633',
-    marginBottom: 8,
-    textShadowColor: 'rgba(219, 134, 51, 0.3)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  pointsSubtext: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#2C3E50',
-  },
   message: {
     fontSize: 17,
     color: '#324E58',
     textAlign: 'center',
     marginBottom: 28,
-    lineHeight: 24,
+    lineHeight: 26,
+    paddingHorizontal: 8,
   },
   buttonContainer: {
     width: '100%',
@@ -126,20 +88,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 18,
-    textAlign: 'center',
-  },
-  badgeContainer: {
-    backgroundColor: '#E8F5E8',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#4CAF50',
-  },
-  badgeText: {
-    color: '#2E7D32',
-    fontSize: 14,
-    fontWeight: '600',
     textAlign: 'center',
   },
 });

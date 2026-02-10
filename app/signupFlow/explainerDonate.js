@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,18 +8,82 @@ import {
   ScrollView,
   SafeAreaView,
   Dimensions,
+  Linking,
+  Alert,
+  Modal,
+  Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Video, ResizeMode, Audio } from 'expo-av';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function ExplainerDonate() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const [showVideo, setShowVideo] = useState(false);
+  const videoRef = useRef(null);
 
   const handleContinue = () => {
-    router.push('/signupFlow/beneficiarySignupCause');
+    if (params?.flow === 'coworking') {
+      router.push({
+        pathname: '/signupFlow/beneficiarySignupCause',
+        params: { flow: 'coworking', sponsorAmount: params?.sponsorAmount || '15' }
+      });
+    } else {
+      router.push('/signupFlow/beneficiarySignupCause');
+    }
+  };
+
+  const handleWatchVideo = async () => {
+    try {
+      // Set audio mode to allow playback
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        staysActiveInBackground: false,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+      
+      setShowVideo(true);
+      // Start playing video after a short delay to ensure modal is fully open
+      setTimeout(async () => {
+        if (videoRef.current) {
+          try {
+            await videoRef.current.playAsync();
+            console.log('Video started playing with audio');
+          } catch (error) {
+            console.log('Error playing video:', error);
+          }
+        }
+      }, 200);
+    } catch (error) {
+      console.log('Error setting audio mode:', error);
+      setShowVideo(true);
+    }
+  };
+
+  const closeVideo = async () => {
+    try {
+      // Stop video playback
+      if (videoRef.current) {
+        await videoRef.current.pauseAsync();
+      }
+      // Reset audio mode
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        staysActiveInBackground: false,
+        playsInSilentModeIOS: false,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+    } catch (error) {
+      console.log('Error closing video:', error);
+    }
+    setShowVideo(false);
   };
 
   return (
@@ -36,7 +100,10 @@ export default function ExplainerDonate() {
 
       {/* Back Navigation */}
       <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-        <AntDesign name="arrowleft" size={24} color="#324E58" />
+        <Image 
+          source={require('../../assets/icons/arrow-left.png')} 
+          style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+        />
       </TouchableOpacity>
 
       {/* Main Content */}
@@ -48,11 +115,14 @@ export default function ExplainerDonate() {
         alwaysBounceVertical={true}
       >
         <View style={styles.infoCard}>
-          {/* Nonprofit Badge */}
-          <View style={styles.nonprofitBadge}>
-            <AntDesign name="heart" size={16} color="#fff" />
+          {/* Nonprofit Badge - Clickable Video Link */}
+          <TouchableOpacity style={styles.nonprofitBadge} onPress={handleWatchVideo}>
+            <Image 
+              source={require('../../assets/icons/play.png')} 
+              style={{ width: 16, height: 16, tintColor: '#fff', marginRight: 8 }} 
+            />
             <Text style={styles.nonprofitText}>Watch Video</Text>
-          </View>
+          </TouchableOpacity>
 
           {/* Main Headline */}
           <Text style={styles.headline}>
@@ -63,7 +133,10 @@ export default function ExplainerDonate() {
           <View style={styles.benefitsContainer}>
             <View style={styles.benefitCard}>
               <View style={styles.benefitIcon}>
-                <AntDesign name="gift" size={24} color="#DB8633" />
+                <Image 
+                  source={require('../../assets/icons/gift.png')} 
+                  style={{ width: 24, height: 24, tintColor: '#DB8633' }} 
+                />
               </View>
               <View style={styles.benefitText}>
                 <Text style={styles.benefitTitle}>100% to Charity</Text>
@@ -75,7 +148,10 @@ export default function ExplainerDonate() {
 
             <View style={styles.benefitCard}>
               <View style={styles.benefitIcon}>
-                <AntDesign name="star" size={24} color="#DB8633" />
+                <Image 
+                  source={require('../../assets/icons/star.png')} 
+                  style={{ width: 24, height: 24, tintColor: '#DB8633' }} 
+                />
               </View>
               <View style={styles.benefitText}>
                 <Text style={styles.benefitTitle}>Local Discounts</Text>
@@ -87,7 +163,10 @@ export default function ExplainerDonate() {
 
             <View style={styles.benefitCard}>
               <View style={styles.benefitIcon}>
-                <AntDesign name="checkcircle" size={24} color="#DB8633" />
+                <Image 
+                  source={require('../../assets/icons/check-circle.png')} 
+                  style={{ width: 24, height: 24, tintColor: '#DB8633' }} 
+                />
               </View>
               <View style={styles.benefitText}>
                 <Text style={styles.benefitTitle}>Monthly Impact</Text>
@@ -123,6 +202,76 @@ export default function ExplainerDonate() {
           <Text style={styles.continueButtonText}>Choose Your Cause →</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Video Modal */}
+      <Modal
+        visible={showVideo}
+        animationType="fade"
+        presentationStyle="fullScreen"
+        onRequestClose={closeVideo}
+      >
+        <View style={styles.videoModalContainer}>
+          {/* Close Button */}
+          <TouchableOpacity style={styles.closeButton} onPress={closeVideo}>
+            {Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 24, color: '#fff' }}>✕</Text>
+            ) : (
+              <AntDesign name="close" size={24} color="#fff" />
+            )}
+          </TouchableOpacity>
+
+          {/* Video Player */}
+          <Video
+            ref={videoRef}
+            style={styles.videoPlayer}
+            source={{
+              uri: 'https://thrive-backend-uploads.s3.us-east-1.amazonaws.com/thrive_initiative_broll_athem_video+(1080p).mp4', // Your actual video
+            }}
+            useNativeControls
+            resizeMode={ResizeMode.CONTAIN}
+            shouldPlay={true}
+            isLooping={false}
+            isMuted={false}
+            volume={1.0}
+            onLoad={async () => {
+              // Auto-play when video loads
+              console.log('Video loaded, attempting to play with audio');
+              if (videoRef.current) {
+                try {
+                  await videoRef.current.playAsync();
+                  console.log('Video auto-played successfully');
+                } catch (error) {
+                  console.log('Error auto-playing video:', error);
+                }
+              }
+            }}
+            onPlaybackStatusUpdate={(status) => {
+              if (status.isLoaded) {
+                console.log('Video status:', {
+                  isPlaying: status.isPlaying,
+                  isMuted: status.isMuted,
+                  volume: status.volume,
+                  hasAudio: status.hasAudio
+                });
+              }
+            }}
+            onError={(error) => {
+              console.log('Video error:', error);
+              Alert.alert(
+                'Video Error',
+                'Unable to load the video. Please check your internet connection.',
+                [{ text: 'OK', onPress: closeVideo }]
+              );
+            }}
+          />
+
+          {/* Video Title */}
+          <View style={styles.videoTitleContainer}>
+            <Text style={styles.videoTitle}>How Your Donation Makes a Difference</Text>
+            <Text style={styles.videoSubtitle}>Watch this short video to learn more about our impact</Text>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -195,6 +344,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignSelf: 'center',
     marginBottom: 20,
+    shadowColor: '#DB8633',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   nonprofitText: {
     color: '#ffffff',
@@ -326,5 +480,46 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: '600',
+  },
+  // Video Modal Styles
+  videoModalContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 1000,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 20,
+    padding: 10,
+  },
+  videoPlayer: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT * 0.8,
+    backgroundColor: '#000',
+  },
+  videoTitleContainer: {
+    position: 'absolute',
+    bottom: 100,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+  },
+  videoTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  videoSubtitle: {
+    color: '#ccc',
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 22,
   },
 });

@@ -1,6 +1,6 @@
 // app/signupProfile.js
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -25,12 +25,22 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function SignupProfile() {
   const router = useRouter();
-  const { email } = useLocalSearchParams();
-  const { saveUserData, uploadProfilePicture, addPoints } = useUser();
+  const params = useLocalSearchParams();
+  // Handle email param - it might be a string or array
+  const emailParam = params?.email;
+  const email = Array.isArray(emailParam) ? emailParam[0] : (emailParam || '');
+  const { saveUserData, uploadProfilePicture, user } = useUser();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [profileImage, setProfileImage] = useState(null);
+
+  // Log email extraction for debugging
+  useEffect(() => {
+    console.log('📧 SignupProfile - Email from params:', email);
+    console.log('📧 SignupProfile - All params:', params);
+    console.log('📧 SignupProfile - User email:', user?.email);
+  }, [email, params, user]);
 
   // Use static gradient colors for now
   const gradientColors = ["#2C3E50", "#4CA1AF"];
@@ -49,6 +59,28 @@ export default function SignupProfile() {
       formattedNumber += '-' + cleaned.slice(6, 10);
     }
     setPhoneNumber(formattedNumber);
+  };
+
+  // Capitalize first letter of name (proper capitalization)
+  const handleFirstNameChange = (text) => {
+    if (text.length === 0) {
+      setFirstName('');
+      return;
+    }
+    // Ensure first letter is uppercase, rest lowercase for proper capitalization
+    const capitalized = text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+    setFirstName(capitalized);
+  };
+
+  // Capitalize first letter of last name (proper capitalization)
+  const handleLastNameChange = (text) => {
+    if (text.length === 0) {
+      setLastName('');
+      return;
+    }
+    // Ensure first letter is uppercase, rest lowercase for proper capitalization
+    const capitalized = text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+    setLastName(capitalized);
   };
 
   const handleContinue = async () => {
@@ -77,14 +109,26 @@ export default function SignupProfile() {
 
     try {
       console.log('💾 Starting profile save process...');
+      console.log('📧 Email from params:', email);
+      console.log('📧 Email from user context:', user?.email);
+      
+      // Get email from params, user context, or existing user data
+      const emailToSave = email || user?.email || '';
+      console.log('📧 Email to save:', emailToSave);
+      
+      if (!emailToSave) {
+        console.warn('⚠️ No email found - this should not happen during signup');
+      }
       
       // Prepare profile data
       const profileData = {
         firstName,
         lastName,
         phone: phoneNumber,
-        email: email, // Get email from params
+        email: emailToSave, // Use the determined email
       };
+      
+      console.log('💾 Profile data to save:', profileData);
       
       // Upload profile picture if selected
       if (profileImage) {
@@ -100,10 +144,7 @@ export default function SignupProfile() {
       }
       
       // Save profile data (this will save both locally and to backend)
-      const savedUserData = await saveUserData(profileData, true);
-      
-      // Award 25 points for completing profile setup
-      await addPoints(25);
+      const savedUserData = await saveUserData({ ...profileData }, true);
       
       // Navigate directly to email verification page with email
       router.push({
@@ -163,11 +204,18 @@ export default function SignupProfile() {
           <Image source={{ uri: profileImage }} style={styles.profileImage} />
         ) : (
           <View style={styles.profilePlaceholder}>
-            <Text style={styles.initials}>{getInitials() || <Feather name="user" size={40} color="#324E58" />}</Text>
+            {getInitials() ? (
+              <Text style={styles.initials}>{getInitials()}</Text>
+            ) : (
+              <Feather name="user" size={40} color="#324E58" />
+            )}
           </View>
         )}
         <View style={styles.plusIconWrapper}>
-          <AntDesign name="pluscircle" size={32} color="#db8633" />
+          <Image 
+            source={require('../assets/icons/add.png')} 
+            style={{ width: 28, height: 28, tintColor: '#324E58' }} 
+          />
         </View>
       </TouchableOpacity>
       <Text style={styles.optionalText}>Profile photo (optional)</Text>
@@ -175,7 +223,7 @@ export default function SignupProfile() {
       <TextInput
         placeholder="First Name *"
         value={firstName}
-        onChangeText={setFirstName}
+        onChangeText={handleFirstNameChange}
         style={[styles.input, !firstName.trim() && styles.inputRequired]}
         placeholderTextColor="#6d6e72"
         autoCapitalize="words"
@@ -183,7 +231,7 @@ export default function SignupProfile() {
       <TextInput
         placeholder="Last Name *"
         value={lastName}
-        onChangeText={setLastName}
+        onChangeText={handleLastNameChange}
         style={[styles.input, !lastName.trim() && styles.inputRequired]}
         placeholderTextColor="#6d6e72"
         autoCapitalize="words"

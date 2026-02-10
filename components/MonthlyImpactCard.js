@@ -6,6 +6,9 @@ export default function MonthlyImpactCard({
   monthlyDonation = 15,
   monthlySavings = 7.5,
   nextDonationDate = null,
+  coworking = false,
+  sponsorAmount = 0,
+  extraDonationAmount = 0,
 }) {
   // Debug the values received by the card
   console.log('📊 MonthlyImpactCard received:', { monthlyDonation, monthlySavings, nextDonationDate });
@@ -40,8 +43,13 @@ export default function MonthlyImpactCard({
         {/* Monthly Donation */}
         <View style={styles.impactBox}>
           <Image source={flowerSeed} style={styles.icon} resizeMode="contain" />
-          <Text style={styles.amount}>${monthlyDonation}</Text>
+          <Text style={styles.amount}>${parseFloat(monthlyDonation || 0).toFixed(2)}</Text>
           <Text style={styles.caption}>Monthly Donation</Text>
+          {coworking && (sponsorAmount > 0 || extraDonationAmount > 0) && (
+            <Text style={styles.subcaption}>
+              Coworking ${parseFloat(sponsorAmount || 0).toFixed(0)} + You ${parseFloat(extraDonationAmount || 0).toFixed(0)}
+            </Text>
+          )}
         </View>
 
         {/* Divider */}
@@ -50,7 +58,7 @@ export default function MonthlyImpactCard({
         {/* Savings */}
         <View style={styles.impactBox}>
           <Image source={piggyWithCoins} style={styles.iconPiggy} resizeMode="contain" />
-          <Text style={styles.amount}>${monthlySavings}</Text>
+          <Text style={styles.amount}>${parseFloat(monthlySavings || 0).toFixed(2)}</Text>
           <Text style={styles.caption}>Savings</Text>
         </View>
       </View>
@@ -124,5 +132,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#7A8D9C',
     marginTop: 2,
+  },
+  subcaption: {
+    fontSize: 11,
+    color: '#9AA9B6',
+    marginTop: 4,
   },
 });

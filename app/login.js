@@ -17,15 +17,19 @@ import { AntDesign, Feather } from '@expo/vector-icons';
 import API from './lib/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from './context/UserContext';
+import { useBeneficiary } from './context/BeneficiaryContext';
+import { signInWithApple, signInWithGoogle, signInWithFacebook } from './utils/socialLogin';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { updateUserProfile, syncVerificationFromLogin } = useUser();
+  const { updateUserProfile, syncVerificationFromLogin, loadUserData } = useUser();
+  const { reloadBeneficiary } = useBeneficiary();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isSocialLoading, setIsSocialLoading] = useState(false);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -44,12 +48,76 @@ export default function LoginScreen() {
       // Sync verification status from login response
       await syncVerificationFromLogin(response);
       
+      // IMPORTANT: Reload full user data from backend to get profile image and all saved data
+      await loadUserData();
+      
+      // Reload beneficiary from storage
+      await reloadBeneficiary();
+      
       // Navigate to home on successful login
       router.replace('/home');
     } catch (error) {
       console.error('❌ Login error:', error);
       const errorMessage = error.message || 'Login failed. Please check your credentials.';
       Alert.alert('Login Error', errorMessage);
+    }
+  };
+
+  const handleSocialLogin = async (socialData) => {
+    if (!socialData) {
+      return; // User canceled
+    }
+
+    try {
+      setIsSocialLoading(true);
+      console.log('🔐 Starting social login:', socialData.provider);
+
+      // Call social login API (handles both signup and login)
+      const response = await API.socialLogin(socialData);
+      console.log('✅ Social login successful:', response);
+
+      // Update user context
+      if (response.user?.email) {
+        updateUserProfile({ email: response.user.email });
+      }
+
+      // Sync verification status
+      await syncVerificationFromLogin(response);
+
+      // IMPORTANT: Reload full user data from backend to get profile image and all saved data
+      await loadUserData();
+      
+      // Reload beneficiary from storage
+      await reloadBeneficiary();
+
+      // Navigate to home on successful login
+      router.replace('/home');
+    } catch (error) {
+      console.error('❌ Social login error:', error);
+      Alert.alert('Login Failed', error.message || 'Social login failed. Please try again.');
+    } finally {
+      setIsSocialLoading(false);
+    }
+  };
+
+  const handleAppleLogin = async () => {
+    const result = await signInWithApple();
+    if (result) {
+      await handleSocialLogin(result);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    const result = await signInWithGoogle();
+    if (result) {
+      await handleSocialLogin(result);
+    }
+  };
+
+  const handleFacebookLogin = async () => {
+    const result = await signInWithFacebook();
+    if (result) {
+      await handleSocialLogin(result);
     }
   };
 
@@ -71,7 +139,10 @@ export default function LoginScreen() {
       >
         <ScrollView contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'flex-start' }} keyboardShouldPersistTaps="handled">
           <TouchableOpacity style={styles.backArrow} onPress={() => router.back()}>
-            <AntDesign name="arrowleft" size={24} color="#324E58" />
+            <Image 
+              source={require('../assets/icons/arrow-left.png')} 
+              style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+            />
           </TouchableOpacity>
           <View style={styles.piggyLogoColumn}>
             <Image source={require('../assets/images/piggy-with-flowers.png')} style={styles.logo} />
@@ -123,13 +194,25 @@ export default function LoginScreen() {
 
             <Text style={styles.orText}>Or login with</Text>
             <View style={styles.socialIconsContainer}>
-              <TouchableOpacity style={styles.socialIconButton}>
+              <TouchableOpacity
+                style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
+                onPress={handleFacebookLogin}
+                disabled={isSocialLoading}
+              >
                 <Image source={require('../assets/images/Facebook-icon.png')} style={styles.socialIcon} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.socialIconButton}>
+              <TouchableOpacity
+                style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
+                onPress={handleGoogleLogin}
+                disabled={isSocialLoading}
+              >
                 <Image source={require('../assets/images/Google-icon.png')} style={styles.socialIcon} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.socialIconButton}>
+              <TouchableOpacity
+                style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
+                onPress={handleAppleLogin}
+                disabled={isSocialLoading}
+              >
                 <Image source={require('../assets/images/Apple-icon.png')} style={styles.socialIcon} />
               </TouchableOpacity>
             </View>
@@ -292,6 +375,9 @@ const styles = StyleSheet.create({
     borderColor: '#e1e1e5',
     borderRadius: 8,
     marginHorizontal: 8,
+  },
+  socialIconButtonDisabled: {
+    opacity: 0.5,
   },
   socialIcon: {
     width: 32,

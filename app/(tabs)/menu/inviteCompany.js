@@ -10,9 +10,11 @@ import {
   Platform,
   ScrollView,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
+import API from '../../lib/api';
 
 // ✅ Phone Formatter Function
 const formatPhoneNumber = (value) => {
@@ -37,14 +39,35 @@ export default function InviteCompany() {
   const [companyEmail, setCompanyEmail] = useState('');
   const [companyPhone, setCompanyPhone] = useState('');
   const [webUrl, setWebUrl] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!contactName || !companyName || !companyEmail || !companyPhone || !webUrl) {
       Alert.alert('Please fill in all required fields.');
       return;
     }
-    Alert.alert('✅ Invitation Sent!', 'Thank you for referring a business.');
-    setTimeout(() => router.push('/(tabs)/menu'), 1500);
+
+    setIsSubmitting(true);
+    try {
+      await API.submitVendorInvitation({
+        contact_name: contactName,
+        company_name: companyName,
+        email: companyEmail,
+        phone: companyPhone,
+        website: webUrl,
+      });
+
+      Alert.alert('✅ Invitation Sent!', 'Thank you for referring a business.');
+      setTimeout(() => router.push('/(tabs)/menu'), 1500);
+    } catch (error) {
+      console.error('❌ Error submitting invitation:', error);
+      Alert.alert(
+        'Error',
+        error.message || 'Failed to send invitation. Please try again.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -56,7 +79,10 @@ export default function InviteCompany() {
         {/* Standardized Header */}
         <View style={styles.headerRow}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <AntDesign name="arrowleft" size={24} color="#324E58" />
+            <Image 
+              source={require('../../../assets/icons/arrow-left.png')} 
+              style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+            />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Send Invitation</Text>
           <View style={styles.headerSpacer} />
@@ -128,8 +154,16 @@ export default function InviteCompany() {
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-            <Text style={styles.submitText}>Send Invitation</Text>
+          <TouchableOpacity 
+            style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]} 
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.submitText}>Send Invitation</Text>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -261,5 +295,8 @@ const styles = StyleSheet.create({
   },
   backButton: {
     // Standard back button with no custom styling
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
   },
 });

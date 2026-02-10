@@ -8,9 +8,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Image,
 } from 'react-native';
 import { Feather, AntDesign } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useBeneficiaryFilter } from '../../context/BeneficiaryFilterContext';
 
 const typeOptions = ['Small', 'Medium', 'Large'];
 const causeOptions = [
@@ -31,14 +33,16 @@ const emergencyOptions = [
 ];
 
 export default function BeneficiaryFilter() {
-  const [location, setLocation] = useState('');
-  const [type, setType] = useState('');
-  const [cause, setCause] = useState('');
-  const [emergency, setEmergency] = useState('');
-  const [showFavorites, setShowFavorites] = useState(false);
+  const { filters, updateFilters } = useBeneficiaryFilter();
   const [isCauseDropdownOpen, setIsCauseDropdownOpen] = useState(false);
   const [isEmergencyDropdownOpen, setIsEmergencyDropdownOpen] = useState(false);
   const router = useRouter();
+
+  const handleApplyFilters = () => {
+    // Filters are already updated in state via the form inputs
+    // Navigate back to beneficiary page
+    router.back();
+  };
 
   const renderOptions = (options, selected, setSelected) => (
     <View style={styles.optionsContainer}>
@@ -60,7 +64,10 @@ export default function BeneficiaryFilter() {
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       {/* Back Navigation */}
       <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-        <AntDesign name="arrowleft" size={24} color="#324E58" />
+        <Image 
+          source={require('../../../assets/icons/arrow-left.png')} 
+          style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+        />
       </TouchableOpacity>
 
       {/* Title */}
@@ -73,8 +80,8 @@ export default function BeneficiaryFilter() {
           <TextInput
             placeholder="Search Location"
             placeholderTextColor="#6d6e72"
-            value={location}
-            onChangeText={setLocation}
+            value={filters.location}
+            onChangeText={(text) => updateFilters({ location: text })}
             style={styles.input}
           />
           <Feather name="crosshair" size={20} color="#666" style={styles.icon} />
@@ -85,17 +92,24 @@ export default function BeneficiaryFilter() {
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>Show favorites only</Text>
         <TouchableOpacity
-          style={[styles.favoritesToggle, showFavorites && styles.favoritesToggleActive]}
-          onPress={() => setShowFavorites(!showFavorites)}
+          style={[styles.favoritesToggle, filters.showFavorites && styles.favoritesToggleActive]}
+          onPress={() => updateFilters({ showFavorites: !filters.showFavorites })}
         >
           <View style={styles.favoritesToggleContent}>
-            <AntDesign 
-              name={showFavorites ? 'heart' : 'hearto'} 
-              size={20} 
-              color={showFavorites ? '#D0861F' : '#D0861F'} 
-            />
-            <Text style={[styles.favoritesToggleText, showFavorites && styles.favoritesToggleTextActive]}>
-              {showFavorites ? 'Showing Favorites Only' : 'Show All Favorites'}
+            {filters.showFavorites ? (
+              <AntDesign 
+                name="heart" 
+                size={20} 
+                color="#D0861F" 
+              />
+            ) : (
+              <Image 
+                source={require('../../../assets/icons/heart.png')} 
+                style={{ width: 20, height: 20, tintColor: '#D0861F' }} 
+              />
+            )}
+            <Text style={[styles.favoritesToggleText, filters.showFavorites && styles.favoritesToggleTextActive]}>
+              {filters.showFavorites ? 'Showing Favorites Only' : 'Show All Favorites'}
             </Text>
           </View>
         </TouchableOpacity>
@@ -108,7 +122,7 @@ export default function BeneficiaryFilter() {
           style={styles.dropdownToggle}
           onPress={() => setIsCauseDropdownOpen(!isCauseDropdownOpen)}
         >
-          <Text style={styles.dropdownToggleText}>{cause || 'Select Category'}</Text>
+          <Text style={styles.dropdownToggleText}>{filters.cause || 'Select Category'}</Text>
           <Feather name={isCauseDropdownOpen ? 'chevron-up' : 'chevron-down'} size={18} color="#666" />
         </TouchableOpacity>
         {isCauseDropdownOpen && (
@@ -116,13 +130,13 @@ export default function BeneficiaryFilter() {
             {causeOptions.map(option => (
               <TouchableOpacity
                 key={option}
-                style={[styles.dropdownItem, cause === option && styles.dropdownItemSelected]}
+                style={[styles.dropdownItem, filters.cause === option && styles.dropdownItemSelected]}
                 onPress={() => {
-                  setCause(option);
+                  updateFilters({ cause: option });
                   setIsCauseDropdownOpen(false);
                 }}
               >
-                <Text style={[styles.optionText, cause === option && styles.optionTextSelected]}>
+                <Text style={[styles.optionText, filters.cause === option && styles.optionTextSelected]}>
                   {option}
                 </Text>
               </TouchableOpacity>
@@ -134,7 +148,7 @@ export default function BeneficiaryFilter() {
       {/* Size Options */}
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>Size of the organization</Text>
-        {renderOptions(typeOptions, type, setType)}
+        {renderOptions(typeOptions, filters.type, (type) => updateFilters({ type }))}
       </View>
 
       {/* Emergency Dropdown */}
@@ -144,7 +158,7 @@ export default function BeneficiaryFilter() {
           style={styles.dropdownToggle}
           onPress={() => setIsEmergencyDropdownOpen(!isEmergencyDropdownOpen)}
         >
-          <Text style={styles.dropdownToggleText}>{emergency || 'Choose an Emergency Relief Program'}</Text>
+          <Text style={styles.dropdownToggleText}>{filters.emergency || 'Choose an Emergency Relief Program'}</Text>
           <Feather name={isEmergencyDropdownOpen ? 'chevron-up' : 'chevron-down'} size={18} color="#666" />
         </TouchableOpacity>
         {isEmergencyDropdownOpen && (
@@ -152,13 +166,13 @@ export default function BeneficiaryFilter() {
             {emergencyOptions.map(option => (
               <TouchableOpacity
                 key={option}
-                style={[styles.dropdownItem, emergency === option && styles.dropdownItemSelected]}
+                style={[styles.dropdownItem, filters.emergency === option && styles.dropdownItemSelected]}
                 onPress={() => {
-                  setEmergency(option);
+                  updateFilters({ emergency: option });
                   setIsEmergencyDropdownOpen(false);
                 }}
               >
-                <Text style={[styles.optionText, emergency === option && styles.optionTextSelected]}>
+                <Text style={[styles.optionText, filters.emergency === option && styles.optionTextSelected]}>
                   {option}
                 </Text>
               </TouchableOpacity>
@@ -168,7 +182,7 @@ export default function BeneficiaryFilter() {
       </View>
 
       {/* Continue Button */}
-      <TouchableOpacity style={styles.button} onPress={() => router.push('/(tabs)/beneficiary')}>
+      <TouchableOpacity style={styles.button} onPress={handleApplyFilters}>
         <Text style={styles.buttonText}>Apply Filters</Text>
       </TouchableOpacity>
     </ScrollView>

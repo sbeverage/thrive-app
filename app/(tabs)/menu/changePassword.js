@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Image,
 } from 'react-native';
 import { AntDesign, Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -41,7 +42,10 @@ export default function ChangePassword() {
       {/* Standardized Header */}
       <View style={styles.headerRow}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <AntDesign name="arrowleft" size={24} color="#324E58" />
+          <Image 
+            source={require('../../../assets/icons/arrow-left.png')} 
+            style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+          />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Change Password</Text>
         <View style={styles.headerSpacer} />

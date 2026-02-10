@@ -11,8 +11,9 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
-import { AntDesign, Feather } from '@expo/vector-icons';
+import { AntDesign, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -25,7 +26,7 @@ export default function FeedbackScreen() {
   const feedbackTypes = [
     { id: 'general', label: 'General', icon: 'message-circle' },
     { id: 'bug', label: 'Bug Report', icon: 'alert-triangle' },
-    { id: 'feature', label: 'Feature Request', icon: 'lightbulb' },
+    { id: 'feature', label: 'Feature Request', icon: 'zap' },
     { id: 'improvement', label: 'Improvement', icon: 'trending-up' },
   ];
 
@@ -74,7 +75,10 @@ export default function FeedbackScreen() {
         {/* Standardized Header */}
         <View style={styles.headerRow}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/menu')}>
-            <AntDesign name="arrowleft" size={24} color="#324E58" />
+            <Image 
+              source={require('../../../assets/icons/arrow-left.png')} 
+              style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+            />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Send Feedback</Text>
           <View style={styles.headerSpacer} />
@@ -137,11 +141,19 @@ export default function FeedbackScreen() {
                 onPress={() => handleRating(num)}
                 style={styles.starButton}
               >
-                <AntDesign
-                  name={num <= rating ? "star" : "staro"}
-                  size={36}
-                  color={num <= rating ? '#FFD700' : '#E2E8F0'}
-                />
+                {num <= rating ? (
+                  <AntDesign
+                    name="star"
+                    size={36}
+                    color="#FFD700"
+                  />
+                ) : (
+                  <MaterialIcons
+                    name="star-border"
+                    size={36}
+                    color="#D1D5DB"
+                  />
+                )}
               </TouchableOpacity>
             ))}
           </View>

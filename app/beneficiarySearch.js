@@ -1,11 +1,12 @@
 // app/beneficiarySearch.js
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Image, TextInput, ScrollView, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
 import SuccessModal from '../components/SuccessModal';
 import ConfettiCannon from 'react-native-confetti-cannon';
+import API from './lib/api';
 
 const styles = StyleSheet.create({
   container: {
@@ -46,13 +47,63 @@ export default function BeneficiarySearch() {
   const [confettiTrigger, setConfettiTrigger] = useState(false);
   const [hasShownFirstSelect, setHasShownFirstSelect] = useState(false);
   const [hasShownFirstFavorite, setHasShownFirstFavorite] = useState(false);
+  const [beneficiaries, setBeneficiaries] = useState([]);
+  const [loadingBeneficiaries, setLoadingBeneficiaries] = useState(true);
 
-  const [beneficiaries, setBeneficiaries] = useState([
-    { id: 1, name: 'NPCF', category: 'Childhood Illness', image: require('../assets/images/child-cancer.jpg') },
-    { id: 2, name: 'Humane Society', category: 'Animal Welfare', image: require('../assets/images/humane-society.jpg') },
-    { id: 3, name: 'Charity Water', category: 'Low Income Families', image: require('../assets/images/charity-water.jpg') },
-    { id: 4, name: 'Dog Trust', category: 'Animal Welfare', image: require('../assets/images/humane-society.jpg') },
-  ]);
+  // Load beneficiaries from API
+  useEffect(() => {
+    const loadBeneficiaries = async () => {
+      try {
+        setLoadingBeneficiaries(true);
+        const data = await API.getCharities();
+        
+        // Handle different response formats
+        let charitiesArray = null;
+        if (data && data.charities && Array.isArray(data.charities)) {
+          charitiesArray = data.charities;
+        } else if (Array.isArray(data)) {
+          charitiesArray = data;
+        } else if (data && data.data && Array.isArray(data.data)) {
+          charitiesArray = data.data;
+        }
+        
+        if (charitiesArray && charitiesArray.length > 0) {
+          const transformed = charitiesArray.map(charity => {
+            // Handle image - use URL if available, otherwise fallback to local asset
+            let imageSource;
+            if (charity.imageUrl) {
+              imageSource = { uri: charity.imageUrl };
+            } else {
+              if (charity.category === 'Childhood Illness') {
+                imageSource = require('../assets/images/child-cancer.jpg');
+              } else if (charity.category === 'Animal Welfare') {
+                imageSource = require('../assets/images/humane-society.jpg');
+              } else {
+                imageSource = require('../assets/images/charity-water.jpg');
+              }
+            }
+
+            return {
+              id: charity.id,
+              name: charity.name,
+              category: charity.category,
+              image: imageSource,
+            };
+          });
+          setBeneficiaries(transformed);
+        } else {
+          setBeneficiaries([]);
+        }
+      } catch (error) {
+        console.error('❌ Failed to load beneficiaries from API:', error);
+        setBeneficiaries([]);
+      } finally {
+        setLoadingBeneficiaries(false);
+      }
+    };
+
+    loadBeneficiaries();
+  }, []);
 
   const toggleFavorite = (id) => {
     if (favorites.includes(id)) {
@@ -108,7 +159,10 @@ export default function BeneficiarySearch() {
         {/* Top Navigation */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <TouchableOpacity style={styles.backButton} onPress={router.back}>
-            <AntDesign name="arrowleft" size={24} color="#324E58" />
+            <Image 
+              source={require('../assets/icons/arrow-left.png')} 
+              style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+            />
           </TouchableOpacity>
           <TouchableOpacity onPress={handleSkip}>
             <Text style={{ color: '#DB8633', fontSize: 14 }}>Skip</Text>
@@ -135,7 +189,7 @@ export default function BeneficiarySearch() {
             position: 'relative',
           }}>
             <Text style={{ color: '#324E58', fontSize: 16, lineHeight: 22 }}>
-              Select only one to donate to. Favorite as many as you'd like to see their updates on your newsfeed.
+              Select only one to donate to. Favorite as many as you'd like to see their updates.
             </Text>
             <View style={{
               position: 'absolute',
@@ -157,7 +211,10 @@ export default function BeneficiarySearch() {
 
         {/* Search Bar */}
         <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f5fa', borderRadius: 8, borderWidth: 1, borderColor: '#e1e1e5', paddingHorizontal: 10, marginBottom: 20 }}>
-          <AntDesign name="search1" size={18} color="#6d6e72" style={{ marginRight: 8 }} />
+          <Image 
+            source={require('../assets/icons/search-icon.png')} 
+            style={{ width: 18, height: 18, tintColor: '#6d6e72', marginRight: 8 }} 
+          />
           <TextInput
             placeholder="Search Beneficiaries"
             placeholderTextColor="#6d6e72"
@@ -196,15 +253,27 @@ export default function BeneficiarySearch() {
                   style={{ position: 'absolute', top: 8, right: 8 }}
                   onPress={() => toggleFavorite(b.id)}
                 >
-                  <AntDesign name={favorites.includes(b.id) ? 'heart' : 'hearto'} size={20} color="#DB8633" />
+                  {favorites.includes(b.id) ? (
+                    <AntDesign name="heart" size={20} color="#DB8633" />
+                  ) : (
+                    <Image 
+                      source={require('../assets/icons/heart.png')} 
+                      style={{ width: 20, height: 20, tintColor: '#DB8633' }} 
+                    />
+                  )}
                 </TouchableOpacity>
 
                 {selectedBeneficiary === b.id && (
-                  <AntDesign
-                    name="checkcircle"
-                    size={20}
-                    color="#DB8633"
-                    style={{ position: 'absolute', top: 8, left: 8 }}
+                  <Image 
+                    source={require('../assets/icons/check-circle.png')} 
+                    style={{ 
+                      width: 20, 
+                      height: 20, 
+                      tintColor: '#DB8633',
+                      position: 'absolute', 
+                      top: 8, 
+                      left: 8 
+                    }} 
                   />
                 )}
 

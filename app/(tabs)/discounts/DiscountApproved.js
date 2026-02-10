@@ -1,36 +1,165 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ScrollView, Modal, Dimensions } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ScrollView, Modal, Dimensions, Platform, Keyboard, KeyboardAvoidingView } from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { AntDesign, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from '../../context/UserContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function DiscountApproved() {
   const router = useRouter();
-  const { addPoints, addSavings } = useUser();
+  const { addSavings } = useUser();
+  const params = useLocalSearchParams();
+  
+  // Get dynamic data from route params
+  const discountCode = params.discountCode || 'DEALFREE';
+  const vendorName = params.vendorName || 'Starbucks Coffee';
+  const discountTitle = params.discountTitle || 'Free Appetizer';
+  const vendorLogo = params.vendorLogo ? { uri: params.vendorLogo } : require('../../../assets/images/logos/starbucks.png');
+  const discountType = params.discountType || '';
+  const discountValue = params.discountValue ? parseFloat(params.discountValue) : null;
+  const maxDiscount = params.maxDiscount ? parseFloat(params.maxDiscount) : null;
+  const description = params.description || '';
+  const terms = params.terms || '';
+  const usageLimitPerMonth = params.usageLimitPerMonth ? parseInt(params.usageLimitPerMonth, 10) : null;
+  const parseCount = (value) => {
+    if (value === undefined || value === null || value === '') return null;
+    const parsed = parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const remainingUses = parseCount(params.remainingUses);
+  const availableCount = parseCount(params.availableCount);
+  const usageLimitDisplay = params.usageLimitDisplay || params.discount?.usageLimitDisplay || '';
+  const parsedDisplayLimit = parseCount(usageLimitDisplay);
+  const usageLimitTotal = usageLimitPerMonth
+    ?? parseCount(params.usageLimit)
+    ?? parseCount(params.maxUsesPerMonth)
+    ?? parseCount(params.usage_limit_per_month)
+    ?? parseCount(params.usage_limit)
+    ?? parseCount(params.max_uses_per_month)
+    ?? parsedDisplayLimit;
+  const usageDisplay = remainingUses !== null
+    ? (usageLimitTotal
+        ? `${remainingUses} out of ${usageLimitTotal} remaining`
+        : `${remainingUses} remaining`)
+    : availableCount !== null
+      ? (usageLimitTotal
+          ? `${availableCount} out of ${usageLimitTotal} remaining`
+          : `${availableCount} remaining`)
+      : (usageLimitDisplay && parsedDisplayLimit === null)
+        ? usageLimitDisplay
+        : usageLimitTotal
+          ? `${usageLimitTotal} time${usageLimitTotal !== 1 ? 's' : ''} per month`
+          : 'Unlimited';
+  
   const [totalBill, setTotalBill] = useState('');
   const [totalDiscount, setTotalDiscount] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  const handleGetPoints = async () => {
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates?.height || 0);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const contentPaddingBottom = keyboardHeight > 0 ? keyboardHeight + 24 : 24;
+
+  const handleSaveTransaction = async () => {
     if (totalBill && totalDiscount) {
       try {
-        // Add 25 points for completing the discount redemption
-        await addPoints(25);
-        
         // Add the savings amount to total savings
         const savingsAmount = parseFloat(totalDiscount) || 0;
         await addSavings(savingsAmount);
         
-        console.log(`💰 Added $${savingsAmount} to savings and 25 points!`);
+        // Add transaction to transaction history
+        await addTransactionToHistory({
+          brand: vendorName,
+          date: new Date().toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          }),
+          discount: discountTitle,
+          spending: `$${totalBill}`,
+          savings: `$${totalDiscount}`,
+          logo: vendorLogo,
+        });
+        
+        console.log(`💰 Added $${savingsAmount} to savings!`);
         setShowModal(true);
       } catch (error) {
-        console.error('❌ Error adding points and savings:', error);
+        console.error('❌ Error adding savings:', error);
         // Still show modal even if there's an error
         setShowModal(true);
       }
+    }
+  };
+
+  const handleSkip = async () => {
+    try {
+      // Add transaction to transaction history with $0 values
+      await addTransactionToHistory({
+        brand: vendorName,
+        date: new Date().toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        }),
+        discount: discountTitle,
+        spending: '$0',
+        savings: '$0',
+        logo: vendorLogo,
+      });
+      
+      console.log('💰 Created transaction record with $0 values!');
+      router.push('/(tabs)');
+    } catch (error) {
+      console.error('❌ Error creating transaction:', error);
+      // Still navigate even if there's an error
+      router.push('/(tabs)');
+    }
+  };
+
+  // Add transaction to transaction history
+  const addTransactionToHistory = async (transactionData) => {
+    try {
+      const newTransaction = {
+        id: Date.now().toString(),
+        ...transactionData,
+        status: 'completed',
+      };
+
+      // Get existing transactions from AsyncStorage
+      const existingTransactions = await AsyncStorage.getItem('userTransactions');
+      let transactions = [];
+      
+      if (existingTransactions) {
+        transactions = JSON.parse(existingTransactions);
+      }
+
+      // Add new transaction to the beginning of the array
+      transactions.unshift(newTransaction);
+
+      // Save updated transactions back to AsyncStorage
+      await AsyncStorage.setItem('userTransactions', JSON.stringify(transactions));
+      
+      console.log('✅ Transaction added to history:', newTransaction);
+    } catch (error) {
+      console.error('❌ Error saving transaction to history:', error);
     }
   };
 
@@ -51,17 +180,26 @@ export default function DiscountApproved() {
         />
       </View>
 
-      <ScrollView
+      <KeyboardAvoidingView
         style={{ flex: 1 }}
-        contentContainerStyle={[styles.scrollContainer, { paddingBottom: 120 }]}
-        keyboardShouldPersistTaps="handled"
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
       >
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={[styles.scrollContainer, { paddingBottom: contentPaddingBottom }]}
+          keyboardShouldPersistTaps="handled"
+        >
         {/* Top Navigation */}
         <View style={styles.headerWrapper}>
           <View style={{ width: 24 }} />
           <Text style={styles.headerTitle}>Discount Redeemed!</Text>
           <TouchableOpacity onPress={() => router.push('/(tabs)/home')} style={styles.closeButton}>
-            <AntDesign name="close" size={24} color="#fff" />
+            {Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 24, color: '#fff' }}>✕</Text>
+            ) : (
+              <AntDesign name="close" size={24} color="#fff" />
+            )}
           </TouchableOpacity>
         </View>
 
@@ -70,12 +208,16 @@ export default function DiscountApproved() {
           {/* Company Info Section */}
           <View style={styles.companySection}>
             <View style={styles.companyLeft}>
-              <Image source={require('../../../assets/logos/starbucks.png')} style={styles.companyLogo} />
+              <Image source={vendorLogo} style={styles.companyLogo} />
               <View style={styles.companyText}>
-                <Text style={styles.companyName}>Starbucks Coffee</Text>
+                <Text style={styles.companyName}>{vendorName}</Text>
                 <View style={styles.approvedBadge}>
-                  <Ionicons name="checkmark-circle" size={14} color="#10B981" />
-                  <Text style={styles.approvedText}>Approved by Carlos Montoya, Owner</Text>
+                  {Platform.OS === 'web' ? (
+                    <Text style={{ marginRight: 6 }}>✅</Text>
+                  ) : (
+                    <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                  )}
+                  <Text style={styles.approvedText}>Discount Approved</Text>
                 </View>
               </View>
             </View>
@@ -92,14 +234,9 @@ export default function DiscountApproved() {
 
           {/* Discount Code Section */}
           <View style={styles.codeSection}>
-            <View style={styles.codeHeader}>
-              <Text style={styles.codeLabel}>Your Discount Code</Text>
-              <TouchableOpacity style={styles.copyButton}>
-                <AntDesign name="copy1" size={18} color="#DB8633" />
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.codeLabel}>Your Discount Code</Text>
             <View style={styles.codeDisplay}>
-              <Text style={styles.codeText}>DEALFREE</Text>
+              <Text style={styles.codeText}>{discountCode}</Text>
             </View>
             <Text style={styles.codeInstructions}>Show this code at checkout</Text>
           </View>
@@ -108,22 +245,70 @@ export default function DiscountApproved() {
         {/* What You Get - Highlight Section */}
         <View style={styles.highlightSection}>
           <View style={styles.highlightIcon}>
-            <Ionicons name="gift" size={32} color="#DB8633" />
+            {Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 32 }}>🎁</Text>
+            ) : (
+              <Ionicons name="gift" size={32} color="#DB8633" />
+            )}
           </View>
-          <Text style={styles.highlightTitle}>What You Get</Text>
-          <Text style={styles.highlightDiscount}>FREE APPETIZER</Text>
-          <Text style={styles.highlightSubtext}>Show this to your waiter</Text>
+          <Text style={styles.highlightTitle}>Discount Details</Text>
+          
+          {/* Discount Value */}
+          <View style={styles.discountDetailsContainer}>
+            {discountType && discountValue !== null && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Discount:</Text>
+                <Text style={styles.detailValue}>
+                  {discountType === 'percentage' 
+                    ? `${discountValue}% off`
+                    : discountType === 'fixed'
+                    ? `$${discountValue} off`
+                    : discountType === 'bogo'
+                    ? 'Buy one, get one'
+                    : discountTitle}
+                </Text>
+              </View>
+            )}
+            
+            {/* Max Discount (if applicable) */}
+            {maxDiscount && maxDiscount > 0 && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Maximum:</Text>
+                <Text style={styles.detailValue}>Up to ${maxDiscount}</Text>
+              </View>
+            )}
+            
+            {/* Usage Limit */}
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Usage:</Text>
+              <Text style={styles.detailValue}>{usageDisplay}</Text>
+            </View>
+            
+            {/* Description if available */}
+            {description && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Details:</Text>
+                <Text style={styles.detailValue}>{description}</Text>
+              </View>
+            )}
+          </View>
+          
+          <Text style={styles.highlightSubtext}>Present this code at checkout</Text>
         </View>
 
-        {/* Points Earning Section */}
-        <View style={styles.pointsSection}>
-          <View style={styles.pointsHeader}>
-            <View style={styles.pointsIconContainer}>
-              <Image source={require('../../../assets/images/piggy-coin.png')} style={styles.pointsIcon} />
+        {/* Savings Tracking Section */}
+        <View style={styles.savingsSection}>
+          <View style={styles.savingsHeader}>
+            <View style={styles.savingsIconContainer}>
+              {Platform.OS === 'web' ? (
+                <Text style={{ fontSize: 32 }}>💰</Text>
+              ) : (
+                <Ionicons name="cash" size={32} color="#DB8633" />
+              )}
             </View>
-            <View style={styles.pointsText}>
-              <Text style={styles.pointsTitle}>Earn Extra Points!</Text>
-              <Text style={styles.pointsSubtitle}>Track your savings and earn rewards</Text>
+            <View style={styles.savingsText}>
+              <Text style={styles.savingsTitle}>Track Your Savings</Text>
+              <Text style={styles.savingsSubtitle}>Enter your total bill and savings amount</Text>
             </View>
           </View>
           
@@ -161,23 +346,23 @@ export default function DiscountApproved() {
             </View>
           </View>
 
-          <View style={styles.pointsButtonRow}>
+          <View style={styles.savingsButtonRow}>
             <TouchableOpacity 
               style={styles.skipButton}
-              onPress={() => router.push('/(tabs)')}
+              onPress={handleSkip}
             >
               <Text style={styles.skipButtonText}>Skip</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
               style={[
-                styles.earnPointsButton, 
-                (!totalBill || !totalDiscount) && styles.earnPointsButtonDisabled
+                styles.saveButton, 
+                (!totalBill || !totalDiscount) && styles.saveButtonDisabled
               ]} 
-              onPress={handleGetPoints}
+              onPress={handleSaveTransaction}
               disabled={!totalBill || !totalDiscount}
             >
-              <Text style={styles.earnPointsButtonText}>Earn +25 Points</Text>
+              <Text style={styles.saveButtonText}>Save Transaction</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -185,11 +370,16 @@ export default function DiscountApproved() {
         {/* Terms Link */}
         <TouchableOpacity style={styles.termsLink}>
           <Text style={styles.termsText}>Read Discount Terms & Conditions</Text>
-          <AntDesign name="right" size={14} color="#8E9BAE" />
+          {Platform.OS === 'web' ? (
+            <Text style={{ fontSize: 14, color: '#8E9BAE' }}>›</Text>
+          ) : (
+            <AntDesign name="right" size={14} color="#8E9BAE" />
+          )}
         </TouchableOpacity>
 
 
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Success Modal */}
       <Modal visible={showModal} transparent animationType="fade">
@@ -198,12 +388,12 @@ export default function DiscountApproved() {
             <View style={styles.modalIconContainer}>
               <Image source={require('../../../assets/images/piggy-confetti.png')} style={styles.modalIcon} />
             </View>
-            <Text style={styles.modalTitle}>Cha-ching!</Text>
+            <Text style={styles.modalTitle}>Savings Recorded! 🎉</Text>
             <Text style={styles.modalMessage}>
-              <Text style={styles.modalHighlight}>+25 Points</Text> added to your piggy bank!
+              <Text style={styles.modalHighlight}>${totalDiscount}</Text> added to your total savings!
             </Text>
             <Text style={styles.modalSubtitle}>
-              ${totalDiscount} added to your total savings! Check your home page.
+              Great job supporting local businesses and making a difference!
             </Text>
             <TouchableOpacity style={styles.modalButton} onPress={handleClose}>
               <Text style={styles.modalButtonText}>Awesome!</Text>
@@ -344,19 +534,11 @@ const styles = StyleSheet.create({
   codeSection: {
     alignItems: 'center',
   },
-  codeHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
   codeLabel: {
     fontSize: 16,
     fontWeight: '600',
     color: '#64748B',
-  },
-  copyButton: {
-    padding: 8,
+    marginBottom: 16,
   },
   codeDisplay: {
     backgroundColor: '#DB8633',
@@ -415,15 +597,45 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     letterSpacing: 1,
   },
+  discountDetailsContainer: {
+    width: '100%',
+    marginTop: 16,
+    marginBottom: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#FED7AA',
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  detailLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#92400E',
+    flex: 1,
+    marginRight: 12,
+  },
+  detailValue: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1E293B',
+    flex: 2,
+    textAlign: 'right',
+  },
   highlightSubtext: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#92400E',
     textAlign: 'center',
     fontWeight: '500',
+    marginTop: 8,
   },
 
-  // Points Section
-  pointsSection: {
+  // Savings Section
+  savingsSection: {
     backgroundColor: '#fff',
     borderRadius: 20,
     padding: 24,
@@ -439,11 +651,11 @@ const styles = StyleSheet.create({
     borderTopWidth: 3,
     borderTopColor: '#DB8633',
   },
-  pointsHeader: {
+  savingsHeader: {
     alignItems: 'center',
     marginBottom: 24,
   },
-  pointsIconContainer: {
+  savingsIconContainer: {
     backgroundColor: '#FFF7ED',
     borderRadius: 50,
     padding: 16,
@@ -455,22 +667,22 @@ const styles = StyleSheet.create({
     elevation: 6,
     borderWidth: 2,
     borderColor: '#FED7AA',
-  },
-  pointsIcon: {
-    width: 40,
-    height: 40,
-  },
-  pointsText: {
+    width: 64,
+    height: 64,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  pointsTitle: {
+  savingsText: {
+    alignItems: 'center',
+  },
+  savingsTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: '#324E58',
     marginBottom: 4,
     textAlign: 'center',
   },
-  pointsSubtitle: {
+  savingsSubtitle: {
     fontSize: 14,
     color: '#8E9BAE',
     textAlign: 'center',
@@ -512,7 +724,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#324E58',
   },
-  pointsButtonRow: {
+  savingsButtonRow: {
     flexDirection: 'row',
     gap: 12,
   },
@@ -531,17 +743,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  earnPointsButton: {
+  saveButton: {
     backgroundColor: '#DB8633',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     flex: 2,
   },
-  earnPointsButtonDisabled: {
+  saveButtonDisabled: {
     backgroundColor: '#E2E8F0',
   },
-  earnPointsButtonText: {
+  saveButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',

@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Dimensions,
   ScrollView,
-  Linking,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -87,14 +87,25 @@ export default function VerifyEmailScreen() {
         onPress={() => router.back()}
       >
         <View style={styles.backButtonContainer}>
-          <AntDesign name="arrowleft" size={24} color="#333" />
+          <Image 
+            source={require('../assets/icons/arrow-left.png')} 
+            style={{ width: 24, height: 24, tintColor: '#333' }} 
+          />
         </View>
       </TouchableOpacity>
 
-      <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.scrollContent} 
+        contentContainerStyle={styles.scrollContentContainer}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.contentCard}>
           <View style={styles.iconContainer}>
-            <AntDesign name="mail" size={60} color="#4CA1AF" />
+            <Image 
+              source={require('../assets/images/piggy-email-verified.png')}
+              style={styles.piggyImage}
+              resizeMode="contain"
+            />
           </View>
 
           <Text style={styles.title}>Verify Your Email</Text>
@@ -111,79 +122,51 @@ export default function VerifyEmailScreen() {
           <View style={styles.buttonContainer}>
             {/* Resend verification email */}
             <TouchableOpacity
-              style={[styles.resendButton, { backgroundColor: '#4CA1AF', marginTop: 16 }]}
+              style={[
+                styles.resendButton, 
+                { 
+                  backgroundColor: '#DB8633', 
+                  marginTop: 16,
+                  opacity: !email ? 0.5 : 1
+                }
+              ]}
+              disabled={!email || isLoading}
               onPress={async () => {
-                console.log('📧 Resending verification email...');
+                if (!email) {
+                  Alert.alert('Error', 'Email address is required. Please make sure you are logged in.');
+                  return;
+                }
+                
+                console.log('📧 Resending verification email to:', email);
                 setIsLoading(true);
                 try {
                   const response = await API.resendVerification(email);
                   console.log('✅ Resend response:', response);
-                  Alert.alert('Success', 'Verification email sent! Please check your inbox and click the verification link.');
+                  Alert.alert(
+                    'Success', 
+                    'Verification email sent! Please check your inbox and click the verification link.',
+                    [{ text: 'OK' }]
+                  );
                 } catch (error) {
-                  console.log('❌ Resend verification failed:', error.message);
-                  Alert.alert('Error', `Failed to resend verification email: ${error.message}`);
+                  console.error('❌ Resend email error:', error);
+                  // Show user-friendly error message
+                  const errorMessage = error.message || 'Unable to resend verification email at this time.';
+                  Alert.alert(
+                    'Verification Email',
+                    errorMessage + '\n\nPlease check your inbox for the original verification email, or contact support if you need assistance.',
+                    [{ text: 'OK' }]
+                  );
                 } finally {
                   setIsLoading(false);
                 }
               }}
             >
-              <AntDesign name="mail" size={20} color="#fff" style={{ marginRight: 8 }} />
+              {Platform.OS === 'web' ? (
+                <Text style={{ marginRight: 8, color: '#fff' }}>✉️</Text>
+              ) : (
+                <AntDesign name="mail" size={20} color="#fff" style={{ marginRight: 8 }} />
+              )}
               <Text style={styles.resendButtonText}>Resend Verification Email</Text>
-            </TouchableOpacity>
-
-            {/* Open web verification */}
-            <TouchableOpacity
-              style={[styles.resendButton, { backgroundColor: '#FF9800', marginTop: 16 }]}
-              onPress={() => {
-                console.log('🌐 Opening web verification');
-                const verificationLink = `https://thrive-web-jet.vercel.app/verify?email=${encodeURIComponent(email)}`;
-                
-                Alert.alert(
-                  'Web Verification', 
-                  'This will open the verification page in your browser. You can also check your email for the verification link.',
-                  [
-                    {
-                      text: 'Open in Browser',
-                      onPress: () => {
-                        Linking.openURL(verificationLink).catch(err => {
-                          console.log('🌐 Web link error:', err);
-                          Alert.alert('Error', 'Could not open web browser. Please check your email for the verification link.');
-                        });
-                      }
-                    },
-                    { text: 'Cancel' }
-                  ]
-                );
-              }}
-            >
-              <AntDesign name="link" size={20} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.resendButtonText}>Open Web Verification</Text>
-            </TouchableOpacity>
-
-            {/* Temporary bypass for testing */}
-            <TouchableOpacity
-              style={[styles.resendButton, { backgroundColor: '#9C27B0', marginTop: 16 }]}
-              onPress={async () => {
-                console.log('🚀 Temporary verification bypass');
-                Alert.alert(
-                  'Skip Verification (Testing)', 
-                  'This will mark your email as verified for testing purposes. Use this only during development.',
-                  [
-                    {
-                      text: 'Skip Verification',
-                      onPress: () => {
-                        markAsVerified();
-                        Alert.alert('Success', 'Email marked as verified for testing. You can now access all features.');
-                        router.replace('/(tabs)/home');
-                      }
-                    },
-                    { text: 'Cancel' }
-                  ]
-                );
-              }}
-            >
-              <AntDesign name="checkcircle" size={20} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.resendButtonText}>Skip Verification (Testing)</Text>
             </TouchableOpacity>
 
             {isLoading && (
@@ -192,6 +175,32 @@ export default function VerifyEmailScreen() {
                 <Text style={styles.checkingText}>Verifying your email...</Text>
               </View>
             )}
+
+            {/* Skip Verification Button (for testing) */}
+            <TouchableOpacity 
+              style={styles.skipButton}
+              onPress={() => {
+                Alert.alert(
+                  'Skip Verification',
+                  'This will skip email verification for testing purposes. Continue?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Skip',
+                      onPress: () => {
+                        console.log('⚠️ Skipping verification for testing');
+                        // Mark as verified for testing
+                        markAsVerified();
+                        // Navigate to next step in signup flow
+                        router.replace('/signupFlow/explainerDonate');
+                      }
+                    }
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.skipButtonText}>Skip Verification (Testing)</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -230,7 +239,11 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   scrollContent: {
+    flex: 1,
+  },
+  scrollContentContainer: {
     flexGrow: 1,
+    justifyContent: 'center',
     paddingTop: 100,
     paddingHorizontal: 20,
     paddingBottom: 40,
@@ -239,21 +252,33 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 24,
     padding: 32,
+    paddingTop: 60,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 8,
+    overflow: 'visible',
   },
   iconContainer: {
     alignItems: 'center',
     marginBottom: 24,
+    position: 'absolute',
+    top: -80,
+    left: 0,
+    right: 0,
+    overflow: 'visible',
+  },
+  piggyImage: {
+    width: 160,
+    height: 160,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
     color: '#2C3E50',
     textAlign: 'center',
+    marginTop: 30,
     marginBottom: 12,
   },
   subtitle: {
@@ -308,5 +333,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#4CA1AF',
     fontWeight: '500',
+  },
+  skipButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#999',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    marginTop: 24,
+    alignSelf: 'center',
+  },
+  skipButtonText: {
+    color: '#999',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
   },
 });

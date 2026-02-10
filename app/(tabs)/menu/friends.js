@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign, Feather } from '@expo/vector-icons';
 
@@ -53,7 +53,10 @@ export default function FriendsScreen() {
       {/* Standardized Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <AntDesign name="arrowleft" size={24} color="#324E58" />
+          <Image 
+            source={require('../../../assets/icons/arrow-left.png')} 
+            style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+          />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Friends</Text>
         <View style={styles.headerSpacer} />

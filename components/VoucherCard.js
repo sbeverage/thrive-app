@@ -4,21 +4,65 @@ import {
   Text,
   StyleSheet,
   Image,
-  TouchableOpacity
+  TouchableOpacity,
+  Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
-const VoucherCard = ({ logo, brand, discounts, onPress }) => {
+const VoucherCard = ({ logo, brand, discounts, discountId, vendor, onPress, vendorId }) => {
+  const router = useRouter();
+
+  const getDiscountLabel = () => {
+    if (typeof discounts === 'number') {
+      return `${discounts} discount${discounts === 1 ? '' : 's'} available`;
+    }
+    if (typeof discounts === 'string' && discounts.trim()) {
+      return discounts;
+    }
+    return 'Discounts available';
+  };
+
+  const handlePress = () => {
+    if (onPress) {
+      onPress();
+    } else if (vendorId || vendor?.id) {
+      // Navigate to vendor details page to see all discounts for this vendor
+      const id = vendorId || vendor?.id;
+      router.push({
+        pathname: '/(tabs)/discounts/[id]',
+        params: { id: id.toString() }
+      });
+    } else if (discountId) {
+      // Fallback: Navigate to discount details page if no vendor ID
+      router.push({
+        pathname: '/(tabs)/discounts/discountDetails',
+        params: { discountId: discountId }
+      });
+    }
+  };
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
+    <TouchableOpacity onPress={handlePress} activeOpacity={0.85}>
       <View style={styles.cardWrapper}>
         <View style={styles.card}>
           {/* Left Section with Logo */}
           <View style={styles.leftSide}>
-            <Image source={logo} style={styles.logo} />
+            <Image 
+              source={
+                logo 
+                  ? (typeof logo === 'string' ? { uri: logo } : logo)
+                  : require('../assets/images/logos/starbucks.png')
+              }
+              style={styles.logo}
+              defaultSource={require('../assets/images/logos/starbucks.png')}
+              onError={(error) => {
+                console.error('❌ Error loading vendor logo:', error);
+                console.log('Logo source:', logo);
+              }}
+            />
             <View style={styles.textContainer}>
               <Text style={styles.brand}>{brand}</Text>
-              <Text style={styles.discounts}>{discounts} discounts available</Text>
+              <Text style={styles.discountBadge}>{getDiscountLabel()}</Text>
             </View>
           </View>
 
@@ -31,7 +75,11 @@ const VoucherCard = ({ logo, brand, discounts, onPress }) => {
 
           {/* Right Section */}
           <View style={styles.rightSide}>
-            <MaterialCommunityIcons name="ticket-percent" size={24} color="#DB8C0E" />
+            {Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 24 }}>🎫</Text>
+            ) : (
+              <MaterialCommunityIcons name="ticket-percent" size={24} color="#DB8C0E" />
+            )}
           </View>
         </View>
       </View>
@@ -79,10 +127,16 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#1C4F7D',
   },
-  discounts: {
-    fontSize: 14,
+  discountBadge: {
+    alignSelf: 'flex-start',
+    fontSize: 13,
+    fontWeight: '700',
     color: '#DB8C0E',
-    marginTop: 4,
+    backgroundColor: '#FFF3E0',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 6,
   },
   dividerContainer: {
     width: 20,

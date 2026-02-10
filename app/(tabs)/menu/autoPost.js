@@ -6,6 +6,7 @@ import {
   ScrollView,
   Switch,
   TouchableOpacity,
+  Image,
 } from 'react-native';
 import { AntDesign } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -28,7 +29,10 @@ export default function AutoPost() {
   return (
     <ScrollView style={styles.container}>
       <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-        <AntDesign name="arrowleft" size={24} color="#324E58" />
+        <Image 
+          source={require('../../../assets/icons/arrow-left.png')} 
+          style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+        />
       </TouchableOpacity>
 
       {[

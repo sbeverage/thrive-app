@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,17 +9,46 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
+import { useStripe } from '@stripe/stripe-react-native';
 import { useUser } from '../../context/UserContext';
+import { useBeneficiary } from '../../context/BeneficiaryContext';
+import API from '../../lib/api';
 
 export default function EditDonationAmount() {
   const router = useRouter();
   const { user, saveUserData } = useUser();
+  const { selectedBeneficiary } = useBeneficiary();
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const [currentAmount, setCurrentAmount] = useState(user.monthlyDonation?.toString() || '15');
   const [newAmount, setNewAmount] = useState(user.monthlyDonation?.toString() || '15');
   const [isEditing, setIsEditing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [subscription, setSubscription] = useState(null);
+
+  // Load existing subscription on mount
+  useEffect(() => {
+    loadSubscription();
+  }, []);
+
+  const loadSubscription = async () => {
+    try {
+      const response = await API.getMonthlyDonations();
+      if (response.subscriptions && response.subscriptions.length > 0) {
+        setSubscription(response.subscriptions[0]);
+        const currentAmount = response.subscriptions[0].amount || user.monthlyDonation || 15;
+        setCurrentAmount(currentAmount.toString());
+        setNewAmount(currentAmount.toString());
+      }
+    } catch (error) {
+      console.log('⚠️ No existing subscription found or error loading:', error.message);
+      // Continue with local data
+    }
+  };
 
   const handleSave = async () => {
     const amount = parseFloat(newAmount);
@@ -33,21 +62,91 @@ export default function EditDonationAmount() {
       return;
     }
 
+    setIsLoading(true);
     try {
-      // Save the new donation amount to user context
+      // Get beneficiary ID (use selected beneficiary or default)
+      const beneficiaryId = selectedBeneficiary?.id || user.selectedBeneficiaryId;
+
+      let response;
+      if (subscription) {
+        // Update existing subscription
+        console.log('💳 Updating existing subscription...');
+        response = await API.updateMonthlyDonationAmount(subscription.id, amount);
+      } else {
+        // Create new subscription
+        if (!beneficiaryId) {
+          Alert.alert(
+            'Beneficiary Required',
+            'Please select a beneficiary before setting up monthly donations.',
+            [{ text: 'OK' }]
+          );
+          setIsLoading(false);
+          return;
+        }
+
+        console.log('💳 Creating new subscription...');
+        response = await API.createMonthlySubscription({
+          beneficiary_id: beneficiaryId,
+          amount: amount,
+          currency: 'USD',
+        });
+      }
+
+      // If clientSecret is returned, collect payment method via Stripe Payment Sheet
+      if (response.subscription?.clientSecret) {
+        console.log('💳 Collecting payment method via Stripe Payment Sheet...');
+        
+        const { error: initError } = await initPaymentSheet({
+          paymentIntentClientSecret: response.subscription.clientSecret,
+          merchantDisplayName: 'Thrive Initiative',
+          allowsDelayedPaymentMethods: true,
+          applePay: {
+            merchantCountryCode: 'US',
+          },
+          googlePay: {
+            merchantCountryCode: 'US',
+            testEnv: true, // Set to false in production
+          },
+        });
+
+        if (initError) {
+          Alert.alert('Error', `Payment sheet initialization failed: ${initError.message}`);
+          setIsLoading(false);
+          return;
+        }
+
+        const { error: presentError } = await presentPaymentSheet();
+
+        if (presentError) {
+          if (presentError.code !== 'Canceled') {
+            Alert.alert('Error', `Payment failed: ${presentError.message}`);
+          }
+          setIsLoading(false);
+          return;
+        }
+
+        // Payment method collected successfully
+        console.log('✅ Payment method collected successfully');
+      }
+
+      // Save to local state
       await saveUserData({ monthlyDonation: amount });
-      
       setCurrentAmount(newAmount);
       setIsEditing(false);
       
       Alert.alert(
         '✅ Amount Updated!',
-        `Your monthly donation amount has been updated to $${newAmount}.`,
+        `Your monthly donation amount has been ${subscription ? 'updated' : 'set'} to $${parseFloat(newAmount || 0).toFixed(2)}.`,
         [{ text: 'OK' }]
       );
     } catch (error) {
       console.error('❌ Error saving donation amount:', error);
-      Alert.alert('Error', 'Failed to save donation amount. Please try again.');
+      Alert.alert(
+        'Error',
+        error.message || 'Failed to save donation amount. Please try again.'
+      );
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -67,7 +166,10 @@ export default function EditDonationAmount() {
         {/* Standardized Header */}
         <View style={styles.headerRow}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/menu')}>
-            <AntDesign name="arrowleft" size={24} color="#324E58" />
+            <Image 
+              source={require('../../../assets/icons/arrow-left.png')} 
+              style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+            />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Edit Donation Amount</Text>
           <View style={styles.headerSpacer} />
@@ -103,11 +205,23 @@ export default function EditDonationAmount() {
               </View>
               
               <View style={styles.buttonRow}>
-                <TouchableOpacity style={styles.cancelButton} onPress={handleCancel}>
+                <TouchableOpacity 
+                  style={styles.cancelButton} 
+                  onPress={handleCancel}
+                  disabled={isLoading}
+                >
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                  <Text style={styles.saveButtonText}>Save</Text>
+                <TouchableOpacity 
+                  style={[styles.saveButton, isLoading && styles.saveButtonDisabled]} 
+                  onPress={handleSave}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.saveButtonText}>Save</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
@@ -291,6 +405,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#fff',
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
   },
   editButton: {
     flexDirection: 'row',

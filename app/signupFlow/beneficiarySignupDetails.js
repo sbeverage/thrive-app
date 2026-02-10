@@ -1,7 +1,7 @@
 // app/signupFlow/beneficiarySignupDetails.js
 
-import React, { useState } from 'react';
-import { View, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, Dimensions, TouchableOpacity, Platform, Text, Image } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
 import BeneficiaryDetailCard from '../../components/BeneficiaryDetailCard';
@@ -10,6 +10,7 @@ import ConfettiCannon from 'react-native-confetti-cannon';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useBeneficiary } from '../context/BeneficiaryContext';
 import { useUser } from '../context/UserContext';
+import API from '../lib/api';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -19,134 +20,191 @@ export const options = {
 
 export default function BeneficiarySignupDetails() {
   const router = useRouter();
-  const { id } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+  const { id } = params;
   const { setSelectedBeneficiary } = useBeneficiary();
 
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [confettiTrigger, setConfettiTrigger] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [beneficiary, setBeneficiary] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   // Use brand blue gradient colors
   const gradientColors = ["#2C3E50", "#4CA1AF"];
 
-  // Map beneficiary IDs to actual beneficiary data
-  const beneficiaryData = {
-    '1': {
-      id: 1,
-      name: 'NPCF',
-      category: 'Childhood Illness',
-      image: require('../../assets/images/child-cancer.jpg'),
-      location: 'Atlanta, GA',
-      distance: '2.3 mi',
-      latitude: 33.7490,
-      longitude: -84.3880,
-      likes: 500,
-      mutual: 20,
-      about: 'NPCF is dedicated to helping children fight cancer and other life-threatening diseases.',
-      ein: '81-3223950',
-      website: 'npcforg.org',
-      phone: '555-1234',
-      social: '@npcforg',
-    },
-    '2': {
-      id: 2,
-      name: 'Humane Society',
-      category: 'Animal Welfare',
-      image: require('../../assets/images/humane-society.jpg'),
-      location: 'Alpharetta, GA',
-      distance: '1.1 mi',
-      latitude: 34.0754,
-      longitude: -84.2941,
-      likes: 450,
-      mutual: 15,
-      about: 'Humane Society works to protect and care for animals in need.',
-      ein: '81-3223951',
-      website: 'humanesociety.org',
-      phone: '555-1235',
-      social: '@humanesociety',
-    },
-    '3': {
-      id: 3,
-      name: 'Charity Water',
-      category: 'Low Income Families',
-      image: require('../../assets/images/charity-water.jpg'),
-      location: 'Roswell, GA',
-      distance: '3.7 mi',
-      latitude: 34.0232,
-      longitude: -84.3616,
-      likes: 600,
-      mutual: 25,
-      about: 'Charity Water provides clean drinking water to people in developing countries.',
-      ein: '81-3223952',
-      website: 'charitywater.org',
-      phone: '555-1236',
-      social: '@charitywater',
-    },
-    '4': {
-      id: 4,
-      name: 'Dog Trust',
-      category: 'Animal Welfare',
-      image: require('../../assets/images/humane-society.jpg'),
-      location: 'Marietta, GA',
-      distance: '5.2 mi',
-      latitude: 33.9525,
-      longitude: -84.5499,
-      likes: 380,
-      mutual: 12,
-      about: 'Dog Trust is committed to the welfare of dogs and responsible dog ownership.',
-      ein: '81-3223953',
-      website: 'dogtrust.org',
-      phone: '555-1237',
-      social: '@dogtrust',
-    },
-    '5': {
-      id: 5,
-      name: 'Local Food Bank',
-      category: 'Low Income Families',
-      image: require('../../assets/images/charity-water.jpg'),
-      location: 'Sandy Springs, GA',
-      distance: '0.8 mi',
-      latitude: 33.9301,
-      longitude: -84.3785,
-      likes: 320,
-      mutual: 18,
-      about: 'Local Food Bank provides food assistance to families in need.',
-      ein: '81-3223954',
-      website: 'localfoodbank.org',
-      phone: '555-1238',
-      social: '@localfoodbank',
-    },
-    '6': {
-      id: 6,
-      name: 'Youth Center',
-      category: 'Education',
-      image: require('../../assets/images/child-cancer.jpg'),
-      location: 'Dunwoody, GA',
-      distance: '2.9 mi',
-      latitude: 33.9495,
-      longitude: -84.3344,
-      likes: 420,
-      mutual: 22,
-      about: 'Youth Center provides educational programs and support for young people.',
-      ein: '81-3223955',
-      website: 'youthcenter.org',
-      phone: '555-1239',
-      social: '@youthcenter',
-    },
-  };
+  // Load beneficiary data from API
+  useEffect(() => {
+    const loadBeneficiary = async () => {
+      try {
+        setLoading(true);
+        console.log('📡 Loading beneficiary details for signup, ID:', id);
+        
+        const data = await API.getCharities();
+        
+        // Handle different possible response structures
+        let charitiesArray = null;
+        if (Array.isArray(data)) {
+          charitiesArray = data;
+        } else if (data?.charities && Array.isArray(data.charities)) {
+          charitiesArray = data.charities;
+        } else if (data?.data && Array.isArray(data.data)) {
+          charitiesArray = data.data;
+        }
+        
+        if (charitiesArray && charitiesArray.length > 0) {
+          // Find the beneficiary by ID
+          const beneficiaryId = id?.toString();
+          const beneficiaryIdNum = id ? parseInt(id, 10) : null;
+          
+          const foundBeneficiary = charitiesArray.find(charity => {
+            return charity.id?.toString() === beneficiaryId ||
+                   (typeof charity.id === 'number' ? charity.id : parseInt(charity.id, 10)) === beneficiaryIdNum ||
+                   charity.id == id;
+          });
+          
+          if (foundBeneficiary) {
+            // Helper function to get default image
+            function getDefaultImage(category) {
+              if (category === 'Childhood Illness') {
+                return require('../../assets/images/child-cancer.jpg');
+              } else if (category === 'Animal Welfare') {
+                return require('../../assets/images/humane-society.jpg');
+              } else {
+                return require('../../assets/images/charity-water.jpg');
+              }
+            }
+            
+            // Handle main image (imageUrl) - for the large banner image
+            let imageSource;
+            const imageUrl = foundBeneficiary.imageUrl || foundBeneficiary.image_url || null;
+            
+            if (imageUrl && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
+              if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+                imageSource = { uri: imageUrl };
+              } else {
+                imageSource = getDefaultImage(foundBeneficiary.category);
+              }
+            } else {
+              imageSource = getDefaultImage(foundBeneficiary.category);
+            }
+            
+            // Handle logo image (logoUrl) - for the circular profile image
+            let logoSource;
+            const logoUrl = foundBeneficiary.logoUrl || foundBeneficiary.logo_url || null;
+            
+            if (logoUrl && typeof logoUrl === 'string' && logoUrl.trim() !== '') {
+              if (logoUrl.startsWith('http://') || logoUrl.startsWith('https://')) {
+                logoSource = { uri: logoUrl };
+              } else {
+                logoSource = imageSource; // Fallback to main image
+              }
+            } else {
+              logoSource = imageSource; // Fallback to main image
+            }
 
-  const beneficiary = beneficiaryData[id] || {
-    id,
-    name: 'Unknown Beneficiary',
-    image: require('../../assets/images/child-cancer.jpg'),
-    likes: 0,
-    mutual: 0,
-    about: 'Beneficiary information not available.',
-    ein: 'N/A',
-    website: 'N/A',
-    phone: 'N/A',
-    social: 'N/A',
-  };
+            // Extract impact fields (check both camelCase and snake_case)
+            const livesImpacted = foundBeneficiary.livesImpacted ?? foundBeneficiary.lives_impacted ?? null;
+            const programsActive = foundBeneficiary.programsActive ?? foundBeneficiary.programs_active ?? null;
+            const directToProgramsPercentage = foundBeneficiary.directToProgramsPercentage ?? foundBeneficiary.direct_to_programs_percentage ?? null;
+            const whyThisMatters = foundBeneficiary.whyThisMatters ?? foundBeneficiary.why_this_matters ?? null;
+            const successStory = foundBeneficiary.successStory ?? foundBeneficiary.success_story ?? null;
+            const storyAuthor = foundBeneficiary.storyAuthor ?? foundBeneficiary.story_author ?? null;
+            const impactStatement1 = foundBeneficiary.impactStatement1 ?? foundBeneficiary.impact_statement_1 ?? null;
+            const impactStatement2 = foundBeneficiary.impactStatement2 ?? foundBeneficiary.impact_statement_2 ?? null;
+
+            const transformedBeneficiary = {
+              id: foundBeneficiary.id,
+              name: foundBeneficiary.name,
+              category: foundBeneficiary.category,
+              type: foundBeneficiary.type,
+              image: imageSource, // Main banner image (from imageUrl)
+              logoUrl: logoSource, // Logo image (from logoUrl, falls back to main image)
+              location: foundBeneficiary.location,
+              latitude: foundBeneficiary.latitude,
+              longitude: foundBeneficiary.longitude,
+              likes: foundBeneficiary.likes ?? 0, // Use ?? to preserve 0
+              mutual: foundBeneficiary.mutual ?? 0, // Use ?? to preserve 0
+              about: foundBeneficiary.about || foundBeneficiary.description || 'Learn more about this amazing cause and the impact you can make in your local community.',
+              ein: foundBeneficiary.ein || '',
+              website: foundBeneficiary.website || '',
+              phone: foundBeneficiary.phone || '',
+              social: foundBeneficiary.social || '',
+              // Impact metrics - pass BOTH camelCase and snake_case
+              livesImpacted: livesImpacted,
+              lives_impacted: foundBeneficiary.lives_impacted ?? foundBeneficiary.livesImpacted ?? livesImpacted,
+              programsActive: programsActive,
+              programs_active: foundBeneficiary.programs_active ?? foundBeneficiary.programsActive ?? programsActive,
+              directToProgramsPercentage: directToProgramsPercentage,
+              direct_to_programs_percentage: foundBeneficiary.direct_to_programs_percentage ?? foundBeneficiary.directToProgramsPercentage ?? directToProgramsPercentage,
+              // Success story and impact statements - pass BOTH camelCase and snake_case
+              whyThisMatters: whyThisMatters,
+              why_this_matters: foundBeneficiary.why_this_matters ?? foundBeneficiary.whyThisMatters ?? whyThisMatters,
+              successStory: successStory,
+              success_story: foundBeneficiary.success_story ?? foundBeneficiary.successStory ?? successStory,
+              storyAuthor: storyAuthor,
+              story_author: foundBeneficiary.story_author ?? foundBeneficiary.storyAuthor ?? storyAuthor,
+              impactStatement1: impactStatement1,
+              impact_statement_1: foundBeneficiary.impact_statement_1 ?? foundBeneficiary.impactStatement1 ?? impactStatement1,
+              impactStatement2: impactStatement2,
+              impact_statement_2: foundBeneficiary.impact_statement_2 ?? foundBeneficiary.impactStatement2 ?? impactStatement2,
+              posts: [], // Posts can be added later if needed
+            };
+
+            setBeneficiary(transformedBeneficiary);
+          } else {
+            console.warn('⚠️ Beneficiary not found for ID:', id);
+            setBeneficiary({
+              id,
+              name: 'Unknown Beneficiary',
+              image: require('../../assets/images/child-cancer.jpg'),
+              likes: 0,
+              mutual: 0,
+              about: 'Beneficiary information not available.',
+              ein: '',
+              website: '',
+              phone: '',
+              social: '',
+            });
+          }
+        } else {
+          console.warn('⚠️ No charities found in API response');
+          setBeneficiary({
+            id,
+            name: 'Unknown Beneficiary',
+            image: require('../../assets/images/child-cancer.jpg'),
+            likes: 0,
+            mutual: 0,
+            about: 'Beneficiary information not available.',
+            ein: '',
+            website: '',
+            phone: '',
+            social: '',
+          });
+        }
+      } catch (error) {
+        console.error('❌ Failed to load beneficiary from API:', error);
+        setBeneficiary({
+          id,
+          name: 'Unknown Beneficiary',
+          image: require('../../assets/images/child-cancer.jpg'),
+          likes: 0,
+          mutual: 0,
+          about: 'Unable to load beneficiary data. Please check your connection and try again.',
+          ein: '',
+          website: '',
+          phone: '',
+          social: '',
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (id) {
+      loadBeneficiary();
+    }
+  }, [id]);
 
   const handleBeneficiarySelect = async () => {
     // Set the selected beneficiary in the context
@@ -161,7 +219,14 @@ export default function BeneficiarySignupDetails() {
 
   const handleModalClose = () => {
     setShowSuccessModal(false);
-    router.push('/signupFlow/donationAmount');
+    if (params?.flow === 'coworking') {
+      router.push({
+        pathname: '/signupFlow/coworkingDonationPrompt',
+        params: { sponsorAmount: params?.sponsorAmount || '15' }
+      });
+    } else {
+      router.push('/signupFlow/donationAmount');
+    }
   };
 
   const handleBackPress = () => {
@@ -183,12 +248,25 @@ export default function BeneficiarySignupDetails() {
       {/* Back button */}
       <View style={styles.backButton}>
         <TouchableOpacity onPress={handleBackPress}>
-          <AntDesign name="arrowleft" size={24} color="#324E58" />
+          <Image 
+            source={require('../../assets/icons/arrow-left.png')} 
+            style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+          />
         </TouchableOpacity>
       </View>
 
       <View style={styles.cardContainer}>
-        <BeneficiaryDetailCard data={beneficiary} onSelect={handleBeneficiarySelect} showBackArrow={false} />
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Loading beneficiary details...</Text>
+          </View>
+        ) : beneficiary ? (
+          <BeneficiaryDetailCard data={beneficiary} onSelect={handleBeneficiarySelect} showBackArrow={false} />
+        ) : (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Beneficiary not found</Text>
+          </View>
+        )}
       </View>
 
       <SuccessModal visible={showSuccessModal} onClose={handleModalClose} message={successMessage} />
@@ -239,6 +317,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 8,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#324E58',
+    textAlign: 'center',
   },
   cardContainer: {
     flex: 1,

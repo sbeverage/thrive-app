@@ -104,13 +104,6 @@ export default function MainHome() {
             <Text style={{ color: '#DB8633', fontWeight: '600' }}>Change Location</Text>
           </TouchableOpacity>
 
-          {/* Rank */}
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Rank</Text>
-            <TouchableOpacity onPress={() => router.push('/leaderboard')}>
-              <Text style={styles.viewDetailsText}>View Leaderboard</Text>
-            </TouchableOpacity>
-          </View>
           <View style={styles.placeholderBox}>
             <Text style={styles.placeholderText}>Coming Soon</Text>
           </View>

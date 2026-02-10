@@ -29,7 +29,7 @@ export default function BeneficiaryDetailCardApp({ data, onSelect }) {
       {/* Header */}
       <View style={styles.headerRow}>
         <TouchableOpacity onPress={router.back}>
-          <AntDesign name="arrowleft" size={24} color="#21555b" />
+          <AntDesign name="left" size={24} color="#21555b" />
         </TouchableOpacity>
         <Text style={styles.header}>{data.name}</Text>
       </View>
@@ -59,10 +59,16 @@ export default function BeneficiaryDetailCardApp({ data, onSelect }) {
             style={styles.secondaryBtn}
             onPress={() => setLiked(prev => !prev)}
           >
-            <AntDesign
-              name={liked ? 'heart' : 'hearto'}
-              size={18}
-              style={[styles.iconLeft, { color: liked ? '#DB8633' : '#666' }]}
+            <Image
+              source={require('../assets/icons/heart.png')}
+              style={[
+                styles.iconLeft,
+                {
+                  width: 18,
+                  height: 18,
+                  tintColor: liked ? '#DB8633' : '#666'
+                }
+              ]}
             />
             <Text style={[styles.btnTextGray, liked && { color: '#DB8633' }]}>
               {liked ? 'Liked' : 'Like'}

@@ -32,7 +32,10 @@ export default function InvitationStatus() {
       {/* Standardized Header */}
       <View style={styles.headerRow}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)/menu')}>
-          <AntDesign name="arrowleft" size={24} color="#324E58" />
+          <Image 
+            source={require('../../../assets/icons/arrow-left.png')} 
+            style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+          />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Invitation Status</Text>
         <View style={styles.headerSpacer} />

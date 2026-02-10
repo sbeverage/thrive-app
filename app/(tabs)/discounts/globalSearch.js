@@ -16,35 +16,35 @@ const discounts = [
   {
     id: 1,
     brand: 'Starbucks Coffee Shop',
-    logo: require('../../../assets/logos/starbucks.png'),
+    logo: require('../../../assets/images/logos/starbucks.png'),
     ends: '31 Dec 2022',
     offers: 3,
   },
   {
     id: 2,
     brand: 'Apple Store',
-    logo: require('../../../assets/logos/apple.png'),
+    logo: require('../../../assets/images/logos/apple.png'),
     ends: '31 Dec 2022',
     offers: 3,
   },
   {
     id: 3,
     brand: 'Amazon On-Site Store',
-    logo: require('../../../assets/logos/amazon.png'),
+    logo: require('../../../assets/images/logos/amazon.png'),
     ends: '31 Dec 2022',
     offers: 3,
   },
   {
     id: 4,
     brand: 'Cisco',
-    logo: require('../../../assets/logos/cisco.png'),
+    logo: require('../../../assets/images/logos/cisco.png'),
     ends: '31 Dec 2022',
     offers: 3,
   },
   {
     id: 5,
     brand: 'Zara',
-    logo: require('../../../assets/logos/zara.png'),
+    logo: require('../../../assets/images/logos/zara.png'),
     ends: '31 Dec 2022',
     offers: 3,
   },
@@ -57,13 +57,19 @@ export default function GlobalSearch() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Feather name="arrow-left" size={24} color="black" />
+          <Image 
+            source={require('../../../assets/icons/arrow-left.png')} 
+            style={{ width: 24, height: 24, tintColor: 'black' }} 
+          />
         </TouchableOpacity>
         <Text style={styles.headerText}>Global Search</Text>
       </View>
 
       <View style={styles.searchRow}>
-        <AntDesign name="search1" size={18} color="#6d6e72" style={{ marginRight: 8 }} />
+        <Image 
+          source={require('../../../assets/icons/search-icon.png')} 
+          style={{ width: 18, height: 18, tintColor: '#6d6e72', marginRight: 8 }} 
+        />
         <TextInput
           placeholder="Search Discounts"
           placeholderTextColor="#6d6e72"
@@ -83,7 +89,10 @@ export default function GlobalSearch() {
           <DiscountCard
             key={`nearby-${item.id}`}
             data={item}
-            onPress={() => router.push(`/discounts/${item.id}`)}
+            onPress={() => router.push({
+              pathname: '/(tabs)/discounts/discountDetails',
+              params: { discountId: item.id.toString() }
+            })}
           />
         ))}
 
@@ -92,7 +101,10 @@ export default function GlobalSearch() {
           <DiscountCard
             key={`all-${item.id}`}
             data={item}
-            onPress={() => router.push(`/discounts/${item.id}`)}
+            onPress={() => router.push({
+              pathname: '/(tabs)/discounts/discountDetails',
+              params: { discountId: item.id.toString() }
+            })}
           />
         ))}
 

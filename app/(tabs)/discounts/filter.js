@@ -16,7 +16,7 @@ const categoryOptions = [
   'Coffee Shop', 'Electronics', 'Shopping Store', 'Fitness',
   'Health & Wellness', 'Beauty', 'Restaurants', 'Fast Food',
   'Entertainment', 'Travel', 'Home Services', 'Automotive',
-  'Clothing', 'Grocery', 'Books & Stationery'
+  'Clothing', 'Grocery', 'Books & Stationery', 'Coworking'
 ];
 const availabilityOptions = ['In-Store', 'Online', 'Both'];
 

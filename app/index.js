@@ -14,30 +14,34 @@ import {
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Video, ResizeMode } from 'expo-av';
+import { VIDEO_ASSETS } from './utils/assetConstants';
 
 const { width } = Dimensions.get('window');
+
+// Supabase Storage Base URL
+const SUPABASE_STORAGE_BASE = 'https://mdqgndyhzlnwojtubouh.supabase.co/storage/v1/object/public/app-assets';
 
 const slides = [
   {
     key: '1',
-    title: 'SHOP',
-    description: 'Discover great deals from local merchants and online retailers.',
-    image: require('../assets/images/slider-image-1.png'),
-    video: require('../assets/videos/shop-loop.mp4'), // Add your video file here
+    title: 'GIVE',
+    description: 'Support causes that matter to you through everyday purchases.',
+    image: { uri: `${SUPABASE_STORAGE_BASE}/assets/images/slider-image-3.png` },
+    video: { uri: VIDEO_ASSETS.GIVE_LOOP }, // Using Supabase URL
   },
   {
     key: '2',
-    title: 'SAVE',
-    description: 'Earn rewards and savings every time you shop.',
-    image: require('../assets/images/slider-image-2.png'),
-    video: require('../assets/videos/save-loop.mp4'), // Add your video file here
+    title: 'SHOP',
+    description: 'Discover great deals from local merchants and online retailers.',
+    image: { uri: `${SUPABASE_STORAGE_BASE}/assets/images/slider-image-1.png` },
+    video: { uri: VIDEO_ASSETS.SHOP_LOOP }, // Using Supabase URL
   },
   {
     key: '3',
-    title: 'GIVE',
-    description: 'Support causes that matter to you through everyday purchases.',
-    image: require('../assets/images/slider-image-3.png'),
-    video: require('../assets/videos/give-loop.mp4'), // Add your video file here
+    title: 'SAVE',
+    description: 'Earn rewards and savings every time you shop.',
+    image: { uri: `${SUPABASE_STORAGE_BASE}/assets/images/slider-image-2.png` },
+    video: { uri: VIDEO_ASSETS.SAVE_LOOP }, // Using Supabase URL
   },
 ];
 
@@ -93,15 +97,16 @@ export default function Index() {
       <StatusBar style="dark" backgroundColor="#ffffff" />
 
       {/* Decorative Half Circles */}
-      <Image source={require('../assets/images/half-circle-left.png')} style={styles.leftCircle} />
-      <Image source={require('../assets/images/half-circle-right.png')} style={styles.rightCircle} />
+      <Image source={{ uri: `${SUPABASE_STORAGE_BASE}/assets/images/half-circle-left.png` }} style={styles.leftCircle} />
+      <Image source={{ uri: `${SUPABASE_STORAGE_BASE}/assets/images/half-circle-right.png` }} style={styles.rightCircle} />
 
       <Text style={styles.welcomeText}>Welcome to</Text>
       <Image
-        source={require('../assets/logos/initiative-logo-no-web.png')}
+        source={{ uri: `${SUPABASE_STORAGE_BASE}/assets/logos/initiative-logo-no-web.png` }}
         style={styles.headerLogo}
         resizeMode="contain"
       />
+      <Text style={styles.nonprofitText}>501 c3 nonprofit organization</Text>
 
       <FlatList
         ref={flatListRef}
@@ -202,7 +207,13 @@ const styles = StyleSheet.create({
   headerLogo: {
     width: 310,
     height: 30,
+    marginBottom: 8,
+  },
+  nonprofitText: {
+    fontSize: 12,
+    color: '#6d6e72',
     marginBottom: 60,
+    fontWeight: '400',
   },
   slide: {
     width: width,

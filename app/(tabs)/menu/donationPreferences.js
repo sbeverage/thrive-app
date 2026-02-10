@@ -36,7 +36,7 @@ export default function DonationAmount() {
   const handleSaveAndContinue = () => {
     Alert.alert(
       '🎉 Monthly Donation Set!',
-      `You've committed to donating $${amount} monthly. Thank you for your generosity!`,
+      `You've committed to donating $${parseFloat(amount || 0).toFixed(2)} monthly. Thank you for your generosity!`,
       [
         {
           text: 'Continue',
@@ -54,7 +54,10 @@ export default function DonationAmount() {
       {/* Standardized Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/menu')}>
-          <AntDesign name="arrowleft" size={24} color="#fff" />
+          <Image 
+            source={require('../../../assets/icons/arrow-left.png')} 
+            style={{ width: 24, height: 24, tintColor: '#fff' }} 
+          />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Monthly Donation</Text>
         <View style={styles.headerSpacer} />
@@ -135,11 +138,11 @@ export default function DonationAmount() {
           <Text style={styles.impactTitle}>Your Impact</Text>
           <View style={styles.impactRow}>
             <Text style={styles.impactLabel}>Monthly:</Text>
-            <Text style={styles.impactValue}>${amount}</Text>
+            <Text style={styles.impactValue}>${parseFloat(amount || 0).toFixed(2)}</Text>
           </View>
           <View style={styles.impactRow}>
             <Text style={styles.impactLabel}>Yearly:</Text>
-            <Text style={styles.impactValue}>${amount * 12}</Text>
+            <Text style={styles.impactValue}>${parseFloat((amount || 0) * 12).toFixed(2)}</Text>
           </View>
         </View>
       </View>
