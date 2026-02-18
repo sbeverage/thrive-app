@@ -30,7 +30,16 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
+.env.*
 .env*.local
+
+# npm config (can contain auth tokens)
+.npmrc
+
+# local nested repos
+thrive-backend/
+ti-admin-panel/
 
 # typescript
 *.tsbuildinfo

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Email Verified - Opening App</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #DB8633 0%, #324E58 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      color: white;
+    }
+    
+    .container {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      max-width: 400px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    }
+    
+    .check {
+      font-size: 48px;
+      margin-bottom: 20px;
+    }
+    
+    h1 {
+      color: #DB8633;
+      margin-bottom: 16px;
+      font-size: 28px;
+    }
+    
+    p {
+      color: #666;
+      margin-bottom: 12px;
+      line-height: 1.6;
+    }
+    
+    .link {
+      display: inline-block;
+      margin-top: 24px;
+      padding: 14px 28px;
+      background-color: #DB8633;
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: bold;
+      transition: background-color 0.3s;
+    }
+    
+    .link:hover {
+      background-color: #c97527;
+    }
+    
+    .loading {
+      color: #666;
+      font-size: 14px;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="check">✓</div>
+    <h1>Email Verified!</h1>
+    <p>Email verified successfully</p>
+    <p class="loading">Opening the Thrive app...</p>
+    <a href="#" id="appLink" class="link" style="display: none;">Open in Thrive App</a>
+  </div>
+
+  <script>
+    // Get token and email from URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    const email = urlParams.get('email');
+    
+    // Try to open the app immediately
+    function openApp() {
+      if (token) {
+        // Try custom scheme deep link first
+        const deepLink = `thriveapp://verify?token=${token}${email ? `&email=${encodeURIComponent(email)}` : ''}&verified=true`;
+        
+        // Try to open the app
+        window.location.href = deepLink;
+        
+        // Show fallback button after 2 seconds
+        setTimeout(() => {
+          const appLink = document.getElementById('appLink');
+          const loadingText = document.querySelector('.loading');
+          
+          if (appLink) {
+            appLink.href = deepLink;
+            appLink.style.display = 'inline-block';
+          }
+          
+          if (loadingText) {
+            loadingText.innerHTML = "If the app didn't open, tap the button above.";
+          }
+        }, 2000);
+      }
+    }
+    
+    // Call immediately
+    openApp();
+  </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
