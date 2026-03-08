@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Tabs, Slot, useRouter, usePathname } from 'expo-router';
-import { View, TouchableOpacity, Image, StyleSheet, Text } from 'react-native';
+import { View, TouchableOpacity, Image, StyleSheet, Text, Platform } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { BeneficiaryProvider } from '../context/BeneficiaryContext';
 
 export default function AppLayout() {
@@ -68,26 +69,38 @@ export default function AppLayout() {
                       router.push(`/${tab.name}`);
                     }}
                   >
-                    <View style={[
-                      styles.iconContainer,
-                      focused && styles.iconContainerActive
-                    ]}>
-                      <Image
-                        source={tab.icon}
-                        style={[
-                          styles.tabIcon,
-                          focused && styles.tabIconActive
-                        ]}
-                      />
-                    </View>
-                    {focused && (
-                      <Text style={[
-                        styles.tabLabel,
-                        focused && styles.tabLabelActive
-                      ]}>
-                        {tab.label}
-                      </Text>
+                    {focused ? (
+                      <View style={[styles.iconContainer, styles.iconContainerActive]}>
+                        <Image
+                          source={tab.icon}
+                          style={[styles.tabIcon, styles.tabIconActive]}
+                        />
+                      </View>
+                    ) : (Platform.OS === 'web' || Platform.OS === 'android') ? (
+                      <View style={styles.iconContainerGlassFallback}>
+                        <Image
+                          source={tab.icon}
+                          style={styles.tabIcon}
+                        />
+                      </View>
+                    ) : (
+                      <BlurView
+                        intensity={70}
+                        tint="light"
+                        style={styles.iconContainerGlass}
+                      >
+                        <Image
+                          source={tab.icon}
+                          style={styles.tabIcon}
+                        />
+                      </BlurView>
                     )}
+                    <Text style={[
+                      styles.tabLabel,
+                      focused && styles.tabLabelActive
+                    ]}>
+                      {tab.label}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -135,7 +148,25 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
-    transition: 'all 0.2s ease',
+  },
+  iconContainerGlass: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconContainerGlassFallback: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(142, 155, 174, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(142, 155, 174, 0.25)',
   },
   iconContainerActive: {
     backgroundColor: '#DB8633',

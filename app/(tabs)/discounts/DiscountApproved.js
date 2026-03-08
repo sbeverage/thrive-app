@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ScrollView, Modal, Dimensions, Platform, Keyboard, KeyboardAvoidingView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ScrollView, Modal, Dimensions, Platform, Keyboard, KeyboardAvoidingView, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { AntDesign, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -90,7 +90,22 @@ export default function DiscountApproved() {
 
   const contentPaddingBottom = keyboardHeight > 0 ? keyboardHeight + 24 : 24;
 
+  const billNum = parseFloat(totalBill) || 0;
+  const savingsNum = parseFloat(totalDiscount) || 0;
+  const savingsExceedsBill = savingsNum > billNum;
+  const canSave = totalBill && totalDiscount && !savingsExceedsBill;
+
   const handleSaveTransaction = async () => {
+    const bill = parseFloat(totalBill) || 0;
+    const savings = parseFloat(totalDiscount) || 0;
+    if (savings > bill) {
+      Alert.alert(
+        'Invalid Amount',
+        'Savings cannot be greater than your total bill. Please enter a savings amount that does not exceed your bill total.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
     if (totalBill && totalDiscount) {
       try {
         // Add the savings amount to total savings
@@ -351,7 +366,7 @@ export default function DiscountApproved() {
               
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Total Savings</Text>
-                <View style={styles.inputWrapper}>
+                <View style={[styles.inputWrapper, savingsExceedsBill && styles.inputError]}>
                   <Text style={styles.currencySymbol}>$</Text>
                   <TextInput
                     style={styles.input}
@@ -362,6 +377,9 @@ export default function DiscountApproved() {
                     onChangeText={(t) => setTotalDiscount(filterNumericInput(t))}
                   />
                 </View>
+                {savingsExceedsBill && (
+                  <Text style={styles.inputErrorText}>Savings cannot exceed total bill</Text>
+                )}
               </View>
             </View>
           </View>
@@ -377,10 +395,10 @@ export default function DiscountApproved() {
             <TouchableOpacity 
               style={[
                 styles.saveButton, 
-                (!totalBill || !totalDiscount) && styles.saveButtonDisabled
+                !canSave && styles.saveButtonDisabled
               ]} 
               onPress={handleSaveTransaction}
-              disabled={!totalBill || !totalDiscount}
+              disabled={!canSave}
             >
               <Text style={styles.saveButtonText}>Save Transaction</Text>
             </TouchableOpacity>
@@ -743,6 +761,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     fontSize: 18,
     color: '#324E58',
+  },
+  inputError: {
+    borderColor: '#DC2626',
+    borderWidth: 2,
+    backgroundColor: '#FEF2F2',
+  },
+  inputErrorText: {
+    fontSize: 12,
+    color: '#DC2626',
+    marginTop: 6,
+    fontWeight: '500',
   },
   savingsButtonRow: {
     flexDirection: 'row',

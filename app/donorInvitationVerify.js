@@ -19,7 +19,6 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
-import { ImageEditor } from 'expo-image-editor';
 import API from './lib/api';
 import { useUser } from './context/UserContext';
 
@@ -38,8 +37,6 @@ export default function DonorInvitationVerifyScreen() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [profileImage, setProfileImage] = useState(null);
-  const [cropModalVisible, setCropModalVisible] = useState(false);
-  const [imageToCrop, setImageToCrop] = useState(null);
   const [coworking, setCoworking] = useState(false);
   const [sponsorAmount, setSponsorAmount] = useState(0);
   const [password, setPassword] = useState('');
@@ -141,24 +138,13 @@ export default function DonorInvitationVerifyScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: false,
-      quality: 1,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
     });
     if (!result.canceled && result.assets && result.assets.length > 0) {
-      setImageToCrop(result.assets[0].uri);
-      setCropModalVisible(true);
+      setProfileImage(result.assets[0].uri);
     }
-  };
-
-  const handleCropComplete = (result) => {
-    if (result?.uri) setProfileImage(result.uri);
-    setCropModalVisible(false);
-    setImageToCrop(null);
-  };
-
-  const handleCropCancel = () => {
-    setCropModalVisible(false);
-    setImageToCrop(null);
   };
   
   /**
@@ -422,7 +408,6 @@ export default function DonorInvitationVerifyScreen() {
   
   // Main signup form (after verification) - only shown in native app
   return (
-    <>
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
@@ -631,16 +616,6 @@ export default function DonorInvitationVerifyScreen() {
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
-    <ImageEditor
-      visible={cropModalVisible}
-      imageUri={imageToCrop}
-      onCloseEditor={handleCropCancel}
-      onEditingComplete={handleCropComplete}
-      mode="crop-only"
-      fixedCropAspectRatio={1}
-      lockAspectRatio={true}
-    />
-    </>
   );
 }
 

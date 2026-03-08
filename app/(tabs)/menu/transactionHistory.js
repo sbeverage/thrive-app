@@ -411,6 +411,16 @@ function EditSavingsModal({ visible, transaction, onClose, onSave }) {
       return;
     }
 
+    const spending = parseFloat(spendingAmount);
+    const savings = parseFloat(savingsAmount);
+    if (savings > spending) {
+      Alert.alert(
+        'Invalid Amount',
+        'Savings cannot be greater than your total bill. Please enter a savings amount that does not exceed the amount spent.'
+      );
+      return;
+    }
+
     onSave(spendingAmount, savingsAmount);
   };
 

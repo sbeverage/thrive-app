@@ -143,11 +143,12 @@ export default function InviteFriendsModal({ visible, onClose }) {
           break;
 
         case 'whatsapp':
-          const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(message)}`;
-          if (await Linking.canOpenURL(whatsappUrl)) {
+          // Use wa.me URL - opens WhatsApp app when installed, or WhatsApp Web when not
+          const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+          try {
             await Linking.openURL(whatsappUrl);
-          } else {
-            Alert.alert('Error', 'WhatsApp is not installed');
+          } catch (err) {
+            Alert.alert('Error', 'Could not open WhatsApp. Please try the Share button instead.');
           }
           break;
 
