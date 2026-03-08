@@ -17,6 +17,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.thrive-app",
       "infoPlist": {
+        "LSApplicationQueriesSchemes": ["whatsapp"],
         "NSLocationWhenInUseUsageDescription": "This app uses location to show nearby discounts and causes on the map.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location to show nearby discounts and causes on the map.",
         "CFBundleURLTypes": [
@@ -57,6 +58,11 @@
               "scheme": "https",
               "host": "thrive-web-jet.vercel.app",
               "pathPrefix": "/verify-email"
+            },
+            {
+              "scheme": "https",
+              "host": "thrive-web-jet.vercel.app",
+              "pathPrefix": "/signup"
             }
           ],
           "category": [

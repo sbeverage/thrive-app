@@ -17,6 +17,7 @@ import {
 import { useRouter } from 'expo-router';
 import { AntDesign, Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { ImageEditor } from 'expo-image-editor';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from './context/UserContext';
 import { useLocalSearchParams } from 'expo-router';
@@ -34,6 +35,8 @@ export default function SignupProfile() {
   const [lastName, setLastName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [profileImage, setProfileImage] = useState(null);
+  const [cropModalVisible, setCropModalVisible] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState(null);
 
   // Log email extraction for debugging
   useEffect(() => {
@@ -163,17 +166,35 @@ export default function SignupProfile() {
     return `${firstName?.[0] || ''}${lastName?.[0] || ''}`.toUpperCase();
   };
 
-  // Image picker handler
+  // Image picker: pick first, then open crop modal (Crop applies crop, Done confirms and closes)
   const pickImage = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Required', 'Please grant camera roll permissions to upload a profile picture.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.7,
+      allowsEditing: false,
+      quality: 1,
     });
     if (!result.canceled && result.assets && result.assets.length > 0) {
-      setProfileImage(result.assets[0].uri);
+      setImageToCrop(result.assets[0].uri);
+      setCropModalVisible(true);
     }
+  };
+
+  const handleCropComplete = (result) => {
+    if (result?.uri) {
+      setProfileImage(result.uri);
+    }
+    setCropModalVisible(false);
+    setImageToCrop(null);
+  };
+
+  const handleCropCancel = () => {
+    setCropModalVisible(false);
+    setImageToCrop(null);
   };
 
   return (
@@ -257,6 +278,15 @@ export default function SignupProfile() {
           </View>
       </ScrollView>
     </KeyboardAvoidingView>
+    <ImageEditor
+      visible={cropModalVisible}
+      imageUri={imageToCrop}
+      onCloseEditor={handleCropCancel}
+      onEditingComplete={handleCropComplete}
+      mode="crop-only"
+      fixedCropAspectRatio={1}
+      lockAspectRatio={true}
+    />
     </View>
   );
 }

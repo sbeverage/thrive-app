@@ -20,9 +20,10 @@ import { Feather, AntDesign } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import VoucherCard from '../../../components/VoucherCard';
 import MapView, { Marker } from 'react-native-maps';
-import { getCurrentLocation, getDefaultRegion } from '../../utils/locationService';
+import { getCurrentLocation, getDefaultRegion, calculateDistance } from '../../utils/locationService';
 import { useLocation } from '../../context/LocationContext';
 import { useDiscount } from '../../context/DiscountContext';
+import { useDiscountFilter } from '../../context/DiscountFilterContext';
 import WalkthroughTutorial from '../../../components/WalkthroughTutorial';
 import { useTutorial } from '../../../hooks/useTutorial';
 
@@ -45,7 +46,30 @@ export default function DiscountsScreen() {
   
   // Location context
   const { location: userLocation, locationAddress, locationPermission, checkLocationPermission, refreshLocation, isLoadingLocation } = useLocation();
-  
+
+  // Filter context
+  const { filters, updateFilters } = useDiscountFilter();
+  const [locationSearch, setLocationSearch] = useState(''); // Location filter from main screen (tap location row to search)
+
+  // Sync category pill and location search with filter screen when filters applied
+  useEffect(() => {
+    if (filters.category && filters.category !== activeCategory) {
+      setActiveCategory(filters.category);
+    }
+    if (filters.location && filters.location !== locationSearch) {
+      setLocationSearch(filters.location);
+    }
+  }, [filters.category, filters.location]);
+
+  const handleCategoryPress = (tag) => {
+    setActiveCategory(tag);
+    if (tag === 'All') {
+      updateFilters({ category: '' });
+    } else {
+      updateFilters({ category: tag });
+    }
+  };
+
   // Discount context
   const { discounts, vendors, isLoading: isLoadingDiscounts, loadDiscounts } = useDiscount();
   
@@ -172,41 +196,88 @@ export default function DiscountsScreen() {
     });
   }, [vendors, discounts]);
 
+  // Map filter type options to discount type values
+  const typeFilterMap = {
+    'Percentage': 'percentage',
+    'Buy One Get One': 'bogo',
+    'Free Item': 'free',
+  };
+
   const filteredVendors = transformedVendors.filter(v => {
     const matchesSearch = v.brandName.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    // Check if vendor matches the selected category
-    // Support both category field and tags array
-    let matchesCategory = true;
-    if (activeCategory !== 'All') {
-      matchesCategory = false;
-      
-      // Check category field (case-insensitive)
-      if (v.category && v.category.toLowerCase() === activeCategory.toLowerCase()) {
-        matchesCategory = true;
+
+    // Filter by location (from filter screen or main screen location input when user types)
+    let matchesLocation = true;
+    const locFilter = (filters.location && filters.location.trim()) || (locationSearch && locationSearch.trim()) || '';
+    if (locFilter) {
+      const loc = locFilter.toLowerCase();
+      matchesLocation = (v.location && v.location.toLowerCase().includes(loc));
+    }
+
+    // Filter by radius (distance from user) - parse "5 miles" -> 5
+    let matchesRadius = true;
+    if (filters.radius && userLocation) {
+      const radiusNum = parseFloat(String(filters.radius).replace(/[^\d.]/g, '')) || 0;
+      if (radiusNum > 0 && v.latitude && v.longitude) {
+        const dist = calculateDistance(
+          userLocation.latitude, userLocation.longitude,
+          v.latitude, v.longitude
+        );
+        matchesRadius = dist !== null && dist <= radiusNum;
       }
-      
-      // Check tags array (case-insensitive)
+    }
+
+    // Filter by discount type
+    let matchesType = true;
+    if (filters.type && typeFilterMap[filters.type]) {
+      const targetType = typeFilterMap[filters.type];
+      const vendorDiscounts = discounts.filter(d =>
+        (d.vendorId?.toString() || d.vendorId) === (v.id?.toString() || v.id)
+      );
+      matchesType = vendorDiscounts.some(d => {
+        const dt = (d.discountType || d.discount_type || '').toLowerCase();
+        return dt === targetType;
+      });
+    }
+
+    // Filter by category (from filter screen or pill selection)
+    const categoryToMatch = filters.category || (activeCategory !== 'All' ? activeCategory : null);
+    let matchesCategory = true;
+    if (categoryToMatch) {
+      matchesCategory = false;
+      if (v.category && v.category.toLowerCase() === categoryToMatch.toLowerCase()) matchesCategory = true;
       if (!matchesCategory && v.tags && Array.isArray(v.tags)) {
-        matchesCategory = v.tags.some(tag => 
+        matchesCategory = v.tags.some(tag =>
+          tag && typeof tag === 'string' && tag.toLowerCase() === categoryToMatch.toLowerCase()
+        );
+      }
+      if (!matchesCategory && v.vendor) {
+        if (v.vendor.category && v.vendor.category.toLowerCase() === categoryToMatch.toLowerCase()) matchesCategory = true;
+        if (!matchesCategory && v.vendor.tags && Array.isArray(v.vendor.tags)) {
+          matchesCategory = v.vendor.tags.some(tag =>
+            tag && typeof tag === 'string' && tag.toLowerCase() === categoryToMatch.toLowerCase()
+          );
+        }
+      }
+    } else if (activeCategory !== 'All') {
+      matchesCategory = false;
+      if (v.category && v.category.toLowerCase() === activeCategory.toLowerCase()) matchesCategory = true;
+      if (!matchesCategory && v.tags && Array.isArray(v.tags)) {
+        matchesCategory = v.tags.some(tag =>
           tag && typeof tag === 'string' && tag.toLowerCase() === activeCategory.toLowerCase()
         );
       }
-      
-      // Also check the full vendor object for tags/category
       if (!matchesCategory && v.vendor) {
-        if (v.vendor.category && v.vendor.category.toLowerCase() === activeCategory.toLowerCase()) {
-          matchesCategory = true;
-        }
+        if (v.vendor.category && v.vendor.category.toLowerCase() === activeCategory.toLowerCase()) matchesCategory = true;
         if (!matchesCategory && v.vendor.tags && Array.isArray(v.vendor.tags)) {
-          matchesCategory = v.vendor.tags.some(tag => 
+          matchesCategory = v.vendor.tags.some(tag =>
             tag && typeof tag === 'string' && tag.toLowerCase() === activeCategory.toLowerCase()
           );
         }
       }
     }
-    
-    return matchesSearch && matchesCategory;
+
+    return matchesSearch && matchesLocation && matchesRadius && matchesType && matchesCategory;
   });
 
   const highlightedVendors = filteredVendors.slice(0, 2);
@@ -231,6 +302,8 @@ export default function DiscountsScreen() {
 
   const updateUserLocation = async () => {
     if (locationPermission === 'granted') {
+      setLocationSearch(''); // Clear location search when refreshing to current location
+      updateFilters({ location: '' });
       await refreshLocation();
     } else {
       checkLocationPermission();
@@ -356,10 +429,13 @@ export default function DiscountsScreen() {
           )}
           {isEditingLocation ? (
             <TextInput
-              placeholder="Enter your location"
+              placeholder="Enter city or area to filter (e.g. Atlanta)"
               placeholderTextColor="#6d6e72"
-              value={locationDisplay}
-              onChangeText={setLocationDisplay}
+              value={locationSearch}
+              onChangeText={(t) => {
+                setLocationSearch(t);
+                updateFilters({ location: t.trim() });
+              }}
               style={styles.locationInput}
               autoFocus
               onBlur={() => setIsEditingLocation(false)}
@@ -368,9 +444,12 @@ export default function DiscountsScreen() {
           ) : (
             <TouchableOpacity 
               style={styles.locationDisplay}
-              onPress={() => setIsEditingLocation(true)}
+              onPress={() => {
+                setIsEditingLocation(true);
+                setLocationSearch(locationSearch || locationDisplay);
+              }}
             >
-              <Text style={styles.locationText}>{locationDisplay}</Text>
+              <Text style={styles.locationText}>{locationSearch || locationDisplay}</Text>
               {Platform.OS === 'web' ? (
                 <Text style={{ fontSize: 14, color: '#DB8633', marginLeft: 8 }}>✏️</Text>
               ) : (
@@ -401,7 +480,7 @@ export default function DiscountsScreen() {
             <TouchableOpacity
               key={tag}
               style={[styles.tag, activeCategory === tag && styles.tagActive]}
-              onPress={() => setActiveCategory(tag)}
+              onPress={() => handleCategoryPress(tag)}
             >
               <Text style={[styles.tagText, activeCategory === tag && styles.tagTextActive]}>{tag}</Text>
             </TouchableOpacity>
@@ -725,6 +804,8 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: '#324E58',
+    paddingVertical: 10,
+    minHeight: 40,
   },
   locationRow: {
     flexDirection: 'row',

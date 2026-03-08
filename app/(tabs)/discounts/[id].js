@@ -250,6 +250,7 @@ export default function VendorDetails() {
         pathname: '/(tabs)/discounts/DiscountApproved',
         params: {
           discountId: selectedDiscount.id,
+          vendorId: vendor?.id,
           discountCode: result.discountCode || selectedDiscount.discountCode,
           vendorName: vendor?.name || 'Vendor',
           discountTitle: selectedDiscount.title,

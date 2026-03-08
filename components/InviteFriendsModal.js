@@ -486,15 +486,13 @@ export default function InviteFriendsModal({ visible, onClose }) {
                   <Text style={[styles.shareButtonText, styles.shareButtonTextSecondary]}>Email</Text>
                 </TouchableOpacity>
 
-                {Platform.OS !== 'ios' && (
-                  <TouchableOpacity
-                    style={styles.shareButton}
-                    onPress={() => handleShare('whatsapp')}
-                  >
-                    <MaterialIcons name="chat" size={24} color="#DB8633" />
-                    <Text style={[styles.shareButtonText, styles.shareButtonTextSecondary]}>WhatsApp</Text>
-                  </TouchableOpacity>
-                )}
+                <TouchableOpacity
+                  style={styles.shareButton}
+                  onPress={() => handleShare('whatsapp')}
+                >
+                  <MaterialIcons name="chat" size={24} color="#DB8633" />
+                  <Text style={[styles.shareButtonText, styles.shareButtonTextSecondary]}>WhatsApp</Text>
+                </TouchableOpacity>
               </View>
             </View>
 

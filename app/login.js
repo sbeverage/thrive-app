@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,10 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+
+const LAST_LOGIN_KEY = 'lastLoginMethod';
 import { AntDesign, Feather } from '@expo/vector-icons';
 import API from './lib/api';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -30,6 +33,27 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSocialLoading, setIsSocialLoading] = useState(false);
+  const [lastLogin, setLastLogin] = useState(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem(LAST_LOGIN_KEY).then((raw) => {
+      try {
+        if (raw) {
+          const data = JSON.parse(raw);
+          setLastLogin(data);
+          if (data.method === 'email' && data.email) {
+            setEmail(data.email);
+          }
+        }
+      } catch (_) {}
+    });
+  }, []);
+
+  const saveLastLogin = (method, emailValue) => {
+    const data = method === 'email' ? { method, email: emailValue } : { method };
+    AsyncStorage.setItem(LAST_LOGIN_KEY, JSON.stringify(data));
+    setLastLogin(data);
+  };
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -53,6 +77,8 @@ export default function LoginScreen() {
       
       // Reload beneficiary from storage
       await reloadBeneficiary();
+
+      saveLastLogin('email', email);
       
       // Navigate to home on successful login
       router.replace('/home');
@@ -89,6 +115,8 @@ export default function LoginScreen() {
       
       // Reload beneficiary from storage
       await reloadBeneficiary();
+
+      saveLastLogin(socialData.provider);
 
       // Navigate to home on successful login
       router.replace('/home');
@@ -150,17 +178,24 @@ export default function LoginScreen() {
             <Text style={styles.welcomeMessage}>Welcome Back! 🎉</Text>
           </View>
           <View style={styles.infoCard}>
+            <View style={styles.labelRow}>
+              <Text style={[styles.label, styles.labelRowLabel]}>Email Address</Text>
+              {lastLogin?.method === 'email' && (
+                <Text style={styles.previouslyUsedBadge}>Previously used</Text>
+              )}
+            </View>
             <TextInput
-              placeholder="Email Address"
+              placeholder="Enter your email"
               style={styles.input}
               placeholderTextColor="#6d6e72"
               autoCapitalize="none"
               value={email}
               onChangeText={setEmail}
             />
+            <Text style={styles.label}>Password</Text>
             <View style={styles.passwordContainer}>
               <TextInput
-                placeholder="Password"
+                placeholder="Enter your password"
                 style={styles.passwordInput}
                 placeholderTextColor="#6d6e72"
                 secureTextEntry={!showPassword}
@@ -194,27 +229,42 @@ export default function LoginScreen() {
 
             <Text style={styles.orText}>Or login with</Text>
             <View style={styles.socialIconsContainer}>
-              <TouchableOpacity
-                style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
-                onPress={handleFacebookLogin}
-                disabled={isSocialLoading}
-              >
-                <Image source={require('../assets/images/Facebook-icon.png')} style={styles.socialIcon} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
-                onPress={handleGoogleLogin}
-                disabled={isSocialLoading}
-              >
-                <Image source={require('../assets/images/Google-icon.png')} style={styles.socialIcon} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
-                onPress={handleAppleLogin}
-                disabled={isSocialLoading}
-              >
-                <Image source={require('../assets/images/Apple-icon.png')} style={styles.socialIcon} />
-              </TouchableOpacity>
+              <View style={styles.socialIconWrapper}>
+                <TouchableOpacity
+                  style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
+                  onPress={handleFacebookLogin}
+                  disabled={isSocialLoading}
+                >
+                  <Image source={require('../assets/images/Facebook-icon.png')} style={styles.socialIcon} />
+                </TouchableOpacity>
+                {lastLogin?.method === 'facebook' && (
+                  <Text style={styles.previouslyUsedBadgeSmall}>Previously used</Text>
+                )}
+              </View>
+              <View style={styles.socialIconWrapper}>
+                <TouchableOpacity
+                  style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
+                  onPress={handleGoogleLogin}
+                  disabled={isSocialLoading}
+                >
+                  <Image source={require('../assets/images/Google-icon.png')} style={styles.socialIcon} />
+                </TouchableOpacity>
+                {lastLogin?.method === 'google' && (
+                  <Text style={styles.previouslyUsedBadgeSmall}>Previously used</Text>
+                )}
+              </View>
+              <View style={styles.socialIconWrapper}>
+                <TouchableOpacity
+                  style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
+                  onPress={handleAppleLogin}
+                  disabled={isSocialLoading}
+                >
+                  <Image source={require('../assets/images/Apple-icon.png')} style={styles.socialIcon} />
+                </TouchableOpacity>
+                {lastLogin?.method === 'apple' && (
+                  <Text style={styles.previouslyUsedBadgeSmall}>Previously used</Text>
+                )}
+              </View>
             </View>
 
             {/* Link to Signup */}
@@ -286,6 +336,32 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     alignItems: 'center',
     zIndex: 2,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 8,
+  },
+  labelRowLabel: {
+    marginBottom: 0,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#324E58',
+    marginBottom: 8,
+    alignSelf: 'flex-start',
+  },
+  previouslyUsedBadge: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#DB8633',
+    backgroundColor: 'rgba(219, 134, 51, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   backArrow: {
     position: 'absolute',
@@ -365,16 +441,25 @@ const styles = StyleSheet.create({
   socialIconsContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginTop: 10,
     marginBottom: 25,
+  },
+  socialIconWrapper: {
+    alignItems: 'center',
+    marginHorizontal: 8,
   },
   socialIconButton: {
     padding: 12,
     borderWidth: 1,
     borderColor: '#e1e1e5',
     borderRadius: 8,
-    marginHorizontal: 8,
+  },
+  previouslyUsedBadgeSmall: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#DB8633',
+    marginTop: 4,
   },
   socialIconButtonDisabled: {
     opacity: 0.5,

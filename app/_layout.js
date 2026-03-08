@@ -1,12 +1,19 @@
 // file: app/_layout.js
 import { Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Text, TextInput } from 'react-native';
+
+// Prevent device font size settings from affecting app layout
+if (Text.defaultProps == null) Text.defaultProps = {};
+Text.defaultProps.allowFontScaling = false;
+if (TextInput.defaultProps == null) TextInput.defaultProps = {};
+TextInput.defaultProps.allowFontScaling = false;
 import { BeneficiaryProvider } from './context/BeneficiaryContext';
 import { UserProvider } from './context/UserContext';
 import { BeneficiaryFilterProvider } from './context/BeneficiaryFilterContext';
 import { LocationProvider } from './context/LocationContext';
 import { DiscountProvider } from './context/DiscountContext';
+import { DiscountFilterProvider } from './context/DiscountFilterContext';
 import { useEffect } from 'react';
 import { Linking } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -81,6 +88,15 @@ export default function Layout() {
           return;
         }
         
+        // Handle referral signup links (from Invite Friends)
+        // Format: https://thrive-web-jet.vercel.app/signup?ref=xxx or thriveapp://signup?ref=xxx
+        const ref = searchParams.get('ref');
+        if ((pathname.includes('signup') || pathname === 'signup') && ref) {
+          console.log('🔗 Referral signup link detected, ref:', ref);
+          router.replace(`/signup?ref=${encodeURIComponent(ref)}`);
+          return;
+        }
+
         // Handle donor invitation links (new flow)
         // Format: thriveapp://verify-email?token=... or https://thrive-web-jet.vercel.app/verify-email?token=...
         if ((pathname.includes('verify-email') || pathname.includes('donor-invitation')) && token) {
@@ -146,6 +162,7 @@ export default function Layout() {
           <BeneficiaryFilterProvider>
             <LocationProvider>
               <DiscountProvider>
+                <DiscountFilterProvider>
                     <SafeAreaView style={styles.safeArea}>
                       <View style={styles.container}>
                         <Stack 
@@ -159,6 +176,7 @@ export default function Layout() {
                         />
                       </View>
                     </SafeAreaView>
+                </DiscountFilterProvider>
               </DiscountProvider>
             </LocationProvider>
           </BeneficiaryFilterProvider>

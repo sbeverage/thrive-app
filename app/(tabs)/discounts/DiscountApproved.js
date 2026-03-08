@@ -5,6 +5,7 @@ import { AntDesign, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from '../../context/UserContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import API from '../../lib/api';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -14,6 +15,8 @@ export default function DiscountApproved() {
   const params = useLocalSearchParams();
   
   // Get dynamic data from route params
+  const discountId = params.discountId || null;
+  const vendorId = params.vendorId || null;
   const discountCode = params.discountCode || 'DEALFREE';
   const vendorName = params.vendorName || 'Starbucks Coffee';
   const discountTitle = params.discountTitle || 'Free Appetizer';
@@ -56,6 +59,15 @@ export default function DiscountApproved() {
   
   const [totalBill, setTotalBill] = useState('');
   const [totalDiscount, setTotalDiscount] = useState('');
+
+  // Only allow numbers and one decimal point
+  const filterNumericInput = (text) => {
+    const filtered = text.replace(/[^0-9.]/g, '');
+    const parts = filtered.split('.');
+    if (parts.length > 2) return parts[0] + '.' + parts.slice(1).join('');
+    if (parts[1] && parts[1].length > 2) return parts[0] + '.' + parts[1].slice(0, 2);
+    return filtered;
+  };
   const [showModal, setShowModal] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
@@ -134,30 +146,38 @@ export default function DiscountApproved() {
     }
   };
 
-  // Add transaction to transaction history
+  // Add transaction to transaction history - try backend first, fallback to local
   const addTransactionToHistory = async (transactionData) => {
+    const spendingNum = parseFloat(String(transactionData.spending).replace(/[$,]/g, '')) || 0;
+    const savingsNum = parseFloat(String(transactionData.savings).replace(/[$,]/g, '')) || 0;
+
     try {
-      const newTransaction = {
-        id: Date.now().toString(),
-        ...transactionData,
-        status: 'completed',
-      };
-
-      // Get existing transactions from AsyncStorage
-      const existingTransactions = await AsyncStorage.getItem('userTransactions');
-      let transactions = [];
-      
-      if (existingTransactions) {
-        transactions = JSON.parse(existingTransactions);
+      // Try to save to backend first
+      try {
+        await API.createTransaction({
+          type: 'redemption',
+          description: transactionData.discount,
+          discount_code: discountCode,
+          savings: savingsNum,
+          spending: spendingNum,
+          discount_id: discountId || undefined,
+          vendor_id: vendorId || undefined,
+          metadata: { vendor_name: transactionData.brand },
+        });
+        console.log('✅ Transaction saved to backend');
+      } catch (apiError) {
+        // Fallback to local storage when API fails (offline, endpoint missing, etc.)
+        console.warn('⚠️ Backend save failed, using local storage:', apiError.message);
+        const newTransaction = {
+          id: Date.now().toString(),
+          ...transactionData,
+          status: 'completed',
+        };
+        const existingTransactions = await AsyncStorage.getItem('userTransactions');
+        let transactions = existingTransactions ? JSON.parse(existingTransactions) : [];
+        transactions.unshift(newTransaction);
+        await AsyncStorage.setItem('userTransactions', JSON.stringify(transactions));
       }
-
-      // Add new transaction to the beginning of the array
-      transactions.unshift(newTransaction);
-
-      // Save updated transactions back to AsyncStorage
-      await AsyncStorage.setItem('userTransactions', JSON.stringify(transactions));
-      
-      console.log('✅ Transaction added to history:', newTransaction);
     } catch (error) {
       console.error('❌ Error saving transaction to history:', error);
     }
@@ -322,9 +342,9 @@ export default function DiscountApproved() {
                     style={styles.input}
                     placeholder="0.00"
                     placeholderTextColor="#A0B4C8"
-                    keyboardType="numeric"
+                    keyboardType="decimal-pad"
                     value={totalBill}
-                    onChangeText={setTotalBill}
+                    onChangeText={(t) => setTotalBill(filterNumericInput(t))}
                   />
                 </View>
               </View>
@@ -337,9 +357,9 @@ export default function DiscountApproved() {
                     style={styles.input}
                     placeholder="0.00"
                     placeholderTextColor="#A0B4C8"
-                    keyboardType="numeric"
+                    keyboardType="decimal-pad"
                     value={totalDiscount}
-                    onChangeText={setTotalDiscount}
+                    onChangeText={(t) => setTotalDiscount(filterNumericInput(t))}
                   />
                 </View>
               </View>

@@ -12,7 +12,7 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
 import { useStripe } from '@stripe/stripe-react-native';
 import { useUser } from '../../context/UserContext';
@@ -22,18 +22,47 @@ import API from '../../lib/api';
 export default function EditDonationAmount() {
   const router = useRouter();
   const { user, saveUserData } = useUser();
-  const { selectedBeneficiary } = useBeneficiary();
+  const { selectedBeneficiary, reloadBeneficiary } = useBeneficiary();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const [currentAmount, setCurrentAmount] = useState(user.monthlyDonation?.toString() || '15');
   const [newAmount, setNewAmount] = useState(user.monthlyDonation?.toString() || '15');
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [subscription, setSubscription] = useState(null);
+  const [savedBeneficiaryId, setSavedBeneficiaryId] = useState(null);
 
-  // Load existing subscription on mount
+  // Load existing subscription and beneficiary on mount
   useEffect(() => {
     loadSubscription();
+    loadSavedBeneficiary();
   }, []);
+
+  // Reload beneficiary when returning from Beneficiary tab (e.g. after selecting one)
+  useFocusEffect(
+    React.useCallback(() => {
+      reloadBeneficiary?.();
+      loadSavedBeneficiary();
+    }, [reloadBeneficiary])
+  );
+
+  // Resolve beneficiary ID: from context, user prefs, or backend
+  const getBeneficiaryId = () => {
+    const fromContext = selectedBeneficiary?.id;
+    const fromUser = user.preferredCharity || user.beneficiary;
+    const fromState = savedBeneficiaryId;
+    return fromContext ?? fromUser ?? fromState ?? null;
+  };
+
+  const loadSavedBeneficiary = async () => {
+    try {
+      const profile = await API.getProfile();
+      if (profile?.preferredCharity || profile?.beneficiary) {
+        setSavedBeneficiaryId(profile.preferredCharity || profile.beneficiary);
+      }
+    } catch (e) {
+      // Profile may 404 - ignore
+    }
+  };
 
   const loadSubscription = async () => {
     try {
@@ -64,49 +93,46 @@ export default function EditDonationAmount() {
 
     setIsLoading(true);
     try {
-      // Get beneficiary ID (use selected beneficiary or default)
-      const beneficiaryId = selectedBeneficiary?.id || user.selectedBeneficiaryId;
+      // Resolve beneficiary: from context (saved at signup), user prefs, or backend profile
+      const beneficiaryId = getBeneficiaryId();
 
-      let response;
+      let response = null;
+      let apiSucceeded = false;
+
       if (subscription) {
-        // Update existing subscription
-        console.log('💳 Updating existing subscription...');
-        response = await API.updateMonthlyDonationAmount(subscription.id, amount);
-      } else {
-        // Create new subscription
-        if (!beneficiaryId) {
-          Alert.alert(
-            'Beneficiary Required',
-            'Please select a beneficiary before setting up monthly donations.',
-            [{ text: 'OK' }]
-          );
-          setIsLoading(false);
-          return;
+        // Update existing subscription - no beneficiary needed
+        try {
+          console.log('💳 Updating existing subscription...');
+          response = await API.updateMonthlyDonationAmount(subscription.id, amount);
+          apiSucceeded = true;
+        } catch (apiError) {
+          console.warn('⚠️ Update subscription failed, saving locally:', apiError.message);
         }
-
-        console.log('💳 Creating new subscription...');
-        response = await API.createMonthlySubscription({
-          beneficiary_id: beneficiaryId,
-          amount: amount,
-          currency: 'USD',
-        });
+      } else if (beneficiaryId) {
+        // Create new subscription with saved beneficiary
+        try {
+          console.log('💳 Creating new subscription...');
+          response = await API.createMonthlySubscription({
+            beneficiary_id: beneficiaryId,
+            amount: amount,
+            currency: 'USD',
+          });
+          apiSucceeded = true;
+        } catch (apiError) {
+          console.warn('⚠️ Create subscription failed, saving locally:', apiError.message);
+        }
       }
+      // If no beneficiary and no subscription: skip API, save locally only
 
       // If clientSecret is returned, collect payment method via Stripe Payment Sheet
-      if (response.subscription?.clientSecret) {
+      if (response?.subscription?.clientSecret) {
         console.log('💳 Collecting payment method via Stripe Payment Sheet...');
-        
         const { error: initError } = await initPaymentSheet({
           paymentIntentClientSecret: response.subscription.clientSecret,
           merchantDisplayName: 'Thrive Initiative',
           allowsDelayedPaymentMethods: true,
-          applePay: {
-            merchantCountryCode: 'US',
-          },
-          googlePay: {
-            merchantCountryCode: 'US',
-            testEnv: true, // Set to false in production
-          },
+          applePay: { merchantCountryCode: 'US' },
+          googlePay: { merchantCountryCode: 'US', testEnv: true },
         });
 
         if (initError) {
@@ -116,7 +142,6 @@ export default function EditDonationAmount() {
         }
 
         const { error: presentError } = await presentPaymentSheet();
-
         if (presentError) {
           if (presentError.code !== 'Canceled') {
             Alert.alert('Error', `Payment failed: ${presentError.message}`);
@@ -124,27 +149,51 @@ export default function EditDonationAmount() {
           setIsLoading(false);
           return;
         }
-
-        // Payment method collected successfully
         console.log('✅ Payment method collected successfully');
       }
 
-      // Save to local state
+      // Always save amount locally (works for: update success, create success, or API fallback)
       await saveUserData({ monthlyDonation: amount });
       setCurrentAmount(newAmount);
       setIsEditing(false);
-      
-      Alert.alert(
-        '✅ Amount Updated!',
-        `Your monthly donation amount has been ${subscription ? 'updated' : 'set'} to $${parseFloat(newAmount || 0).toFixed(2)}.`,
-        [{ text: 'OK' }]
-      );
+
+      if (apiSucceeded) {
+        Alert.alert(
+          '✅ Amount Updated!',
+          `Your monthly donation amount has been ${subscription ? 'updated' : 'set'} to $${parseFloat(newAmount || 0).toFixed(2)}.`,
+          [{ text: 'OK' }]
+        );
+      } else if (!beneficiaryId) {
+        Alert.alert(
+          '✅ Amount Saved',
+          `Your monthly donation amount of $${parseFloat(newAmount || 0).toFixed(2)} has been saved. To enable automatic billing, select a beneficiary from the Beneficiary tab and add a payment method.`,
+          [
+            { text: 'OK' },
+            { text: 'Select Beneficiary', onPress: () => router.replace('/(tabs)/beneficiary') },
+          ]
+        );
+      } else {
+        Alert.alert(
+          '✅ Amount Saved',
+          `Your monthly donation amount of $${parseFloat(newAmount || 0).toFixed(2)} has been saved locally. The subscription could not be created at this time—you can try again later.`,
+          [{ text: 'OK' }]
+        );
+      }
     } catch (error) {
       console.error('❌ Error saving donation amount:', error);
-      Alert.alert(
-        'Error',
-        error.message || 'Failed to save donation amount. Please try again.'
-      );
+      // Fallback: save locally so user isn't blocked
+      try {
+        await saveUserData({ monthlyDonation: amount });
+        setCurrentAmount(newAmount);
+        setIsEditing(false);
+        Alert.alert(
+          'Amount Saved Locally',
+          `Your amount of $${parseFloat(newAmount || 0).toFixed(2)} has been saved. The subscription service could not be reached—please try again later.`,
+          [{ text: 'OK' }]
+        );
+      } catch (fallbackError) {
+        Alert.alert('Error', error.message || 'Failed to save donation amount. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -329,8 +378,8 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
   },
   currencySymbol: {
-    fontSize: 24,
-    fontWeight: '600',
+    fontSize: 48,
+    fontWeight: '700',
     color: '#DB8633',
     marginRight: 4,
   },

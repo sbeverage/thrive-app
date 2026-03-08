@@ -22,6 +22,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/discounts',
   '/api/auth/login',
   '/api/auth/signup',
+  '/api/auth/check-email',
   '/api/auth/social-login',
   '/api/auth/verify',
   '/api/auth/verify-email',
@@ -188,7 +189,36 @@ const API = {
       return response.data;
     } catch (error) {
       console.error('Signup failed:', error);
-      throw new Error(error.response?.data?.message || 'Signup failed. Please try again.');
+      const data = error.response?.data || {};
+      const msg = data.message || data.error || data.msg || '';
+      const isDuplicateEmail = error.response?.status === 409 ||
+        /already|exists|registered|in use|taken/i.test(msg);
+      if (isDuplicateEmail) {
+        throw new Error('This email is already registered. Please log in or use a different email.');
+      }
+      throw new Error(msg || 'Signup failed. Please try again.');
+    }
+  },
+
+  /**
+   * Check if email is available (not yet registered).
+   * Returns { available: true } or throws if email is taken.
+   * Backend should implement GET /api/auth/check-email?email=xxx
+   */
+  checkEmailAvailable: async (email) => {
+    try {
+      const response = await api.get('/api/auth/check-email', { params: { email } });
+      if (response.data?.available === false) {
+        throw new Error('This email is already registered. Please log in or use a different email.');
+      }
+      return response.data;
+    } catch (error) {
+      if (error.message?.includes('already registered')) throw error;
+      if (error.response?.status === 409 || error.response?.data?.available === false) {
+        throw new Error('This email is already registered. Please log in or use a different email.');
+      }
+      if (error.response?.status === 404) return { available: true };
+      throw error;
     }
   },
 

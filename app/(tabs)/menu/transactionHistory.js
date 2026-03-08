@@ -55,17 +55,27 @@ export default function TransactionHistory() {
   );
 
   // Load transactions from backend API with fallback to local storage
+  // Merges local-only transactions (from Discount Redeemed when API fails) with backend data
   const loadTransactions = async (pageNum = 1, append = false) => {
     try {
       setIsLoading(true);
       
+      // Load local transactions to merge with backend (local-only items have numeric string ids)
+      const localRaw = await AsyncStorage.getItem('userTransactions');
+      const localTransactions = localRaw ? JSON.parse(localRaw) : [];
+      const localOnlyIds = new Set(
+        localTransactions
+          .filter(t => t.id && /^\d+$/.test(String(t.id)))
+          .map(t => t.id)
+      );
+
       // Try to load from backend API
       try {
         const response = await API.getTransactions(pageNum, 20);
         const backendTransactions = response.transactions || [];
         
         // Transform backend transactions to match frontend format
-        const transformedTransactions = backendTransactions.map(t => ({
+        const transformedBackend = backendTransactions.map(t => ({
           id: t.id,
           type: t.type,
           brand: t.vendor_name || t.beneficiary_name || 'Unknown',
@@ -83,27 +93,33 @@ export default function TransactionHistory() {
           logo: t.vendor_logo || require('../../../assets/images/child-cancer.jpg'),
         }));
 
+        // Merge: backend + local-only (saved when Discount Redeemed API failed)
+        const localOnly = localTransactions.filter(t => localOnlyIds.has(t.id));
+        const merged = [...localOnly, ...transformedBackend].sort((a, b) => {
+          const dateA = new Date(a.date);
+          const dateB = new Date(b.date);
+          return dateB - dateA;
+        });
+
         if (append) {
-          setTransactions(prev => [...prev, ...transformedTransactions]);
+          setTransactions(prev => [...prev, ...merged]);
         } else {
-          setTransactions(transformedTransactions);
+          setTransactions(merged);
         }
 
         setHasMore(response.pagination?.has_more || false);
         setPage(pageNum);
-        console.log('✅ Loaded transactions from backend:', transformedTransactions.length);
+        console.log('✅ Loaded transactions:', merged.length, '(backend:', transformedBackend.length, ', local-only:', localOnly.length, ')');
         
-        // Also save to local storage as backup
+        // Save merged result to local storage as backup
         if (!append) {
-          await AsyncStorage.setItem('userTransactions', JSON.stringify(transformedTransactions));
+          await AsyncStorage.setItem('userTransactions', JSON.stringify(merged));
         }
       } catch (apiError) {
         console.warn('⚠️ Backend API failed, falling back to local storage:', apiError.message);
         
         // Fallback to local storage
-        const existingTransactions = await AsyncStorage.getItem('userTransactions');
-        if (existingTransactions) {
-          const localTransactions = JSON.parse(existingTransactions);
+        if (localTransactions.length > 0) {
           setTransactions(localTransactions);
           console.log('✅ Loaded transactions from local storage:', localTransactions.length);
         } else {

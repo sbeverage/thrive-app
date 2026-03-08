@@ -127,6 +127,16 @@ export default function SignupScreen() {
     }
 
     try {
+      // Check if email is already registered (when backend supports /api/auth/check-email)
+      try {
+        await API.checkEmailAvailable(email.trim());
+      } catch (checkError) {
+        if (checkError.message?.includes('already registered')) {
+          Alert.alert('Email Already Used', checkError.message);
+          return;
+        }
+      }
+
       console.log('🚀 Starting signup process...');
       
       // Prepare signup data with location and referral token if available
@@ -191,17 +201,19 @@ export default function SignupScreen() {
             <Image source={require('../assets/logos/thrive-logo-white.png')} style={styles.brand} />
           </View>
           <View style={styles.infoCard}>
+            <Text style={styles.label}>Email Address</Text>
             <TextInput
-              placeholder="Email Address"
+              placeholder="Enter your email"
               value={email}
               onChangeText={setEmail}
               style={styles.input}
               placeholderTextColor="#6d6e72"
               autoCapitalize="none"
             />
+            <Text style={styles.label}>Password</Text>
             <View style={styles.passwordContainer}>
               <TextInput
-                placeholder="Password"
+                placeholder="Enter your password"
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
@@ -280,6 +292,14 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     alignItems: 'center',
     zIndex: 2,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#324E58',
+    marginBottom: 8,
+    alignSelf: 'flex-start',
+    width: '100%',
   },
   backArrow: {
     position: 'absolute',

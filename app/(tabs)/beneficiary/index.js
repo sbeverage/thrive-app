@@ -662,24 +662,26 @@ export default function BeneficiaryScreen() {
                         {/* Buttons Row */}
                         <View style={styles.buttonsRow}>
                           <TouchableOpacity 
-                            style={styles.detailsButton}
-                            onPress={() => {
+                            style={styles.viewDetailsButton}
+                            onPress={(e) => {
+                              e.stopPropagation();
                               router.push({
                                 pathname: '/(tabs)/beneficiary/beneficiaryDetail',
                                 params: { id: b.id.toString() }
                               });
                             }}
                           >
-                            <Text style={styles.detailsButtonText}>View Details</Text>
+                            <Text style={styles.viewDetailsButtonText}>Details</Text>
                           </TouchableOpacity>
                           <TouchableOpacity 
-                            style={styles.selectButton}
-                            onPress={() => {
+                            style={styles.changeToThisButton}
+                            onPress={(e) => {
+                              e.stopPropagation();
                               setPendingBeneficiary(b);
                               setConfirmModalVisible(true);
                             }}
                           >
-                            <Text style={styles.selectButtonText}>Select</Text>
+                            <Text style={styles.changeToThisButtonText}>Select</Text>
                           </TouchableOpacity>
                         </View>
                       </View>

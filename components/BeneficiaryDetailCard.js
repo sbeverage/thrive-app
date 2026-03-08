@@ -222,11 +222,7 @@ export default function BeneficiaryDetailCard({ data, onSelect, showBackArrow = 
         <View style={styles.buttonRow}>
           <TouchableOpacity
             style={styles.primaryBtn}
-            onPress={() => {
-              if (isSignupFlow) {
-                onSelect?.();
-              }
-            }}
+            onPress={() => onSelect?.()}
           >
             <Image
               source={require('../assets/icons/donation-box.png')}

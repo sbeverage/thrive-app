@@ -13,6 +13,7 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { ImageEditor } from 'expo-image-editor';
 import { useUser } from '../../context/UserContext';
 
 export default function EditProfileScreen() {
@@ -23,6 +24,8 @@ export default function EditProfileScreen() {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [profileImage, setProfileImage] = useState(null);
+  const [cropModalVisible, setCropModalVisible] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [fieldsInitialized, setFieldsInitialized] = useState(false);
@@ -80,16 +83,13 @@ export default function EditProfileScreen() {
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.7,
+        allowsEditing: false,
+        quality: 1,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        // Just store the image URI in state - don't save yet
-        // It will be saved when user clicks "Update Changes"
-        const imageUri = result.assets[0].uri;
-        setProfileImage(imageUri);
+        setImageToCrop(result.assets[0].uri);
+        setCropModalVisible(true);
       }
     } catch (error) {
       console.error('❌ Error picking image:', error);
@@ -210,6 +210,7 @@ export default function EditProfileScreen() {
   };
 
   return (
+    <>
     <ScrollView contentContainerStyle={styles.container}>
       {/* Standardized Header */}
       <View style={styles.headerRow}>
@@ -304,6 +305,20 @@ export default function EditProfileScreen() {
         )}
       </TouchableOpacity>
     </ScrollView>
+    <ImageEditor
+      visible={cropModalVisible}
+      imageUri={imageToCrop}
+      onCloseEditor={() => { setCropModalVisible(false); setImageToCrop(null); }}
+      onEditingComplete={(result) => {
+        if (result?.uri) setProfileImage(result.uri);
+        setCropModalVisible(false);
+        setImageToCrop(null);
+      }}
+      mode="crop-only"
+      fixedCropAspectRatio={1}
+      lockAspectRatio={true}
+    />
+    </>
   );
 }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
 } from 'react-native';
 import { Feather, AntDesign } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useDiscountFilter } from '../../context/DiscountFilterContext';
+import { useLocation } from '../../context/LocationContext';
 
 const radiusOptions = ['1 mile', '5 miles', '10 miles', '25 miles'];
 const typeOptions = ['Percentage', 'Buy One Get One', 'Free Item'];
@@ -22,12 +24,47 @@ const availabilityOptions = ['In-Store', 'Online', 'Both'];
 
 export default function FilterScreen() {
   const router = useRouter();
-  const [location, setLocation] = useState('');
-  const [radius, setRadius] = useState('');
-  const [type, setType] = useState('');
-  const [category, setCategory] = useState('');
-  const [availability, setAvailability] = useState('');
+  const { filters, updateFilters, clearFilters, hasActiveFilters } = useDiscountFilter();
+  const { locationAddress, refreshLocation, locationPermission, checkLocationPermission } = useLocation();
+  const [location, setLocation] = useState(filters.location || '');
+  const [radius, setRadius] = useState(filters.radius || '');
+  const [type, setType] = useState(filters.type || '');
+  const [category, setCategory] = useState(filters.category || '');
+  const [availability, setAvailability] = useState(filters.availability || '');
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    setLocation(filters.location || '');
+    setRadius(filters.radius || '');
+    setType(filters.type || '');
+    setCategory(filters.category || '');
+    setAvailability(filters.availability || '');
+  }, [filters.location, filters.radius, filters.type, filters.category, filters.availability]);
+
+  const handleUseCurrentLocation = async () => {
+    if (locationPermission !== 'granted') {
+      checkLocationPermission();
+      return;
+    }
+    await refreshLocation();
+    if (locationAddress?.city && locationAddress?.state) {
+      setLocation(`${locationAddress.city}, ${locationAddress.state}`);
+    }
+  };
+
+  const handleApplyFilters = () => {
+    updateFilters({ location, radius, type, category, availability });
+    router.back();
+  };
+
+  const handleClearFilters = () => {
+    clearFilters();
+    setLocation('');
+    setRadius('');
+    setType('');
+    setCategory('');
+    setAvailability('');
+  };
 
   const renderHorizontalOptions = (options, selected, setSelected) => (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollRow}>
@@ -72,7 +109,9 @@ export default function FilterScreen() {
             onChangeText={setLocation}
             style={styles.input}
           />
-          <Feather name="crosshair" size={20} color="#666" style={styles.icon} />
+          <TouchableOpacity onPress={handleUseCurrentLocation} style={styles.iconTouchable}>
+            <Feather name="crosshair" size={20} color="#DB8633" style={styles.icon} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -132,7 +171,12 @@ export default function FilterScreen() {
         )}
       </View>
 
-      <TouchableOpacity style={styles.button} onPress={() => router.push('/(tabs)/discounts')}>
+      {hasActiveFilters() && (
+        <TouchableOpacity style={styles.clearButton} onPress={handleClearFilters}>
+          <Text style={styles.clearButtonText}>Clear Filters</Text>
+        </TouchableOpacity>
+      )}
+      <TouchableOpacity style={styles.button} onPress={handleApplyFilters}>
         <Text style={styles.buttonText}>Apply Filters</Text>
       </TouchableOpacity>
     </ScrollView>
@@ -184,6 +228,9 @@ const styles = StyleSheet.create({
   },
   icon: {
     marginLeft: 8,
+  },
+  iconTouchable: {
+    padding: 8,
   },
   scrollRow: {
     flexDirection: 'row',
@@ -247,12 +294,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF5EB',
     borderColor: '#D0861F',
   },
+  clearButton: {
+    backgroundColor: 'transparent',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+  },
+  clearButtonText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   button: {
     backgroundColor: '#D0861F',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: 12,
   },
   buttonText: {
     color: '#fff',
