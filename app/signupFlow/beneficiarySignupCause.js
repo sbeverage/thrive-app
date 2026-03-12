@@ -17,7 +17,14 @@ import {
 import { AntDesign, Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import MapView, { Marker, Circle } from 'react-native-maps';
+// Conditional import: react-native-maps crashes on web when imported at load time
+let MapView, Marker, Circle;
+if (Platform.OS !== 'web') {
+  const maps = require('react-native-maps');
+  MapView = maps.default;
+  Marker = maps.Marker;
+  Circle = maps.Circle;
+}
 import { useBeneficiary } from '../context/BeneficiaryContext';
 import { useLocation } from '../context/LocationContext';
 import API from '../lib/api';

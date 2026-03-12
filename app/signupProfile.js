@@ -61,25 +61,28 @@ export default function SignupProfile() {
     setPhoneNumber(formattedNumber);
   };
 
+  // Filter to letters only (plus spaces, hyphens, apostrophes for names like Mary-Jane, O'Brien)
+  const filterAlphabetic = (text) => text.replace(/[^a-zA-Z\s\-']/g, '');
+
   // Capitalize first letter of name (proper capitalization)
   const handleFirstNameChange = (text) => {
-    if (text.length === 0) {
+    const filtered = filterAlphabetic(text);
+    if (filtered.length === 0) {
       setFirstName('');
       return;
     }
-    // Ensure first letter is uppercase, rest lowercase for proper capitalization
-    const capitalized = text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+    const capitalized = filtered.charAt(0).toUpperCase() + filtered.slice(1).toLowerCase();
     setFirstName(capitalized);
   };
 
   // Capitalize first letter of last name (proper capitalization)
   const handleLastNameChange = (text) => {
-    if (text.length === 0) {
+    const filtered = filterAlphabetic(text);
+    if (filtered.length === 0) {
       setLastName('');
       return;
     }
-    // Ensure first letter is uppercase, rest lowercase for proper capitalization
-    const capitalized = text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+    const capitalized = filtered.charAt(0).toUpperCase() + filtered.slice(1).toLowerCase();
     setLastName(capitalized);
   };
 
@@ -97,6 +100,16 @@ export default function SignupProfile() {
     
     if (!phoneNumber.trim()) {
       Alert.alert('Required Field', 'Please enter your phone number.');
+      return;
+    }
+
+    // Validate names contain only letters (no numbers)
+    if (/\d/.test(firstName)) {
+      Alert.alert('Invalid First Name', 'First name should contain only letters.');
+      return;
+    }
+    if (/\d/.test(lastName)) {
+      Alert.alert('Invalid Last Name', 'Last name should contain only letters.');
       return;
     }
     
@@ -225,30 +238,45 @@ export default function SignupProfile() {
       </TouchableOpacity>
       <Text style={styles.optionalText}>Profile photo (optional)</Text>
             <View style={{ width: '100%' }}>
-      <TextInput
-        placeholder="First Name *"
-        value={firstName}
-        onChangeText={handleFirstNameChange}
-        style={[styles.input, !firstName.trim() && styles.inputRequired]}
-        placeholderTextColor="#6d6e72"
-        autoCapitalize="words"
-      />
-      <TextInput
-        placeholder="Last Name *"
-        value={lastName}
-        onChangeText={handleLastNameChange}
-        style={[styles.input, !lastName.trim() && styles.inputRequired]}
-        placeholderTextColor="#6d6e72"
-        autoCapitalize="words"
-      />
-      <TextInput
-        placeholder="Phone Number *"
-        value={phoneNumber}
-        onChangeText={handlePhoneChange}
-        style={[styles.input, !phoneNumber.trim() && styles.inputRequired]}
-        placeholderTextColor="#6d6e72"
-        keyboardType="phone-pad"
-      />
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>
+          First Name <Text style={styles.requiredAsterisk}>*</Text>
+        </Text>
+        <TextInput
+          placeholder="Enter your first name"
+          value={firstName}
+          onChangeText={handleFirstNameChange}
+          style={[styles.input, !firstName.trim() && styles.inputRequired]}
+          placeholderTextColor="#6d6e72"
+          autoCapitalize="words"
+        />
+      </View>
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>
+          Last Name <Text style={styles.requiredAsterisk}>*</Text>
+        </Text>
+        <TextInput
+          placeholder="Enter your last name"
+          value={lastName}
+          onChangeText={handleLastNameChange}
+          style={[styles.input, !lastName.trim() && styles.inputRequired]}
+          placeholderTextColor="#6d6e72"
+          autoCapitalize="words"
+        />
+      </View>
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>
+          Phone Number <Text style={styles.requiredAsterisk}>*</Text>
+        </Text>
+        <TextInput
+          placeholder="(555) 123-4567"
+          value={phoneNumber}
+          onChangeText={handlePhoneChange}
+          style={[styles.input, !phoneNumber.trim() && styles.inputRequired]}
+          placeholderTextColor="#6d6e72"
+          keyboardType="phone-pad"
+        />
+      </View>
             </View>
             <View style={{ width: '100%' }}>
               <TouchableOpacity 
@@ -352,6 +380,20 @@ const styles = StyleSheet.create({
     padding: 2,
     zIndex: 2,
   },
+  inputGroup: {
+    marginBottom: 20,
+    width: '100%',
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#324E58',
+    marginBottom: 8,
+  },
+  requiredAsterisk: {
+    color: '#DC2626',
+    fontWeight: '700',
+  },
   input: {
     height: 48,
     backgroundColor: '#f5f5fa',
@@ -359,7 +401,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e1e1e5',
     paddingHorizontal: 15,
-    marginBottom: 20,
     fontSize: 16,
     color: '#324E58',
   },

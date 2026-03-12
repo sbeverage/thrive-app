@@ -17,8 +17,12 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Video, ResizeMode, Audio } from 'expo-av';
+import { VIDEO_ASSETS } from '../utils/assetConstants';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// 2-3 min donation explainer video (Supabase) - no fallback
+const DONATION_VIDEO_URL = VIDEO_ASSETS.DONATION_EXPLAINER;
 
 export default function ExplainerDonate() {
   const router = useRouter();
@@ -27,13 +31,22 @@ export default function ExplainerDonate() {
   const videoRef = useRef(null);
 
   const handleContinue = () => {
-    if (params?.flow === 'coworking') {
-      router.push({
-        pathname: '/signupFlow/beneficiarySignupCause',
-        params: { flow: 'coworking', sponsorAmount: params?.sponsorAmount || '15' }
-      });
-    } else {
-      router.push('/signupFlow/beneficiarySignupCause');
+    try {
+      if (params?.flow === 'coworking') {
+        router.push({
+          pathname: '/signupFlow/beneficiarySignupCause',
+          params: { flow: 'coworking', sponsorAmount: params?.sponsorAmount || '15' }
+        });
+      } else {
+        router.push('/signupFlow/beneficiarySignupCause');
+      }
+    } catch (error) {
+      console.error('Error navigating to Choose Your Cause:', error);
+      Alert.alert(
+        'Something went wrong',
+        'Unable to open the cause selection. Please try again.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -224,9 +237,7 @@ export default function ExplainerDonate() {
           <Video
             ref={videoRef}
             style={styles.videoPlayer}
-            source={{
-              uri: 'https://thrive-backend-uploads.s3.us-east-1.amazonaws.com/thrive_initiative_broll_athem_video+(1080p).mp4', // Your actual video
-            }}
+            source={{ uri: DONATION_VIDEO_URL }}
             useNativeControls
             resizeMode={ResizeMode.CONTAIN}
             shouldPlay={true}
@@ -234,8 +245,7 @@ export default function ExplainerDonate() {
             isMuted={false}
             volume={1.0}
             onLoad={async () => {
-              // Auto-play when video loads
-              console.log('Video loaded, attempting to play with audio');
+              console.log('Video loaded, attempting to play');
               if (videoRef.current) {
                 try {
                   await videoRef.current.playAsync();
@@ -245,21 +255,11 @@ export default function ExplainerDonate() {
                 }
               }
             }}
-            onPlaybackStatusUpdate={(status) => {
-              if (status.isLoaded) {
-                console.log('Video status:', {
-                  isPlaying: status.isPlaying,
-                  isMuted: status.isMuted,
-                  volume: status.volume,
-                  hasAudio: status.hasAudio
-                });
-              }
-            }}
             onError={(error) => {
               console.log('Video error:', error);
               Alert.alert(
                 'Video Error',
-                'Unable to load the video. Please check your internet connection.',
+                'Unable to load the video. Please check your internet connection and try again.',
                 [{ text: 'OK', onPress: closeVideo }]
               );
             }}

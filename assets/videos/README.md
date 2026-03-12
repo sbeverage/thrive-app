@@ -9,6 +9,7 @@ This directory should contain the following video files for the welcome page cir
 1. **`shop-loop.mp4`** - Shopping/discount discovery video
 2. **`save-loop.mp4`** - Savings/rewards earning video  
 3. **`give-loop.mp4`** - Charitable giving/impact video
+4. **`donation-explainer.mp4`** - 2–3 min explainer for "Watch Video" on the 3rd onboarding screen (donation screen)
 
 ### 📋 Video Specifications
 
@@ -33,6 +34,15 @@ This directory should contain the following video files for the welcome page cir
 - **SAVE**: Piggy bank filling, coins accumulating, savings
 - **GIVE**: Hearts growing, charity logos, community impact
 
+### 📺 Donation Explainer Video (3rd onboarding screen)
+
+- **File**: `donation-explainer.mp4`
+- **Duration**: 2–3 minutes
+- **Format**: MP4 (H.264 recommended for iOS/Android)
+- **Content**: Your Thrive donation impact explainer
+- **Upload**: Place the video file in this directory, then run `npm run upload-assets`
+- **Alternative**: Upload manually via Supabase Dashboard → Storage → app-assets → assets/videos/
+
 ### ⚠️ Note
 
-If videos are missing, the app will automatically fall back to static images.
+If videos are missing, the app will automatically fall back to static images. The donation explainer must be uploaded to Supabase for "Watch Video" to work.
