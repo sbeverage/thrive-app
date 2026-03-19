@@ -1,8 +1,9 @@
-# 🔴 Save Profile 500 Error - Diagnostic & Fix Guide
+a# 🔴 Save Profile 500 Error - Diagnostic & Fix Guide
 
 ## 🚨 Current Error
 
 **Error from Terminal:**
+
 ```
 ERROR  ❌ Backend save failed (500 Server Error):
 ERROR     Error message: Failed to save profile
@@ -10,6 +11,7 @@ ERROR     Response data: {"error": "Failed to save profile"}
 ```
 
 **Request Details:**
+
 - **Endpoint:** `POST /api/auth/save-profile`
 - **Status:** 500 Internal Server Error
 - **Response:** Generic error message (not helpful for debugging)
@@ -21,20 +23,24 @@ ERROR     Response data: {"error": "Failed to save profile"}
 The backend is returning a generic error message, which means the actual error is being caught and hidden. The most common causes are:
 
 ### 1. **Column Name Mismatch** (Most Likely)
+
 - App sends: `firstName`, `lastName` (camelCase)
 - Database expects: `first_name`, `last_name` (snake_case)
 - **Result:** Database error → Generic 500 response
 
 ### 2. **Missing Database Columns**
+
 - Backend tries to update columns that don't exist
 - Common missing columns: `first_name`, `last_name`, `phone`, `profile_image`, `profile_image_url`
 - **Result:** Database error → Generic 500 response
 
 ### 3. **JWT Token Validation Issue**
+
 - Token extraction or validation fails
 - **Result:** Auth error → Generic 500 response
 
 ### 4. **Data Type Mismatch**
+
 - Wrong data type (e.g., sending string to integer column)
 - **Result:** Database error → Generic 500 response
 
@@ -58,6 +64,7 @@ The backend logs will show the **actual error**, not the generic message.
    - Type errors
 
 **What to look for:**
+
 ```
 ❌ column "firstname" does not exist
 ❌ column users.first_name does not exist
@@ -72,16 +79,18 @@ The backend logs will show the **actual error**, not the generic message.
 Check what columns actually exist in your `users` table:
 
 **In Supabase Dashboard:**
+
 1. Go to **Database** → **Tables** → **users**
 2. Check the **Columns** tab
 3. Note the exact column names (snake_case vs camelCase)
 
 **Or run SQL:**
+
 ```sql
 -- Check users table structure
-SELECT 
-  column_name, 
-  data_type, 
+SELECT
+  column_name,
+  data_type,
   is_nullable
 FROM information_schema.columns
 WHERE table_name = 'users'
@@ -89,6 +98,7 @@ ORDER BY column_name;
 ```
 
 **Expected columns for save-profile:**
+
 - `id` (UUID or integer)
 - `first_name` OR `firstName` (check which one exists)
 - `last_name` OR `lastName` (check which one exists)
@@ -103,6 +113,7 @@ ORDER BY column_name;
 ### Step 3: Fix Backend Code
 
 The backend needs to:
+
 1. **Map camelCase to snake_case** (or vice versa)
 2. **Handle missing columns gracefully**
 3. **Return detailed error messages** (for debugging)
@@ -113,39 +124,36 @@ The backend needs to:
 // In your Supabase Edge Function: supabase/functions/api/index.ts
 
 // POST /api/auth/save-profile
-if (method === 'POST' && path === '/api/auth/save-profile') {
+if (method === "POST" && path === "/api/auth/save-profile") {
   try {
     // 1. Verify JWT token
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } }
-      );
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({error: "Unauthorized"}), {
+        status: 401,
+        headers: {"Content-Type": "application/json"},
+      });
     }
 
     const token = authHeader.substring(7);
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
+    const {
+      data: {user},
+      error: authError,
+    } = await supabase.auth.getUser(token);
+
     if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid token' }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({error: "Invalid token"}), {
+        status: 401,
+        headers: {"Content-Type": "application/json"},
+      });
     }
 
     const userId = user.id;
 
     // 2. Parse request body (camelCase from app)
     const body = await req.json();
-    const { 
-      firstName, 
-      lastName, 
-      phone, 
-      email,
-      profileImage,
-      profileImageUrl
-    } = body;
+    const {firstName, lastName, phone, email, profileImage, profileImageUrl} =
+      body;
 
     // 3. Prepare update data (convert to snake_case for database)
     const updateData: any = {
@@ -158,19 +166,20 @@ if (method === 'POST' && path === '/api/auth/save-profile') {
     if (phone !== undefined) updateData.phone = phone;
     if (email !== undefined) updateData.email = email;
     if (profileImage !== undefined) updateData.profile_image = profileImage;
-    if (profileImageUrl !== undefined) updateData.profile_image_url = profileImageUrl;
+    if (profileImageUrl !== undefined)
+      updateData.profile_image_url = profileImageUrl;
 
     // 4. Update user profile in database
-    const { data: profile, error: updateError } = await supabase
-      .from('users')
+    const {data: profile, error: updateError} = await supabase
+      .from("users")
       .update(updateData)
-      .eq('id', userId)
+      .eq("id", userId)
       .select()
       .single();
 
     if (updateError) {
       // Log the ACTUAL error (don't hide it!)
-      console.error('❌ Database update error:', {
+      console.error("❌ Database update error:", {
         message: updateError.message,
         code: updateError.code,
         details: updateError.details,
@@ -179,12 +188,12 @@ if (method === 'POST' && path === '/api/auth/save-profile') {
 
       // Return detailed error for debugging
       return new Response(
-        JSON.stringify({ 
-          error: 'Failed to save profile',
+        JSON.stringify({
+          error: "Failed to save profile",
           details: updateError.message, // Include actual error
-          code: updateError.code
+          code: updateError.code,
         }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
+        {status: 500, headers: {"Content-Type": "application/json"}},
       );
     }
 
@@ -192,37 +201,37 @@ if (method === 'POST' && path === '/api/auth/save-profile') {
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Profile saved successfully',
+        message: "Profile saved successfully",
         profile: {
           firstName: profile.first_name || profile.firstName,
           lastName: profile.last_name || profile.lastName,
           email: profile.email,
           phone: profile.phone,
-        }
+        },
       }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      {status: 200, headers: {"Content-Type": "application/json"}},
     );
-
   } catch (error) {
     // Log unexpected errors
-    console.error('❌ Unexpected error in save-profile:', {
+    console.error("❌ Unexpected error in save-profile:", {
       message: error.message,
       stack: error.stack,
       name: error.name,
     });
 
     return new Response(
-      JSON.stringify({ 
-        error: 'Internal server error',
-        details: error.message // Include actual error for debugging
+      JSON.stringify({
+        error: "Internal server error",
+        details: error.message, // Include actual error for debugging
       }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      {status: 500, headers: {"Content-Type": "application/json"}},
     );
   }
 }
 ```
 
 **Key Changes:**
+
 1. ✅ Map camelCase → snake_case
 2. ✅ Log actual errors (not generic messages)
 3. ✅ Return detailed error messages (for debugging)
@@ -236,7 +245,7 @@ If your database is missing required columns, add them:
 
 ```sql
 -- Add missing columns to users table
-ALTER TABLE users 
+ALTER TABLE users
 ADD COLUMN IF NOT EXISTS first_name VARCHAR(255),
 ADD COLUMN IF NOT EXISTS last_name VARCHAR(255),
 ADD COLUMN IF NOT EXISTS phone VARCHAR(50),
@@ -246,10 +255,11 @@ ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 ```
 
 **Or if your columns use camelCase:**
+
 ```sql
 -- Check what naming convention you're using
-SELECT column_name FROM information_schema.columns 
-WHERE table_name = 'users' 
+SELECT column_name FROM information_schema.columns
+WHERE table_name = 'users'
 AND column_name LIKE '%name%' OR column_name LIKE '%Name%';
 ```
 
@@ -258,6 +268,7 @@ AND column_name LIKE '%name%' OR column_name LIKE '%Name%';
 ### Step 5: Test the Fix
 
 **Test with curl:**
+
 ```bash
 curl -X POST "https://mdqgndyhzlnwojtubouh.supabase.co/functions/v1/api/auth/save-profile" \
   -H "Content-Type: application/json" \
@@ -272,6 +283,7 @@ curl -X POST "https://mdqgndyhzlnwojtubouh.supabase.co/functions/v1/api/auth/sav
 ```
 
 **Expected Success Response:**
+
 ```json
 {
   "success": true,
@@ -286,6 +298,7 @@ curl -X POST "https://mdqgndyhzlnwojtubouh.supabase.co/functions/v1/api/auth/sav
 ```
 
 **If you still get an error, check:**
+
 - The error message should now be **detailed** (not generic)
 - Check Supabase logs for the actual error
 - Verify column names match
@@ -308,15 +321,19 @@ Run through this checklist to identify the issue:
 ## 📋 Common Error Messages & Solutions
 
 ### Error: `column "firstname" does not exist`
+
 **Solution:** Backend needs to map `firstName` → `first_name`
 
 ### Error: `column users.first_name does not exist`
+
 **Solution:** Add the column: `ALTER TABLE users ADD COLUMN first_name VARCHAR(255);`
 
 ### Error: `null value in column "user_id" violates not-null constraint`
+
 **Solution:** Backend isn't extracting user ID correctly from JWT token
 
 ### Error: `invalid input syntax for type integer`
+
 **Solution:** Data type mismatch - check what the database expects vs what you're sending
 
 ---
@@ -350,6 +367,3 @@ With this information, I can provide a more specific fix!
 - But profile data won't sync to backend until this is fixed
 - This is a **backend issue**, not an app issue
 - The backend needs better error logging to help debug
-
-
-

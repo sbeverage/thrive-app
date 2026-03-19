@@ -1,16 +1,30 @@
 /**
  * Social Login Utilities
- * Handles Apple, Google, and Facebook authentication
+ * Uses native SDKs for Apple, Google, and Facebook authentication.
+ * No expo-auth-session (browser popup) - all native OS-level popups.
  */
 
 import * as AppleAuthentication from 'expo-apple-authentication';
-import * as AuthSession from 'expo-auth-session';
-import * as Crypto from 'expo-crypto';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { LoginManager, AccessToken, Profile } from 'react-native-fbsdk-next';
 import { Platform, Alert } from 'react-native';
 
+let googleConfigured = false;
+const ensureGoogleConfigured = () => {
+  if (googleConfigured) return;
+  GoogleSignin.configure({
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '',
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '',
+    offlineAccess: true,
+  });
+  googleConfigured = true;
+  console.log('📱 Google Sign-In configured with webClientId:', process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ? 'SET' : 'EMPTY');
+  console.log('📱 Google Sign-In configured with iosClientId:', process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ? 'SET' : 'EMPTY');
+};
+
 /**
- * Apple Sign In
- * Only works on iOS devices (iOS 13+)
+ * Apple Sign In (iOS only, iOS 13+)
+ * Uses expo-apple-authentication (native SDK)
  */
 export const signInWithApple = async () => {
   if (Platform.OS !== 'ios') {
@@ -19,14 +33,12 @@ export const signInWithApple = async () => {
   }
 
   try {
-    // Check if Apple Authentication is available
     const isAvailable = await AppleAuthentication.isAvailableAsync();
     if (!isAvailable) {
       Alert.alert('Not Available', 'Apple Sign In is not available on this device.');
       return null;
     }
 
-    // Request Apple ID credential
     const credential = await AppleAuthentication.signInAsync({
       requestedScopes: [
         AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
@@ -38,7 +50,6 @@ export const signInWithApple = async () => {
       return null;
     }
 
-    // Return user info
     return {
       provider: 'apple',
       id: credential.user,
@@ -50,7 +61,6 @@ export const signInWithApple = async () => {
     };
   } catch (error) {
     if (error.code === 'ERR_CANCELED') {
-      // User canceled, don't show error
       return null;
     }
     console.error('Apple Sign In error:', error);
@@ -60,140 +70,129 @@ export const signInWithApple = async () => {
 };
 
 /**
- * Google Sign In using OAuth
+ * Google Sign In
+ * Uses @react-native-google-signin/google-signin (native SDK)
  */
 export const signInWithGoogle = async () => {
   try {
-    // Generate a random state for security
-    const state = await Crypto.digestStringAsync(
-      Crypto.CryptoDigestAlgorithm.SHA256,
-      Math.random().toString()
-    );
+    ensureGoogleConfigured();
 
-    // Create OAuth request
-    const request = new AuthSession.AuthRequest({
-      clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '',
-      scopes: ['openid', 'profile', 'email'],
-      responseType: AuthSession.ResponseType.Code,
-      redirectUri: AuthSession.makeRedirectUri({
-        scheme: 'thriveapp',
-        path: 'oauth/google',
-      }),
-      state,
-      usePKCE: true,
-    });
-
-    // Get discovery document
-    const discovery = {
-      authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
-      tokenEndpoint: 'https://oauth2.googleapis.com/token',
-      revocationEndpoint: 'https://oauth2.googleapis.com/revoke',
-    };
-
-    // Start authentication
-    const result = await request.promptAsync(discovery);
-
-    if (result.type === 'success') {
-      // Exchange code for token
-      const tokenResponse = await AuthSession.exchangeCodeAsync(
-        {
-          clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '',
-          code: result.params.code,
-          redirectUri: AuthSession.makeRedirectUri({
-            scheme: 'thriveapp',
-            path: 'oauth/google',
-          }),
-          extraParams: {},
-        },
-        discovery
-      );
-
-      // Get user info from Google
-      const userInfoResponse = await fetch(
-        `https://www.googleapis.com/oauth2/v2/userinfo?access_token=${tokenResponse.accessToken}`
-      );
-      const userInfo = await userInfoResponse.json();
-
-      return {
-        provider: 'google',
-        id: userInfo.id,
-        email: userInfo.email,
-        firstName: userInfo.given_name || null,
-        lastName: userInfo.family_name || null,
-        picture: userInfo.picture || null,
-        accessToken: tokenResponse.accessToken,
-        idToken: tokenResponse.idToken,
-      };
-    } else if (result.type === 'cancel') {
-      return null;
-    } else {
-      throw new Error(result.error?.message || 'Google Sign In failed');
+    if (Platform.OS === 'android') {
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
     }
+
+    const response = await GoogleSignin.signIn();
+    console.log('📱 Google signIn response type:', response.type);
+
+    if (response.type === 'cancelled') {
+      return null;
+    }
+
+    const { data } = response;
+    console.log('📱 Google signIn data:', JSON.stringify(data, null, 2));
+
+    if (!data?.idToken) {
+      console.warn('⚠️ No idToken from Google, using serverAuthCode flow');
+    }
+
+    return {
+      provider: 'google',
+      id: data.user.id,
+      email: data.user.email,
+      firstName: data.user.givenName || null,
+      lastName: data.user.familyName || null,
+      picture: data.user.photo || null,
+      idToken: data.idToken || null,
+      accessToken: data.serverAuthCode || null,
+    };
   } catch (error) {
+    const cancelled =
+      error.code === 'SIGN_IN_CANCELLED' ||
+      error.code === '12501' ||
+      error.code === 'SIGN_IN_REQUIRED';
+
+    if (cancelled) {
+      return null;
+    }
+
     console.error('Google Sign In error:', error);
-    Alert.alert('Error', 'Google Sign In failed. Please try again.');
+    console.error('Google Sign In error code:', error.code);
+    console.error('Google Sign In error message:', error.message);
+    Alert.alert('Error', `Google Sign In failed: ${error.message || 'Please try again.'}`);
     return null;
   }
 };
 
 /**
- * Facebook Sign In using OAuth
+ * Facebook Sign In
+ * Uses react-native-fbsdk-next (native SDK)
  */
 export const signInWithFacebook = async () => {
   try {
-    // Generate a random state for security
-    const state = await Crypto.digestStringAsync(
-      Crypto.CryptoDigestAlgorithm.SHA256,
-      Math.random().toString()
+    LoginManager.logOut();
+
+    const result = await LoginManager.logInWithPermissions(
+      ['public_profile', 'email'],
+      'limited',
     );
 
-    // Create OAuth request
-    const request = new AuthSession.AuthRequest({
-      clientId: process.env.EXPO_PUBLIC_FACEBOOK_APP_ID || '',
-      scopes: ['public_profile', 'email'],
-      responseType: AuthSession.ResponseType.Token,
-      redirectUri: AuthSession.makeRedirectUri({
-        scheme: 'thriveapp',
-        path: 'oauth/facebook',
-      }),
-      state,
-    });
-
-    // Facebook OAuth endpoints
-    const discovery = {
-      authorizationEndpoint: 'https://www.facebook.com/v18.0/dialog/oauth',
-      tokenEndpoint: 'https://graph.facebook.com/v18.0/oauth/access_token',
-    };
-
-    // Start authentication
-    const result = await request.promptAsync(discovery);
-
-    if (result.type === 'success' && result.params.access_token) {
-      // Get user info from Facebook
-      const userInfoResponse = await fetch(
-        `https://graph.facebook.com/v18.0/me?fields=id,name,email,first_name,last_name,picture&access_token=${result.params.access_token}`
-      );
-      const userInfo = await userInfoResponse.json();
-
-      return {
-        provider: 'facebook',
-        id: userInfo.id,
-        email: userInfo.email || null,
-        firstName: userInfo.first_name || null,
-        lastName: userInfo.last_name || null,
-        name: userInfo.name || null,
-        picture: userInfo.picture?.data?.url || null,
-        accessToken: result.params.access_token,
-      };
-    } else if (result.type === 'cancel') {
+    if (result.isCancelled) {
       return null;
-    } else {
-      throw new Error(result.error?.message || 'Facebook Sign In failed');
     }
+
+    const tokenData = await AccessToken.getCurrentAccessToken();
+    if (!tokenData) {
+      throw new Error('No access token received from Facebook');
+    }
+
+    let firstName = null;
+    let lastName = null;
+    let name = null;
+    let picture = null;
+    let email = null;
+
+    try {
+      const currentProfile = await Profile.getCurrentProfile();
+      if (currentProfile) {
+        firstName = currentProfile.firstName || null;
+        lastName = currentProfile.lastName || null;
+        name = currentProfile.name || null;
+        picture = currentProfile.imageURL || null;
+        email = currentProfile.email || null;
+      }
+    } catch (profileError) {
+      console.warn('Could not fetch Facebook profile, continuing with token only:', profileError);
+    }
+
+    if (!email || !firstName) {
+      try {
+        const userInfoResponse = await fetch(
+          `https://graph.facebook.com/v18.0/me?fields=id,name,email,first_name,last_name,picture&access_token=${tokenData.accessToken}`
+        );
+        const userInfo = await userInfoResponse.json();
+        email = email || userInfo.email || null;
+        firstName = firstName || userInfo.first_name || null;
+        lastName = lastName || userInfo.last_name || null;
+        name = name || userInfo.name || null;
+        picture = picture || userInfo.picture?.data?.url || null;
+      } catch (fetchError) {
+        console.warn('Could not fetch Facebook user info via Graph API:', fetchError);
+      }
+    }
+
+    return {
+      provider: 'facebook',
+      id: tokenData.userID,
+      email,
+      firstName,
+      lastName,
+      name,
+      picture,
+      accessToken: tokenData.accessToken,
+    };
   } catch (error) {
     console.error('Facebook Sign In error:', error);
     Alert.alert('Error', 'Facebook Sign In failed. Please try again.');
     return null;
   }
 };
-

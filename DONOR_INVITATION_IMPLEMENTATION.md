@@ -305,7 +305,7 @@ xcrun simctl openurl booted "thriveapp://verify-email?token=test-token-123"
 
 **Android Emulator:**
 ```bash
-adb shell am start -W -a android.intent.action.VIEW -d "thriveapp://verify-email?token=test-token-123" com.anonymous.thrive-app
+adb shell am start -W -a android.intent.action.VIEW -d "thriveapp://verify-email?token=test-token-123" com.thriveinitiative.app
 ```
 
 **Universal Link (requires device):**

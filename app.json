@@ -7,7 +7,7 @@
     "icon": "./assets/images/piggy-with-flowers.png",
     "scheme": "thriveapp",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/piggy-with-flowers.png",
       "resizeMode": "contain",
@@ -15,7 +15,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.thrive-app",
+      "bundleIdentifier": "com.thriveinitiative.app",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "LSApplicationQueriesSchemes": ["whatsapp"],
         "NSLocationWhenInUseUsageDescription": "This app uses location to show nearby discounts and causes on the map.",
@@ -26,6 +27,11 @@
             "CFBundleURLSchemes": [
               "thriveapp"
             ]
+          },
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.1079764121058-6q0ua6k2j17mmf6e38o4b9tc4f1n53rc"
+            ]
           }
         ]
       },
@@ -34,6 +40,7 @@
       ]
     },
     "android": {
+      "googleServicesFile": "./google-services.json",
       "package": "com.thriveinitiative.app",
       "versionCode": 1,
       "adaptiveIcon": {
@@ -99,7 +106,18 @@
         }
       ],
       "expo-web-browser",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "@react-native-google-signin/google-signin",
+      [
+        "react-native-fbsdk-next",
+        {
+          "appID": "1693324062023615",
+          "clientToken": "91df4ea8e91af96eba396afe8cc5f233",
+          "displayName": "Thrive",
+          "scheme": "fb1693324062023615",
+          "iosUserTrackingPermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

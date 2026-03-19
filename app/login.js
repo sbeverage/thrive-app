@@ -90,6 +90,7 @@ export default function LoginScreen() {
   };
 
   const handleSocialLogin = async (socialData) => {
+    console.log("🚀 ~ :93 ~handleSocialLogin ~ socialData>>", socialData)
     if (!socialData) {
       return; // User canceled
     }
@@ -130,6 +131,7 @@ export default function LoginScreen() {
 
   const handleAppleLogin = async () => {
     const result = await signInWithApple();
+    console.log("🚀 ~ :133 ~Apple Login result>>", result)
     if (result) {
       await handleSocialLogin(result);
     }
