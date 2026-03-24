@@ -43,13 +43,19 @@
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>exp+thrive-app</string>
+          <string>fb1693324062023615</string>
         </array>
       </dict>
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>fb1693324062023615</string>
+          <string>com.googleusercontent.apps.1079764121058-0gddc4pdd26bhknv5089id7god1n8s14</string>
+        </array>
+      </dict>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>exp+thrive-app</string>
         </array>
       </dict>
     </array>

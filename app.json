@@ -18,7 +18,13 @@
       "bundleIdentifier": "com.thriveinitiative.app",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "LSApplicationQueriesSchemes": ["whatsapp"],
+        "LSApplicationQueriesSchemes": [
+          "whatsapp",
+          "fbapi",
+          "fb-messenger-api",
+          "fbauth2",
+          "fbshareextension"
+        ],
         "NSLocationWhenInUseUsageDescription": "This app uses location to show nearby discounts and causes on the map.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses location to show nearby discounts and causes on the map.",
         "CFBundleURLTypes": [
@@ -31,6 +37,11 @@
           {
             "CFBundleURLSchemes": [
               "com.googleusercontent.apps.1079764121058-6q0ua6k2j17mmf6e38o4b9tc4f1n53rc"
+            ]
+          },
+          {
+            "CFBundleURLSchemes": [
+              "fb1693324062023615"
             ]
           }
         ]
