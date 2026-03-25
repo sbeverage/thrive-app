@@ -10,6 +10,9 @@ import { LoginManager, AccessToken, Profile } from 'react-native-fbsdk-next';
 import { Platform, Alert } from 'react-native';
 
 let googleConfigured = false;
+let googleSignInInProgress = false;
+let facebookSignInInProgress = false;
+
 const ensureGoogleConfigured = () => {
   if (googleConfigured) return;
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
@@ -79,7 +82,13 @@ export const signInWithApple = async () => {
  * Uses @react-native-google-signin/google-signin (native SDK)
  */
 export const signInWithGoogle = async () => {
+  if (googleSignInInProgress) {
+    console.log('📱 Google Sign-In already in progress, ignoring duplicate request');
+    return null;
+  }
+
   try {
+    googleSignInInProgress = true;
     ensureGoogleConfigured();
 
     if (!process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID && Platform.OS === 'android') {
@@ -92,6 +101,14 @@ export const signInWithGoogle = async () => {
 
     if (Platform.OS === 'android') {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    }
+
+    // Sign out first to ensure we get a fresh token (not a cached/expired one)
+    try {
+      await GoogleSignin.signOut();
+    } catch (signOutError) {
+      // Ignore sign out errors - user might not be signed in
+      console.log('📱 Google signOut (pre-login cleanup):', signOutError.message || 'OK');
     }
 
     const response = await GoogleSignin.signIn();
@@ -153,7 +170,8 @@ export const signInWithGoogle = async () => {
     const cancelled =
       error.code === 'SIGN_IN_CANCELLED' ||
       error.code === '12501' ||
-      error.code === 'SIGN_IN_REQUIRED';
+      error.code === 'SIGN_IN_REQUIRED' ||
+      error.code === 'IN_PROGRESS';
 
     if (cancelled) {
       return null;
@@ -164,6 +182,8 @@ export const signInWithGoogle = async () => {
     console.error('Google Sign In error message:', error.message);
     Alert.alert('Error', `Google Sign In failed: ${error.message || 'Please try again.'}`);
     return null;
+  } finally {
+    googleSignInInProgress = false;
   }
 };
 
@@ -172,7 +192,13 @@ export const signInWithGoogle = async () => {
  * Uses react-native-fbsdk-next (native SDK)
  */
 export const signInWithFacebook = async () => {
+  if (facebookSignInInProgress) {
+    console.log('📱 Facebook Sign-In already in progress, ignoring duplicate request');
+    return null;
+  }
+
   try {
+    facebookSignInInProgress = true;
     LoginManager.logOut();
 
     // 'limited' is iOS-only (Limited Login); Android must use classic permissions
@@ -239,5 +265,7 @@ export const signInWithFacebook = async () => {
     console.error('Facebook Sign In error:', error);
     Alert.alert('Error', 'Facebook Sign In failed. Please try again.');
     return null;
+  } finally {
+    facebookSignInInProgress = false;
   }
 };

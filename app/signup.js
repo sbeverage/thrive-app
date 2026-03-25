@@ -11,7 +11,9 @@ import {
   Dimensions,
   Platform,
   KeyboardAvoidingView,
+  ActivityIndicator,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { AntDesign, Feather } from '@expo/vector-icons'; 
 import API from './lib/api';
@@ -19,6 +21,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocation } from './context/LocationContext';
 import { signInWithApple, signInWithGoogle, signInWithFacebook } from './utils/socialLogin';
 import { useUser } from './context/UserContext';
+import { useBeneficiary } from './context/BeneficiaryContext';
+
+const LAST_LOGIN_KEY = 'lastLoginMethod';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -42,7 +47,8 @@ export default function SignupScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { locationAddress, checkLocationPermission } = useLocation();
-  const { updateUserProfile, syncVerificationFromLogin } = useUser();
+  const { updateUserProfile, syncVerificationFromLogin, loadUserData } = useUser();
+  const { reloadBeneficiary } = useBeneficiary();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -57,11 +63,7 @@ export default function SignupScreen() {
     checkLocationPermission();
   }, []);
 
-  const socialLogins = [
-    { name: 'Facebook', icon: require('../assets/images/Facebook-icon.png'), handler: handleFacebookSignup },
-    { name: 'Google', icon: require('../assets/images/Google-icon.png'), handler: handleGoogleSignup },
-    { name: 'Apple', icon: require('../assets/images/Apple-icon.png'), handler: handleAppleSignup },
-  ];
+
 
   const handleSocialSignup = async (socialData) => {
     if (!socialData) {
@@ -100,6 +102,15 @@ export default function SignupScreen() {
           params: { email: response.user.email || socialData.email },
         });
       } else {
+        // IMPORTANT: Reload full user data from backend to get profile image and all saved data
+        await loadUserData();
+        
+        // Reload beneficiary from storage
+        await reloadBeneficiary();
+
+        // Save last login method
+        AsyncStorage.setItem(LAST_LOGIN_KEY, JSON.stringify({ method: socialData.provider }));
+
         // User already has profile, go to home
         router.replace('/home');
       }
@@ -112,23 +123,35 @@ export default function SignupScreen() {
   };
 
   const handleAppleSignup = async () => {
+    if (isSocialLoading) return;
+    setIsSocialLoading(true);
     const result = await signInWithApple();
     if (result) {
       await handleSocialSignup(result);
+    } else {
+      setIsSocialLoading(false);
     }
   };
 
   const handleGoogleSignup = async () => {
+    if (isSocialLoading) return;
+    setIsSocialLoading(true);
     const result = await signInWithGoogle();
     if (result) {
       await handleSocialSignup(result);
+    } else {
+      setIsSocialLoading(false);
     }
   };
 
   const handleFacebookSignup = async () => {
+    if (isSocialLoading) return;
+    setIsSocialLoading(true);
     const result = await signInWithFacebook();
     if (result) {
       await handleSocialSignup(result);
+    } else {
+      setIsSocialLoading(false);
     }
   };
 
@@ -281,20 +304,43 @@ export default function SignupScreen() {
             </TouchableOpacity>
             <Text style={styles.orText}>Or sign up with</Text>
             <View style={styles.socialIconsContainer}>
-              {socialLogins.map((social, index) => (
+              <TouchableOpacity
+                style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
+                onPress={handleFacebookSignup}
+                disabled={isSocialLoading}
+              >
+                <Image source={require('../assets/images/Facebook-icon.png')} style={styles.socialIcon} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
+                onPress={handleGoogleSignup}
+                disabled={isSocialLoading}
+              >
+                <Image source={require('../assets/images/Google-icon.png')} style={styles.socialIcon} />
+              </TouchableOpacity>
+              {Platform.OS === 'ios' && (
                 <TouchableOpacity
-                  key={index}
                   style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
-                  onPress={social.handler}
+                  onPress={handleAppleSignup}
                   disabled={isSocialLoading}
                 >
-                  <Image source={social.icon} style={styles.socialIcon} />
+                  <Image source={require('../assets/images/Apple-icon.png')} style={styles.socialIcon} />
                 </TouchableOpacity>
-              ))}
+              )}
             </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Loading Overlay for Social Login */}
+      {isSocialLoading && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingCard}>
+            <ActivityIndicator size="large" color="#db8633" />
+            <Text style={styles.loadingText}>Loading...</Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -445,5 +491,29 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     resizeMode: 'contain',
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  loadingCard: {
+    backgroundColor: '#fff',
+    padding: 30,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  loadingText: {
+    marginTop: 15,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#324E58',
   },
 });

@@ -47,20 +47,24 @@ const getApiErrorMessage = (error, fallback) => {
 };
 
 // Request interceptor - Add auth token to requests (except public endpoints)
+// Request interceptor - Add auth token to requests
 api.interceptors.request.use(
   async (config) => {
     try {
-      // Skip token for public endpoints
-      if (isPublicEndpoint(config.url)) {
-        return config;
-      }
-      
+      // Get user auth token if available
       const token = await AsyncStorage.getItem('authToken');
+      
       if (token) {
+        // Use user token for authenticated requests
         config.headers.Authorization = `Bearer ${token}`;
+      } else {
+        // IMPORTANT: Supabase Edge Functions often require an Authorization header even for 
+        // public routes to pass through the gateway (if "Verify JWT" is enabled).
+        // Fallback to ANON_KEY as the bearer token for "public" invocations.
+        config.headers.Authorization = `Bearer ${SUPABASE_ANON_KEY}`;
       }
     } catch (error) {
-      console.error('Error getting auth token:', error);
+      console.error('Error setting auth header:', error);
     }
     return config;
   },
@@ -265,7 +269,13 @@ const API = {
    */
   socialLogin: async (socialData) => {
     try {
-      console.log('🔐 Social login:', { provider: socialData.provider, email: socialData.email });
+      console.log('🔐 Social login:', { 
+        provider: socialData.provider, 
+        email: socialData.email,
+        hasIdToken: !!socialData.idToken,
+        hasAccessToken: !!socialData.accessToken,
+        id: socialData.id 
+      });
       
       // Prepare data for backend
       const loginData = {
@@ -274,12 +284,26 @@ const API = {
         email: socialData.email,
         firstName: socialData.firstName,
         lastName: socialData.lastName,
+        // Signup specific fields (location, referral)
+        ...(socialData.city && { city: socialData.city }),
+        ...(socialData.state && { state: socialData.state }),
+        ...(socialData.zipCode && { zipCode: socialData.zipCode }),
+        ...(socialData.zip_code && { zipCode: socialData.zip_code }),
+        ...(socialData.referralToken && { referralToken: socialData.referralToken }),
+        // Authentication tokens
         ...(socialData.identityToken && { identityToken: socialData.identityToken }), // Apple
         ...(socialData.authorizationCode && { authorizationCode: socialData.authorizationCode }), // Apple
         ...(socialData.accessToken && { accessToken: socialData.accessToken }), // Google/Facebook
         ...(socialData.idToken && { idToken: socialData.idToken }), // Google
         ...(socialData.picture && { picture: socialData.picture }), // Profile picture
       };
+
+      console.log('🚀 Sending social login payload to backend:', {
+        ...loginData,
+        accessToken: loginData.accessToken ? '[REDACTED]' : null,
+        idToken: loginData.idToken ? '[REDACTED]' : null,
+        identityToken: loginData.identityToken ? '[REDACTED]' : null,
+      });
       
       const response = await api.post('/api/auth/social-login', loginData);
       

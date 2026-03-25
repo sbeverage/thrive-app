@@ -12,6 +12,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   Switch,
+  ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
@@ -146,24 +147,36 @@ export default function LoginScreen() {
   };
 
   const handleAppleLogin = async () => {
+    if (isSocialLoading) return;
+    setIsSocialLoading(true);
     const result = await signInWithApple();
     console.log("🚀 ~ :133 ~Apple Login result>>", result)
     if (result) {
       await handleSocialLogin(result);
+    } else {
+      setIsSocialLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
+    if (isSocialLoading) return;
+    setIsSocialLoading(true);
     const result = await signInWithGoogle();
     if (result) {
       await handleSocialLogin(result);
+    } else {
+      setIsSocialLoading(false);
     }
   };
 
   const handleFacebookLogin = async () => {
+    if (isSocialLoading) return;
+    setIsSocialLoading(true);
     const result = await signInWithFacebook();
     if (result) {
       await handleSocialLogin(result);
+    } else {
+      setIsSocialLoading(false);
     }
   };
 
@@ -297,18 +310,20 @@ export default function LoginScreen() {
                   <Text style={styles.previouslyUsedBadgeSmall}>Previously used</Text>
                 )}
               </View>
-              <View style={styles.socialIconWrapper}>
-                <TouchableOpacity
-                  style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
-                  onPress={handleAppleLogin}
-                  disabled={isSocialLoading}
-                >
-                  <Image source={require('../assets/images/Apple-icon.png')} style={styles.socialIcon} />
-                </TouchableOpacity>
-                {lastLogin?.method === 'apple' && (
-                  <Text style={styles.previouslyUsedBadgeSmall}>Previously used</Text>
-                )}
-              </View>
+              {Platform.OS === 'ios' && (
+                <View style={styles.socialIconWrapper}>
+                  <TouchableOpacity
+                    style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
+                    onPress={handleAppleLogin}
+                    disabled={isSocialLoading}
+                  >
+                    <Image source={require('../assets/images/Apple-icon.png')} style={styles.socialIcon} />
+                  </TouchableOpacity>
+                  {lastLogin?.method === 'apple' && (
+                    <Text style={styles.previouslyUsedBadgeSmall}>Previously used</Text>
+                  )}
+                </View>
+              )}
             </View>
 
             {/* Link to Signup */}
@@ -318,6 +333,16 @@ export default function LoginScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Loading Overlay for Social Login */}
+      {isSocialLoading && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingCard}>
+            <ActivityIndicator size="large" color="#db8633" />
+            <Text style={styles.loadingText}>Loading...</Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -543,5 +568,29 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     fontSize: 16,
     fontWeight: '500',
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  loadingCard: {
+    backgroundColor: '#fff',
+    padding: 30,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  loadingText: {
+    marginTop: 15,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#324E58',
   },
 });

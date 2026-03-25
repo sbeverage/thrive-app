@@ -246,7 +246,7 @@ async function jwkToCryptoKey(jwk: any): Promise<CryptoKey> {
     'jwk',
     jwk,
     {
-      name: 'RSASSA-PKCS1-v1_5', // Required for RS256 in Deno/Web Crypto API
+      name: 'RSASSA-PKCS1-v1_5',
       hash: 'SHA-256',
     },
     false,
@@ -293,11 +293,10 @@ async function verifyJWTWithJWKS(
     );
 
     // Validate issuer
-    // Normalize both for comparison (remove https://)
-    const normalizedIss = payload.iss.replace('https://', '').replace(/\/$/, '');
-    const normalizedExpected = expectedIssuer.replace('https://', '').replace(/\/$/, '');
+    const normalizedPayloadIss = payload.iss?.replace('https://', '').replace(/\/$/, '');
+    const normalizedExpectedIss = expectedIssuer?.replace('https://', '').replace(/\/$/, '');
     
-    if (normalizedIss !== normalizedExpected) {
+    if (normalizedPayloadIss !== normalizedExpectedIss) {
       console.error(`Invalid issuer: ${payload.iss}, expected: ${expectedIssuer}`);
       return null;
     }
@@ -419,7 +418,8 @@ async function verifyGoogleToken(idToken: string): Promise<{ sub: string; email?
       Deno.env.get('GOOGLE_WEB_CLIENT_ID'),
       Deno.env.get('GOOGLE_IOS_CLIENT_ID'),
       Deno.env.get('GOOGLE_ANDROID_CLIENT_ID'),
-      Deno.env.get('GOOGLE_CLIENT_ID') // Backward compatibility
+      Deno.env.get('GOOGLE_CLIENT_ID'), // Backward compatibility
+      '1079764121058-0jj3h2rm28c7jsk6e227s0eaasgtp0hb.apps.googleusercontent.com' // Explicitly allow this web/android client ID
     ].filter(Boolean) as string[];
 
     if (validAudiences.length === 0) {
@@ -1915,10 +1915,11 @@ serve(async (req) => {
     // Special handling for delete-account route - always allow (it's public)
     const isDeleteAccountRoute = route === '/delete-account' || pathname.includes('delete-account');
     // Hard allow social login route regardless of prefix normalization
-    const isSocialLoginRoute =
-      route === '/auth/social-login' ||
-      route.endsWith('/auth/social-login') ||
-      pathname.includes('/auth/social-login');
+    // We use a broader check to avoid any path normalization issues or gateway prefixing
+    const isSocialLoginRoute = 
+      pathname.includes('/auth/social-login') || 
+      route.includes('/auth/social-login') ||
+      url.href.includes('/auth/social-login');
     
     if (!isPublicRoute && !isAdminRoute && !isDeleteAccountRoute && !isSocialLoginRoute) {
       // Protected route (non-admin) - require JWT token
