@@ -46,7 +46,6 @@ const getApiErrorMessage = (error, fallback) => {
   return data.message || data.error || data.detail || fallback;
 };
 
-// Request interceptor - Add auth token to requests (except public endpoints)
 // Request interceptor - Add auth token to requests
 api.interceptors.request.use(
   async (config) => {

@@ -622,6 +622,7 @@ export const UserProvider = ({ children }) => {
         'userData',
         'selectedBeneficiary',
         'beneficiaryFavorites',
+        'userTransactions',
       ]);
       
       setUser({
@@ -658,6 +659,7 @@ export const UserProvider = ({ children }) => {
         'userData',
         'selectedBeneficiary',
         'beneficiaryFavorites',
+        'userTransactions',
       ]);
       
       setUser({
