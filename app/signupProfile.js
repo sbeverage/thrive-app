@@ -1,6 +1,6 @@
 // app/signupProfile.js
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,8 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { AntDesign, Feather } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
+import PhoneInput from 'react-native-phone-number-input';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from './context/UserContext';
@@ -44,22 +45,6 @@ export default function SignupProfile() {
 
   // Use static gradient colors for now
   const gradientColors = ["#2C3E50", "#4CA1AF"];
-
-  const handlePhoneChange = (text) => {
-    const cleaned = ('' + text).replace(/\D/g, '');
-    let formattedNumber = cleaned;
-
-    if (cleaned.length >= 1) {
-      formattedNumber = '(' + cleaned.slice(0, 3);
-    }
-    if (cleaned.length >= 4) {
-      formattedNumber += ') ' + cleaned.slice(3, 6);
-    }
-    if (cleaned.length >= 7) {
-      formattedNumber += '-' + cleaned.slice(6, 10);
-    }
-    setPhoneNumber(formattedNumber);
-  };
 
   // Filter to letters only (plus spaces, hyphens, apostrophes for names like Mary-Jane, O'Brien)
   const filterAlphabetic = (text) => text.replace(/[^a-zA-Z\s\-']/g, '');
@@ -113,13 +98,6 @@ export default function SignupProfile() {
       return;
     }
     
-    // Validate phone number format (should have at least 10 digits)
-    const phoneDigits = phoneNumber.replace(/\D/g, '');
-    if (phoneDigits.length < 10) {
-      Alert.alert('Invalid Phone', 'Please enter a valid 10-digit phone number.');
-      return;
-    }
-
     try {
       console.log('💾 Starting profile save process...');
       console.log('📧 Email from params:', email);
@@ -137,7 +115,7 @@ export default function SignupProfile() {
       const profileData = {
         firstName,
         lastName,
-        phone: phoneNumber,
+        phone: formattedNumber || phoneFormatted,
         email: emailToSave, // Use the determined email
       };
       
@@ -268,14 +246,30 @@ export default function SignupProfile() {
         <Text style={styles.inputLabel}>
           Phone Number <Text style={styles.requiredAsterisk}>*</Text>
         </Text>
-        <TextInput
-          placeholder="(555) 123-4567"
-          value={phoneNumber}
-          onChangeText={handlePhoneChange}
-          style={[styles.input, !phoneNumber.trim() && styles.inputRequired]}
-          placeholderTextColor="#6d6e72"
-          keyboardType="phone-pad"
-        />
+        <View
+          style={[
+            styles.phoneFieldWrap,
+            !phoneNational.trim() && styles.inputRequired,
+          ]}
+        >
+          <PhoneInput
+            ref={phoneInputRef}
+            defaultCode="US"
+            layout="first"
+            placeholder="Phone number"
+            onChangeText={setPhoneNational}
+            onChangeFormattedText={setPhoneFormatted}
+            containerStyle={styles.phoneInputContainer}
+            textContainerStyle={styles.phoneTextContainer}
+            textInputStyle={styles.phoneTextInput}
+            codeTextStyle={styles.phoneCodeText}
+            flagButtonStyle={styles.phoneFlagButton}
+            countryPickerButtonStyle={styles.phoneFlagButton}
+            textInputProps={{
+              placeholderTextColor: '#6d6e72',
+            }}
+          />
+        </View>
       </View>
             </View>
             <View style={{ width: '100%' }}>
@@ -407,6 +401,41 @@ const styles = StyleSheet.create({
   inputRequired: {
     borderColor: '#db8633',
     borderWidth: 2,
+  },
+  phoneFieldWrap: {
+    width: '100%',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    backgroundColor: '#f5f5fa',
+    overflow: 'hidden',
+  },
+  phoneInputContainer: {
+    width: '100%',
+    height: 48,
+    backgroundColor: 'transparent',
+  },
+  phoneTextContainer: {
+    backgroundColor: 'transparent',
+    paddingVertical: 0,
+    paddingRight: 12,
+    borderRadius: 0,
+  },
+  phoneTextInput: {
+    fontSize: 16,
+    color: '#324E58',
+    height: 48,
+    paddingVertical: 0,
+  },
+  phoneCodeText: {
+    fontSize: 16,
+    color: '#324E58',
+    fontWeight: '600',
+  },
+  phoneFlagButton: {
+    width: 52,
+    paddingHorizontal: 4,
+    justifyContent: 'center',
   },
   optionalText: {
     color: '#6d6e72',

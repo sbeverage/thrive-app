@@ -19,6 +19,12 @@ import { AntDesign, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 import { useUser } from '../app/context/UserContext';
 import API from '../app/lib/api';
+import {
+  REFERRAL_TIERS,
+  milestonesForDisplay,
+  nextMilestoneFromPaidCount,
+  tiersUnlockedCount,
+} from '../app/constants/referralRewards';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -27,7 +33,6 @@ export default function InviteFriendsModal({ visible, onClose }) {
   const [referralLink, setReferralLink] = useState('');
   const [friendsCount, setFriendsCount] = useState(0);
   const [paidFriendsCount, setPaidFriendsCount] = useState(0);
-  const [totalEarned, setTotalEarned] = useState(0);
   const [apiMilestones, setApiMilestones] = useState([]);
   const [friendsList, setFriendsList] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -58,7 +63,6 @@ export default function InviteFriendsModal({ visible, onClose }) {
       const actualPaidFriendsCount = data?.paidFriendsCount ?? data?.friendsCount ?? 0;
       setPaidFriendsCount(actualPaidFriendsCount);
       setFriendsCount(data?.friendsCount || 0);
-      setTotalEarned(data?.totalEarned || 0);
       setApiMilestones(data?.milestones || []);
       
       // Load friends list
@@ -77,7 +81,6 @@ export default function InviteFriendsModal({ visible, onClose }) {
       setReferralLink(link);
       setPaidFriendsCount(0);
       setFriendsCount(0);
-      setTotalEarned(0);
       setApiMilestones([]);
       setFriendsList([]);
     } finally {
@@ -161,51 +164,17 @@ export default function InviteFriendsModal({ visible, onClose }) {
     }
   };
 
-  // Default milestones (used if API doesn't return milestones)
-  const defaultMilestones = [
-    { 
-      count: 1, 
-      reward: '$5 Credit',
-      description: 'Get $5 credit toward your next donation',
-      cost: '$5 per referral'
-    },
-    { 
-      count: 5, 
-      reward: '$25 Credit + Badge',
-      description: 'Earn $25 credit and unlock the "Community Builder" badge',
-      cost: '$25 one-time'
-    },
-    { 
-      count: 10, 
-      reward: '$50 Credit + VIP Access',
-      description: 'Get $50 credit and early access to new local deals',
-      cost: '$50 one-time'
-    },
-    { 
-      count: 25, 
-      reward: '$100 Credit + Recognition',
-      description: 'Earn $100 credit and featured recognition on our community page',
-      cost: '$100 one-time'
-    },
-  ];
-
-  // Use API milestones if available, otherwise use defaults
-  const milestones = apiMilestones.length > 0 
-    ? apiMilestones.map(m => ({
-        count: m.count,
-        reward: m.reward,
-        description: defaultMilestones.find(d => d.count === m.count)?.description || m.description || '',
-        unlocked: m.unlocked || false,
-        earnedAt: m.earnedAt || null,
-      }))
-    : defaultMilestones.map(m => ({
-        ...m,
-        unlocked: paidFriendsCount >= m.count,
-        earnedAt: null,
-      }));
-
-  const nextMilestone = milestones.find(m => m.count > paidFriendsCount) || milestones[milestones.length - 1];
-  const progress = paidFriendsCount > 0 ? (paidFriendsCount / nextMilestone.count) * 100 : 0;
+  const milestones = milestonesForDisplay(apiMilestones, paidFriendsCount);
+  const nextMilestone = nextMilestoneFromPaidCount(paidFriendsCount, milestones);
+  const unlockedTierCount = tiersUnlockedCount(milestones);
+  const finalTierCount = REFERRAL_TIERS[REFERRAL_TIERS.length - 1].count;
+  const allTiersDone = paidFriendsCount >= finalTierCount;
+  const progress = allTiersDone
+    ? 100
+    : Math.min(
+        100,
+        (paidFriendsCount / Math.max(1, nextMilestone.count)) * 100
+      );
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -220,7 +189,9 @@ export default function InviteFriendsModal({ visible, onClose }) {
                   <AntDesign name="close" size={24} color="#324E58" />
                 </TouchableOpacity>
               </View>
-              <Text style={styles.subtitle}>Invite friends and multiply your impact together!</Text>
+              <Text style={styles.subtitle}>
+                Invite friends to grow the movement—recognition and badges only, so more support reaches the causes you care about.
+              </Text>
             </View>
 
             {/* Stats Card */}
@@ -237,8 +208,10 @@ export default function InviteFriendsModal({ visible, onClose }) {
                 </View>
                 <View style={styles.statsDivider} />
                 <View style={styles.statsContent}>
-                  <Text style={styles.statsNumber}>${totalEarned}</Text>
-                  <Text style={styles.statsLabel}>Credits Earned</Text>
+                  <Text style={styles.statsNumber}>
+                    {unlockedTierCount}/{REFERRAL_TIERS.length}
+                  </Text>
+                  <Text style={styles.statsLabel}>Recognition{'\n'}tiers unlocked</Text>
                 </View>
               </LinearGradient>
             </View>
@@ -246,87 +219,46 @@ export default function InviteFriendsModal({ visible, onClose }) {
             {/* Progress Bar */}
             <View style={styles.progressSection}>
               <View style={styles.progressHeader}>
-                <Text style={styles.progressLabel}>Progress to {nextMilestone.reward}</Text>
+                <Text style={styles.progressLabel} numberOfLines={2}>
+                  {allTiersDone
+                    ? 'Every recognition tier unlocked'
+                    : `Next: ${nextMilestone.reward}`}
+                </Text>
                 <Text style={styles.progressPercent}>{Math.round(progress)}%</Text>
               </View>
               <View style={styles.progressBar}>
                 <View style={[styles.progressFill, { width: `${progress}%` }]} />
               </View>
               <Text style={styles.progressText}>
-                {nextMilestone.count - paidFriendsCount} more {nextMilestone.count - paidFriendsCount === 1 ? 'friend' : 'friends'} {nextMilestone.count - paidFriendsCount === 1 ? 'who joins' : 'who join'} to unlock {nextMilestone.reward}!
+                {allTiersDone
+                  ? 'Thank you—your invites help us keep donations focused on real impact.'
+                  : `${Math.max(0, nextMilestone.count - paidFriendsCount)} more ${nextMilestone.count - paidFriendsCount === 1 ? 'active friend' : 'active friends'} to unlock ${nextMilestone.reward}.`}
               </Text>
             </View>
 
-            {/* Badges Section */}
+            {/* Recognition badges earned */}
             {(() => {
-              // Extract badges from milestones that have "Badge" in reward or description
               const earnedBadges = milestones
-                .filter(m => {
-                  const hasBadge = (m.reward && m.reward.includes('Badge')) || 
-                                  (m.description && m.description.includes('badge'));
-                  const isUnlocked = m.unlocked || paidFriendsCount >= m.count;
-                  return hasBadge && isUnlocked;
-                })
-                .map(m => {
-                  // Extract badge name from description (e.g., 'unlock the "Community Builder" badge')
-                  let badgeName = 'Community Builder'; // Default
-                  if (m.description) {
-                    const badgeMatch = m.description.match(/"([^"]+)" badge/i);
-                    if (badgeMatch) {
-                      badgeName = badgeMatch[1];
-                    } else if (m.description.includes('Community Builder')) {
-                      badgeName = 'Community Builder';
-                    }
-                  }
-                  // Fallback: use milestone count to determine badge
-                  if (badgeName === 'Community Builder' && !m.description?.includes('Community Builder')) {
-                    if (m.count === 5) badgeName = 'Community Builder';
-                    else if (m.count === 10) badgeName = 'VIP Member';
-                    else if (m.count === 25) badgeName = 'Community Champion';
-                  }
-                  return {
-                    name: badgeName,
-                    earnedAt: m.earnedAt,
-                    milestone: m.count,
-                  };
-                });
-              
-              console.log('🔍 Badge Debug Info:');
-              console.log('  - Paid friends count:', paidFriendsCount);
-              console.log('  - Milestones:', milestones.map(m => ({ count: m.count, reward: m.reward, unlocked: m.unlocked, hasBadge: (m.reward && m.reward.includes('Badge')) || (m.description && m.description.includes('badge')) })));
-              console.log('  - Earned badges:', earnedBadges.length, earnedBadges);
-              
-              // For testing: Show badge section even if empty (with message)
-              // Remove this after testing
-              if (earnedBadges.length === 0 && paidFriendsCount < 5) {
-                console.log('⚠️ No badges yet - need 5+ paid friends to unlock Community Builder badge');
-              }
-              
-              // Show grayed out badge if not earned yet (for UI preview)
-              let displayBadges = earnedBadges;
-              if (earnedBadges.length === 0 && paidFriendsCount < 5) {
-                // Show grayed out badge if not earned yet
-                displayBadges = [{
-                  name: 'Community Builder',
-                  earnedAt: null,
-                  milestone: 5,
-                  isTest: true,
-                }];
-              }
-              
-              return displayBadges.length > 0 ? (
+                .filter((m) => m.unlocked)
+                .map((m) => ({
+                  name: m.shortLabel || m.reward.replace(/ Badge$/i, '').trim(),
+                  earnedAt: m.earnedAt,
+                  milestone: m.count,
+                }));
+
+              if (earnedBadges.length === 0) return null;
+
+              return (
                 <View style={styles.badgesSection}>
-                  <Text style={styles.sectionTitle}>Your Badges</Text>
+                  <Text style={styles.sectionTitle}>Your recognition</Text>
                   <View style={styles.badgesContainer}>
-                    {displayBadges.map((badge, index) => (
-                      <View key={index} style={[styles.badgeItem, badge.isTest && !badge.earnedAt && styles.badgeItemTest]}>
+                    {earnedBadges.map((badge, index) => (
+                      <View key={`${badge.milestone}-${index}`} style={styles.badgeItem}>
                         <View style={styles.badgeIcon}>
-                          <AntDesign name="star" size={28} color={badge.isTest && !badge.earnedAt ? "#9CA3AF" : "#DB8633"} />
+                          <AntDesign name="star" size={28} color="#DB8633" />
                         </View>
-                        <Text style={[styles.badgeName, badge.isTest && !badge.earnedAt && styles.badgeNameTest]}>{badge.name}</Text>
-                        {badge.isTest && !badge.earnedAt ? (
-                          <Text style={styles.badgeDate}>Unlock at 5 friends</Text>
-                        ) : badge.earnedAt ? (
+                        <Text style={styles.badgeName}>{badge.name}</Text>
+                        {badge.earnedAt ? (
                           <Text style={styles.badgeDate}>
                             {new Date(badge.earnedAt).toLocaleDateString()}
                           </Text>
@@ -335,14 +267,14 @@ export default function InviteFriendsModal({ visible, onClose }) {
                     ))}
                   </View>
                 </View>
-              ) : null;
+              );
             })()}
 
             {/* Milestones */}
             <View style={styles.milestonesSection}>
-              <Text style={styles.sectionTitle}>Milestones & Rewards</Text>
+              <Text style={styles.sectionTitle}>Milestones & recognition</Text>
               <Text style={styles.milestoneNote}>
-                Rewards are earned when friends join and start making a monthly difference in our community
+                Tiers unlock when invited friends become active donors (first successful donation). No cash back—just badges and spotlight so donations stay with nonprofits.
               </Text>
               <View style={styles.milestonesList}>
                 {milestones.map((milestone, index) => (
@@ -499,23 +431,23 @@ export default function InviteFriendsModal({ visible, onClose }) {
 
             {/* Benefits */}
             <View style={styles.benefitsSection}>
-              <Text style={styles.sectionTitle}>Why Invite Friends?</Text>
+              <Text style={styles.sectionTitle}>Why invite friends?</Text>
               <View style={styles.benefitsList}>
                 <View style={styles.benefitItem}>
-                  <AntDesign name="gift" size={20} color="#DB8633" />
-                  <Text style={styles.benefitText}>Earn rewards for each friend who joins</Text>
-                </View>
-                <View style={styles.benefitItem}>
                   <AntDesign name="heart" size={20} color="#DB8633" />
-                  <Text style={styles.benefitText}>Multiply your impact together</Text>
+                  <Text style={styles.benefitText}>Grow support for the causes you care about</Text>
                 </View>
                 <View style={styles.benefitItem}>
                   <AntDesign name="star" size={20} color="#DB8633" />
-                  <Text style={styles.benefitText}>Unlock exclusive discounts and perks</Text>
+                  <Text style={styles.benefitText}>Earn badges and a chance to be featured on our site</Text>
                 </View>
                 <View style={styles.benefitItem}>
                   <AntDesign name="team" size={20} color="#DB8633" />
-                  <Text style={styles.benefitText}>Build a community of changemakers</Text>
+                  <Text style={styles.benefitText}>Build a community of people who give back locally</Text>
+                </View>
+                <View style={styles.benefitItem}>
+                  <AntDesign name="gift" size={20} color="#DB8633" />
+                  <Text style={styles.benefitText}>No donor cash rewards—more of every dollar supports missions</Text>
                 </View>
               </View>
             </View>

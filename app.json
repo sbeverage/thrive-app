@@ -1,5 +1,6 @@
 {
   "expo": {
+    "owner": "sbeverage",
     "name": "thrive-app",
     "slug": "thrive-app",
     "version": "1.0.0",

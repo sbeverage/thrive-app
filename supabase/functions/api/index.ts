@@ -1329,7 +1329,7 @@ async function sendReferralReminderEmail({
     </div>
     <p>Hi ${name},</p>
     <p>You were referred to ${appName}${referrerText}. You've signed up, but we noticed you haven't completed your first donation yet.</p>
-    <p>Complete your setup to start supporting your chosen cause and earn referral rewards for your friend!</p>
+    <p>Complete your setup to start supporting your chosen cause and unlock recognition for the friend who invited you!</p>
     <p style="text-align: center;">
       <a href="${appBaseUrl}/login" class="button">Complete Your Signup</a>
     </p>
@@ -1843,6 +1843,7 @@ serve(async (req) => {
     const publicRoutes = [
       '/auth/signup',
       '/auth/login',
+      '/auth/check-email', // Pre-signup availability (must be public — same as signup)
       '/auth/social-login', // Social login endpoint (OAuth)
       '/api/auth/social-login', // Safety: allow unstripped route
       '/functions/v1/api/auth/social-login', // Safety: full edge path
@@ -8857,6 +8858,66 @@ async function handleAuthRoute(req: Request, supabase: any, route: string, metho
     );
   }
 
+  const normalizedAuthRoute = route.replace(/\/$/, '');
+
+  // GET /auth/check-email?email= — must match signup rules (invite completion still "available")
+  if (method === 'GET' && normalizedAuthRoute === '/auth/check-email') {
+    try {
+      const urlObj = new URL(req.url);
+      const emailRaw = urlObj.searchParams.get('email');
+      if (!emailRaw || !String(emailRaw).trim()) {
+        return new Response(
+          JSON.stringify({ message: 'Email is required.', available: false }),
+          { headers: { 'Content-Type': 'application/json' }, status: 400 }
+        );
+      }
+      const emailCheck = String(emailRaw).trim();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(emailCheck)) {
+        return new Response(
+          JSON.stringify({ message: 'Invalid email format.', available: false }),
+          { headers: { 'Content-Type': 'application/json' }, status: 400 }
+        );
+      }
+
+      const { data: existingRows, error: existingError } = await supabase
+        .from('users')
+        .select('id, account_status')
+        .eq('email', emailCheck)
+        .limit(1);
+
+      if (existingError) {
+        console.error('❌ check-email query error:', existingError);
+        return new Response(
+          JSON.stringify({ message: 'Server error. Please try again later.' }),
+          { headers: { 'Content-Type': 'application/json' }, status: 500 }
+        );
+      }
+
+      if (!existingRows || existingRows.length === 0) {
+        return new Response(
+          JSON.stringify({ available: true }),
+          { headers: { 'Content-Type': 'application/json' }, status: 200 }
+        );
+      }
+
+      const accountStatus = existingRows[0].account_status;
+      const inviteCompletion =
+        accountStatus === 'pending_verification' || accountStatus === 'email_verified';
+
+      return new Response(
+        JSON.stringify({ available: inviteCompletion }),
+        { headers: { 'Content-Type': 'application/json' }, status: 200 }
+      );
+    } catch (checkEmailErr) {
+      console.error('❌ check-email error:', checkEmailErr);
+      return new Response(
+        JSON.stringify({ message: 'Server error. Please try again later.' }),
+        { headers: { 'Content-Type': 'application/json' }, status: 500 }
+      );
+    }
+  }
+
   // POST /auth/signup
   if (method === 'POST' && route === '/auth/signup') {
     try {
@@ -8866,7 +8927,7 @@ async function handleAuthRoute(req: Request, supabase: any, route: string, metho
       console.log('📝 Signup request body:', JSON.stringify(body, null, 2));
       
       const { 
-        email, 
+        email: emailRaw, 
         password, 
         role,
         firstName, // User's first name
@@ -8898,6 +8959,8 @@ async function handleAuthRoute(req: Request, supabase: any, route: string, metho
         referrerId // direct referrer ID (alternative to token)
       } = body;
 
+      const email = typeof emailRaw === 'string' ? emailRaw.trim() : emailRaw;
+
       // Validate required fields
       if (!email || !password) {
         return new Response(
@@ -8921,14 +8984,26 @@ async function handleAuthRoute(req: Request, supabase: any, route: string, metho
         );
       }
 
-      // Validate password length
-      if (password.length < 6) {
+      // Validate password (match app: min 8, upper + lower case)
+      if (password.length < 8) {
         return new Response(
-          JSON.stringify({ message: 'Password must be at least 6 characters long.' }),
+          JSON.stringify({ message: 'Password must be at least 8 characters long.' }),
           { 
             headers: { 'Content-Type': 'application/json' },
             status: 400 
           }
+        );
+      }
+      if (!/[a-z]/.test(password)) {
+        return new Response(
+          JSON.stringify({ message: 'Password must include at least one lowercase letter.' }),
+          { headers: { 'Content-Type': 'application/json' }, status: 400 }
+        );
+      }
+      if (!/[A-Z]/.test(password)) {
+        return new Response(
+          JSON.stringify({ message: 'Password must include at least one uppercase letter.' }),
+          { headers: { 'Content-Type': 'application/json' }, status: 400 }
         );
       }
 
@@ -9675,10 +9750,12 @@ async function handleAuthRoute(req: Request, supabase: any, route: string, metho
       const { email, password } = body;
 
       // Get user by email
+      const emailTrim = typeof email === 'string' ? email.trim() : '';
+      // Case-insensitive email match (login works regardless of stored casing)
       const { data: users, error: userError } = await supabase
         .from('users')
         .select('*')
-        .eq('email', email)
+        .ilike('email', emailTrim)
         .limit(1);
 
       // If error or no user found
@@ -10491,13 +10568,14 @@ async function handleAuthRoute(req: Request, supabase: any, route: string, metho
     try {
       const body = await req.json();
       const { email } = body;
+      const emailTrim = typeof email === 'string' ? email.trim() : '';
 
-      // Get user by email
+      // Get user by email (case-insensitive)
       const { data: user, error: userError } = await supabase
         .from('users')
         .select('*')
-        .eq('email', email)
-        .single();
+        .ilike('email', emailTrim)
+        .maybeSingle();
 
       // Don't reveal if user exists or not (security best practice)
       if (!userError && user) {
@@ -12825,6 +12903,28 @@ async function handleDiscountRoute(req: Request, supabase: any, route: string, m
 }
 
 // Charities routes handler
+// Canonical referral recognition tiers (non-monetary). Keep aligned with app/constants/referralRewards.js
+const REFERRAL_TIERS = [
+  {
+    count: 1,
+    reward: 'Supporter Badge',
+    description:
+      'Unlock the Supporter badge on your profile when one friend becomes an active donor.',
+  },
+  {
+    count: 3,
+    reward: 'Champion Badge',
+    description:
+      'Earn the Champion badge when three friends are making a difference together.',
+  },
+  {
+    count: 5,
+    reward: 'Website spotlight',
+    description:
+      'Be featured on our website as a top community ambassador.',
+  },
+];
+
 // Referral route handler
 async function handleReferralRoute(req: Request, supabase: any, route: string, method: string) {
   // Get user ID from JWT token
@@ -12902,10 +13002,10 @@ async function handleReferralRoute(req: Request, supabase: any, route: string, m
 
       const totalCount = allReferrals?.length || 0;
 
-      // Get milestones
+      // Get milestone unlock rows (badges / recognition; credits not shown in app)
       const { data: milestones, error: milestonesError } = await supabase
         .from('user_milestones')
-        .select('milestone_type, milestone_count, credit_amount, badge_name, unlocked_at')
+        .select('milestone_type, milestone_count, credit_amount, badge_name, reward_description, unlocked_at')
         .eq('user_id', userId)
         .order('milestone_count', { ascending: true });
 
@@ -12913,40 +13013,42 @@ async function handleReferralRoute(req: Request, supabase: any, route: string, m
         console.error('❌ Error fetching milestones:', milestonesError);
       }
 
-      // Get total credits earned
-      const { data: credits, error: creditsError } = await supabase
-        .from('user_credits')
-        .select('amount')
-        .eq('user_id', userId)
-        .in('status', ['active', 'applied']);
-
-      if (creditsError) {
-        console.error('❌ Error fetching credits:', creditsError);
-      }
-
-      const totalEarned = credits?.reduce((sum, credit) => sum + parseFloat(credit.amount || 0), 0) || 0;
+      const dbByCount = new Map(
+        (milestones || []).map((m: any) => [m.milestone_count, m])
+      );
 
       // Generate referral link
       const appBaseUrl = Deno.env.get('APP_BASE_URL') || 'https://thrive-web-jet.vercel.app';
       const referralLink = `${appBaseUrl}/signup?ref=${userId}`;
 
-      // Format milestones
-      const formattedMilestones = (milestones || []).map((m: any) => ({
-        count: m.milestone_count,
-        unlocked: true,
-        reward: m.badge_name 
-          ? `$${m.credit_amount} Credit + ${m.badge_name.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}`
-          : `$${m.credit_amount} Credit`,
-        earnedAt: m.unlocked_at
-      }));
+      const formattedMilestones = REFERRAL_TIERS.map((tier) => {
+        const row = dbByCount.get(tier.count);
+        const unlocked = paidCount >= tier.count || !!row;
+        const reward =
+          row?.reward_description?.trim() ||
+          (row?.badge_name
+            ? `${tier.reward} (${String(row.badge_name).replace(/_/g, ' ')})`
+            : tier.reward);
+        return {
+          count: tier.count,
+          unlocked,
+          reward,
+          description: tier.description,
+          earnedAt: row?.unlocked_at ?? null,
+        };
+      });
+
+      const tiersUnlocked = formattedMilestones.filter((m) => m.unlocked).length;
 
       return new Response(
         JSON.stringify({
           referralLink,
           friendsCount: totalCount,
           paidFriendsCount: paidCount,
-          totalEarned: totalEarned.toFixed(2),
-          milestones: formattedMilestones
+          totalEarned: '0',
+          tiersUnlocked,
+          tiersTotal: REFERRAL_TIERS.length,
+          milestones: formattedMilestones,
         }),
         { 
           headers: { 'Content-Type': 'application/json' },
@@ -15099,9 +15201,17 @@ async function handleDonationRoute(req: Request, supabase: any, route: string, m
         .limit(12);
 
       const monthlyBreakdown = (transactions || []).map((t: any) => ({
+        created_at: t.created_at,
         month: new Date(t.created_at).toISOString().substring(0, 7),
-        amount: parseFloat(t.amount || 0)
+        amount: parseFloat(t.amount || 0),
+        status: 'completed',
       }));
+
+      const nextPaymentDates = (subscriptions || [])
+        .map((s: any) => s.next_payment_date)
+        .filter(Boolean)
+        .sort();
+      const nextPaymentDate = nextPaymentDates.length > 0 ? nextPaymentDates[0] : null;
 
       return new Response(
         JSON.stringify({
@@ -15110,7 +15220,8 @@ async function handleDonationRoute(req: Request, supabase: any, route: string, m
             total_monthly_amount: totalMonthly,
             active_subscriptions: subscriptions?.length || 0,
             monthly_breakdown: monthlyBreakdown,
-            total_donated: monthlyBreakdown.reduce((sum: number, m: any) => sum + m.amount, 0)
+            total_donated: monthlyBreakdown.reduce((sum: number, m: any) => sum + m.amount, 0),
+            next_payment_date: nextPaymentDate,
           }
         }),
         { 

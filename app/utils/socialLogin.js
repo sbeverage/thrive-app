@@ -12,14 +12,19 @@ import { Platform, Alert } from 'react-native';
 let googleConfigured = false;
 const ensureGoogleConfigured = () => {
   if (googleConfigured) return;
+  const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
+  const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
+  if (!webClientId && Platform.OS === 'android') {
+    console.warn('⚠️ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is not set — Google Sign-In will fail on Android.');
+  }
   GoogleSignin.configure({
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '',
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '',
+    webClientId,
+    iosClientId,
     offlineAccess: true,
   });
   googleConfigured = true;
-  console.log('📱 Google Sign-In configured with webClientId:', process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ? 'SET' : 'EMPTY');
-  console.log('📱 Google Sign-In configured with iosClientId:', process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ? 'SET' : 'EMPTY');
+  console.log('📱 Google Sign-In configured with webClientId:', webClientId ? 'SET' : 'EMPTY');
+  console.log('📱 Google Sign-In configured with iosClientId:', iosClientId ? 'SET' : 'EMPTY');
 };
 
 /**
@@ -77,33 +82,72 @@ export const signInWithGoogle = async () => {
   try {
     ensureGoogleConfigured();
 
+    if (!process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID && Platform.OS === 'android') {
+      Alert.alert(
+        'Google Sign-In not configured',
+        'Add EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID to your .env (Web client ID from Google Cloud Console) and rebuild the app.'
+      );
+      return null;
+    }
+
     if (Platform.OS === 'android') {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
     }
 
     const response = await GoogleSignin.signIn();
-    console.log('📱 Google signIn response type:', response.type);
+    console.log('📱 Google signIn response:', JSON.stringify(response, null, 2));
 
     if (response.type === 'cancelled') {
       return null;
     }
 
-    const { data } = response;
-    console.log('📱 Google signIn data:', JSON.stringify(data, null, 2));
+    let user;
+    let idToken = null;
+    let serverAuthCode = null;
 
-    if (!data?.idToken) {
-      console.warn('⚠️ No idToken from Google, using serverAuthCode flow');
+    if (response.type === 'success' && response.data) {
+      const d = response.data;
+      user = d.user;
+      idToken = d.idToken || null;
+      serverAuthCode = d.serverAuthCode || null;
+    } else if (response.user) {
+      user = response.user;
+      idToken = response.idToken || null;
+    }
+
+    if (!user?.id) {
+      console.error('📱 Google signIn: missing user in response');
+      Alert.alert('Error', 'Could not read Google account. Please try again.');
+      return null;
+    }
+
+    if (!idToken) {
+      try {
+        const tokens = await GoogleSignin.getTokens();
+        idToken = tokens?.idToken || null;
+        console.log('📱 Google getTokens idToken:', idToken ? 'present' : 'missing');
+      } catch (tokErr) {
+        console.warn('⚠️ Google getTokens failed:', tokErr);
+      }
+    }
+
+    if (!idToken) {
+      Alert.alert(
+        'Google Sign-In',
+        'Could not obtain a secure token from Google. Check Web Client ID in .env and rebuild.'
+      );
+      return null;
     }
 
     return {
       provider: 'google',
-      id: data.user.id,
-      email: data.user.email,
-      firstName: data.user.givenName || null,
-      lastName: data.user.familyName || null,
-      picture: data.user.photo || null,
-      idToken: data.idToken || null,
-      accessToken: data.serverAuthCode || null,
+      id: user.id,
+      email: user.email,
+      firstName: user.givenName || null,
+      lastName: user.familyName || null,
+      picture: user.photo || null,
+      idToken,
+      accessToken: serverAuthCode || null,
     };
   } catch (error) {
     const cancelled =
@@ -131,10 +175,11 @@ export const signInWithFacebook = async () => {
   try {
     LoginManager.logOut();
 
-    const result = await LoginManager.logInWithPermissions(
-      ['public_profile', 'email'],
-      'limited',
-    );
+    // 'limited' is iOS-only (Limited Login); Android must use classic permissions
+    const result =
+      Platform.OS === 'ios'
+        ? await LoginManager.logInWithPermissions(['public_profile', 'email'], 'limited')
+        : await LoginManager.logInWithPermissions(['public_profile', 'email']);
 
     if (result.isCancelled) {
       return null;

@@ -16,6 +16,12 @@ import { BACKEND_URL } from '../utils/constants';
 import WalkthroughTutorial from '../../components/WalkthroughTutorial';
 import { useTutorial } from '../../hooks/useTutorial';
 import InviteFriendsModal from '../../components/InviteFriendsModal';
+import {
+  REFERRAL_TIERS,
+  milestonesForDisplay,
+  nextMilestoneFromPaidCount,
+  tiersUnlockedCount,
+} from '../constants/referralRewards';
 
 export default function MainHome() {
   const router = useRouter();
@@ -30,9 +36,11 @@ export default function MainHome() {
   
   // Referral data state
   const [paidFriendsCount, setPaidFriendsCount] = useState(0);
-  const [totalEarned, setTotalEarned] = useState(0);
+  const [referralMilestones, setReferralMilestones] = useState([]);
   const [badges, setBadges] = useState([]);
-  const [nextMilestone, setNextMilestone] = useState({ count: 5, reward: '$25 Credit + Badge' });
+  const [nextMilestone, setNextMilestone] = useState(() =>
+    nextMilestoneFromPaidCount(0, milestonesForDisplay([], 0))
+  );
   
   
   // Load user data when component mounts or when screen is focused
@@ -131,56 +139,28 @@ export default function MainHome() {
   const loadReferralData = async () => {
     try {
       const data = await API.getReferralInfo();
-      
+
       const actualPaidFriendsCount = data?.paidFriendsCount ?? data?.friendsCount ?? 0;
       setPaidFriendsCount(actualPaidFriendsCount);
-      setTotalEarned(data?.totalEarned || 0);
-      
-      // Default milestones
-      const defaultMilestones = [
-        { count: 1, reward: '$5 Credit' },
-        { count: 5, reward: '$25 Credit + Badge', description: 'Earn $25 credit and unlock the "Community Builder" badge' },
-        { count: 10, reward: '$50 Credit + VIP Access' },
-        { count: 25, reward: '$100 Credit + Recognition' },
-      ];
-      
-      const milestones = data?.milestones && data.milestones.length > 0 
-        ? data.milestones 
-        : defaultMilestones;
-      
-      // Find next milestone
-      const next = milestones.find(m => m.count > actualPaidFriendsCount) || milestones[milestones.length - 1];
-      setNextMilestone(next);
-      
-      // Extract badges
+
+      const milestones = milestonesForDisplay(data?.milestones || [], actualPaidFriendsCount);
+      setReferralMilestones(milestones);
+      setNextMilestone(nextMilestoneFromPaidCount(actualPaidFriendsCount, milestones));
+
       const earnedBadges = milestones
-        .filter(m => {
-          const hasBadge = (m.reward && m.reward.includes('Badge')) || 
-                          (m.description && m.description.includes('badge'));
-          const isUnlocked = m.unlocked || actualPaidFriendsCount >= m.count;
-          return hasBadge && isUnlocked;
-        })
-        .map(m => {
-          let badgeName = 'Community Builder';
-          if (m.description) {
-            const badgeMatch = m.description.match(/"([^"]+)" badge/i);
-            if (badgeMatch) {
-              badgeName = badgeMatch[1];
-            }
-          }
-          return {
-            name: badgeName,
-            earnedAt: m.earnedAt,
-            milestone: m.count,
-          };
-        });
-      
+        .filter((m) => m.unlocked)
+        .map((m) => ({
+          name: m.shortLabel || m.reward.replace(/ Badge$/i, '').trim(),
+          earnedAt: m.earnedAt,
+          milestone: m.count,
+        }));
+
       setBadges(earnedBadges);
     } catch (error) {
       console.error('Error loading referral data:', error);
-      // Set defaults if API fails
       setPaidFriendsCount(0);
-      setTotalEarned(0);
+      setReferralMilestones(milestonesForDisplay([], 0));
+      setNextMilestone(nextMilestoneFromPaidCount(0, milestonesForDisplay([], 0)));
       setBadges([]);
     }
   };
@@ -612,7 +592,7 @@ export default function MainHome() {
           {/* Discounts Near You Section */}
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionHeader}>Discounts Near You</Text>
-            <TouchableOpacity onPress={() => router.push('/(tabs)/discounts')}>
+            <TouchableOpacity onPress={() => router.push('/discounts')}>
               <Text style={styles.viewMoreText}>View More</Text>
             </TouchableOpacity>
           </View>
@@ -621,10 +601,7 @@ export default function MainHome() {
               vouchers.map((voucher) => (
                 <View key={voucher.id} style={styles.discountCardWrapper}>
                   <TouchableOpacity 
-                    onPress={() => router.push({
-                      pathname: '/(tabs)/discounts/[id]',
-                      params: { id: voucher.id.toString() }
-                    })}
+                    onPress={() => router.push(`/discounts/${voucher.id}`)}
                     activeOpacity={0.7}
                   >
                     <View style={styles.cardCream}>
@@ -672,7 +649,9 @@ export default function MainHome() {
           <View style={styles.inviteSectionWrapper}>
             <View style={styles.inviteSectionHeader}>
               <Text style={styles.inviteSectionTitle}>Grow Your Impact</Text>
-              <Text style={styles.inviteSectionSubtitle}>Invite friends and earn rewards together</Text>
+              <Text style={styles.inviteSectionSubtitle}>
+                Invite friends—unlock recognition while keeping donations focused on causes.
+              </Text>
             </View>
             
             <View style={styles.inviteCard}>
@@ -683,8 +662,10 @@ export default function MainHome() {
                 </View>
                 <View style={styles.inviteStatDivider} />
                 <View style={styles.inviteStatItem}>
-                  <Text style={styles.inviteStatNumber}>${totalEarned}</Text>
-                  <Text style={styles.inviteStatLabel}>Credits Earned</Text>
+                  <Text style={styles.inviteStatNumber}>
+                    {tiersUnlockedCount(referralMilestones)}/{REFERRAL_TIERS.length}
+                  </Text>
+                  <Text style={styles.inviteStatLabel}>Recognition{'\n'}tiers unlocked</Text>
                 </View>
               </View>
               
@@ -705,11 +686,18 @@ export default function MainHome() {
               
               <View style={styles.inviteProgressContainer}>
                 <Text style={styles.inviteProgressText}>
-                  {nextMilestone.count - paidFriendsCount} more {nextMilestone.count - paidFriendsCount === 1 ? 'friend' : 'friends'} {nextMilestone.count - paidFriendsCount === 1 ? 'who joins' : 'who join'} to unlock {nextMilestone.reward}
+                  {paidFriendsCount >= REFERRAL_TIERS[REFERRAL_TIERS.length - 1].count
+                    ? 'Every recognition tier unlocked—thank you!'
+                    : `${Math.max(0, nextMilestone.count - paidFriendsCount)} more ${nextMilestone.count - paidFriendsCount === 1 ? 'active friend' : 'active friends'} to unlock ${nextMilestone.reward}`}
                 </Text>
                 <View style={styles.inviteProgressBar}>
                   <View style={[styles.inviteProgressFill, { 
-                    width: `${paidFriendsCount > 0 ? Math.min((paidFriendsCount / nextMilestone.count) * 100, 100) : 0}%` 
+                    width: `${(() => {
+                      const maxTier = REFERRAL_TIERS[REFERRAL_TIERS.length - 1].count;
+                      if (paidFriendsCount >= maxTier) return 100;
+                      const denom = Math.max(1, nextMilestone.count);
+                      return Math.min((paidFriendsCount / denom) * 100, 100);
+                    })()}%` 
                   }]} />
                 </View>
               </View>

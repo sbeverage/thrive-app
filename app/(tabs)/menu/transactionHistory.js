@@ -21,6 +21,45 @@ import { useUser } from '../../context/UserContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import API from '../../lib/api';
 
+function toMetadataObject(metadata) {
+  if (metadata == null) return {};
+  if (typeof metadata === 'string') {
+    try {
+      return JSON.parse(metadata);
+    } catch {
+      return {};
+    }
+  }
+  return typeof metadata === 'object' ? metadata : {};
+}
+
+function parseMoneyRaw(val) {
+  if (val == null || val === '') return null;
+  const n = parseFloat(String(val).replace(/[$,]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Amount counted toward “Total Spent” for one list item (discount vs donation). */
+function getTransactionSpentAmount(item) {
+  const isDonation =
+    item.type === 'donation' ||
+    item.type === 'one_time_gift' ||
+    item.isOneTimeGift;
+  if (isDonation) {
+    if (item.amount == null || item.amount === '') return 0;
+    return typeof item.amount === 'string'
+      ? parseFloat(item.amount.replace(/[$,]/g, '')) || 0
+      : parseFloat(item.amount) || 0;
+  }
+  if (typeof item.spentNumeric === 'number' && Number.isFinite(item.spentNumeric)) {
+    return item.spentNumeric;
+  }
+  if (item.spending != null && item.spending !== '') {
+    return parseFloat(String(item.spending).replace(/[$,]/g, '')) || 0;
+  }
+  return 0;
+}
+
 export default function TransactionHistory() {
   const router = useRouter();
   const { user, loadUserData, addSavings } = useUser();
@@ -75,23 +114,40 @@ export default function TransactionHistory() {
         const backendTransactions = response.transactions || [];
         
         // Transform backend transactions to match frontend format
-        const transformedBackend = backendTransactions.map(t => ({
-          id: t.id,
-          type: t.type,
-          brand: t.vendor_name || t.beneficiary_name || 'Unknown',
-          date: new Date(t.created_at).toLocaleDateString('en-US', { 
-            month: 'short', 
-            day: 'numeric', 
-            year: 'numeric' 
-          }),
-          discount: t.description || '',
-          spending: t.spending ? `$${parseFloat(t.spending).toFixed(2)}` : undefined,
-          savings: t.savings ? `$${parseFloat(t.savings).toFixed(2)}` : undefined,
-          amount: t.amount ? `$${parseFloat(t.amount).toFixed(2)}` : undefined,
-          isOneTimeGift: t.type === 'one_time_gift' || t.type === 'donation',
-          beneficiaryName: t.beneficiary_name,
-          logo: t.vendor_logo || require('../../../assets/images/child-cancer.jpg'),
-        }));
+        const transformedBackend = backendTransactions.map((t) => {
+          const meta = toMetadataObject(t.metadata);
+          const isGift = t.type === 'one_time_gift' || t.type === 'donation';
+
+          let spentNum = parseMoneyRaw(t.spending);
+          if (spentNum == null) spentNum = parseMoneyRaw(meta.spending);
+          if (spentNum == null && t.type === 'redemption' && t.amount != null && t.amount !== '') {
+            spentNum = parseMoneyRaw(t.amount);
+          }
+
+          let savingsNum = parseMoneyRaw(t.savings);
+          if (savingsNum == null) savingsNum = parseMoneyRaw(meta.savings);
+
+          const amountNum = parseMoneyRaw(t.amount);
+
+          return {
+            id: t.id,
+            type: t.type,
+            brand: t.vendor_name || t.beneficiary_name || meta.vendor_name || 'Unknown',
+            date: new Date(t.created_at).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            }),
+            discount: t.description || '',
+            spending: spentNum != null ? `$${spentNum.toFixed(2)}` : undefined,
+            savings: savingsNum != null ? `$${savingsNum.toFixed(2)}` : undefined,
+            amount: amountNum != null ? `$${amountNum.toFixed(2)}` : undefined,
+            spentNumeric: isGift ? undefined : spentNum != null ? spentNum : undefined,
+            isOneTimeGift: isGift,
+            beneficiaryName: t.beneficiary_name,
+            logo: t.vendor_logo || require('../../../assets/images/child-cancer.jpg'),
+          };
+        });
 
         // Merge: backend + local-only (saved when Discount Redeemed API failed)
         const localOnly = localTransactions.filter(t => localOnlyIds.has(t.id));
@@ -200,27 +256,10 @@ export default function TransactionHistory() {
 
   // Use real user data for totals
   const totalSavings = user.totalSavings || 0;
-  const totalSpent = transactions.reduce((sum, item) => {
-    // Handle donation transactions (one-time gifts) which use 'amount' instead of 'spending'
-    if (item.type === 'donation' || item.isOneTimeGift) {
-      const amount = item.amount || '0';
-      const numericAmount = typeof amount === 'string' 
-        ? parseFloat(amount.replace('$', '').replace(',', '')) || 0
-        : parseFloat(amount) || 0;
-      return sum + numericAmount;
-    }
-    
-    // Handle regular discount transactions which use 'spending'
-    if (item.spending) {
-      const spending = typeof item.spending === 'string'
-        ? item.spending.replace('$', '').replace(',', '')
-        : String(item.spending);
-      return sum + (parseFloat(spending) || 0);
-    }
-    
-    // Skip transactions without spending or amount
-    return sum;
-  }, 0);
+  const totalSpent = transactions.reduce(
+    (sum, item) => sum + getTransactionSpentAmount(item),
+    0
+  );
 
   const renderItem = ({ item }) => {
     // Check if this is a one-time gift donation
@@ -338,7 +377,10 @@ export default function TransactionHistory() {
         ) : transactions.length > 0 ? (
           <FlatList
             data={transactions}
-            keyExtractor={(item) => item.id || item.id.toString()}
+            keyExtractor={(item, index) => {
+              const id = item.id != null && item.id !== '' ? String(item.id) : null;
+              return id ? `tx-${id}-${index}` : `tx-local-${index}`;
+            }}
             renderItem={renderItem}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.listContainer}

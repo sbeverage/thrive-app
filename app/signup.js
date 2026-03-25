@@ -22,6 +22,22 @@ import { useUser } from './context/UserContext';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
+const PASSWORD_MIN_LENGTH = 8;
+
+/** Returns null if valid, or an error message string */
+const getPasswordValidationError = (pwd) => {
+  if (!pwd || pwd.length < PASSWORD_MIN_LENGTH) {
+    return `Password must be at least ${PASSWORD_MIN_LENGTH} characters long.`;
+  }
+  if (!/[a-z]/.test(pwd)) {
+    return 'Password must include at least one lowercase letter.';
+  }
+  if (!/[A-Z]/.test(pwd)) {
+    return 'Password must include at least one uppercase letter.';
+  }
+  return null;
+};
+
 export default function SignupScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -31,6 +47,7 @@ export default function SignupScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSocialLoading, setIsSocialLoading] = useState(false);
+  const [isSigningUp, setIsSigningUp] = useState(false);
   
   // Capture referral token from URL params (?ref=USER_ID)
   const referralToken = params.ref || null;
@@ -116,32 +133,43 @@ export default function SignupScreen() {
   };
 
   const handleSignup = async () => {
-    if (!email || !password) {
+    if (isSigningUp) return;
+
+    const emailTrim = email.trim();
+    if (!emailTrim || !password) {
       Alert.alert('Missing Fields', 'Please fill out all fields.');
       return;
     }
 
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters.');
+    const passwordError = getPasswordValidationError(password);
+    if (passwordError) {
+      Alert.alert('Password requirements', passwordError);
       return;
     }
 
     try {
-      // Check if email is already registered (when backend supports /api/auth/check-email)
+      setIsSigningUp(true);
+
+      // Check if email is already registered (backend GET /api/auth/check-email)
       try {
-        await API.checkEmailAvailable(email.trim());
+        await API.checkEmailAvailable(emailTrim);
       } catch (checkError) {
         if (checkError.message?.includes('already registered')) {
           Alert.alert('Email Already Used', checkError.message);
           return;
         }
+        Alert.alert(
+          'Cannot continue',
+          checkError.message || 'We could not verify this email. Please try again.'
+        );
+        return;
       }
 
       console.log('🚀 Starting signup process...');
       
       // Prepare signup data with location and referral token if available
       const signupData = {
-        email,
+        email: emailTrim,
         password,
         ...(locationAddress?.city && { city: locationAddress.city }),
         ...(locationAddress?.state && { state: locationAddress.state }),
@@ -157,7 +185,7 @@ export default function SignupScreen() {
       console.log('📧 Email from API response:', response?.user?.email || response?.email);
       
       // Use email from API response if available, otherwise use the one from form
-      const userEmail = response?.user?.email || response?.email || email;
+      const userEmail = response?.user?.email || response?.email || emailTrim;
       console.log('📧 Final email to use:', userEmail);
       
       // Navigate to profile setup (points will be reset to 0 in signupProfile)
@@ -219,6 +247,8 @@ export default function SignupScreen() {
                 secureTextEntry={!showPassword}
                 style={styles.passwordInput}
                 placeholderTextColor="#6d6e72"
+                autoCapitalize="none"
+                autoCorrect={false}
               />
               <TouchableOpacity
                 style={styles.eyeButton}
@@ -237,8 +267,17 @@ export default function SignupScreen() {
                 )}
               </TouchableOpacity>
             </View>
-            <TouchableOpacity style={styles.signupButton} onPress={handleSignup}>
-              <Text style={styles.signupButtonText}>Create Account</Text>
+            <Text style={styles.passwordHint}>
+              Use at least {PASSWORD_MIN_LENGTH} characters with uppercase and lowercase letters.
+            </Text>
+            <TouchableOpacity
+              style={[styles.signupButton, isSigningUp && styles.signupButtonDisabled]}
+              onPress={handleSignup}
+              disabled={isSigningUp}
+            >
+              <Text style={styles.signupButtonText}>
+                {isSigningUp ? 'Please wait…' : 'Create Account'}
+              </Text>
             </TouchableOpacity>
             <Text style={styles.orText}>Or sign up with</Text>
             <View style={styles.socialIconsContainer}>
@@ -339,8 +378,19 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e1e1e5',
-    marginBottom: 20,
+    marginBottom: 8,
     height: 48,
+  },
+  passwordHint: {
+    alignSelf: 'flex-start',
+    width: '100%',
+    fontSize: 12,
+    color: '#6d6e72',
+    marginBottom: 16,
+    lineHeight: 18,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+    }),
   },
   passwordInput: {
     flex: 1,
@@ -365,6 +415,9 @@ const styles = StyleSheet.create({
   signupButtonText: {
     color: '#fff',
     fontSize: 16,
+  },
+  signupButtonDisabled: {
+    opacity: 0.7,
   },
   orText: {
     color: '#6d6e72',

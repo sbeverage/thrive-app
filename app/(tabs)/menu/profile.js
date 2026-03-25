@@ -1,15 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Alert, ScrollView, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUser } from '../../context/UserContext';
 import API from '../../lib/api';
+import { milestonesForDisplay } from '../../constants/referralRewards';
 
 export default function UserProfile() {
   const router = useRouter();
-  const { user, loadUserData } = useUser();
+  const { user, loadUserData, logout } = useUser();
   const [badges, setBadges] = useState([]);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   
   // Format phone number for display: (XXX) XXX-XXXX
   const formatPhoneNumber = (phone) => {
@@ -25,89 +28,75 @@ export default function UserProfile() {
   };
   
   // Load user data when screen is focused
-  useFocusEffect(
-    useCallback(() => {
-      loadUserData();
-    }, [])
-  );
-
-  useEffect(() => {
-    loadBadges();
-  }, []);
-
-  const loadBadges = async () => {
+  const loadBadges = useCallback(async () => {
     try {
       const data = await API.getReferralInfo();
-      console.log('Referral data:', data);
-      
-      // Default milestones for fallback
-      const defaultMilestones = [
-        { count: 5, reward: '$25 Credit + Badge', description: 'Earn $25 credit and unlock the "Community Builder" badge' }
-      ];
-      
-      // Use API milestones if available, otherwise use defaults
-      const milestones = data?.milestones && data.milestones.length > 0 
-        ? data.milestones 
-        : defaultMilestones;
-      
-      // Get paid friends count from API or use 0
-      const paidFriendsCount = data?.paidFriendsCount || 0;
-      
-      // Extract badges from milestones that have "Badge" in reward or description
+      const paidFriendsCount = data?.paidFriendsCount ?? 0;
+      const milestones = milestonesForDisplay(data?.milestones || [], paidFriendsCount);
       const earnedBadges = milestones
-        .filter(m => {
-          const hasBadge = (m.reward && m.reward.includes('Badge')) || 
-                          (m.description && m.description.includes('badge'));
-          const isUnlocked = m.unlocked || paidFriendsCount >= m.count;
-          return hasBadge && isUnlocked;
-        })
-        .map(m => {
-          // Extract badge name from description (e.g., 'unlock the "Community Builder" badge')
-          let badgeName = 'Community Builder'; // Default
-          if (m.description) {
-            const badgeMatch = m.description.match(/"([^"]+)" badge/i);
-            if (badgeMatch) {
-              badgeName = badgeMatch[1];
-            } else if (m.description.includes('Community Builder')) {
-              badgeName = 'Community Builder';
-            }
-          }
-          // Fallback: use milestone count to determine badge
-          if (badgeName === 'Community Builder' && !m.description?.includes('Community Builder')) {
-            if (m.count === 5) badgeName = 'Community Builder';
-            else if (m.count === 10) badgeName = 'VIP Member';
-            else if (m.count === 25) badgeName = 'Community Champion';
-          }
-          return {
-            name: badgeName,
-            earnedAt: m.earnedAt,
-            milestone: m.count,
-          };
-        });
-      
-      console.log('🔍 Profile Badge Debug Info:');
-      console.log('  - Paid friends count:', paidFriendsCount);
-      console.log('  - Milestones:', milestones.map(m => ({ count: m.count, reward: m.reward, unlocked: m.unlocked, hasBadge: (m.reward && m.reward.includes('Badge')) || (m.description && m.description.includes('badge')) })));
-      console.log('  - Earned badges:', earnedBadges.length, earnedBadges);
-      
-      if (earnedBadges.length === 0 && paidFriendsCount < 5) {
-        console.log('⚠️ No badges yet - need 5+ paid friends to unlock Community Builder badge');
-      }
-      
+        .filter((m) => m.unlocked)
+        .map((m) => ({
+          name: m.shortLabel || m.reward.replace(/ Badge$/i, '').trim(),
+          earnedAt: m.earnedAt,
+          milestone: m.count,
+        }));
       setBadges(earnedBadges);
     } catch (error) {
       console.error('Error loading badges:', error);
       setBadges([]);
     }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadUserData();
+      loadBadges();
+    }, [loadBadges])
+  );
+
+  const performDeleteAccount = async () => {
+    const email = (user?.email || '').trim();
+    if (!email) {
+      Alert.alert('Cannot delete account', 'No email is associated with this session. Please log in again.');
+      return;
+    }
+    setIsDeletingAccount(true);
+    try {
+      await API.deleteUser(email);
+      await AsyncStorage.removeItem('userTransactions');
+      await logout();
+      router.replace('/');
+    } catch (error) {
+      console.error('Delete account failed:', error);
+      Alert.alert(
+        'Delete failed',
+        error?.message || 'We could not delete your account. Please try again or contact support.'
+      );
+    } finally {
+      setIsDeletingAccount(false);
+    }
   };
 
   const handleDelete = () => {
     Alert.alert(
-      'Are you sure?',
-      'This action will permanently delete your profile. Are you sure you want to continue?',
+      'Delete account?',
+      'This permanently removes your Thrive account and associated data. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Yes, Delete', style: 'destructive', onPress: () => console.log('User deleted') },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Are you absolutely sure?',
+              'Your account will be deleted from our servers.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Yes, delete my account', style: 'destructive', onPress: performDeleteAccount },
+              ]
+            );
+          },
+        },
       ]
     );
   };
@@ -217,12 +206,22 @@ export default function UserProfile() {
       </View>
 
       <View style={styles.dangerSection}>
-        <TouchableOpacity style={styles.dangerItem} onPress={handleDelete}>
+        <TouchableOpacity
+          style={styles.dangerItem}
+          onPress={handleDelete}
+          disabled={isDeletingAccount}
+        >
           <View style={styles.actionLeft}>
-            <AntDesign name="delete" size={20} color="#EF4444" />
-            <Text style={styles.dangerText}>Delete Account</Text>
+            {isDeletingAccount ? (
+              <ActivityIndicator size="small" color="#EF4444" style={{ marginRight: 4 }} />
+            ) : (
+              <AntDesign name="delete" size={20} color="#EF4444" />
+            )}
+            <Text style={styles.dangerText}>
+              {isDeletingAccount ? 'Deleting…' : 'Delete Account'}
+            </Text>
           </View>
-          <AntDesign name="right" size={16} color="#ccc" />
+          {!isDeletingAccount && <AntDesign name="right" size={16} color="#ccc" />}
         </TouchableOpacity>
       </View>
     </ScrollView>

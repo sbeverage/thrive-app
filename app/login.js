@@ -11,11 +11,13 @@ import {
   Dimensions,
   Platform,
   KeyboardAvoidingView,
+  Switch,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 
 const LAST_LOGIN_KEY = 'lastLoginMethod';
+const REMEMBER_ME_KEY = 'loginRememberMe';
 import { AntDesign, Feather } from '@expo/vector-icons';
 import API from './lib/api';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -34,6 +36,13 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSocialLoading, setIsSocialLoading] = useState(false);
   const [lastLogin, setLastLogin] = useState(null);
+  const [rememberMe, setRememberMe] = useState(true);
+
+  useEffect(() => {
+    AsyncStorage.getItem(REMEMBER_ME_KEY).then((v) => {
+      if (v === 'false') setRememberMe(false);
+    });
+  }, []);
 
   useEffect(() => {
     AsyncStorage.getItem(LAST_LOGIN_KEY).then((raw) => {
@@ -56,18 +65,20 @@ export default function LoginScreen() {
   };
 
   const handleLogin = async () => {
-    if (!email || !password) {
+    const emailTrim = email.trim();
+    if (!emailTrim || !password) {
       Alert.alert('Missing Info', 'Please enter both email and password.');
       return;
     }
 
     try {
       console.log('🔐 Starting login process...');
-      const response = await API.login({ email, password });
+      await AsyncStorage.setItem(REMEMBER_ME_KEY, rememberMe ? 'true' : 'false');
+      const response = await API.login({ email: emailTrim, password });
       console.log('✅ Login successful:', response);
       
       // Update user email in context (preserves existing data)
-      updateUserProfile({ email });
+      updateUserProfile({ email: emailTrim });
       
       // Sync verification status from login response
       await syncVerificationFromLogin(response);
@@ -78,7 +89,12 @@ export default function LoginScreen() {
       // Reload beneficiary from storage
       await reloadBeneficiary();
 
-      saveLastLogin('email', email);
+      if (rememberMe) {
+        saveLastLogin('email', emailTrim);
+      } else {
+        await AsyncStorage.removeItem(LAST_LOGIN_KEY);
+        setLastLogin(null);
+      }
       
       // Navigate to home on successful login
       router.replace('/home');
@@ -180,40 +196,66 @@ export default function LoginScreen() {
             <Text style={styles.welcomeMessage}>Welcome Back! 🎉</Text>
           </View>
           <View style={styles.infoCard}>
-            <View style={styles.labelRow}>
-              <Text style={[styles.label, styles.labelRowLabel]}>Email Address</Text>
-              {lastLogin?.method === 'email' && (
-                <Text style={styles.previouslyUsedBadge}>Previously used</Text>
-              )}
-            </View>
-            <TextInput
-              placeholder="Enter your email"
-              style={styles.input}
-              placeholderTextColor="#6d6e72"
-              autoCapitalize="none"
-              value={email}
-              onChangeText={setEmail}
-            />
-            <Text style={styles.label}>Password</Text>
-            <View style={styles.passwordContainer}>
+            <View style={styles.fieldGroup}>
+              <View style={styles.labelRow}>
+                <Text style={styles.fieldLabel} accessibilityRole="text">
+                  Email Address <Text style={styles.requiredMark}>*</Text>
+                </Text>
+                {lastLogin?.method === 'email' && (
+                  <Text style={styles.previouslyUsedBadge}>Previously used</Text>
+                )}
+              </View>
               <TextInput
-                placeholder="Enter your password"
-                style={styles.passwordInput}
+                placeholder="Enter your email"
+                style={styles.input}
                 placeholderTextColor="#6d6e72"
-                secureTextEntry={!showPassword}
-                value={password}
-                onChangeText={setPassword}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoCorrect={false}
+                value={email}
+                onChangeText={setEmail}
+                accessibilityLabel="Email address"
               />
-              <TouchableOpacity
-                style={styles.eyeButton}
-                onPress={() => setShowPassword(!showPassword)}
-              >
-                <Feather 
-                  name={showPassword ? "eye" : "eye-off"} 
-                  size={20} 
-                  color="#6d6e72" 
+            </View>
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel} accessibilityRole="text">
+                Password <Text style={styles.requiredMark}>*</Text>
+              </Text>
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  placeholder="Enter your password"
+                  style={styles.passwordInput}
+                  placeholderTextColor="#6d6e72"
+                  secureTextEntry={!showPassword}
+                  value={password}
+                  onChangeText={setPassword}
+                  accessibilityLabel="Password"
                 />
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.eyeButton}
+                  onPress={() => setShowPassword(!showPassword)}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  <Feather 
+                    name={showPassword ? "eye" : "eye-off"} 
+                    size={20} 
+                    color="#6d6e72" 
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.rememberRow}>
+              <Text style={styles.rememberLabel}>Remember me</Text>
+              <Switch
+                value={rememberMe}
+                onValueChange={setRememberMe}
+                trackColor={{ false: '#d1d5db', true: 'rgba(219, 134, 51, 0.45)' }}
+                thumbColor={rememberMe ? '#DB8633' : '#f4f4f5'}
+                ios_backgroundColor="#d1d5db"
+                accessibilityLabel="Remember me on this device"
+              />
             </View>
             
             {/* Forgot Password Link */}
@@ -339,6 +381,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 2,
   },
+  fieldGroup: {
+    width: '100%',
+    marginBottom: 16,
+  },
   labelRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -346,15 +392,35 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 8,
   },
-  labelRowLabel: {
-    marginBottom: 0,
+  fieldLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1e293b',
+    alignSelf: 'flex-start',
+    ...Platform.select({
+      android: { includeFontPadding: false },
+    }),
   },
-  label: {
-    fontSize: 14,
+  requiredMark: {
+    color: '#DC2626',
+    fontWeight: '700',
+  },
+  rememberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 16,
+    paddingVertical: 4,
+  },
+  rememberLabel: {
+    fontSize: 15,
     fontWeight: '600',
     color: '#324E58',
-    marginBottom: 8,
-    alignSelf: 'flex-start',
+    flex: 1,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+    }),
   },
   previouslyUsedBadge: {
     fontSize: 11,
@@ -386,9 +452,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     width: '100%',
     paddingHorizontal: 15,
-    marginBottom: 20,
     borderWidth: 1,
     borderColor: '#e1e1e5',
+    fontSize: 16,
+    color: '#324E58',
   },
   passwordContainer: {
     flexDirection: 'row',
@@ -397,7 +464,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e1e1e5',
-    marginBottom: 20,
     height: 48,
   },
   passwordInput: {

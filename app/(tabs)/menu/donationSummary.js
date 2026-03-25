@@ -16,6 +16,49 @@ import { useUser } from '../../context/UserContext';
 import { useBeneficiary } from '../../context/BeneficiaryContext';
 import API from '../../lib/api';
 
+function formatDonationBreakdownDate(donation) {
+  if (donation.created_at) {
+    const d = new Date(donation.created_at);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    }
+  }
+  if (donation.date) {
+    const d = new Date(donation.date);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    }
+  }
+  const m = donation.month;
+  if (m && /^\d{4}-\d{2}$/.test(String(m))) {
+    const [y, mo] = String(m).split('-').map(Number);
+    const d = new Date(y, mo - 1, 1);
+    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  }
+  if (m) return String(m);
+  return '—';
+}
+
+function formatNextPaymentLabel(isoDate) {
+  if (!isoDate) return null;
+  const s = String(isoDate);
+  const d = s.includes('T') ? new Date(s) : new Date(`${s}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 export default function DonationSummary() {
   const router = useRouter();
   const { user, loadUserData } = useUser();
@@ -81,6 +124,7 @@ export default function DonationSummary() {
   const totalDonated = donationSummary?.total_donated || 0;
   const monthlyBreakdown = donationSummary?.monthly_breakdown || [];
   const hasCompletedDonations = totalDonated > 0 || monthlyBreakdown.length > 0;
+  const nextPaymentLabel = formatNextPaymentLabel(donationSummary?.next_payment_date);
 
   return (
     <View style={styles.container} key={refreshTrigger}>
@@ -158,9 +202,12 @@ export default function DonationSummary() {
             </View>
           ) : hasCompletedDonations && monthlyBreakdown.length > 0 ? (
             monthlyBreakdown.map((donation, index) => (
-              <View key={index} style={styles.donationRow}>
+              <View
+                key={donation.created_at ? `${donation.created_at}-${index}` : `row-${index}`}
+                style={styles.donationRow}
+              >
                 <View style={styles.donationInfo}>
-                  <Text style={styles.donationMonth}>{donation.month || donation.date}</Text>
+                  <Text style={styles.donationMonth}>{formatDonationBreakdownDate(donation)}</Text>
                   <Text style={styles.donationCharity}>{donation.charity_name || donation.beneficiary_name || currentCharity}</Text>
                 </View>
                 <View style={styles.donationRight}>
@@ -200,7 +247,10 @@ export default function DonationSummary() {
             {!hasCompletedDonations && (
               <View style={styles.taxRow}>
                 <Text style={styles.taxLabel}>Next Donation</Text>
-                <Text style={styles.taxValue}>${parseFloat(monthlyDonationAmount || 0).toFixed(2)} (This Month)</Text>
+                <Text style={styles.taxValue}>
+                  ${parseFloat(monthlyDonationAmount || 0).toFixed(2)}
+                  {nextPaymentLabel ? ` (due ${nextPaymentLabel})` : ''}
+                </Text>
               </View>
             )}
           </View>

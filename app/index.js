@@ -106,7 +106,7 @@ export default function Index() {
         style={styles.headerLogo}
         resizeMode="contain"
       />
-      <Text style={styles.nonprofitText}>501 c3 nonprofit organization</Text>
+      <Text style={styles.nonprofitText}>501 (c)(3) non profit organization</Text>
 
       <FlatList
         ref={flatListRef}

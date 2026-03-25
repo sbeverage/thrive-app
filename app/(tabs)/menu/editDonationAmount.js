@@ -81,8 +81,12 @@ export default function EditDonationAmount() {
 
   const handleSave = async () => {
     const amount = parseFloat(newAmount);
-    if (isNaN(amount) || amount < 15) {
-      Alert.alert('Invalid Amount', 'Please enter a valid amount of $15 or more.');
+    if (isNaN(amount)) {
+      Alert.alert('Invalid Amount', 'Please enter a valid number.');
+      return;
+    }
+    if (amount < 15) {
+      Alert.alert('Minimum Amount', 'Please enter the minimum amount: $15 or more per month.');
       return;
     }
 

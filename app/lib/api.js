@@ -38,6 +38,14 @@ const isPublicEndpoint = (url) => {
   return PUBLIC_ENDPOINTS.some(endpoint => url.includes(endpoint));
 };
 
+/** Normalize API error body (Supabase Edge returns message, error, or string body) */
+const getApiErrorMessage = (error, fallback) => {
+  const data = error.response?.data;
+  if (data == null) return error.message || fallback;
+  if (typeof data === 'string') return data || fallback;
+  return data.message || data.error || data.detail || fallback;
+};
+
 // Request interceptor - Add auth token to requests (except public endpoints)
 api.interceptors.request.use(
   async (config) => {
@@ -190,9 +198,12 @@ const API = {
     } catch (error) {
       console.error('Signup failed:', error);
       const data = error.response?.data || {};
-      const msg = data.message || data.error || data.msg || '';
-      const isDuplicateEmail = error.response?.status === 409 ||
-        /already|exists|registered|in use|taken/i.test(msg);
+      const msg = String(data.message || data.error || data.msg || '');
+      const isDuplicateEmail =
+        error.response?.status === 409 ||
+        /already registered|already in use|email already in use|duplicate key|unique constraint/i.test(
+          msg
+        );
       if (isDuplicateEmail) {
         throw new Error('This email is already registered. Please log in or use a different email.');
       }
@@ -214,10 +225,15 @@ const API = {
       return response.data;
     } catch (error) {
       if (error.message?.includes('already registered')) throw error;
-      if (error.response?.status === 409 || error.response?.data?.available === false) {
+      const status = error.response?.status;
+      if (status === 409 || error.response?.data?.available === false) {
         throw new Error('This email is already registered. Please log in or use a different email.');
       }
-      if (error.response?.status === 404) return { available: true };
+      if (status === 400) {
+        const m = error.response?.data?.message || 'Invalid email.';
+        throw new Error(m);
+      }
+      if (status === 404) return { available: true };
       throw error;
     }
   },
@@ -227,8 +243,10 @@ const API = {
    */
   login: async (credentials) => {
     try {
-      console.log('🔐 Logging in user:', { email: credentials.email });
-      const response = await api.post('/api/auth/login', credentials);
+      const email = typeof credentials.email === 'string' ? credentials.email.trim() : credentials.email;
+      const password = credentials.password;
+      console.log('🔐 Logging in user:', { email });
+      const response = await api.post('/api/auth/login', { email, password });
       
       // Store auth token
       if (response.data.token) {
@@ -238,7 +256,7 @@ const API = {
       return response.data;
     } catch (error) {
       console.error('Login failed:', error);
-      throw new Error(error.response?.data?.message || 'Login failed. Please check your credentials.');
+      throw new Error(getApiErrorMessage(error, 'Login failed. Please check your credentials.'));
     }
   },
 
@@ -273,7 +291,7 @@ const API = {
       return response.data;
     } catch (error) {
       console.error('Social login failed:', error);
-      throw new Error(error.response?.data?.message || 'Social login failed. Please try again.');
+      throw new Error(getApiErrorMessage(error, 'Social login failed. Please try again.'));
     }
   },
 
@@ -314,11 +332,12 @@ const API = {
    */
   forgotPassword: async (email) => {
     try {
-      const response = await api.post('/api/auth/forgot-password', { email });
+      const trimmed = typeof email === 'string' ? email.trim() : email;
+      const response = await api.post('/api/auth/forgot-password', { email: trimmed });
       return response.data;
     } catch (error) {
       console.error('Forgot password failed:', error);
-      throw new Error(error.response?.data?.message || 'Failed to send reset email.');
+      throw new Error(getApiErrorMessage(error, 'Failed to send reset email.'));
     }
   },
 
@@ -389,7 +408,7 @@ const API = {
 
   /**
    * Get user's referral information
-   * Returns: { referralLink, friendsCount, paidFriendsCount, totalEarned, milestones: [{ count, reward, unlocked, earnedAt }] }
+   * Returns: { referralLink, friendsCount, paidFriendsCount, totalEarned, tiersUnlocked?, tiersTotal?, milestones: [{ count, reward, description, unlocked, earnedAt }] }
    */
   getReferralInfo: async () => {
     try {

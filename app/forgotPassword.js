@@ -8,27 +8,33 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import API from './lib/api'; // ✅ corrected
+import API from './lib/api';
 
 export default function ForgotPassword() {
   const router = useRouter();
   const [email, setEmail] = useState('');
 
   const handleSendLink = async () => {
-    if (!email.trim()) {
+    const trimmed = email.trim();
+    if (!trimmed) {
       Alert.alert('Missing Email', 'Please enter your email address.');
       return;
     }
 
     try {
-      await API.post('/auth/forgot-password', { email });
-      Alert.alert('✅ Reset Link Sent!', 'Check your email for password reset instructions.');
-      router.back();
+      const result = await API.forgotPassword(trimmed);
+      Alert.alert(
+        'Check your email',
+        result?.message || 'If an account exists for this address, we sent password reset instructions.',
+        [{ text: 'OK', onPress: () => router.back() }]
+      );
     } catch (error) {
-      Alert.alert('Error', 'Failed to send reset link. Please try again.');
-      console.error('❌ Error sending reset link:', error.response?.data || error.message);
+      const msg = error?.message || 'Failed to send reset link. Please try again.';
+      Alert.alert('Error', msg);
+      console.error('❌ Error sending reset link:', error);
     }
   };
 
@@ -44,11 +50,12 @@ export default function ForgotPassword() {
       <Image source={require('../assets/images/bolt-piggy.png')} style={styles.logo} />
 
       <Text style={styles.tagline}>
-        Enter your email we'll <Text style={styles.highlight}>send you a reset link</Text>
+        Enter your email and we{"'"}ll <Text style={styles.highlight}>send you a reset link</Text>
       </Text>
 
+      <Text style={styles.label}>Email Address</Text>
       <TextInput
-        placeholder="Email Address"
+        placeholder="Enter your email"
         style={styles.input}
         placeholderTextColor="#6d6e72"
         value={email}
@@ -95,12 +102,23 @@ const styles = StyleSheet.create({
     color: '#324E58',
     textAlign: 'center',
     paddingHorizontal: 20,
-    marginBottom: 60,
+    marginBottom: 32,
     lineHeight: 28,
   },
   highlight: {
     color: '#DB8633',
     fontWeight: 'bold',
+  },
+  label: {
+    alignSelf: 'flex-start',
+    width: '100%',
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1e293b',
+    marginBottom: 8,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+    }),
   },
   input: {
     height: 48,
@@ -112,6 +130,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e1e1e5',
     color: '#324E58',
+    fontSize: 16,
   },
   sendButton: {
     backgroundColor: '#db8633',
