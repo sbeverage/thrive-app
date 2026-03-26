@@ -2131,11 +2131,11 @@ serve(async (req) => {
 
 // Admin route handler
 async function handleAdminRoute(req: Request, supabase: any, route: string, method: string) {
-  // Check admin secret
-  const adminSecret = req.headers.get('x-admin-secret');
-  const expectedSecret = Deno.env.get('ADMIN_SECRET_KEY');
-  
-  if (!adminSecret || adminSecret !== expectedSecret) {
+  // Check admin secret (trim: dashboard / env imports often add trailing newline)
+  const adminSecret = (req.headers.get('x-admin-secret') ?? '').trim();
+  const expectedSecret = (Deno.env.get('ADMIN_SECRET_KEY') ?? '').trim();
+
+  if (!adminSecret || !expectedSecret || adminSecret !== expectedSecret) {
     return new Response(
       JSON.stringify({ error: 'Unauthorized admin access' }),
       { 
