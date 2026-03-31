@@ -10908,25 +10908,43 @@ async function handleAuthRoute(
         Number(user.sponsor_amount || 0) > 0 ||
         user.external_billed === true;
       const needsOnboarding = !(hasBeneficiaryPreference || hasRecurringSetup);
-      
+
       // Detailed logging for debugging
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log('📋 [EMAIL-LOGIN] Final decision data:');
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log('🆔 [EMAIL-LOGIN] User ID:', user.id);
-      console.log('📧 [EMAIL-LOGIN] Email:', user.email);
-      console.log('👤 [EMAIL-LOGIN] First Name:', user.first_name);
-      console.log('👤 [EMAIL-LOGIN] Last Name:', user.last_name);
-      console.log('📋 [EMAIL-LOGIN] user.preferences:', JSON.stringify(user.preferences));
-      console.log('📋 [EMAIL-LOGIN] preferredCharity:', user.preferences?.preferredCharity);
-      console.log('📋 [EMAIL-LOGIN] beneficiary:', user.preferences?.beneficiary);
-      console.log('💳 [EMAIL-LOGIN] total_monthly_donation:', user.total_monthly_donation);
-      console.log('💳 [EMAIL-LOGIN] sponsor_amount:', user.sponsor_amount);
-      console.log('💳 [EMAIL-LOGIN] external_billed:', user.external_billed);
-      console.log('📋 [EMAIL-LOGIN] needsOnboarding:', needsOnboarding);
-      console.log('✅ [EMAIL-LOGIN] isVerified:', user.is_verified);
-      console.log('═══════════════════════════════════════════════════════════');
-      
+      console.log(
+        "═══════════════════════════════════════════════════════════",
+      );
+      console.log("📋 [EMAIL-LOGIN] Final decision data:");
+      console.log(
+        "═══════════════════════════════════════════════════════════",
+      );
+      console.log("🆔 [EMAIL-LOGIN] User ID:", user.id);
+      console.log("📧 [EMAIL-LOGIN] Email:", user.email);
+      console.log("👤 [EMAIL-LOGIN] First Name:", user.first_name);
+      console.log("👤 [EMAIL-LOGIN] Last Name:", user.last_name);
+      console.log(
+        "📋 [EMAIL-LOGIN] user.preferences:",
+        JSON.stringify(user.preferences),
+      );
+      console.log(
+        "📋 [EMAIL-LOGIN] preferredCharity:",
+        user.preferences?.preferredCharity,
+      );
+      console.log(
+        "📋 [EMAIL-LOGIN] beneficiary:",
+        user.preferences?.beneficiary,
+      );
+      console.log(
+        "💳 [EMAIL-LOGIN] total_monthly_donation:",
+        user.total_monthly_donation,
+      );
+      console.log("💳 [EMAIL-LOGIN] sponsor_amount:", user.sponsor_amount);
+      console.log("💳 [EMAIL-LOGIN] external_billed:", user.external_billed);
+      console.log("📋 [EMAIL-LOGIN] needsOnboarding:", needsOnboarding);
+      console.log("✅ [EMAIL-LOGIN] isVerified:", user.is_verified);
+      console.log(
+        "═══════════════════════════════════════════════════════════",
+      );
+
       // Return user data (excluding sensitive fields)
       const userData = {
         id: user.id,
@@ -13097,7 +13115,10 @@ async function handleAuthRoute(
       // If called from the login screen, reject unknown users instead of creating them
       if (!user && loginOnly) {
         return new Response(
-          JSON.stringify({message: "No account found for this social login. Please sign up first."}),
+          JSON.stringify({
+            message:
+              "No account found for this social login. Please sign up first.",
+          }),
           {
             headers: {"Content-Type": "application/json"},
             status: 404,
@@ -13225,28 +13246,49 @@ async function handleAuthRoute(
         Number(user.sponsor_amount || 0) > 0 ||
         user.external_billed === true;
       const needsOnboarding = !(hasBeneficiaryPreference || hasRecurringSetup);
-      
+
       // Detailed logging for debugging
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log('📋 [SOCIAL-LOGIN] Final decision data:');
-      console.log('═══════════════════════════════════════════════════════════');
-      console.log('🆔 [SOCIAL-LOGIN] User ID:', user.id);
-      console.log('📧 [SOCIAL-LOGIN] Email:', user.email);
-      console.log('👤 [SOCIAL-LOGIN] First Name:', user.first_name);
-      console.log('👤 [SOCIAL-LOGIN] Last Name:', user.last_name);
-      console.log('📞 [SOCIAL-LOGIN] Phone:', user.phone);
-      console.log('🆕 [SOCIAL-LOGIN] isNewUser:', isNewUser);
-      console.log('👤 [SOCIAL-LOGIN] needsProfileSetup:', !user.first_name || !user.last_name);
-      console.log('📋 [SOCIAL-LOGIN] user.preferences:', JSON.stringify(user.preferences));
-      console.log('📋 [SOCIAL-LOGIN] preferredCharity:', user.preferences?.preferredCharity);
-      console.log('📋 [SOCIAL-LOGIN] beneficiary:', user.preferences?.beneficiary);
-      console.log('💳 [SOCIAL-LOGIN] total_monthly_donation:', user.total_monthly_donation);
-      console.log('💳 [SOCIAL-LOGIN] sponsor_amount:', user.sponsor_amount);
-      console.log('💳 [SOCIAL-LOGIN] external_billed:', user.external_billed);
-      console.log('📋 [SOCIAL-LOGIN] needsOnboarding:', needsOnboarding);
-      console.log('✅ [SOCIAL-LOGIN] isVerified:', user.is_verified);
-      console.log('═══════════════════════════════════════════════════════════');
-      
+      console.log(
+        "═══════════════════════════════════════════════════════════",
+      );
+      console.log("📋 [SOCIAL-LOGIN] Final decision data:");
+      console.log(
+        "═══════════════════════════════════════════════════════════",
+      );
+      console.log("🆔 [SOCIAL-LOGIN] User ID:", user.id);
+      console.log("📧 [SOCIAL-LOGIN] Email:", user.email);
+      console.log("👤 [SOCIAL-LOGIN] First Name:", user.first_name);
+      console.log("👤 [SOCIAL-LOGIN] Last Name:", user.last_name);
+      console.log("📞 [SOCIAL-LOGIN] Phone:", user.phone);
+      console.log("🆕 [SOCIAL-LOGIN] isNewUser:", isNewUser);
+      console.log(
+        "👤 [SOCIAL-LOGIN] needsProfileSetup:",
+        !user.first_name || !user.last_name,
+      );
+      console.log(
+        "📋 [SOCIAL-LOGIN] user.preferences:",
+        JSON.stringify(user.preferences),
+      );
+      console.log(
+        "📋 [SOCIAL-LOGIN] preferredCharity:",
+        user.preferences?.preferredCharity,
+      );
+      console.log(
+        "📋 [SOCIAL-LOGIN] beneficiary:",
+        user.preferences?.beneficiary,
+      );
+      console.log(
+        "💳 [SOCIAL-LOGIN] total_monthly_donation:",
+        user.total_monthly_donation,
+      );
+      console.log("💳 [SOCIAL-LOGIN] sponsor_amount:", user.sponsor_amount);
+      console.log("💳 [SOCIAL-LOGIN] external_billed:", user.external_billed);
+      console.log("📋 [SOCIAL-LOGIN] needsOnboarding:", needsOnboarding);
+      console.log("✅ [SOCIAL-LOGIN] isVerified:", user.is_verified);
+      console.log(
+        "═══════════════════════════════════════════════════════════",
+      );
+
       // Return response
       return new Response(
         JSON.stringify({
@@ -13258,8 +13300,7 @@ async function handleAuthRoute(
             email: user.email,
             firstName: user.first_name,
             lastName: user.last_name,
-            needsProfileSetup:
-              !user.first_name || !user.last_name,
+            needsProfileSetup: !user.first_name || !user.last_name,
             needsOnboarding: needsOnboarding,
             isVerified: user.is_verified,
           },

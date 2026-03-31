@@ -4,9 +4,11 @@
   },
   "build": {
     "development": {
+      "node": "22.14.0",
       "developmentClient": true,
       "distribution": "internal",
       "env": {
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kcWduZHloemxud29qdHVib3VoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE5NjE3MTksImV4cCI6MjA3NzUzNzcxOX0.EtIyUJ3kFILYV6bAIETAk6RE-ra7sEDd14bDG7PDVfg",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "1079764121058-0jj3h2rm28c7jsk6e227s0eaasgtp0hb.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "1079764121058-6q0ua6k2j17mmf6e38o4b9tc4f1n53rc.apps.googleusercontent.com",
         "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51I1hawHeCafBpXfQZYUqZqKNh2pIiQ975wm9xUMvAdCnYhlmS8Glm9sDCyRZjzzJ6lazR4JChRu4rhJ4ZeOpnW3b00kbYiafyl"
@@ -19,8 +21,10 @@
       }
     },
     "preview": {
+      "node": "22.14.0",
       "distribution": "internal",
       "env": {
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kcWduZHloemxud29qdHVib3VoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE5NjE3MTksImV4cCI6MjA3NzUzNzcxOX0.EtIyUJ3kFILYV6bAIETAk6RE-ra7sEDd14bDG7PDVfg",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "1079764121058-0jj3h2rm28c7jsk6e227s0eaasgtp0hb.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "1079764121058-6q0ua6k2j17mmf6e38o4b9tc4f1n53rc.apps.googleusercontent.com",
         "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51I1hawHeCafBpXfQZYUqZqKNh2pIiQ975wm9xUMvAdCnYhlmS8Glm9sDCyRZjzzJ6lazR4JChRu4rhJ4ZeOpnW3b00kbYiafyl"
@@ -33,7 +37,9 @@
       }
     },
     "production": {
+      "node": "22.14.0",
       "env": {
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kcWduZHloemxud29qdHVib3VoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE5NjE3MTksImV4cCI6MjA3NzUzNzcxOX0.EtIyUJ3kFILYV6bAIETAk6RE-ra7sEDd14bDG7PDVfg",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "1079764121058-0jj3h2rm28c7jsk6e227s0eaasgtp0hb.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "1079764121058-6q0ua6k2j17mmf6e38o4b9tc4f1n53rc.apps.googleusercontent.com",
         "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51I1hawHeCafBpXfQZYUqZqKNh2pIiQ975wm9xUMvAdCnYhlmS8Glm9sDCyRZjzzJ6lazR4JChRu4rhJ4ZeOpnW3b00kbYiafyl"
