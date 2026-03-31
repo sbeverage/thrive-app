@@ -11,7 +11,6 @@ export default function MonthlyImpactCard({
   extraDonationAmount = 0,
 }) {
   // Debug the values received by the card
-  console.log('📊 MonthlyImpactCard received:', { monthlyDonation, monthlySavings, nextDonationDate });
   
   // Calculate next billing date (1 month from now)
   const getNextBillingDate = () => {

@@ -295,6 +295,7 @@ const API = {
         ...(socialData.accessToken && { accessToken: socialData.accessToken }), // Google/Facebook
         ...(socialData.idToken && { idToken: socialData.idToken }), // Google
         ...(socialData.picture && { picture: socialData.picture }), // Profile picture
+        ...(socialData.loginOnly && { loginOnly: true }), // Login-only mode: reject if user doesn't exist
       };
 
       console.log('🚀 Sending social login payload to backend:', {

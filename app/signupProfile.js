@@ -38,19 +38,23 @@ export default function SignupProfile() {
   const [profileImage, setProfileImage] = useState(null);
   const phoneInputRef = useRef(null);
 
+  // Guard: if user is already logged in with a completed profile, redirect to home
+  useEffect(() => {
+    if (user?.isLoggedIn && user?.firstName && user?.lastName) {
+      console.log('👤 [PROFILE_FLOW] User profile already complete, redirecting to home');
+      router.replace('/home');
+    }
+  }, [user?.isLoggedIn, user?.firstName, user?.lastName]);
+
   // Log email extraction for debugging
   useEffect(() => {
-    console.log('📧 SignupProfile - Email from params:', email);
-    console.log('📧 SignupProfile - All params:', params);
-    console.log('📧 SignupProfile - User email:', user?.email);
-    
-    // Initialize fields from user context if available (e.g. from social login)
+    // Pre-fill form fields from user context if available (e.g. from social login)
     if (user) {
       if (user.firstName && !firstName) setFirstName(user.firstName);
       if (user.lastName && !lastName) setLastName(user.lastName);
       if (user.profileImage && !profileImage) setProfileImage(user.profileImage);
     }
-  }, [email, params, user]);
+  }, [user?.firstName, user?.lastName, user?.profileImage]);
 
   // Use static gradient colors for now
   const gradientColors = ["#2C3E50", "#4CA1AF"];

@@ -208,9 +208,9 @@ export default function ExplainerDonate() {
 
       {/* Sticky Button at Bottom */}
       <View style={styles.stickyButtonContainer}>
-        <View style={styles.buttonIndicator}>
+        {/* <View style={styles.buttonIndicator}>
           <Text style={styles.buttonIndicatorText}>Next Step</Text>
-        </View>
+        </View> */}
         <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
           <Text style={styles.continueButtonText}>Choose Your Cause →</Text>
         </TouchableOpacity>

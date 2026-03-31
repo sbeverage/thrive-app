@@ -19,7 +19,7 @@ import { AntDesign, Feather } from '@expo/vector-icons';
 import API from './lib/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocation } from './context/LocationContext';
-import { signInWithApple, signInWithGoogle, signInWithFacebook } from './utils/socialLogin';
+import { signInWithApple, signInWithGoogle } from './utils/socialLogin';
 import { useUser } from './context/UserContext';
 import { useBeneficiary } from './context/BeneficiaryContext';
 
@@ -72,7 +72,6 @@ export default function SignupScreen() {
 
     try {
       setIsSocialLoading(true);
-      console.log('🚀 Starting social signup:', socialData.provider);
 
       // Prepare signup data with location and referral token if available
       const signupData = {
@@ -85,38 +84,59 @@ export default function SignupScreen() {
 
       // Call social login API (handles both signup and login)
       const response = await API.socialLogin(signupData);
-      console.log('✅ Social signup successful:', response);
+
+      // --- EXISTING ACCOUNT CHECK ---
+      // If the backend found an existing account (isNewUser = false on the signup screen),
+      // surface a clear message and offer to navigate to login instead.
+      if (!response.isNewUser) {
+        Alert.alert(
+          'Account Already Exists',
+          'This account is already registered. Would you like to log in instead?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Go to Login',
+              onPress: () => router.replace('/login'),
+            },
+          ]
+        );
+        return;
+      }
 
       // Update user context with all available info from social login
+      // isVerified must be set here so verifyEmail.js auto-redirects correctly for social users
       if (response.user) {
-        updateUserProfile({ 
+        updateUserProfile({
           email: response.user.email || socialData.email,
           firstName: response.user.firstName || socialData.firstName,
           lastName: response.user.lastName || socialData.lastName,
           profileImage: response.user.profileImage || socialData.picture,
+          isVerified: response.user.isVerified ?? false,
         });
       }
 
-      // Sync verification status
-      await syncVerificationFromLogin(response);
-
-      // Check if user needs to complete profile
+      // Check if user needs to complete profile first
       if (response.user?.needsProfileSetup) {
         router.push({
           pathname: '/signupProfile',
           params: { email: response.user.email || socialData.email },
         });
-      } else {
-        // IMPORTANT: Reload full user data from backend to get profile image and all saved data
+      } else if (response.isNewUser || response.user?.needsOnboarding) {
+        // New user or user who hasn't completed onboarding - send to onboarding flow
         await loadUserData();
-        
-        // Reload beneficiary from storage
-        await reloadBeneficiary();
-
-        // Save last login method
+        const savedBeneficiary = await reloadBeneficiary();
+        const hasLocalBeneficiary = Boolean(savedBeneficiary?.id || savedBeneficiary?.name);
         AsyncStorage.setItem(LAST_LOGIN_KEY, JSON.stringify({ method: socialData.provider }));
-
-        // User already has profile, go to home
+        if (response.isNewUser || (response.user?.needsOnboarding && !hasLocalBeneficiary)) {
+          router.replace('/signupFlow/explainerDonate');
+        } else {
+          router.replace('/home');
+        }
+      } else {
+        // Existing user with completed onboarding - go to home
+        await loadUserData();
+        await reloadBeneficiary();
+        AsyncStorage.setItem(LAST_LOGIN_KEY, JSON.stringify({ method: socialData.provider }));
         router.replace('/home');
       }
     } catch (error) {
@@ -149,17 +169,6 @@ export default function SignupScreen() {
     }
   };
 
-  const handleFacebookSignup = async () => {
-    if (isSocialLoading) return;
-    setIsSocialLoading(true);
-    const result = await signInWithFacebook();
-    if (result) {
-      await handleSocialSignup(result);
-    } else {
-      setIsSocialLoading(false);
-    }
-  };
-
   const handleSignup = async () => {
     if (isSigningUp) return;
 
@@ -184,17 +193,18 @@ export default function SignupScreen() {
       } catch (checkError) {
         if (checkError.message?.includes('already registered')) {
           Alert.alert('Email Already Used', checkError.message);
-          return;
+        } else {
+          Alert.alert(
+            'Cannot continue',
+            checkError.message || 'We could not verify this email. Please try again.'
+          );
         }
-        Alert.alert(
-          'Cannot continue',
-          checkError.message || 'We could not verify this email. Please try again.'
-        );
+        setIsSigningUp(false);
         return;
       }
 
       console.log('🚀 Starting signup process...');
-      
+
       // Prepare signup data with location and referral token if available
       const signupData = {
         email: emailTrim,
@@ -204,28 +214,30 @@ export default function SignupScreen() {
         ...(locationAddress?.zipCode && { zipCode: locationAddress.zipCode }),
         ...(referralToken && { referralToken }), // Include referral token if present
       };
-      
+
       console.log('📍 Signup data with location and referral:', signupData);
-      
+
       const response = await API.signup(signupData);
       console.log('✅ Signup successful:', response);
       console.log('📧 Email from signup:', email);
       console.log('📧 Email from API response:', response?.user?.email || response?.email);
-      
+
       // Use email from API response if available, otherwise use the one from form
       const userEmail = response?.user?.email || response?.email || emailTrim;
       console.log('📧 Final email to use:', userEmail);
-      
+
       // Navigate to profile setup (points will be reset to 0 in signupProfile)
       // Pass email as a string to ensure it's preserved
-      router.push({ 
-        pathname: '/signupProfile', 
-        params: { email: userEmail } 
+      router.push({
+        pathname: '/signupProfile',
+        params: { email: userEmail }
       });
     } catch (error) {
       console.error('❌ Signup error:', error);
       const errorMessage = error.message || 'Signup failed. Please try again.';
       Alert.alert('Signup Failed', errorMessage);
+    } finally {
+      setIsSigningUp(false);
     }
   };
 
@@ -309,13 +321,6 @@ export default function SignupScreen() {
             </TouchableOpacity>
             <Text style={styles.orText}>Or sign up with</Text>
             <View style={styles.socialIconsContainer}>
-              <TouchableOpacity
-                style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
-                onPress={handleFacebookSignup}
-                disabled={isSocialLoading}
-              >
-                <Image source={require('../assets/images/Facebook-icon.png')} style={styles.socialIcon} />
-              </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
                 onPress={handleGoogleSignup}

@@ -12,6 +12,8 @@ import {
   Animated,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useUser } from './context/UserContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
 import { Video, ResizeMode } from 'expo-av';
 import { VIDEO_ASSETS } from './utils/assetConstants';
@@ -88,6 +90,28 @@ export default function Index() {
     return () => {
       timeoutIds.forEach(id => clearTimeout(id));
     };
+  }, []);
+  
+  // Auto-redirect if already logged in
+  React.useEffect(() => {
+    const checkUserStatus = async () => {
+      try {
+        const token = await AsyncStorage.getItem('authToken');
+        const userDataString = await AsyncStorage.getItem('userData');
+        
+        if (token && userDataString) {
+          const userData = JSON.parse(userDataString);
+          if (userData.isLoggedIn) {
+            console.log('📱 User already logged in, redirecting from index to home...');
+            router.replace('/home');
+          }
+        }
+      } catch (error) {
+        console.error('Error checking user status in index:', error);
+      }
+    };
+    
+    checkUserStatus();
   }, []);
 
 

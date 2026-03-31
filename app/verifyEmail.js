@@ -64,11 +64,11 @@ export default function VerifyEmailScreen() {
         markAsVerified();
         Alert.alert(
           'Email Verified! 🎉',
-          'Your email has been successfully verified. You can now access all features of the app.',
+          'Your email has been successfully verified. Let\'s set up your giving preferences!',
           [
             {
               text: 'Continue',
-              onPress: () => router.replace('/(tabs)/home'),
+              onPress: () => router.replace('/signupFlow/explainerDonate'),
             },
           ]
         );

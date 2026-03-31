@@ -3,7 +3,6 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useFonts, Figtree_400Regular, Figtree_700Bold } from '@expo-google-fonts/figtree';
 import { View, Text, StyleSheet, ScrollView, SafeAreaView, Image, TouchableOpacity, Alert } from 'react-native';
 import { AntDesign } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, Tabs, useFocusEffect, useNavigation } from 'expo-router';
 import MonthlyImpactCard from '../../components/MonthlyImpactCard';
@@ -30,7 +29,6 @@ export default function MainHome() {
   const { user, saveUserData, loadUserData, syncWithBackend, clearAllData, clearProfileImage, addPoints, addSavings, uploadProfilePicture, checkVerificationStatus } = useUser();
   const { location: userLocation, locationAddress, locationPermission, checkLocationPermission } = useLocation();
   const { vendors, discounts, loadDiscounts } = useDiscount();
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [topDiscounts, setTopDiscounts] = useState([]);
   
@@ -49,11 +47,6 @@ export default function MainHome() {
       const loadData = async () => {
         try {
           await loadUserData();
-          console.log('🏠 Home page - Loaded user data:', {
-            firstName: user.firstName,
-            lastName: user.lastName,
-            email: user.email,
-          });
         } catch (error) {
           console.error('❌ Error loading user data on home page:', error);
         }
@@ -199,7 +192,6 @@ export default function MainHome() {
           // Prevent back navigation from home screen
           // This prevents swiping back to index/login page
           e.preventDefault();
-          console.log('🚫 Blocked back navigation from home screen');
         }
         // Allow forward navigation (to other tabs, detail pages, etc.)
       });
@@ -211,7 +203,6 @@ export default function MainHome() {
   // Set the ref for the tutorial to measure
   useEffect(() => {
     if (showTutorial && impactCardRef.current) {
-      console.log('📚 Home: Setting tutorial element ref');
       tutorialElementRef.current = impactCardRef.current;
     }
   }, [showTutorial, tutorialElementRef]);
@@ -219,15 +210,12 @@ export default function MainHome() {
   // Check tutorial when screen is focused (after signup)
   useFocusEffect(
     useCallback(() => {
-      console.log('📚 Home: Screen focused, showTutorial:', showTutorial);
       // Small delay to ensure screen is fully rendered
       const timer = setTimeout(() => {
         if (showTutorial && impactCardRef.current) {
-          console.log('📚 Home: Setting tutorial element ref on focus');
           tutorialElementRef.current = impactCardRef.current;
         } else if (impactCardRef.current) {
           // Always set the ref if element exists, even if tutorial not showing yet
-          console.log('📚 Home: Setting element ref (tutorial may show soon)');
           tutorialElementRef.current = impactCardRef.current;
         }
       }, 1500);
@@ -240,24 +228,17 @@ export default function MainHome() {
 
   // Update display location when locationAddress or userLocation changes
   useEffect(() => {
-    console.log('🏠 Updating display location - locationAddress:', locationAddress);
-    console.log('🏠 Updating display location - userLocation:', userLocation);
-    console.log('🏠 Updating display location - locationPermission:', locationPermission);
-    
     if (userLocation && locationPermission === 'granted') {
       // Use locationAddress from context if available (more accurate)
       if (locationAddress?.city && locationAddress?.state) {
         const display = `${locationAddress.city}, ${locationAddress.state}`;
-        console.log('🏠 Setting display location to:', display);
         setDisplayLocation(display);
         return;
       }
       // Fallback to coordinates-based lookup
-      console.log('🏠 No locationAddress, using fallback');
       setDisplayLocation('Current Location, USA');
       return;
     }
-    console.log('🏠 No location permission, using default');
     setDisplayLocation('Home — Alpharetta, GA, USA');
   }, [locationAddress, userLocation, locationPermission]);
 
@@ -269,53 +250,6 @@ export default function MainHome() {
   const monthlyDonation = user.monthlyDonation || 15;
   const monthlySavings = user.totalSavings || 0; // Use total savings from discounts
   
-  // Debug the values being passed to the card
-  console.log('🏠 Monthly card values:', { monthlyDonation, monthlySavings, userMonthlyDonation: user.monthlyDonation });
-
-  // Debug user data
-  console.log('🏠 Home page - User data:', user);
-  console.log('🏠 Home page - First name:', user.firstName);
-  console.log('🏠 Home page - Last name:', user.lastName);
-  console.log('🏠 Home page - Profile image:', user.profileImage);
-  console.log('🏠 Home page - Profile image URL:', user.profileImageUrl);
-  console.log('🏠 Home page - Image type:', typeof user.profileImage);
-  console.log('🏠 Home page - Is verified:', user.isVerified);
-
-  // Force re-render when user data changes
-  useEffect(() => {
-    console.log('🔄 Home page user data changed:', user);
-    // If firstName is missing but user is logged in, try to reload data
-    if (!user.firstName && user.isLoggedIn && user.email) {
-      console.log('⚠️ FirstName missing but user is logged in - reloading data...');
-      loadUserData().then(loadedData => {
-        if (loadedData && !loadedData.firstName) {
-          console.warn('⚠️ FirstName still missing after reload - checking storage directly...');
-          // Check storage directly as a last resort
-          AsyncStorage.getItem('userData').then(storedData => {
-            if (storedData) {
-              const parsed = JSON.parse(storedData);
-              console.log('📦 Direct storage check - firstName:', parsed.firstName);
-              console.log('📦 Direct storage check - lastName:', parsed.lastName);
-              console.log('📦 Direct storage check - full user object:', parsed);
-            }
-          });
-        }
-      });
-    }
-  }, [user, refreshTrigger]);
-
-  // Load user data when home page loads
-  useEffect(() => {
-    console.log('🏠 Home page useEffect - loading user data...');
-    const loadData = async () => {
-      const loadedData = await loadUserData();
-      console.log('🏠 Loaded data result:', loadedData);
-      // Force a re-render after loading data
-      setRefreshTrigger(prev => prev + 1);
-    };
-    loadData();
-  }, []);
-
   // Check location permission when home page loads
   useEffect(() => {
     checkLocationPermission();
@@ -324,26 +258,12 @@ export default function MainHome() {
   // Refresh data when user navigates to home page
   useFocusEffect(
     React.useCallback(() => {
-      console.log('🏠 Home page focused - refreshing user data...');
       const refreshData = async () => {
-        const loadedData = await loadUserData();
-        console.log('🏠 Focus refresh - loaded data:', loadedData);
-        setRefreshTrigger(prev => prev + 1);
+        await loadUserData();
       };
       refreshData();
     }, [])
   );
-
-  // Debug user data changes
-  useEffect(() => {
-    console.log('🔄 User data changed:', {
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      profileImage: user.profileImage,
-      isLoading: user.isLoading
-    });
-  }, [user]);
 
   const handleTestBackend = async () => {
     console.log('🧪 Test button clicked!');
@@ -472,17 +392,6 @@ export default function MainHome() {
                   <View style={[styles.profilePic, { backgroundColor: '#DB8633', justifyContent: 'center', alignItems: 'center' }]}>
                     <Text style={{ color: 'white', fontSize: 18, fontWeight: 'bold' }}>
                       {(() => {
-                        // Debug: Log what we have
-                        console.log('🔍 Profile initials debug:', {
-                          firstName: user.firstName,
-                          lastName: user.lastName,
-                          email: user.email,
-                          hasFirstName: !!user.firstName,
-                          hasLastName: !!user.lastName,
-                          firstNameLength: user.firstName?.length,
-                          lastNameLength: user.lastName?.length,
-                        });
-                        
                         if (user.firstName && user.lastName) {
                           return `${user.firstName[0].toUpperCase()}${user.lastName[0].toUpperCase()}`;
                         } else if (user.firstName) {

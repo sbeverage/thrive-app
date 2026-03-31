@@ -56,14 +56,12 @@ export const UserProvider = ({ children }) => {
    */
   const loadUserData = async () => {
     try {
-      console.log('📱 Loading user data from storage...');
       const userData = await AsyncStorage.getItem('userData');
       
       let loadedUser;
       
       if (userData) {
         const parsedUser = JSON.parse(userData);
-        console.log('✅ User data loaded from storage:', parsedUser);
         console.log('📱 Loaded firstName:', parsedUser.firstName);
         console.log('📱 Loaded lastName:', parsedUser.lastName);
         console.log('📱 Loaded email:', parsedUser.email);
@@ -106,16 +104,17 @@ export const UserProvider = ({ children }) => {
                 console.log('📥 Backend profile data:', backendProfile);
                 // Merge backend data, prioritizing backend values for profile image and other fields
                 // This ensures profile image saved to backend is loaded
+                const profileData = backendProfile.profile || backendProfile;
                 const mergedUser = {
                   ...loadedUser,
                   // Use backend values if they exist and are non-empty, otherwise keep local
-                  firstName: (backendProfile.firstName && backendProfile.firstName.trim()) ? backendProfile.firstName : (loadedUser.firstName || ''),
-                  lastName: (backendProfile.lastName && backendProfile.lastName.trim()) ? backendProfile.lastName : (loadedUser.lastName || ''),
-                  phone: (backendProfile.phone && backendProfile.phone.trim()) ? backendProfile.phone : (loadedUser.phone || ''),
-                  email: (backendProfile.email && backendProfile.email.trim()) ? backendProfile.email : (loadedUser.email || ''),
+                  firstName: (profileData.firstName && profileData.firstName.trim()) ? profileData.firstName : (loadedUser.firstName || ''),
+                  lastName: (profileData.lastName && profileData.lastName.trim()) ? profileData.lastName : (loadedUser.lastName || ''),
+                  phone: (profileData.phone && profileData.phone.trim()) ? profileData.phone : (loadedUser.phone || ''),
+                  email: (profileData.email && profileData.email.trim()) ? profileData.email : (loadedUser.email || ''),
                   // IMPORTANT: Prioritize backend profile image to ensure it's loaded
-                  profileImage: backendProfile.profileImage || backendProfile.profileImageUrl || loadedUser.profileImage || null,
-                  profileImageUrl: backendProfile.profileImageUrl || backendProfile.profileImage || loadedUser.profileImageUrl || null,
+                  profileImage: profileData.profileImage || profileData.profileImageUrl || loadedUser.profileImage || null,
+                  profileImageUrl: profileData.profileImageUrl || profileData.profileImage || loadedUser.profileImageUrl || null,
                   // Preserve all other local fields
                   points: loadedUser.points ?? 0,
                   monthlyDonation: loadedUser.monthlyDonation ?? 15,
@@ -137,18 +136,9 @@ export const UserProvider = ({ children }) => {
           }
         }
         
-        console.log('📱 Final loaded user object:', {
-          firstName: loadedUser.firstName,
-          lastName: loadedUser.lastName,
-          phone: loadedUser.phone,
-          email: loadedUser.email,
-          profileImage: loadedUser.profileImage,
-        });
-        
         setUser(loadedUser);
         return loadedUser;
       } else {
-        console.log('📱 No user data found in storage');
         // CRITICAL: Don't overwrite existing user state if storage is empty
         // If user state already has data (from previous load or context), preserve it
         // Only update isLoading flag
@@ -157,7 +147,6 @@ export const UserProvider = ({ children }) => {
           // Only clear if this is truly the initial state (no data anywhere)
           const hasDataInMemory = prev.firstName || prev.lastName || prev.email || prev.phone || prev.profileImage;
           if (hasDataInMemory) {
-            console.log('⚠️ Storage empty but data exists in memory - preserving memory data');
             return { ...prev, isLoading: false };
           }
           // Only set empty values if we truly have no data
@@ -227,7 +216,7 @@ export const UserProvider = ({ children }) => {
         ...existingData,  // Start with what's in storage (most complete)
         ...user,          // Then apply current state
         ...userData,      // Then apply new data
-        isLoggedIn: true, 
+        isLoggedIn: userData.isLoggedIn ?? existingData.isLoggedIn ?? user.isLoggedIn ?? false,
         points: pointsToSet,
         // Explicitly preserve firstName, lastName, email, phone, profileImage
         // Only use userData values if they're non-empty strings
@@ -570,16 +559,17 @@ export const UserProvider = ({ children }) => {
         // Merge: local data (preserve) -> backend data (update)
         // Only use backend values if they're actually present and not empty
         // This prevents overwriting local data with empty backend values
+        const profileData = backendProfile.profile || backendProfile;
         const mergedUser = {
           ...localUser,  // Start with local data (preserve existing)
           // Explicitly preserve local values - only use backend if it has a value
           // This prevents empty backend values from overwriting local data
-          firstName: (backendProfile.firstName && backendProfile.firstName.trim()) ? backendProfile.firstName : localUser.firstName || '',
-          lastName: (backendProfile.lastName && backendProfile.lastName.trim()) ? backendProfile.lastName : localUser.lastName || '',
-          email: (backendProfile.email && backendProfile.email.trim()) ? backendProfile.email : localUser.email || '',
-          phone: (backendProfile.phone && backendProfile.phone.trim()) ? backendProfile.phone : localUser.phone || '',
-          profileImage: backendProfile.profileImage || backendProfile.profileImageUrl || localUser.profileImage || localUser.profileImageUrl || null,
-          profileImageUrl: backendProfile.profileImageUrl || backendProfile.profileImage || localUser.profileImageUrl || localUser.profileImage || null,
+          firstName: (profileData.firstName && profileData.firstName.trim()) ? profileData.firstName : localUser.firstName || '',
+          lastName: (profileData.lastName && profileData.lastName.trim()) ? profileData.lastName : localUser.lastName || '',
+          email: (profileData.email && profileData.email.trim()) ? profileData.email : localUser.email || '',
+          phone: (profileData.phone && profileData.phone.trim()) ? profileData.phone : localUser.phone || '',
+          profileImage: profileData.profileImage || profileData.profileImageUrl || localUser.profileImage || localUser.profileImageUrl || null,
+          profileImageUrl: profileData.profileImageUrl || profileData.profileImage || localUser.profileImageUrl || localUser.profileImage || null,
           // Preserve other local fields that might not be in backend
           points: localUser.points ?? user.points ?? 0,
           monthlyDonation: localUser.monthlyDonation ?? user.monthlyDonation ?? 15,

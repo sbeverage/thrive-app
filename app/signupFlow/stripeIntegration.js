@@ -11,6 +11,7 @@ import { SvgXml } from 'react-native-svg';
 import { Asset } from 'expo-asset';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useBeneficiary } from '../context/BeneficiaryContext';
+import { useUser } from '../context/UserContext';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -21,6 +22,7 @@ export default function StripeIntegration() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { selectedBeneficiary } = useBeneficiary();
+  const { user } = useUser();
   const [applePaySvg, setApplePaySvg] = useState(null);
 
   // Load SVG content
@@ -335,6 +337,10 @@ export default function StripeIntegration() {
           try {
             await AsyncStorage.removeItem('@thrive_walkthrough_completed');
             await AsyncStorage.removeItem('@thrive_walkthrough_current_step');
+            const completedEmail = (user?.email || '').toLowerCase();
+            if (completedEmail) {
+              await AsyncStorage.setItem(`onboardingCompleted:${completedEmail}`, 'true');
+            }
             console.log('📚 Signup completed - tutorial will show on home screen');
           } catch (error) {
             console.error('Error resetting tutorial:', error);

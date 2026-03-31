@@ -19,12 +19,13 @@ import { useRouter } from 'expo-router';
 
 const LAST_LOGIN_KEY = 'lastLoginMethod';
 const REMEMBER_ME_KEY = 'loginRememberMe';
+const ONBOARDING_DONE_KEY_PREFIX = 'onboardingCompleted:';
 import { AntDesign, Feather } from '@expo/vector-icons';
 import API from './lib/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from './context/UserContext';
 import { useBeneficiary } from './context/BeneficiaryContext';
-import { signInWithApple, signInWithGoogle, signInWithFacebook } from './utils/socialLogin';
+import { signInWithApple, signInWithGoogle } from './utils/socialLogin';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -36,6 +37,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSocialLoading, setIsSocialLoading] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [lastLogin, setLastLogin] = useState(null);
   const [rememberMe, setRememberMe] = useState(true);
 
@@ -65,7 +67,14 @@ export default function LoginScreen() {
     setLastLogin(data);
   };
 
+  const getOnboardingDoneForEmail = async (emailValue) => {
+    if (!emailValue) return false;
+    const flag = await AsyncStorage.getItem(`${ONBOARDING_DONE_KEY_PREFIX}${emailValue.toLowerCase()}`);
+    return flag === 'true';
+  };
+
   const handleLogin = async () => {
+    if (isLoggingIn) return;
     const emailTrim = email.trim();
     if (!emailTrim || !password) {
       Alert.alert('Missing Info', 'Please enter both email and password.');
@@ -73,10 +82,9 @@ export default function LoginScreen() {
     }
 
     try {
-      console.log('🔐 Starting login process...');
+      setIsLoggingIn(true);
       await AsyncStorage.setItem(REMEMBER_ME_KEY, rememberMe ? 'true' : 'false');
       const response = await API.login({ email: emailTrim, password });
-      console.log('✅ Login successful:', response);
       
       // Update user email in context (preserves existing data)
       updateUserProfile({ email: emailTrim });
@@ -84,11 +92,13 @@ export default function LoginScreen() {
       // Sync verification status from login response
       await syncVerificationFromLogin(response);
       
-      // IMPORTANT: Reload full user data from backend to get profile image and all saved data
+      // Reload full user data from backend
       await loadUserData();
       
-      // Reload beneficiary from storage
-      await reloadBeneficiary();
+      // Reload beneficiary from storage (fallback signal for completed onboarding)
+      const savedBeneficiary = await reloadBeneficiary();
+      const hasLocalBeneficiary = Boolean(savedBeneficiary?.id || savedBeneficiary?.name);
+      const onboardingDoneLocally = await getOnboardingDoneForEmail(response.user?.email || emailTrim);
 
       if (rememberMe) {
         saveLastLogin('email', emailTrim);
@@ -97,47 +107,87 @@ export default function LoginScreen() {
         setLastLogin(null);
       }
       
-      // Navigate to home on successful login
-      router.replace('/home');
+      // Check if user needs to complete onboarding
+      if (response.user?.needsProfileSetup) {
+        console.log('📱 User needs profile setup, redirecting...');
+        router.push({
+          pathname: '/signupProfile',
+          params: { email: response.user.email || emailTrim }
+        });
+      } else if (response.user?.needsOnboarding && !hasLocalBeneficiary && !onboardingDoneLocally) {
+        router.replace('/signupFlow/explainerDonate');
+      } else {
+        // Navigate to home on successful login
+        router.replace('/home');
+      }
     } catch (error) {
       console.error('❌ Login error:', error);
       const errorMessage = error.message || 'Login failed. Please check your credentials.';
       Alert.alert('Login Error', errorMessage);
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
   const handleSocialLogin = async (socialData) => {
-    console.log("🚀 ~ :93 ~handleSocialLogin ~ socialData>>", socialData)
     if (!socialData) {
       return; // User canceled
     }
 
     try {
       setIsSocialLoading(true);
-      console.log('🔐 Starting social login:', socialData.provider);
 
-      // Call social login API (handles both signup and login)
-      const response = await API.socialLogin(socialData);
-      console.log('✅ Social login successful:', response);
+      // Call social login API with loginOnly=true so backend rejects unknown users
+      const response = await API.socialLogin({ ...socialData, loginOnly: true });
 
-      // Update user context
-      if (response.user?.email) {
-        updateUserProfile({ email: response.user.email });
+      // isNewUser should never be true here since loginOnly rejects them at the backend,
+      // but guard defensively in case of an unexpected response.
+      if (response.isNewUser) {
+        Alert.alert(
+          'Account Not Found',
+          'No account found for this social login. Please sign up first.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Existing user - update context including verification status
+      if (response.user) {
+        updateUserProfile({
+          email: response.user.email || socialData.email,
+          isVerified: response.user.isVerified ?? false,
+        });
       }
 
       // Sync verification status
       await syncVerificationFromLogin(response);
 
-      // IMPORTANT: Reload full user data from backend to get profile image and all saved data
+      // If existing user never completed profile setup, send them there
+      if (response.user?.needsProfileSetup) {
+        router.push({
+          pathname: '/signupProfile',
+          params: { email: response.user.email || socialData.email },
+        });
+        return;
+      }
+
+      // Reload full user data from backend
       await loadUserData();
       
-      // Reload beneficiary from storage
-      await reloadBeneficiary();
+      // Reload beneficiary from storage (fallback signal for completed onboarding)
+      const savedBeneficiary = await reloadBeneficiary();
+      const hasLocalBeneficiary = Boolean(savedBeneficiary?.id || savedBeneficiary?.name);
+      const onboardingDoneLocally = await getOnboardingDoneForEmail(response.user?.email || socialData.email);
 
       saveLastLogin(socialData.provider);
 
-      // Navigate to home on successful login
-      router.replace('/home');
+      // Check if user needs to complete onboarding
+      if (response.user?.needsOnboarding && !hasLocalBeneficiary && !onboardingDoneLocally) {
+        router.replace('/signupFlow/explainerDonate');
+      } else {
+        // Navigate to home on successful login
+        router.replace('/home');
+      }
     } catch (error) {
       console.error('❌ Social login error:', error);
       Alert.alert('Login Failed', error.message || 'Social login failed. Please try again.');
@@ -150,7 +200,6 @@ export default function LoginScreen() {
     if (isSocialLoading) return;
     setIsSocialLoading(true);
     const result = await signInWithApple();
-    console.log("🚀 ~ :133 ~Apple Login result>>", result)
     if (result) {
       await handleSocialLogin(result);
     } else {
@@ -162,17 +211,6 @@ export default function LoginScreen() {
     if (isSocialLoading) return;
     setIsSocialLoading(true);
     const result = await signInWithGoogle();
-    if (result) {
-      await handleSocialLogin(result);
-    } else {
-      setIsSocialLoading(false);
-    }
-  };
-
-  const handleFacebookLogin = async () => {
-    if (isSocialLoading) return;
-    setIsSocialLoading(true);
-    const result = await signInWithFacebook();
     if (result) {
       await handleSocialLogin(result);
     } else {
@@ -280,24 +318,16 @@ export default function LoginScreen() {
             </TouchableOpacity>
 
             {/* Login Button */}
-            <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-              <Text style={styles.loginButtonText}>Login</Text>
+            <TouchableOpacity
+              style={[styles.loginButton, isLoggingIn && { opacity: 0.7 }]}
+              onPress={handleLogin}
+              disabled={isLoggingIn}
+            >
+              <Text style={styles.loginButtonText}>{isLoggingIn ? 'Please wait…' : 'Login'}</Text>
             </TouchableOpacity>
 
             <Text style={styles.orText}>Or login with</Text>
             <View style={styles.socialIconsContainer}>
-              <View style={styles.socialIconWrapper}>
-                <TouchableOpacity
-                  style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
-                  onPress={handleFacebookLogin}
-                  disabled={isSocialLoading}
-                >
-                  <Image source={require('../assets/images/Facebook-icon.png')} style={styles.socialIcon} />
-                </TouchableOpacity>
-                {lastLogin?.method === 'facebook' && (
-                  <Text style={styles.previouslyUsedBadgeSmall}>Previously used</Text>
-                )}
-              </View>
               <View style={styles.socialIconWrapper}>
                 <TouchableOpacity
                   style={[styles.socialIconButton, isSocialLoading && styles.socialIconButtonDisabled]}
