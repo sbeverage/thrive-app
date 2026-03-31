@@ -87,9 +87,14 @@ export default function SignupScreen() {
       const response = await API.socialLogin(signupData);
       console.log('✅ Social signup successful:', response);
 
-      // Update user context
-      if (response.user?.email) {
-        updateUserProfile({ email: response.user.email });
+      // Update user context with all available info from social login
+      if (response.user) {
+        updateUserProfile({ 
+          email: response.user.email || socialData.email,
+          firstName: response.user.firstName || socialData.firstName,
+          lastName: response.user.lastName || socialData.lastName,
+          profileImage: response.user.profileImage || socialData.picture,
+        });
       }
 
       // Sync verification status

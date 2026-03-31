@@ -33,11 +33,20 @@ export default function VerifyEmailScreen() {
   console.log('📧 VerifyEmail - Final email:', email);
   console.log('📧 VerifyEmail - Token parameter:', token);
 
+  // Auto-verify if token is provided
   useEffect(() => {
     if (token && email) {
       handleVerification();
     }
   }, [token, email]);
+
+  // Auto-redirect if already verified (e.g. social login)
+  useEffect(() => {
+    if (user?.isVerified) {
+      console.log('✅ User already verified, redirecting to onboarding...');
+      router.replace('/signupFlow/explainerDonate');
+    }
+  }, [user?.isVerified]);
 
   const handleVerification = async () => {
     if (!token || !email) return;

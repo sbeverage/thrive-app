@@ -33,14 +33,23 @@ export default function SignupProfile() {
   const { saveUserData, uploadProfilePicture, user } = useUser();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneNational, setPhoneNational] = useState('');
+  const [phoneFormatted, setPhoneFormatted] = useState('');
   const [profileImage, setProfileImage] = useState(null);
+  const phoneInputRef = useRef(null);
 
   // Log email extraction for debugging
   useEffect(() => {
     console.log('📧 SignupProfile - Email from params:', email);
     console.log('📧 SignupProfile - All params:', params);
     console.log('📧 SignupProfile - User email:', user?.email);
+    
+    // Initialize fields from user context if available (e.g. from social login)
+    if (user) {
+      if (user.firstName && !firstName) setFirstName(user.firstName);
+      if (user.lastName && !lastName) setLastName(user.lastName);
+      if (user.profileImage && !profileImage) setProfileImage(user.profileImage);
+    }
   }, [email, params, user]);
 
   // Use static gradient colors for now
@@ -83,18 +92,15 @@ export default function SignupProfile() {
       return;
     }
     
-    if (!phoneNumber.trim()) {
+    if (!phoneNational.trim()) {
       Alert.alert('Required Field', 'Please enter your phone number.');
       return;
     }
 
-    // Validate names contain only letters (no numbers)
-    if (/\d/.test(firstName)) {
-      Alert.alert('Invalid First Name', 'First name should contain only letters.');
-      return;
-    }
-    if (/\d/.test(lastName)) {
-      Alert.alert('Invalid Last Name', 'Last name should contain only letters.');
+    // Validate phone number is valid using the ref
+    const isValid = phoneInputRef.current?.isValidNumber(phoneNational);
+    if (!isValid) {
+      Alert.alert('Invalid Phone Number', 'Please enter a valid phone number.');
       return;
     }
     
@@ -115,7 +121,7 @@ export default function SignupProfile() {
       const profileData = {
         firstName,
         lastName,
-        phone: formattedNumber || phoneFormatted,
+        phone: phoneFormatted,
         email: emailToSave, // Use the determined email
       };
       
