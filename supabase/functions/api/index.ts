@@ -9861,6 +9861,7 @@ async function handleAuthRoute(
         profile_picture_url,
         coworking,
         inviteType,
+        invite_type,
         sponsorAmount,
         extraDonationAmount,
         totalMonthlyDonation,
@@ -10382,6 +10383,25 @@ async function handleAuthRoute(
       // Add preferences if we have any
       if (Object.keys(preferences).length > 0) {
         userData.preferences = preferences;
+      }
+
+      // Coworking / account type (Stripe business rules: standard vs coworking)
+      const isCoworkingSignup =
+        coworking === true || coworking === "Yes" || coworking === "yes";
+      if (coworking !== undefined && coworking !== null) {
+        userData.coworking = isCoworkingSignup;
+      }
+      const inviteTypeResolved =
+        inviteType || invite_type ||
+        (coworking !== undefined && coworking !== null
+          ? (isCoworkingSignup ? "coworking" : "standard")
+          : undefined);
+      if (
+        inviteTypeResolved !== undefined &&
+        inviteTypeResolved !== null &&
+        inviteTypeResolved !== ""
+      ) {
+        userData.invite_type = inviteTypeResolved;
       }
 
       // Insert new user
@@ -12953,6 +12973,9 @@ async function handleAuthRoute(
         referralToken,
         referrerId,
         loginOnly, // When true, reject if user doesn't exist (called from login screen)
+        coworking,
+        inviteType,
+        invite_type,
       } = body;
 
       // Validate required fields
@@ -13149,6 +13172,18 @@ async function handleAuthRoute(
         if (state) userData.state = state;
         const zip = zipCode || zip_code;
         if (zip) userData.zip_code = zip;
+
+        const isCoworkingSocial =
+          coworking === true || coworking === "Yes" || coworking === "yes";
+        if (coworking !== undefined && coworking !== null) {
+          userData.coworking = isCoworkingSocial;
+        }
+        const inviteTypeSocial = inviteType || invite_type;
+        if (inviteTypeSocial !== undefined && inviteTypeSocial !== null && inviteTypeSocial !== "") {
+          userData.invite_type = inviteTypeSocial;
+        } else if (coworking !== undefined && coworking !== null) {
+          userData.invite_type = isCoworkingSocial ? "coworking" : "standard";
+        }
 
         // Handle referral
         if (referralToken || referrerId) {
