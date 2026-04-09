@@ -4,6 +4,8 @@ import Slider from '@react-native-community/slider';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from '../context/UserContext';
+import { useBeneficiary } from '../context/BeneficiaryContext';
+import { resolveCheckoutBeneficiaryId } from '../utils/resolveCheckoutBeneficiaryId';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -11,6 +13,7 @@ export default function CoworkingExtraDonation() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { saveUserData } = useUser();
+  const { selectedBeneficiary } = useBeneficiary();
 
   const sponsorAmount = parseFloat(params.sponsorAmount || '15');
   const [extraAmount, setExtraAmount] = useState(5);
@@ -28,13 +31,19 @@ export default function CoworkingExtraDonation() {
       inviteType: 'coworking'
     }, true);
 
+    const beneficiaryId = await resolveCheckoutBeneficiaryId({
+      params,
+      selectedBeneficiary,
+    });
+
     router.push({
       pathname: '/signupFlow/stripeIntegration',
       params: {
         amount: extraAmount.toString(),
         sponsorAmount: sponsorAmount.toString(),
         totalMonthlyDonation: totalMonthlyDonation.toString(),
-        isCoworkingExtra: 'true'
+        isCoworkingExtra: 'true',
+        ...(beneficiaryId ? { beneficiaryId } : {}),
       }
     });
   };

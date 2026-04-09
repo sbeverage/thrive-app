@@ -18,7 +18,7 @@ import { useEffect } from 'react';
 import { Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StripeProvider } from '@stripe/stripe-react-native';
-import { STRIPE_PUBLISHABLE_KEY } from './utils/constants';
+import { STRIPE_PUBLISHABLE_KEY, STRIPE_MERCHANT_IDENTIFIER } from './utils/constants';
 
 export default function Layout() {
   const router = useRouter();
@@ -156,7 +156,10 @@ export default function Layout() {
   }, [router]);
 
   return (
-    <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>
+    <StripeProvider
+      publishableKey={STRIPE_PUBLISHABLE_KEY}
+      merchantIdentifier={STRIPE_MERCHANT_IDENTIFIER}
+    >
       <UserProvider>
         <BeneficiaryProvider>
           <BeneficiaryFilterProvider>

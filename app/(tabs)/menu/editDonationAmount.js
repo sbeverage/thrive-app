@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,21 +11,25 @@ import {
   Platform,
   Image,
   ActivityIndicator,
-} from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { AntDesign } from '@expo/vector-icons';
-import { useStripe } from '@stripe/stripe-react-native';
-import { useUser } from '../../context/UserContext';
-import { useBeneficiary } from '../../context/BeneficiaryContext';
-import API from '../../lib/api';
+} from "react-native";
+import { useRouter, useFocusEffect } from "expo-router";
+import { AntDesign } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useUser } from "../../context/UserContext";
+import { useBeneficiary } from "../../context/BeneficiaryContext";
+import API from "../../lib/api";
 
 export default function EditDonationAmount() {
   const router = useRouter();
   const { user, saveUserData } = useUser();
+  const MIN_DONATION_AMOUNT = user?.coworking ? 1 : 15;
   const { selectedBeneficiary, reloadBeneficiary } = useBeneficiary();
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
-  const [currentAmount, setCurrentAmount] = useState(user.monthlyDonation?.toString() || '15');
-  const [newAmount, setNewAmount] = useState(user.monthlyDonation?.toString() || '15');
+  const [currentAmount, setCurrentAmount] = useState(
+    user.monthlyDonation?.toString() || "15",
+  );
+  const [newAmount, setNewAmount] = useState(
+    user.monthlyDonation?.toString() || "15",
+  );
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [subscription, setSubscription] = useState(null);
@@ -42,7 +46,7 @@ export default function EditDonationAmount() {
     React.useCallback(() => {
       reloadBeneficiary?.();
       loadSavedBeneficiary();
-    }, [reloadBeneficiary])
+    }, [reloadBeneficiary]),
   );
 
   // Resolve beneficiary ID: from context, user prefs, or backend
@@ -69,12 +73,16 @@ export default function EditDonationAmount() {
       const response = await API.getMonthlyDonations();
       if (response.subscriptions && response.subscriptions.length > 0) {
         setSubscription(response.subscriptions[0]);
-        const currentAmount = response.subscriptions[0].amount || user.monthlyDonation || 15;
+        const currentAmount =
+          response.subscriptions[0].amount || user.monthlyDonation || 15;
         setCurrentAmount(currentAmount.toString());
         setNewAmount(currentAmount.toString());
       }
     } catch (error) {
-      console.log('⚠️ No existing subscription found or error loading:', error.message);
+      console.log(
+        "⚠️ No existing subscription found or error loading:",
+        error.message,
+      );
       // Continue with local data
     }
   };
@@ -82,16 +90,22 @@ export default function EditDonationAmount() {
   const handleSave = async () => {
     const amount = parseFloat(newAmount);
     if (isNaN(amount)) {
-      Alert.alert('Invalid Amount', 'Please enter a valid number.');
+      Alert.alert("Invalid Amount", "Please enter a valid number.");
       return;
     }
-    if (amount < 15) {
-      Alert.alert('Minimum Amount', 'Please enter the minimum amount: $15 or more per month.');
+    if (amount < MIN_DONATION_AMOUNT) {
+      Alert.alert(
+        "Minimum Amount",
+        `Please enter the minimum amount: $${MIN_DONATION_AMOUNT} or more per month.`,
+      );
       return;
     }
 
     if (amount > 1000) {
-      Alert.alert('Amount Too High', 'Please enter an amount of $1,000 or less.');
+      Alert.alert(
+        "Amount Too High",
+        "Please enter an amount of $1,000 or less.",
+      );
       return;
     }
 
@@ -106,55 +120,57 @@ export default function EditDonationAmount() {
       if (subscription) {
         // Update existing subscription - no beneficiary needed
         try {
-          console.log('💳 Updating existing subscription...');
-          response = await API.updateMonthlyDonationAmount(subscription.id, amount);
+          console.log("💳 Updating existing subscription...");
+          const subscriptionIdForUpdate =
+            subscription.stripe_subscription_id ||
+            subscription.subscription_id ||
+            subscription.id;
+          response = await API.upgradeOrDowngradeMonthlyAmount(
+            subscriptionIdForUpdate,
+            amount,
+          );
+          if (response?.billing || response?.subscription) {
+            await AsyncStorage.setItem(
+              "monthlyBillingPreview",
+              JSON.stringify({
+                billing: response.billing || null,
+                subscription: response.subscription || null,
+                updated_at: new Date().toISOString(),
+              }),
+            );
+          }
           apiSucceeded = true;
         } catch (apiError) {
-          console.warn('⚠️ Update subscription failed, saving locally:', apiError.message);
+          if (apiError?.status === 409) {
+            Alert.alert(
+              "Payment setup required",
+              "Complete first payment setup before changing amount.",
+            );
+            return;
+          }
+          console.warn(
+            "⚠️ Update subscription failed, saving locally:",
+            apiError.message,
+          );
         }
       } else if (beneficiaryId) {
         // Create new subscription with saved beneficiary
         try {
-          console.log('💳 Creating new subscription...');
+          console.log("💳 Creating new subscription...");
           response = await API.createMonthlySubscription({
             beneficiary_id: beneficiaryId,
             amount: amount,
-            currency: 'USD',
+            currency: "USD",
           });
           apiSucceeded = true;
         } catch (apiError) {
-          console.warn('⚠️ Create subscription failed, saving locally:', apiError.message);
+          console.warn(
+            "⚠️ Create subscription failed, saving locally:",
+            apiError.message,
+          );
         }
       }
       // If no beneficiary and no subscription: skip API, save locally only
-
-      // If clientSecret is returned, collect payment method via Stripe Payment Sheet
-      if (response?.subscription?.clientSecret) {
-        console.log('💳 Collecting payment method via Stripe Payment Sheet...');
-        const { error: initError } = await initPaymentSheet({
-          paymentIntentClientSecret: response.subscription.clientSecret,
-          merchantDisplayName: 'Thrive Initiative',
-          allowsDelayedPaymentMethods: true,
-          applePay: { merchantCountryCode: 'US' },
-          googlePay: { merchantCountryCode: 'US', testEnv: true },
-        });
-
-        if (initError) {
-          Alert.alert('Error', `Payment sheet initialization failed: ${initError.message}`);
-          setIsLoading(false);
-          return;
-        }
-
-        const { error: presentError } = await presentPaymentSheet();
-        if (presentError) {
-          if (presentError.code !== 'Canceled') {
-            Alert.alert('Error', `Payment failed: ${presentError.message}`);
-          }
-          setIsLoading(false);
-          return;
-        }
-        console.log('✅ Payment method collected successfully');
-      }
 
       // Always save amount locally (works for: update success, create success, or API fallback)
       await saveUserData({ monthlyDonation: amount });
@@ -162,41 +178,51 @@ export default function EditDonationAmount() {
       setIsEditing(false);
 
       if (apiSucceeded) {
+        const changeTiming =
+          response?.change?.timing === "next_invoice" || !!subscription;
         Alert.alert(
-          '✅ Amount Updated!',
-          `Your monthly donation amount has been ${subscription ? 'updated' : 'set'} to $${parseFloat(newAmount || 0).toFixed(2)}.`,
-          [{ text: 'OK' }]
+          "✅ Amount Updated!",
+          changeTiming
+            ? `Your monthly donation amount has been updated to $${parseFloat(newAmount || 0).toFixed(2)} and will apply on your next invoice.`
+            : `Your monthly donation amount has been ${subscription ? "updated" : "set"} to $${parseFloat(newAmount || 0).toFixed(2)}.`,
+          [{ text: "OK" }],
         );
       } else if (!beneficiaryId) {
         Alert.alert(
-          '✅ Amount Saved',
+          "✅ Amount Saved",
           `Your monthly donation amount of $${parseFloat(newAmount || 0).toFixed(2)} has been saved. To enable automatic billing, select a beneficiary from the Beneficiary tab and add a payment method.`,
           [
-            { text: 'OK' },
-            { text: 'Select Beneficiary', onPress: () => router.replace('/(tabs)/beneficiary') },
-          ]
+            { text: "OK" },
+            {
+              text: "Select Beneficiary",
+              onPress: () => router.replace("/(tabs)/beneficiary"),
+            },
+          ],
         );
       } else {
         Alert.alert(
-          '✅ Amount Saved',
+          "✅ Amount Saved",
           `Your monthly donation amount of $${parseFloat(newAmount || 0).toFixed(2)} has been saved locally. The subscription could not be created at this time—you can try again later.`,
-          [{ text: 'OK' }]
+          [{ text: "OK" }],
         );
       }
     } catch (error) {
-      console.error('❌ Error saving donation amount:', error);
+      console.error("❌ Error saving donation amount:", error);
       // Fallback: save locally so user isn't blocked
       try {
         await saveUserData({ monthlyDonation: amount });
         setCurrentAmount(newAmount);
         setIsEditing(false);
         Alert.alert(
-          'Amount Saved Locally',
+          "Amount Saved Locally",
           `Your amount of $${parseFloat(newAmount || 0).toFixed(2)} has been saved. The subscription service could not be reached—please try again later.`,
-          [{ text: 'OK' }]
+          [{ text: "OK" }],
         );
       } catch (fallbackError) {
-        Alert.alert('Error', error.message || 'Failed to save donation amount. Please try again.');
+        Alert.alert(
+          "Error",
+          error.message || " to save donation amount. Please try again.",
+        );
       }
     } finally {
       setIsLoading(false);
@@ -208,20 +234,25 @@ export default function EditDonationAmount() {
     setIsEditing(false);
   };
 
-  const quickAmounts = [15, 25, 50, 75, 100, 150];
+  const quickAmounts = user?.coworking
+    ? [1, 5, 10, 15, 25, 50]
+    : [15, 25, 50, 75, 100, 150];
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={styles.container}
     >
       <ScrollView contentContainerStyle={styles.scroll}>
         {/* Standardized Header */}
         <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/menu')}>
-            <Image 
-              source={require('../../../assets/icons/arrow-left.png')} 
-              style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.replace("/(tabs)/menu")}
+          >
+            <Image
+              source={require("../../../assets/icons/arrow-left.png")}
+              style={{ width: 24, height: 24, tintColor: "#324E58" }}
             />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Edit Donation Amount</Text>
@@ -241,7 +272,7 @@ export default function EditDonationAmount() {
         {/* Edit Section */}
         <View style={styles.editSection}>
           <Text style={styles.sectionTitle}>New Monthly Amount</Text>
-          
+
           {isEditing ? (
             <View style={styles.editMode}>
               <View style={styles.amountInputContainer}>
@@ -256,17 +287,20 @@ export default function EditDonationAmount() {
                   autoFocus
                 />
               </View>
-              
+
               <View style={styles.buttonRow}>
-                <TouchableOpacity 
-                  style={styles.cancelButton} 
+                <TouchableOpacity
+                  style={styles.cancelButton}
                   onPress={handleCancel}
                   disabled={isLoading}
                 >
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.saveButton, isLoading && styles.saveButtonDisabled]} 
+                <TouchableOpacity
+                  style={[
+                    styles.saveButton,
+                    isLoading && styles.saveButtonDisabled,
+                  ]}
                   onPress={handleSave}
                   disabled={isLoading}
                 >
@@ -279,7 +313,10 @@ export default function EditDonationAmount() {
               </View>
             </View>
           ) : (
-            <TouchableOpacity style={styles.editButton} onPress={() => setIsEditing(true)}>
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={() => setIsEditing(true)}
+            >
               <AntDesign name="edit" size={20} color="#DB8633" />
               <Text style={styles.editButtonText}>Change Amount</Text>
             </TouchableOpacity>
@@ -295,17 +332,21 @@ export default function EditDonationAmount() {
                 key={amount}
                 style={[
                   styles.quickAmountButton,
-                  parseFloat(newAmount) === amount && styles.selectedQuickAmount
+                  parseFloat(newAmount) === amount &&
+                    styles.selectedQuickAmount,
                 ]}
                 onPress={() => {
                   setNewAmount(amount.toString());
                   if (!isEditing) setIsEditing(true);
                 }}
               >
-                <Text style={[
-                  styles.quickAmountText,
-                  parseFloat(newAmount) === amount && styles.selectedQuickAmountText
-                ]}>
+                <Text
+                  style={[
+                    styles.quickAmountText,
+                    parseFloat(newAmount) === amount &&
+                      styles.selectedQuickAmountText,
+                  ]}
+                >
                   ${amount}
                 </Text>
               </TouchableOpacity>
@@ -326,7 +367,7 @@ export default function EditDonationAmount() {
             • Changes take effect immediately for the next billing cycle
           </Text>
           <Text style={styles.infoText}>
-            • Minimum donation: $15 per month
+            • Minimum donation: ${MIN_DONATION_AMOUNT} per month
           </Text>
         </View>
       </ScrollView>
@@ -337,7 +378,7 @@ export default function EditDonationAmount() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
   },
   scroll: {
     paddingHorizontal: 24,
@@ -345,9 +386,9 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 20,
     paddingTop: 5,
   },
@@ -356,81 +397,81 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#6d6e72',
-    textAlign: 'center',
+    fontWeight: "700",
+    color: "#6d6e72",
+    textAlign: "center",
     flex: 1,
   },
   headerSpacer: {
     width: 32,
   },
   currentAmountSection: {
-    backgroundColor: '#F5F5FA',
+    backgroundColor: "#F5F5FA",
     borderRadius: 12,
     padding: 24,
     marginBottom: 24,
-    alignItems: 'center',
+    alignItems: "center",
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#324E58',
+    fontWeight: "600",
+    color: "#324E58",
     marginBottom: 16,
   },
   amountDisplay: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
+    flexDirection: "row",
+    alignItems: "baseline",
   },
   currencySymbol: {
     fontSize: 48,
-    fontWeight: '700',
-    color: '#DB8633',
+    fontWeight: "700",
+    color: "#DB8633",
     marginRight: 4,
   },
   currentAmountText: {
     fontSize: 48,
-    fontWeight: '700',
-    color: '#DB8633',
+    fontWeight: "700",
+    color: "#DB8633",
   },
   perMonthText: {
     fontSize: 18,
-    color: '#666',
+    color: "#666",
     marginLeft: 8,
   },
   editSection: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 24,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: "#E2E8F0",
   },
   editMode: {
     gap: 20,
   },
   amountInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F5F5FA',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F5F5FA",
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 8,
   },
   currencyLabel: {
     fontSize: 24,
-    fontWeight: '600',
-    color: '#324E58',
+    fontWeight: "600",
+    color: "#324E58",
     marginRight: 8,
   },
   amountInput: {
     flex: 1,
     fontSize: 24,
-    fontWeight: '600',
-    color: '#324E58',
+    fontWeight: "600",
+    color: "#324E58",
     paddingVertical: 12,
   },
   buttonRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
   },
   cancelButton: {
@@ -438,95 +479,95 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#fff',
+    borderColor: "#E2E8F0",
+    backgroundColor: "#fff",
   },
   cancelButtonText: {
-    textAlign: 'center',
+    textAlign: "center",
     fontSize: 16,
-    fontWeight: '600',
-    color: '#666',
+    fontWeight: "600",
+    color: "#666",
   },
   saveButton: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 10,
-    backgroundColor: '#DB8633',
+    backgroundColor: "#DB8633",
   },
   saveButtonText: {
-    textAlign: 'center',
+    textAlign: "center",
     fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
+    fontWeight: "600",
+    color: "#fff",
   },
   saveButtonDisabled: {
     opacity: 0.6,
   },
   editButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 8,
     paddingVertical: 16,
     borderRadius: 10,
-    backgroundColor: '#F5F5FA',
+    backgroundColor: "#F5F5FA",
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: "#E2E8F0",
   },
   editButtonText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#324E58',
+    fontWeight: "600",
+    color: "#324E58",
   },
   quickAmountsSection: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 24,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: "#E2E8F0",
   },
   quickAmountsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 12,
   },
   quickAmountButton: {
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 8,
-    backgroundColor: '#F5F5FA',
+    backgroundColor: "#F5F5FA",
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: "#E2E8F0",
     minWidth: 80,
-    alignItems: 'center',
+    alignItems: "center",
   },
   selectedQuickAmount: {
-    backgroundColor: '#DB8633',
-    borderColor: '#DB8633',
+    backgroundColor: "#DB8633",
+    borderColor: "#DB8633",
   },
   quickAmountText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#324E58',
+    fontWeight: "600",
+    color: "#324E58",
   },
   selectedQuickAmountText: {
-    color: '#fff',
+    color: "#fff",
   },
   infoSection: {
-    backgroundColor: '#F5F5FA',
+    backgroundColor: "#F5F5FA",
     borderRadius: 12,
     padding: 24,
   },
   infoTitle: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#324E58',
+    fontWeight: "600",
+    color: "#324E58",
     marginBottom: 16,
   },
   infoText: {
     fontSize: 14,
-    color: '#666',
+    color: "#666",
     marginBottom: 8,
     lineHeight: 20,
   },

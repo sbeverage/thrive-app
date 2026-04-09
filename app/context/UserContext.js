@@ -1,10 +1,37 @@
-3 // context/UserContext.js - Clean user context with Supabase backend integration
+// context/UserContext.js - Clean user context with Supabase backend integration
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
 import API from '../lib/api';
 
 const UserContext = createContext();
+
+/** Normalize backend charity payload and sync BeneficiaryContext storage key. */
+async function persistSelectedBeneficiaryToStorage(raw) {
+  if (!raw || raw.id == null) return;
+  const normalized = {
+    id: raw.id,
+    name: raw.name || '',
+    description: raw.description ?? null,
+    logo_url: raw.logo_url || '',
+  };
+  if (raw.logo_url) {
+    normalized.image = { uri: raw.logo_url };
+  }
+  await AsyncStorage.setItem('selectedBeneficiary', JSON.stringify(normalized));
+}
+
+function extractBeneficiaryFromProfile(backendProfile, profileData, fallbackUser) {
+  const raw =
+    profileData?.selectedBeneficiary ||
+    profileData?.referredCharity ||
+    backendProfile?.selectedBeneficiary ||
+    backendProfile?.referredCharity ||
+    fallbackUser?.selectedBeneficiary ||
+    fallbackUser?.referredCharity ||
+    null;
+  return raw && raw.id != null ? raw : null;
+}
 
 export const useUser = () => {
   const context = useContext(UserContext);
@@ -56,6 +83,8 @@ export const UserProvider = ({ children }) => {
    */
   const loadUserData = async () => {
     try {
+      const token = await AsyncStorage.getItem('authToken');
+      const hasAuthToken = !!token;
       const userData = await AsyncStorage.getItem('userData');
       
       let loadedUser;
@@ -88,7 +117,7 @@ export const UserProvider = ({ children }) => {
           points: parsedUser.points ?? user.points ?? 0,
           monthlyDonation: parsedUser.monthlyDonation ?? user.monthlyDonation ?? 15,
           totalSavings: parsedUser.totalSavings ?? user.totalSavings ?? 0,
-          isLoggedIn: parsedUser.isLoggedIn ?? user.isLoggedIn ?? false,
+          isLoggedIn: parsedUser.isLoggedIn ?? user.isLoggedIn ?? hasAuthToken,
           isVerified: parsedUser.isVerified ?? user.isVerified ?? false,
         };
         
@@ -105,6 +134,11 @@ export const UserProvider = ({ children }) => {
                 // Merge backend data, prioritizing backend values for profile image and other fields
                 // This ensures profile image saved to backend is loaded
                 const profileData = backendProfile.profile || backendProfile;
+                const backendBeneficiary = extractBeneficiaryFromProfile(
+                  backendProfile,
+                  profileData,
+                  loadedUser,
+                );
                 const mergedUser = {
                   ...loadedUser,
                   // Use backend values if they exist and are non-empty, otherwise keep local
@@ -115,14 +149,27 @@ export const UserProvider = ({ children }) => {
                   // IMPORTANT: Prioritize backend profile image to ensure it's loaded
                   profileImage: profileData.profileImage || profileData.profileImageUrl || loadedUser.profileImage || null,
                   profileImageUrl: profileData.profileImageUrl || profileData.profileImage || loadedUser.profileImageUrl || null,
+                  // Beneficiary from backend (keeps Donation Summary / home in sync with API)
+                  ...(backendBeneficiary
+                    ? {
+                        selectedBeneficiary: backendBeneficiary,
+                        referredCharity:
+                          profileData.referredCharity ||
+                          backendProfile.referredCharity ||
+                          backendBeneficiary,
+                      }
+                    : {}),
                   // Preserve all other local fields
                   points: loadedUser.points ?? 0,
                   monthlyDonation: loadedUser.monthlyDonation ?? 15,
                   totalSavings: loadedUser.totalSavings ?? 0,
-                  isLoggedIn: loadedUser.isLoggedIn ?? true,
+                  isLoggedIn: loadedUser.isLoggedIn ?? hasAuthToken,
                   isVerified: backendProfile.is_verified !== undefined ? (backendProfile.is_verified === 1 || backendProfile.is_verified === true) : (loadedUser.isVerified ?? false),
                 };
                 loadedUser = mergedUser;
+                if (backendBeneficiary) {
+                  await persistSelectedBeneficiaryToStorage(backendBeneficiary);
+                }
                 // Save the merged data back to storage
                 await AsyncStorage.setItem('userData', JSON.stringify(loadedUser));
                 console.log('✅ Merged backend data with local data, profileImage:', mergedUser.profileImage);
@@ -560,6 +607,11 @@ export const UserProvider = ({ children }) => {
         // Only use backend values if they're actually present and not empty
         // This prevents overwriting local data with empty backend values
         const profileData = backendProfile.profile || backendProfile;
+        const backendBeneficiary = extractBeneficiaryFromProfile(
+          backendProfile,
+          profileData,
+          localUser,
+        );
         const mergedUser = {
           ...localUser,  // Start with local data (preserve existing)
           // Explicitly preserve local values - only use backend if it has a value
@@ -570,6 +622,15 @@ export const UserProvider = ({ children }) => {
           phone: (profileData.phone && profileData.phone.trim()) ? profileData.phone : localUser.phone || '',
           profileImage: profileData.profileImage || profileData.profileImageUrl || localUser.profileImage || localUser.profileImageUrl || null,
           profileImageUrl: profileData.profileImageUrl || profileData.profileImage || localUser.profileImageUrl || localUser.profileImage || null,
+          ...(backendBeneficiary
+            ? {
+                selectedBeneficiary: backendBeneficiary,
+                referredCharity:
+                  profileData.referredCharity ||
+                  backendProfile.referredCharity ||
+                  backendBeneficiary,
+              }
+            : {}),
           // Preserve other local fields that might not be in backend
           points: localUser.points ?? user.points ?? 0,
           monthlyDonation: localUser.monthlyDonation ?? user.monthlyDonation ?? 15,
@@ -579,6 +640,9 @@ export const UserProvider = ({ children }) => {
           isLoading: false,
         };
         
+        if (backendBeneficiary) {
+          await persistSelectedBeneficiaryToStorage(backendBeneficiary);
+        }
         setUser(mergedUser);
         await AsyncStorage.setItem('userData', JSON.stringify(mergedUser));
         
