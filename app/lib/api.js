@@ -1394,11 +1394,90 @@ const API = {
   /**
    * Get user's monthly donation subscriptions
    * Returns: { subscriptions: [...], summary: {...} }
+   *
+   * Merges `/donations/monthly` (monthly_donations) with any `donations` rows
+   * that have `stripe_subscription_id` (e.g. signup flow), so the list is not
+   * limited to a single monthly_donations row.
    */
   getMonthlyDonations: async () => {
+    const normalizeMonthlySubRow = (sub) => ({
+      ...sub,
+      charity_name:
+        sub.charity_name ||
+        sub.beneficiary?.name ||
+        sub.beneficiary_name ||
+        null,
+    });
+
+    const mergeMonthlySubscriptionLists = (primary, supplemental) => {
+      const seenStripe = new Set();
+      const out = [];
+      for (const s of primary) {
+        const n = normalizeMonthlySubRow(s);
+        const sid = n.stripe_subscription_id || n.subscription_id;
+        if (sid && String(sid).startsWith("sub_")) {
+          seenStripe.add(String(sid));
+        }
+        out.push(n);
+      }
+      for (const s of supplemental) {
+        const n = normalizeMonthlySubRow(s);
+        const sid = n.stripe_subscription_id || n.subscription_id;
+        if (!sid || !String(sid).startsWith("sub_")) continue;
+        const key = String(sid);
+        if (seenStripe.has(key)) continue;
+        seenStripe.add(key);
+        out.push(n);
+      }
+      out.sort((a, b) => {
+        const ta = new Date(a.created_at || 0).getTime();
+        const tb = new Date(b.created_at || 0).getTime();
+        return tb - ta;
+      });
+      return out;
+    };
+
     try {
       const response = await api.get("/api/donations/monthly");
-      return response.data;
+      const data = response.data || {};
+      const rawSubs =
+        data.subscriptions ?? data.data?.subscriptions ?? [];
+      const subscriptions = (Array.isArray(rawSubs) ? rawSubs : []).map(
+        normalizeMonthlySubRow,
+      );
+
+      let merged = subscriptions;
+      try {
+        const supplementalRes = await api.get("/api/donations/my-donations");
+        const rows = Array.isArray(supplementalRes.data?.data)
+          ? supplementalRes.data.data
+          : [];
+        const supplemental = rows
+          .filter((row) => row?.stripe_subscription_id)
+          .map((row) => ({
+            id: row.id,
+            amount: parseFloat(row.amount) || 0,
+            status: row.status,
+            charity_id: row.charity_id,
+            charity_name:
+              row.charity_name || row.charity?.name || row.beneficiary?.name,
+            currency: row.currency,
+            next_payment_date: row.next_payment_date,
+            last_payment_date: row.last_payment_date,
+            stripe_subscription_id: row.stripe_subscription_id,
+            subscription_id: row.stripe_subscription_id || row.subscription_id,
+            beneficiary: row.charity || row.beneficiary || null,
+            created_at: row.created_at,
+          }));
+        merged = mergeMonthlySubscriptionLists(subscriptions, supplemental);
+      } catch (mergeErr) {
+        console.warn(
+          "Monthly subscriptions supplemental merge skipped:",
+          mergeErr?.message || mergeErr,
+        );
+      }
+
+      return { ...data, subscriptions: merged };
     } catch (error) {
       // Fallback: some backends expose unified donations feed instead
       // of /donations/monthly.
@@ -1409,21 +1488,46 @@ const API = {
             ? fallbackResponse.data.data
             : [];
           const subscriptions = rows
-            .filter(
-              (row) =>
-                row?.type === "subscription" || row?.table === "monthly_donations",
-            )
+            .filter((row) => {
+              const t = String(row?.type || "").toLowerCase();
+              const dt = String(row?.donation_type || "").toLowerCase();
+              return (
+                t === "subscription" ||
+                row?.table === "monthly_donations" ||
+                dt === "monthly" ||
+                !!row?.stripe_subscription_id
+              );
+            })
             .map((row) => ({
               id: row.id,
               amount: row.amount,
               status: row.status,
               charity_id: row.charity_id,
-              charity_name: row.charity_name,
+              charity_name:
+                row.charity_name ||
+                row.charity?.name ||
+                row.beneficiary?.name ||
+                null,
               currency: row.currency,
               next_payment_date: row.next_payment_date,
               last_payment_date: row.last_payment_date,
-              stripe_subscription_id: row.stripe_subscription_id,
-              subscription_id: row.stripe_subscription_id || row.subscription_id,
+              stripe_subscription_id:
+                row.stripe_subscription_id ||
+                row.stripeSubscriptionId ||
+                row.subscription_stripe_id,
+              subscription_id:
+                row.stripe_subscription_id ||
+                row.subscription_id ||
+                row.stripeSubscriptionId,
+              current_amount: row.current_amount,
+              next_amount: row.next_amount,
+              current_period_start:
+                row.current_period_start ?? row.period_start ?? row.currentPeriodStart,
+              current_period_end:
+                row.current_period_end ?? row.period_end ?? row.currentPeriodEnd,
+              current_period_end_date: row.current_period_end_date,
+              effective_from: row.effective_from,
+              invoice_total: row.invoice_total ?? row.total_with_fees ?? row.charged_amount,
             }));
 
           return { subscriptions };
@@ -1440,6 +1544,31 @@ const API = {
       throw new Error(
         error.response?.data?.message || "Failed to load monthly donations.",
       );
+    }
+  },
+
+  /**
+   * Live billing schedule from Stripe (amounts + period dates). Do not use AsyncStorage for this.
+   * @param {number|null|undefined} monthlyDonationId — optional monthly_donations row id
+   */
+  getMonthlyBillingPreview: async (monthlyDonationId) => {
+    try {
+      const response = await api.get("/api/donations/monthly/billing-preview", {
+        params:
+          monthlyDonationId != null && monthlyDonationId !== ""
+            ? { monthly_donation_id: monthlyDonationId }
+            : {},
+      });
+      return response.data;
+    } catch (error) {
+      if (error.response?.status === 404) {
+        return { success: false, billing: null, subscription: null };
+      }
+      console.warn(
+        "Get monthly billing preview failed:",
+        error.response?.data || error.message,
+      );
+      return { success: false, billing: null, subscription: null };
     }
   },
 

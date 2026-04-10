@@ -17,7 +17,6 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useFocusEffect } from "expo-router";
 import { AntDesign, Feather } from "@expo/vector-icons";
 import { useUser } from "../../context/UserContext";
@@ -27,6 +26,17 @@ import API from "../../lib/api";
 function formatDonationBreakdownDate(donation) {
   if (donation.created_at) {
     const d = new Date(donation.created_at);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    }
+  }
+  if (donation.next_payment_date) {
+    const s = String(donation.next_payment_date);
+    const d = s.includes("T") ? new Date(s) : new Date(`${s}T12:00:00`);
     if (!Number.isNaN(d.getTime())) {
       return d.toLocaleDateString("en-US", {
         month: "short",
@@ -55,6 +65,25 @@ function formatDonationBreakdownDate(donation) {
   return "—";
 }
 
+function statusDotColor(status) {
+  const s = String(status || "").toLowerCase();
+  if (s === "completed" || s === "paid" || s === "succeeded") {
+    return "#10B981";
+  }
+  if (
+    s === "active" ||
+    s === "trialing" ||
+    s === "cancelling" ||
+    s === "pending"
+  ) {
+    return "#3B82F6";
+  }
+  if (s === "canceled" || s === "cancelled" || s === "unpaid") {
+    return "#9CA3AF";
+  }
+  return "#F59E0B";
+}
+
 function formatNextPaymentLabel(isoDate) {
   if (!isoDate) return null;
   const s = String(isoDate);
@@ -65,6 +94,36 @@ function formatNextPaymentLabel(isoDate) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+/** Stripe subscription id for cancel API — must start with sub_ */
+function pickStripeSubscriptionId(sub) {
+  if (!sub || typeof sub !== "object") return null;
+  const candidates = [
+    sub.stripe_subscription_id,
+    sub.stripeSubscriptionId,
+    sub.subscription_stripe_id,
+    sub.subscription_id,
+  ];
+  for (const c of candidates) {
+    if (c != null && String(c).startsWith("sub_")) {
+      return String(c);
+    }
+  }
+  return null;
+}
+
+function isSubscriptionRowEligible(sub) {
+  const status = String(sub?.status || "").toLowerCase();
+  return [
+    "active",
+    "trialing",
+    "cancelling",
+    "pending",
+    "past_due",
+    "incomplete",
+    "unpaid",
+  ].includes(status);
 }
 
 function formatBillingDate(value) {
@@ -89,6 +148,17 @@ function formatBillingDate(value) {
   });
 }
 
+/** Stripe often omits current_period_start for incomplete/pending subs; match billing-preview API: ~1 month before period end. */
+function approximatePeriodStartFromEnd(dateStr) {
+  if (dateStr == null || dateStr === "") return null;
+  const s = String(dateStr).trim();
+  const d = s.includes("T") ? new Date(s) : new Date(`${s}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  const start = new Date(d);
+  start.setMonth(start.getMonth() - 1);
+  return start.toISOString().split("T")[0];
+}
+
 export default function DonationSummary() {
   const router = useRouter();
   const { user, loadUserData } = useUser();
@@ -101,67 +171,168 @@ export default function DonationSummary() {
   const [isCancelling, setIsCancelling] = useState(false);
   const isFetchingRef = useRef(false);
   const lastFetchTsRef = useRef(0);
+  /** Last good Stripe billing-preview API payload — survives transient failures / re-fetches that would clear state */
+  const stripeBillingCacheRef = useRef(null);
   const loadUserDataRef = useRef(loadUserData);
   loadUserDataRef.current = loadUserData;
 
-  // Debug logging
-  useEffect(() => {
-    console.log("🔍 DonationSummary - User data:", user);
-    console.log("🔍 DonationSummary - Monthly donation:", user.monthlyDonation);
-    console.log(
-      "🔍 DonationSummary - Selected beneficiary:",
-      selectedBeneficiary,
-    );
-  }, [user, selectedBeneficiary]);
+  const { currentPeriodStart, currentPeriodEnd, effectiveFrom } =
+    useMemo(() => {
+      const cache = stripeBillingCacheRef.current;
+      const cacheOk =
+        cache?.forMonthlyDonationId != null &&
+        activeSubscription?.id != null &&
+        cache.forMonthlyDonationId === activeSubscription.id;
+      const b = billingPreview?.billing;
+      const c = cacheOk ? cache?.billing : null;
 
-  const { currentPeriodStart, currentPeriodEnd, effectiveFrom } = useMemo(() => {
-    const start = formatBillingDate(
-      activeSubscription?.current_period_start,
-    );
-    const end = formatBillingDate(
-      billingPreview?.billing?.current_period_end ||
+      const rawEnd =
+        b?.current_period_end ||
+        c?.current_period_end ||
         activeSubscription?.current_period_end_date ||
         activeSubscription?.current_period_end ||
-        activeSubscription?.next_payment_date,
-    );
-    const effective = formatBillingDate(
-      billingPreview?.billing?.effective_from ||
+        activeSubscription?.next_payment_date;
+
+      let rawStart =
+        b?.current_period_start ||
+        c?.current_period_start ||
+        activeSubscription?.current_period_start;
+      if (!rawStart && rawEnd) {
+        rawStart = approximatePeriodStartFromEnd(rawEnd);
+      }
+      if (!rawStart && activeSubscription?.created_at) {
+        rawStart = String(activeSubscription.created_at).split("T")[0];
+      }
+
+      const rawEffective =
+        b?.effective_from ||
+        c?.effective_from ||
         activeSubscription?.effective_from ||
         activeSubscription?.current_period_end_date ||
-        activeSubscription?.current_period_end,
-    );
-    return {
-      currentPeriodStart: start,
-      currentPeriodEnd: end,
-      effectiveFrom: effective,
-    };
-  }, [billingPreview, activeSubscription]);
+        activeSubscription?.current_period_end ||
+        activeSubscription?.next_payment_date;
 
-  useEffect(() => {
-    console.log("📅 DonationSummary Billing Schedule (UI values):", {
-      currentPeriodStart,
-      currentPeriodEnd,
-      effectiveFrom,
-      raw: {
-        billingPreview: billingPreview?.billing ?? null,
-        activeSubscription: activeSubscription
-          ? {
-              current_period_start: activeSubscription.current_period_start,
-              current_period_end: activeSubscription.current_period_end,
-              current_period_end_date:
-                activeSubscription.current_period_end_date,
-              next_payment_date: activeSubscription.next_payment_date,
-              effective_from: activeSubscription.effective_from,
-            }
-          : null,
-      },
-    });
+      const start = formatBillingDate(rawStart);
+      const end = formatBillingDate(rawEnd);
+      const effective = formatBillingDate(rawEffective);
+
+      if (typeof __DEV__ !== "undefined" && __DEV__) {
+        console.log("[DonationSummary] Billing schedule period fields", {
+          raw: {
+            fromState: b ?? null,
+            fromCache: c ?? null,
+            rawStartBeforeFormat: rawStart,
+            activeSubscriptionPeriod: activeSubscription
+              ? {
+                  current_period_start: activeSubscription.current_period_start,
+                  current_period_end: activeSubscription.current_period_end,
+                  current_period_end_date:
+                    activeSubscription.current_period_end_date,
+                  next_payment_date: activeSubscription.next_payment_date,
+                  effective_from: activeSubscription.effective_from,
+                  created_at: activeSubscription.created_at,
+                }
+              : null,
+          },
+          resolved: {
+            currentPeriodStart: start,
+            currentPeriodEnd: end,
+            effectiveFrom: effective,
+          },
+        });
+      }
+
+      return {
+        currentPeriodStart: start,
+        currentPeriodEnd: end,
+        effectiveFrom: effective,
+      };
+    }, [billingPreview, activeSubscription]);
+
+  const { currentBillingAmount, nextBillingAmount } = useMemo(() => {
+    const rows = donationSummary?.monthly_breakdown || [];
+    const amounts = rows
+      .map((d) => Number(d.amount || d.donation_amount || 0))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    const maxBreakdown = amounts.length ? Math.max(...amounts) : 0;
+    const minBreakdown = amounts.length ? Math.min(...amounts) : 0;
+    const multiDistinct = amounts.length >= 2 && maxBreakdown > minBreakdown;
+
+    const base =
+      Number(activeSubscription?.amount ?? user.monthlyDonation ?? 0) || 0;
+
+    const cache = stripeBillingCacheRef.current;
+    const cacheOk =
+      cache?.forMonthlyDonationId != null &&
+      activeSubscription?.id != null &&
+      cache.forMonthlyDonationId === activeSubscription.id;
+
+    const pickNum = (v) => {
+      if (v == null || v === "") return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const mergedBilling = {
+      current_amount:
+        billingPreview?.billing?.current_amount ??
+        (cacheOk ? cache?.billing?.current_amount : undefined),
+      next_amount:
+        billingPreview?.billing?.next_amount ??
+        (cacheOk ? cache?.billing?.next_amount : undefined),
+    };
+    const currentFromPreview = pickNum(mergedBilling.current_amount);
+    const nextFromPreview = pickNum(mergedBilling.next_amount);
+
+    let current = currentFromPreview ?? 0;
+    if (!current) {
+      current =
+        Number(
+          activeSubscription?.current_amount ??
+            activeSubscription?.invoice_total ??
+            null,
+        ) || 0;
+    }
+    if (!current && maxBreakdown > 0) {
+      current = maxBreakdown;
+    }
+    if (!current) {
+      current =
+        base ||
+        Number(
+          donationSummary?.total_monthly_amount || user.monthlyDonation || 0,
+        ) ||
+        0;
+    }
+    if (maxBreakdown > base && maxBreakdown > current) {
+      current = maxBreakdown;
+    }
+
+    // Next recurring: Stripe preview first; never use activeSubscription.amount (often invoice total w/ fees, e.g. 261 vs plan 100)
+    let nextAmt;
+    if (nextFromPreview !== null) {
+      nextAmt = nextFromPreview;
+    } else if (multiDistinct) {
+      nextAmt = minBreakdown;
+    } else {
+      nextAmt =
+        Number(
+          activeSubscription?.next_amount ??
+            user.monthlyDonation ??
+            donationSummary?.total_monthly_amount ??
+            0,
+        ) || 0;
+    }
+
+    return {
+      currentBillingAmount: current,
+      nextBillingAmount: nextAmt,
+    };
   }, [
-    currentPeriodStart,
-    currentPeriodEnd,
-    effectiveFrom,
     billingPreview,
     activeSubscription,
+    donationSummary,
+    user.monthlyDonation,
   ]);
 
   const loadActiveSubscriptionId = async () => {
@@ -169,24 +340,31 @@ export default function DonationSummary() {
       setIsLoading(true);
       const response = await API.getMonthlyDonations();
       const subscriptions = response?.subscriptions || [];
-      const activeSubscription = (response?.subscriptions || []).find((sub) => {
-        const status = String(sub?.status || "").toLowerCase();
-        return (
-          status === "active" ||
-          status === "trialing" ||
-          status === "cancelling"
-        );
-      });
+      const activeSubscription =
+        subscriptions.find((sub) => isSubscriptionRowEligible(sub)) ||
+        subscriptions.find((sub) => pickStripeSubscriptionId(sub)) ||
+        subscriptions[0] ||
+        null;
       setActiveSubscription(activeSubscription || null);
 
       // Build screen summary from the same payload to avoid extra API calls.
-      const monthlyBreakdown = subscriptions.map((sub) => ({
-        amount: sub?.amount || 0,
-        status: sub?.status || "",
-        created_at: sub?.created_at || sub?.last_payment_date || null,
-        beneficiary_name: sub?.charity_name || null,
-        charity_name: sub?.charity_name || null,
-      }));
+      const monthlyBreakdown = subscriptions.map((sub) => {
+        const charityLabel =
+          sub?.charity_name ||
+          sub?.beneficiary?.name ||
+          sub?.beneficiary_name ||
+          null;
+        return {
+          id: sub?.id,
+          stripe_subscription_id: sub?.stripe_subscription_id,
+          amount: sub?.amount || 0,
+          status: sub?.status || "",
+          created_at: sub?.created_at || sub?.last_payment_date || null,
+          next_payment_date: sub?.next_payment_date || null,
+          beneficiary_name: charityLabel,
+          charity_name: charityLabel,
+        };
+      });
       const paidTotal = subscriptions.reduce((sum, sub) => {
         const status = String(sub?.status || "").toLowerCase();
         if (
@@ -203,44 +381,54 @@ export default function DonationSummary() {
         total_donated: paidTotal,
         active_subscriptions: subscriptions.filter((sub) => {
           const status = String(sub?.status || "").toLowerCase();
-          return (
-            status === "active" ||
-            status === "trialing" ||
-            status === "cancelling"
-          );
+          return !["canceled", "cancelled"].includes(status);
         }).length,
         monthly_breakdown: monthlyBreakdown,
         next_payment_date: activeSubscription?.next_payment_date || null,
         beneficiary_name: activeSubscription?.charity_name || null,
       });
 
-      setActiveSubscriptionId(
-        activeSubscription?.stripe_subscription_id ||
-          activeSubscription?.subscription_id ||
-          activeSubscription?.id ||
-          null,
-      );
+      const stripeSubId =
+        pickStripeSubscriptionId(activeSubscription) ||
+        subscriptions.map(pickStripeSubscriptionId).find(Boolean) ||
+        null;
+      setActiveSubscriptionId(stripeSubId);
+
+      try {
+        const preview = await API.getMonthlyBillingPreview(
+          activeSubscription?.id,
+        );
+        if (preview?.success && preview?.billing) {
+          const payload = {
+            billing: preview.billing,
+            subscription: preview.subscription ?? null,
+          };
+          setBillingPreview(payload);
+          stripeBillingCacheRef.current = {
+            billing: preview.billing,
+            subscription: preview.subscription ?? null,
+            forMonthlyDonationId: activeSubscription?.id ?? null,
+          };
+        } else if (
+          preview?.success &&
+          !preview?.billing &&
+          !preview?.subscription
+        ) {
+          setBillingPreview(null);
+          stripeBillingCacheRef.current = null;
+        }
+        // On network / 502 errors: keep prior billing + cache so Next Amount does not jump to DB invoice total
+      } catch {
+        /* keep billingPreview + stripeBillingCacheRef */
+      }
     } catch (error) {
       console.error("❌ Error loading donation summary:", error);
       setDonationSummary(null);
       setActiveSubscription(null);
       setActiveSubscriptionId(null);
+      setBillingPreview(null);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const loadBillingPreview = async () => {
-    try {
-      const raw = await AsyncStorage.getItem("monthlyBillingPreview");
-      if (!raw) {
-        setBillingPreview(null);
-        return;
-      }
-      const parsed = JSON.parse(raw);
-      setBillingPreview(parsed);
-    } catch (error) {
-      setBillingPreview(null);
     }
   };
 
@@ -255,7 +443,7 @@ export default function DonationSummary() {
 
     isFetchingRef.current = true;
     try {
-      await Promise.all([loadActiveSubscriptionId(), loadBillingPreview()]);
+      await loadActiveSubscriptionId();
       lastFetchTsRef.current = Date.now();
     } finally {
       isFetchingRef.current = false;
@@ -298,11 +486,7 @@ export default function DonationSummary() {
                 "Cancellation Scheduled",
                 "Your subscription will cancel at the end of the current billing period.",
               );
-              await Promise.all([
-                loadActiveSubscriptionId(),
-                AsyncStorage.removeItem("monthlyBillingPreview"),
-              ]);
-              setBillingPreview(null);
+              await loadActiveSubscriptionId();
             } catch (error) {
               Alert.alert(
                 "Cancellation Failed",
@@ -334,20 +518,6 @@ export default function DonationSummary() {
   const nextPaymentLabel = formatNextPaymentLabel(
     donationSummary?.next_payment_date,
   );
-  const currentBillingAmount =
-    Number(
-      billingPreview?.billing?.current_amount ??
-        activeSubscription?.current_amount ??
-        activeSubscription?.amount ??
-        monthlyDonationAmount,
-    ) || 0;
-  const nextBillingAmount =
-    Number(
-      billingPreview?.billing?.next_amount ??
-        activeSubscription?.next_amount ??
-        activeSubscription?.amount ??
-        monthlyDonationAmount,
-    ) || 0;
 
   return (
     <View style={styles.container}>
@@ -461,13 +631,17 @@ export default function DonationSummary() {
                 Loading donation history...
               </Text>
             </View>
-          ) : hasCompletedDonations && monthlyBreakdown.length > 0 ? (
+          ) : monthlyBreakdown.length > 0 ? (
             monthlyBreakdown.map((donation, index) => (
               <View
                 key={
-                  donation.created_at
-                    ? `${donation.created_at}-${index}`
-                    : `row-${index}`
+                  donation.stripe_subscription_id
+                    ? `stripe-${donation.stripe_subscription_id}`
+                    : donation.id != null
+                      ? `sub-${donation.id}`
+                      : donation.created_at
+                        ? `${donation.created_at}-${index}`
+                        : `row-${index}`
                 }
                 style={styles.donationRow}
               >
@@ -492,13 +666,7 @@ export default function DonationSummary() {
                   <View
                     style={[
                       styles.statusDot,
-                      {
-                        backgroundColor:
-                          donation.status === "completed" ||
-                          donation.status === "paid"
-                            ? "#10B981"
-                            : "#F59E0B",
-                      },
+                      { backgroundColor: statusDotColor(donation.status) },
                     ]}
                   />
                 </View>

@@ -16429,6 +16429,8 @@ async function handleDonationRoute(
             last_payment_amount: sub.last_payment_amount
               ? parseFloat(sub.last_payment_amount)
               : null,
+            stripe_subscription_id: sub.stripe_subscription_id ?? null,
+            charity_name: sub.beneficiary?.name ?? null,
             beneficiary: sub.beneficiary || null,
             created_at: sub.created_at,
           })),
@@ -16442,6 +16444,249 @@ async function handleDonationRoute(
       console.error("Error fetching subscriptions:", error);
       return new Response(
         JSON.stringify({error: "Failed to fetch subscriptions"}),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // GET /donations/monthly/billing-preview — live Stripe amounts + period dates (no client cache)
+  if (method === "GET" && route === "/donations/monthly/billing-preview") {
+    if (!userId) {
+      return new Response(JSON.stringify({error: "Unauthorized"}), {
+        headers: {"Content-Type": "application/json"},
+        status: 401,
+      });
+    }
+
+    try {
+      const url = new URL(req.url);
+      const monthlyDonationIdParam = url.searchParams.get("monthly_donation_id");
+
+      const {data: mdRows, error: mdError} = await supabase
+        .from("monthly_donations")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", {ascending: false});
+
+      if (mdError) {
+        console.error("billing-preview monthly_donations error:", mdError);
+        return new Response(
+          JSON.stringify({error: "Failed to load monthly donations"}),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 500,
+          },
+        );
+      }
+
+      const rows = mdRows || [];
+      let row: any = null;
+      if (monthlyDonationIdParam) {
+        const mid = parseInt(monthlyDonationIdParam, 10);
+        if (!Number.isNaN(mid)) {
+          row = rows.find((r: any) => r.id === mid) || null;
+        }
+      }
+      if (!row) {
+        row =
+          rows.find((r: any) => r.stripe_subscription_id) || rows[0] || null;
+      }
+
+      if (!row?.stripe_subscription_id) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            billing: null,
+            subscription: null,
+          }),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 200,
+          },
+        );
+      }
+
+      const {data: dbUser} = await supabase
+        .from("users")
+        .select("stripe_customer_id")
+        .eq("id", userId)
+        .single();
+
+      const customerId = row.stripe_customer_id || dbUser?.stripe_customer_id;
+      if (!customerId) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            billing: null,
+            subscription: {
+              id: row.id,
+              stripe_subscription_id: row.stripe_subscription_id,
+              status: row.status,
+            },
+          }),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 200,
+          },
+        );
+      }
+
+      const stripe = getStripeClient();
+      const subId = row.stripe_subscription_id;
+
+      const subRes = await fetch(
+        `${stripe.baseUrl}/subscriptions/${subId}?expand[]=latest_invoice`,
+        {
+          method: "GET",
+          headers: {Authorization: `Bearer ${stripe.secretKey}`},
+        },
+      );
+
+      if (!subRes.ok) {
+        const errText = await subRes.text();
+        console.error("Stripe subscription fetch failed:", subRes.status, errText);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "Failed to fetch subscription from Stripe",
+          }),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 502,
+          },
+        );
+      }
+
+      const subJson = await subRes.json();
+
+      const sumRecurring = (s: any) => {
+        let total = 0;
+        for (const item of s.items?.data || []) {
+          const ua = item.price?.unit_amount;
+          if (ua != null) {
+            total += (ua * (item.quantity || 1)) / 100;
+          }
+        }
+        return total;
+      };
+
+      const nextRecurring = sumRecurring(subJson);
+
+      const upcomingParams = new URLSearchParams({
+        customer: customerId,
+        subscription: subId,
+      });
+      const upRes = await fetch(
+        `${stripe.baseUrl}/invoices/upcoming?${upcomingParams.toString()}`,
+        {
+          method: "GET",
+          headers: {Authorization: `Bearer ${stripe.secretKey}`},
+        },
+      );
+
+      let upcomingInvoice: any = null;
+      let currentAmount = nextRecurring;
+      if (upRes.ok) {
+        upcomingInvoice = await upRes.json();
+        const cents =
+          upcomingInvoice.amount_due != null
+            ? upcomingInvoice.amount_due
+            : upcomingInvoice.total ?? null;
+        if (cents != null && typeof cents === "number") {
+          currentAmount = cents / 100;
+        }
+      }
+
+      const fmtDate = (unix: number | string | undefined | null) => {
+        if (unix == null || unix === "") return null;
+        const n = typeof unix === "string" ? parseInt(unix, 10) : Number(unix);
+        if (!Number.isFinite(n) || n <= 0) return null;
+        return new Date(n * 1000).toISOString().split("T")[0];
+      };
+
+      // Incomplete/pending subs may omit current_period_*; use start_date / upcoming invoice periods
+      let periodStartUnix: number | null =
+        subJson.current_period_start != null
+          ? Number(subJson.current_period_start)
+          : null;
+      let periodEndUnix: number | null =
+        subJson.current_period_end != null
+          ? Number(subJson.current_period_end)
+          : null;
+
+      if (periodStartUnix == null && subJson.start_date != null) {
+        const sd = Number(subJson.start_date);
+        if (Number.isFinite(sd) && sd > 0) periodStartUnix = sd;
+      }
+      if (upcomingInvoice) {
+        const ips = upcomingInvoice.period_start;
+        const ipe = upcomingInvoice.period_end;
+        if (ips != null && periodStartUnix == null) {
+          const n = Number(ips);
+          if (Number.isFinite(n) && n > 0) periodStartUnix = n;
+        }
+        if (ipe != null && periodEndUnix == null) {
+          const n = Number(ipe);
+          if (Number.isFinite(n) && n > 0) periodEndUnix = n;
+        }
+      }
+
+      let periodStartStr = fmtDate(periodStartUnix);
+      let periodEndStr = fmtDate(periodEndUnix);
+
+      // DB often has next_payment_date when Stripe omits period fields (e.g. incomplete/pending)
+      if (!periodEndStr && row.next_payment_date) {
+        periodEndStr = String(row.next_payment_date).split("T")[0];
+      }
+      if (!periodStartStr && periodEndStr) {
+        try {
+          const end = new Date(`${periodEndStr}T12:00:00`);
+          if (!Number.isNaN(end.getTime())) {
+            const start = new Date(end);
+            start.setMonth(start.getMonth() - 1);
+            periodStartStr = start.toISOString().split("T")[0];
+          }
+        } catch (_) {
+          /* ignore */
+        }
+      }
+
+      const billing = {
+        current_amount: currentAmount,
+        next_amount: nextRecurring,
+        current_period_start: periodStartStr,
+        current_period_end: periodEndStr,
+        // When plan/amount change applies at next cycle; align with period end if Stripe does not send a separate field
+        effective_from: periodEndStr,
+      };
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          billing,
+          subscription: {
+            id: row.id,
+            amount: parseFloat(row.amount),
+            status: row.status,
+            stripe_subscription_id: subId,
+            beneficiary_id: row.beneficiary_id,
+            currency: row.currency,
+          },
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 200,
+        },
+      );
+    } catch (error: any) {
+      console.error("billing-preview error:", error);
+      return new Response(
+        JSON.stringify({
+          error: error.message || "Failed to load billing preview",
+        }),
         {
           headers: {"Content-Type": "application/json"},
           status: 500,

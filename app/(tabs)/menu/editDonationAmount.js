@@ -14,7 +14,6 @@ import {
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { AntDesign } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useUser } from "../../context/UserContext";
 import { useBeneficiary } from "../../context/BeneficiaryContext";
 import API from "../../lib/api";
@@ -129,16 +128,6 @@ export default function EditDonationAmount() {
             subscriptionIdForUpdate,
             amount,
           );
-          if (response?.billing || response?.subscription) {
-            await AsyncStorage.setItem(
-              "monthlyBillingPreview",
-              JSON.stringify({
-                billing: response.billing || null,
-                subscription: response.subscription || null,
-                updated_at: new Date().toISOString(),
-              }),
-            );
-          }
           apiSucceeded = true;
         } catch (apiError) {
           if (apiError?.status === 409) {
