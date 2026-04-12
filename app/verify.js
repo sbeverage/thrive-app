@@ -424,24 +424,6 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingHorizontal: 20,
   },
-  skipContainer: {
-    marginTop: 24,
-    alignItems: 'center',
-  },
-  skipButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#999',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-  },
-  skipButtonText: {
-    color: '#999',
-    fontSize: 14,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
   emojiIcon: {
     fontSize: 60,
     textAlign: 'center',

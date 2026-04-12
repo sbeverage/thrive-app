@@ -19,7 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { useStripe } from '@stripe/stripe-react-native';
 import API from '../../lib/api';
-import { STRIPE_PUBLISHABLE_KEY } from '../../utils/constants';
+import { STRIPE_PUBLISHABLE_KEY, STRIPE_CC_FEE_RATE, STRIPE_CC_FEE_FIXED } from '../../utils/constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function CheckoutScreen() {
@@ -257,8 +257,8 @@ export default function CheckoutScreen() {
     router.back();
   };
 
-  // Calculate fees (matching backend calculation)
-  const processingFee = userCoveredFees ? (amount * 0.029 + 0.30) : 0;
+  // Calculate fees using shared constants (matching backend calculation)
+  const processingFee = userCoveredFees ? (amount * STRIPE_CC_FEE_RATE + STRIPE_CC_FEE_FIXED) : 0;
   const totalAmount = userCoveredFees ? (amount + processingFee) : amount;
 
   return (

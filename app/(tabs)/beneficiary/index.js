@@ -12,6 +12,7 @@ import {
   Platform,
   SafeAreaView,
   Modal,
+  Alert,
 } from 'react-native';
 
 import { AntDesign, Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
