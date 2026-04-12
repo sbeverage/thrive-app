@@ -27,18 +27,11 @@ export default function Layout() {
     // Handle deep links when app is already running
     // Skip if running in web browser (Safari) - only handle in native app
     const handleDeepLink = (event) => {
-      // Extract URL from event object
       const url = event?.url || event;
-      console.log('🔗 Deep link received:', url);
-      
       if (!url) return;
-      
-      // Skip deep link handling in web browser (Safari)
-      // In Safari, the verify.js screen will handle the URL directly via useLocalSearchParams
+
+      // Skip deep link handling in web browser — verify.js handles URL params directly
       if (typeof window !== 'undefined' && window.location) {
-        // Running in web browser - don't process deep links here
-        // The verify.js screen will handle the URL via URL params
-        console.log('🌐 Running in web browser - skipping deep link handler');
         return;
       }
       
@@ -64,63 +57,45 @@ export default function Layout() {
         const pathname = parsedUrl.pathname || '';
         const searchParams = parsedUrl.searchParams || new URLSearchParams(parsedUrl.search || '');
         const token = searchParams.get('token');
-        
-        console.log('🔗 Parsed URL - Path:', pathname, 'Token:', token);
-        
-        // Handle original email verification flow - /verify?token=...&email=...
-        // This is the original working flow from before resend email was added
-        // Also handles custom scheme redirects from Safari: thriveapp://verify?token=...&email=...&verified=true
-        if (pathname.includes('verify') && !pathname.includes('verify-email') && token) {
+
+        // Email verification: /verify?token=...&email=...
+        // Also handles thriveapp://verify?token=...&verified=true (custom scheme fallback)
+        if (pathname.includes('verify') && !pathname.includes('verify-email') && !pathname.includes('donorInvitationVerify') && token) {
           const verified = searchParams.get('verified');
-          
-          // If verified=true (from Safari redirect or direct deep link), navigate directly to explainerDonate
           if (verified === 'true') {
-            console.log('🔗 Email verified - navigating to explainerDonate (from Safari redirect)');
             router.replace('/signupFlow/explainerDonate');
             return;
           }
-          
-          // If not verified yet, route to verify screen to handle verification
-          // Original flow: verify screen will verify token, then navigate to explainerDonate
-          console.log('🔗 Email verification link detected - routing to verify screen');
           const emailParam = searchParams.get('email') || '';
           router.push(`/verify?token=${token}&email=${encodeURIComponent(emailParam)}`);
           return;
         }
-        
-        // Handle referral signup links (from Invite Friends)
-        // Format: https://thrive-web-jet.vercel.app/signup?ref=xxx or thriveapp://signup?ref=xxx
+
+        // Referral signup: /signup?ref=xxx
         const ref = searchParams.get('ref');
         if ((pathname.includes('signup') || pathname === 'signup') && ref) {
-          console.log('🔗 Referral signup link detected, ref:', ref);
           router.replace(`/signup?ref=${encodeURIComponent(ref)}`);
           return;
         }
 
-        // Handle donor invitation links (new flow)
-        // Format: thriveapp://verify-email?token=... or https://thrive-web-jet.vercel.app/verify-email?token=...
-        if ((pathname.includes('verify-email') || pathname.includes('donor-invitation')) && token) {
-          // Check if this is an invitation (64-char token) or self-signup (40-char token)
+        // Handle donor invitation links
+        // Universal Link: https://thrive-web-jet.vercel.app/donorInvitationVerify?token=...
+        // Legacy custom scheme: thriveapp://verify-email?token=...
+        if ((pathname.includes('donorInvitationVerify') || pathname.includes('verify-email') || pathname.includes('donor-invitation')) && token) {
           const isInvitationToken = token.length === 64;
-          
           if (isInvitationToken) {
-            console.log('🔗 Donor invitation verification link detected');
             router.push(`/donorInvitationVerify?token=${token}`);
           } else {
-            console.log('🔗 Self-signup verification link detected');
             router.push(`/verify?token=${token}`);
           }
           return;
         }
         
-        // Handle regular email verification success redirect (custom scheme)
+        // Custom scheme verification success fallback
         if (url.startsWith('thriveapp://verify-success')) {
-          console.log('🔗 Email verification success redirect received!');
           router.replace('/signupFlow/explainerDonate');
           return;
         }
-        
-        console.log('🔗 Deep link not matched to any handler');
       } catch (error) {
         console.error('❌ Error parsing deep link:', error);
       }
@@ -129,9 +104,6 @@ export default function Layout() {
     // Only set up deep link listeners in native app (not in web browser)
     // In web browser (Safari), the verify.js screen handles URL params directly
     if (typeof window !== 'undefined' && window.location) {
-      // Running in web browser (Safari) - don't set up deep link listeners
-      // The verify.js screen will handle URL params directly via useLocalSearchParams
-      console.log('🌐 Running in web browser - skipping deep link setup');
       return () => {};
     }
     

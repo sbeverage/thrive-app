@@ -979,16 +979,15 @@ async function sendInvitationEmail({
     // Determine if this is an invitation (64-char token) or self-signup
     const isInvitationToken = verificationToken.length === 64;
 
-    // Build verification link - Use backend Edge Function for branded verification page
-    // The backend Edge Function has the properly branded blue gradient page
-    const edgeFunctionUrl =
-      Deno.env.get("EDGE_FUNCTION_URL") ||
-      "https://mdqgndyhzlnwojtubouh.supabase.co/functions/v1/api";
+    // Build verification link - Use Universal Link (Vercel frontend URL) so iOS intercepts it
+    // and opens the app directly instead of showing a web page in Safari.
+    // APP_BASE_URL is registered in the app's associatedDomains (applinks:thrive-web-jet.vercel.app).
+    const appBaseUrl =
+      Deno.env.get("APP_BASE_URL") || "https://thrive-web-jet.vercel.app";
 
-    // Use backend Edge Function for verification - it has the branded blue gradient page
     const verificationLink = isInvitationToken
-      ? `${edgeFunctionUrl}/auth/verify-email?token=${verificationToken}` // Backend route for invitations
-      : `${edgeFunctionUrl}/auth/verify?token=${verificationToken}&email=${encodeURIComponent(to)}`; // Backend route for self-signup
+      ? `${appBaseUrl}/donorInvitationVerify?token=${verificationToken}`
+      : `${appBaseUrl}/verify?token=${verificationToken}&email=${encodeURIComponent(to)}`;
 
     // App store links (update these with your actual app URLs)
     const appStoreLinks = {
