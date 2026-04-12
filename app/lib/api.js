@@ -75,10 +75,7 @@ api.interceptors.request.use(
 
 // Response interceptor - Handle common errors
 api.interceptors.response.use(
-  (response) => {
-    console.log(`✅ API Success: ${response.config.method?.toUpperCase()} ${response.config.url}`);
-    return response;
-  },
+  (response) => response,
   async (error) => {
     const status = error.response?.status;
     const url = error.config?.url || '';
@@ -174,8 +171,6 @@ const API = {
    */
   signup: async (userData) => {
     try {
-      console.log('🚀 Signing up user:', { email: userData.email, hasReferralToken: !!userData.referralToken });
-      
       // Prepare signup data - include location and referral token if available
       const signupData = {
         email: userData.email,
@@ -248,7 +243,6 @@ const API = {
     try {
       const email = typeof credentials.email === 'string' ? credentials.email.trim() : credentials.email;
       const password = credentials.password;
-      console.log('🔐 Logging in user:', { email });
       const response = await api.post('/api/auth/login', { email, password });
       
       // Store auth token
@@ -298,13 +292,6 @@ const API = {
         ...(socialData.loginOnly && { loginOnly: true }), // Login-only mode: reject if user doesn't exist
       };
 
-      console.log('🚀 Sending social login payload to backend:', {
-        ...loginData,
-        accessToken: loginData.accessToken ? '[REDACTED]' : null,
-        idToken: loginData.idToken ? '[REDACTED]' : null,
-        identityToken: loginData.identityToken ? '[REDACTED]' : null,
-      });
-      
       const response = await api.post('/api/auth/social-login', loginData);
       
       // Store auth token
@@ -384,7 +371,6 @@ const API = {
    */
   verifyDonorInvitation: async (token) => {
     try {
-      console.log('🔍 Verifying donor invitation token:', token);
       const response = await api.get(`/api/auth/verify-email?token=${token}&format=json`);
       return response.data;
     } catch (error) {

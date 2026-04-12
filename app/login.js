@@ -11,7 +11,6 @@ import {
   Dimensions,
   Platform,
   KeyboardAvoidingView,
-  Switch,
   ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';

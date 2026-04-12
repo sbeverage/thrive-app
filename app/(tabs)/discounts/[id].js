@@ -49,24 +49,13 @@ export default function VendorDetails() {
       });
       
       if (foundVendor) {
-        console.log('✅ Found vendor:', foundVendor.name, 'ID:', foundVendor.id);
         setVendor(foundVendor);
-        
-        // Find all discounts for this vendor
         const vendorDiscountList = discounts.filter(d => {
           const dVendorId = d.vendorId?.toString() || d.vendorId;
           const vId = foundVendor.id?.toString() || foundVendor.id;
-          const matches = dVendorId === vId;
-          if (matches) {
-            console.log('✅ Found matching discount:', d.title, 'for vendor:', foundVendor.name);
-          }
-          return matches;
+          return dVendorId === vId;
         });
-        console.log(`📊 Vendor ${foundVendor.name} has ${vendorDiscountList.length} discount(s)`);
         setVendorDiscounts(vendorDiscountList);
-      } else {
-        console.warn('⚠️ Vendor not found for ID:', vendorId);
-        console.log('📊 Available vendor IDs:', vendors.map(v => v.id));
       }
     }
   }, [vendors, discounts, vendorId]);
@@ -77,9 +66,7 @@ export default function VendorDetails() {
       try {
         const stored = await AsyncStorage.getItem(redemptionCountsKey);
         if (stored) {
-          const counts = JSON.parse(stored);
-          setRedemptionCounts(counts);
-          console.log('📊 Loaded redemption counts from storage:', counts);
+          setRedemptionCounts(JSON.parse(stored));
         }
       } catch (error) {
         console.warn('⚠️ Failed to load redemption counts from storage:', error);
@@ -93,9 +80,8 @@ export default function VendorDetails() {
     const saveRedemptionCounts = async () => {
       try {
         await AsyncStorage.setItem(redemptionCountsKey, JSON.stringify(redemptionCounts));
-        console.log('💾 Saved redemption counts to storage:', redemptionCounts);
-      } catch (error) {
-        console.warn('⚠️ Failed to save redemption counts to storage:', error);
+      } catch {
+        // Non-critical
       }
     };
     if (Object.keys(redemptionCounts).length > 0) {
@@ -119,30 +105,22 @@ export default function VendorDetails() {
       console.warn('⚠️ Failed to load redemption counts from storage:', error);
     }
     
-    const counts = {};
-    
-    for (const discount of vendorDiscounts) {
-      try {
-        const result = await API.getRedemptionCount(discount.id);
-        const serverCount = result.count || 0;
-        const currentCount = currentCounts[discount.id] || 0;
-        
-        // Only use server count if it's valid and >= current count
-        // This prevents 404 responses (which return 0) from overwriting optimistic updates
-        if (serverCount > 0 && serverCount >= currentCount) {
-          counts[discount.id] = serverCount;
-          console.log(`📊 Discount ${discount.id} - Updated count from server: ${serverCount}`);
-        } else {
-          // Server returned 0 or lower count (likely 404), preserve existing count
-          counts[discount.id] = currentCount;
-          console.log(`📊 Discount ${discount.id} - Preserving existing count: ${currentCount} (server returned: ${serverCount})`);
+    const results = await Promise.all(
+      vendorDiscounts.map(async (discount) => {
+        try {
+          const result = await API.getRedemptionCount(discount.id);
+          const serverCount = result.count || 0;
+          const currentCount = currentCounts[discount.id] || 0;
+          // Only use server count if it's valid and >= current count
+          // This prevents 404 responses (which return 0) from overwriting optimistic updates
+          const count = serverCount > 0 && serverCount >= currentCount ? serverCount : currentCount;
+          return { id: discount.id, count };
+        } catch {
+          return { id: discount.id, count: currentCounts[discount.id] || 0 };
         }
-      } catch (error) {
-        console.warn(`⚠️ Failed to get redemption count for discount ${discount.id}:`, error);
-        // Preserve existing count on error
-        counts[discount.id] = currentCounts[discount.id] || 0;
-      }
-    }
+      })
+    );
+    const counts = Object.fromEntries(results.map(({ id, count }) => [id, count]));
     setRedemptionCounts(counts);
   };
 

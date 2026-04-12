@@ -1,17 +1,16 @@
 // file: app/(tabs)/home.js
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useFonts, Figtree_400Regular, Figtree_700Bold } from '@expo-google-fonts/figtree';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, Image, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, Image, TouchableOpacity } from 'react-native';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter, Tabs, useFocusEffect, useNavigation } from 'expo-router';
+import { useRouter, useFocusEffect, useNavigation } from 'expo-router';
 import MonthlyImpactCard from '../../components/MonthlyImpactCard';
 import { useBeneficiary } from '../context/BeneficiaryContext';
 import { useUser } from '../context/UserContext';
 import { useLocation } from '../context/LocationContext';
 import { useDiscount } from '../context/DiscountContext';
 import API from '../lib/api';
-import { BACKEND_URL } from '../utils/constants';
 import WalkthroughTutorial from '../../components/WalkthroughTutorial';
 import { useTutorial } from '../../hooks/useTutorial';
 import InviteFriendsModal from '../../components/InviteFriendsModal';
@@ -26,7 +25,7 @@ export default function MainHome() {
   const router = useRouter();
   const navigation = useNavigation();
   const { selectedBeneficiary } = useBeneficiary();
-  const { user, saveUserData, loadUserData, syncWithBackend, clearAllData, clearProfileImage, addPoints, addSavings, uploadProfilePicture, checkVerificationStatus } = useUser();
+  const { user, loadUserData } = useUser();
   const { location: userLocation, locationAddress, locationPermission, checkLocationPermission } = useLocation();
   const { vendors, discounts, loadDiscounts } = useDiscount();
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -265,81 +264,6 @@ export default function MainHome() {
     }, [])
   );
 
-  const handleTestBackend = async () => {
-    console.log('🧪 Test button clicked!');
-    console.log('Starting backend test...');
-    Alert.alert('Debug', 'Button clicked! Check console for logs.');
-    
-    try {
-      console.log('Fetching backend...');
-      Alert.alert('Testing Backend', 'Testing connection to your backend...');
-      
-      // Test basic connectivity to your backend
-      const response = await fetch(`${BACKEND_URL}/api/health`);
-      console.log('Response received:', response.status);
-      
-      if (response.ok) {
-        console.log('✅ Backend test successful!');
-        Alert.alert('✅ Success!', 'Backend connection is working perfectly!');
-      } else {
-        console.log('⚠️ Backend returned status:', response.status);
-        Alert.alert('⚠️ Partial Success', 'Backend is reachable but some endpoints may have issues.');
-      }
-    } catch (error) {
-      console.log('❌ Backend test failed:', error);
-      Alert.alert('❌ Test Failed', `Backend connection test failed: ${error.message}`);
-      console.error('Test error:', error);
-    }
-  };
-
-  const handleTestSignup = async () => {
-    try {
-      Alert.alert('Testing Signup', 'Testing signup API call...');
-      const response = await API.signup({ 
-        email: 'test@example.com', 
-        password: 'testpassword123' 
-      });
-      Alert.alert('✅ Signup Test Success', 'Signup API is working!');
-    } catch (error) {
-      Alert.alert('❌ Signup Test Failed', `Error: ${error.message}\n\nThis might be a network issue or backend problem.`);
-      console.error('Signup test error:', error);
-    }
-  };
-
-  const handleSyncWithBackend = async () => {
-    try {
-      Alert.alert('Syncing', 'Syncing user data with backend...');
-      await syncWithBackend();
-      Alert.alert('✅ Sync Complete', 'User data synced with backend successfully!');
-    } catch (error) {
-      Alert.alert('❌ Sync Failed', `Error: ${error.message}`);
-      console.error('Sync error:', error);
-    }
-  };
-
-  const handleDeleteUser = async () => {
-    Alert.alert(
-      'Delete User Account',
-      'Enter email to delete from database:',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          onPress: async () => {
-            try {
-              await API.deleteUser('stephanie@phixsolutions.com');
-              Alert.alert('✅ User Deleted', 'User account deleted from database. You can now sign up again.');
-            } catch (error) {
-              Alert.alert('❌ Delete Failed', `Error: ${error.message}`);
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  // Debug functions removed for production
-
   let [fontsLoaded] = useFonts({
     Figtree_400Regular,
     Figtree_700Bold,
@@ -446,8 +370,7 @@ export default function MainHome() {
           {selectedBeneficiary ? (
             <TouchableOpacity 
               onPress={() => {
-                console.log('🔵 Home: Navigating to beneficiary detail, selectedBeneficiary:', selectedBeneficiary?.id);
-                router.push({ 
+                router.push({
                   pathname: '/(tabs)/beneficiary/beneficiaryDetail', 
                   params: { id: selectedBeneficiary?.id?.toString() } 
                 });

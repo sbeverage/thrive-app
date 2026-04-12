@@ -12,7 +12,6 @@ import {
   SafeAreaView,
   KeyboardAvoidingView,
   Platform,
-  Linking,
 } from 'react-native';
 
 

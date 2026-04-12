@@ -91,10 +91,8 @@ export const UserProvider = ({ children }) => {
           try {
             const isAuth = await API.isAuthenticated();
             if (isAuth) {
-              console.log('📥 User authenticated, syncing with backend to get latest profile data...');
               const backendProfile = await API.getProfile();
               if (backendProfile) {
-                console.log('📥 Backend profile data:', backendProfile);
                 // Merge backend data, prioritizing backend values for profile image and other fields
                 // This ensures profile image saved to backend is loaded
                 const profileData = backendProfile.profile || backendProfile;
@@ -118,9 +116,6 @@ export const UserProvider = ({ children }) => {
                 loadedUser = mergedUser;
                 // Save the merged data back to storage
                 await AsyncStorage.setItem('userData', JSON.stringify(loadedUser));
-                console.log('✅ Merged backend data with local data, profileImage:', mergedUser.profileImage);
-              } else {
-                console.log('⚠️ Backend profile is null (404), keeping local data only');
               }
             }
           } catch (backendError) {
@@ -136,8 +131,6 @@ export const UserProvider = ({ children }) => {
         // If user state already has data (from previous load or context), preserve it
         // Only update isLoading flag
         setUser(prev => {
-          // If we have data in memory, preserve it
-          // Only clear if this is truly the initial state (no data anywhere)
           const hasDataInMemory = prev.firstName || prev.lastName || prev.email || prev.phone || prev.profileImage;
           if (hasDataInMemory) {
             return { ...prev, isLoading: false };
@@ -157,7 +150,6 @@ export const UserProvider = ({ children }) => {
       setUser(prev => {
         const hasDataInMemory = prev.firstName || prev.lastName || prev.email || prev.phone || prev.profileImage;
         if (hasDataInMemory) {
-          console.log('⚠️ Error loading but data exists in memory - preserving memory data');
           return { ...prev, isLoading: false };
         }
         // Only update isLoading if we have no data
@@ -251,9 +243,6 @@ export const UserProvider = ({ children }) => {
         try {
           const isAuth = await API.isAuthenticated();
           if (isAuth) {
-            console.log('🌐 Saving profile to Supabase backend...');
-            // Send the complete updated user data to backend, not just userData
-            // This ensures all fields (firstName, lastName, email, phone, etc.) are saved
             await API.saveProfile({
               firstName: updatedUser.firstName,
               lastName: updatedUser.lastName,
@@ -262,23 +251,16 @@ export const UserProvider = ({ children }) => {
               profileImage: updatedUser.profileImage || updatedUser.profileImageUrl,
               profileImageUrl: updatedUser.profileImageUrl || updatedUser.profileImage,
             });
-            console.log('✅ Profile saved to Supabase backend');
-          } else {
-            console.log('⚠️ User not authenticated, skipping backend save');
           }
         } catch (backendError) {
-          // Handle different error types gracefully
-          // Check both response.status and error.status (in case error was enhanced)
           const status = backendError.response?.status || backendError.status;
           const errorMessage = backendError.message || '';
           const errorData = backendError.response?.data || backendError.data;
-          
+
           if (status === 404) {
-            // Endpoint not implemented - this is expected and handled gracefully
-            console.log('⚠️ Save profile endpoint not implemented yet (404) - data saved locally only');
+            // Expected: endpoint not implemented
           } else if (status === 401) {
-            // User not authenticated - token expired or invalid
-            console.log('⚠️ User authentication expired - data saved locally only');
+            // Expected: token expired
           } else if (status === 500) {
             // Server error - log detailed error for debugging
             console.error('❌ Backend save failed (500 Server Error):');
@@ -317,7 +299,6 @@ export const UserProvider = ({ children }) => {
       const updatedUser = { ...user, ...profileData };
       setUser(updatedUser);
       await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
-      console.log('✅ User profile updated locally');
     } catch (error) {
       console.error('❌ Error updating user profile:', error);
     }
@@ -327,17 +308,14 @@ export const UserProvider = ({ children }) => {
     try {
       if (loginResponse && loginResponse.is_verified !== undefined) {
         const isVerified = loginResponse.is_verified === 1 || loginResponse.is_verified === true;
-        console.log('🔄 Syncing verification status from login response:', isVerified);
-        
         if (isVerified !== user.isVerified) {
           const updatedUser = { ...user, isVerified };
           setUser(updatedUser);
           await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
-          console.log('✅ Verification status synced from login');
         }
       }
-    } catch (error) {
-      console.log('⚠️ Could not sync verification from login:', error.message);
+    } catch {
+      // Non-critical sync — ignore
     }
   };
 
@@ -346,40 +324,28 @@ export const UserProvider = ({ children }) => {
    */
   const addPoints = async (pointsToAdd, type = 'earned', description = '') => {
     try {
-      console.log(`🎯 Adding ${pointsToAdd} points. Current: ${user.points}`);
-      
       // Try to add points via backend API
       try {
         const isAuth = await API.isAuthenticated();
         if (isAuth) {
           const response = await API.addPoints(pointsToAdd, type, description);
           const newPoints = response.points || (user.points + pointsToAdd);
-          
-          // Update local state
           const updatedUser = { ...user, points: newPoints };
           setUser(updatedUser);
           await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
-          
-          console.log(`✅ Points added via backend. New total: ${newPoints}`);
           return newPoints;
         }
-      } catch (apiError) {
-        console.warn('⚠️ Backend points API failed, using local storage:', apiError.message);
+      } catch {
         // Fall through to local storage fallback
       }
-      
+
       // Fallback to local storage if backend fails or user not authenticated
       const currentUserData = await AsyncStorage.getItem('userData');
       const currentUser = currentUserData ? JSON.parse(currentUserData) : user;
-      
       const newPoints = (currentUser.points || 0) + pointsToAdd;
       const updatedUser = { ...currentUser, points: newPoints };
-      
-      console.log(`🎯 Updated user object for points (local):`, updatedUser);
       setUser(updatedUser);
       await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
-      
-      console.log(`✅ Points updated locally. New total: ${newPoints}`);
       return newPoints;
     } catch (error) {
       console.error('❌ Error adding points:', error);
@@ -396,19 +362,14 @@ export const UserProvider = ({ children }) => {
       if (isAuth) {
         const response = await API.getPoints();
         const backendPoints = response.points || 0;
-        
-        // Update local state if different
         if (backendPoints !== user.points) {
           const updatedUser = { ...user, points: backendPoints };
           setUser(updatedUser);
           await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
-          console.log(`✅ Points synced from backend: ${backendPoints}`);
         }
-        
         return backendPoints;
       }
-    } catch (error) {
-      console.warn('⚠️ Could not sync points from backend:', error.message);
+    } catch {
       return user.points;
     }
   };
@@ -418,20 +379,12 @@ export const UserProvider = ({ children }) => {
    */
   const addSavings = async (savingsAmount) => {
     try {
-      console.log(`💰 Adding $${savingsAmount} to savings. Current: $${user.totalSavings}`);
-      
-      // Get current user data from storage to ensure we have the latest data
       const currentUserData = await AsyncStorage.getItem('userData');
       const currentUser = currentUserData ? JSON.parse(currentUserData) : user;
-      
       const newTotalSavings = (currentUser.totalSavings || 0) + savingsAmount;
       const updatedUser = { ...currentUser, totalSavings: newTotalSavings };
-      
-      console.log(`💰 Updated user object for savings:`, updatedUser);
       setUser(updatedUser);
       await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
-      
-      console.log(`✅ Savings updated. New total: $${newTotalSavings}`);
       return newTotalSavings;
     } catch (error) {
       console.error('❌ Error adding savings:', error);
@@ -444,55 +397,32 @@ export const UserProvider = ({ children }) => {
    */
   const uploadProfilePicture = async (imageUri) => {
     try {
-      console.log('📸 Uploading profile picture...');
-      
-      // Check if user is authenticated before attempting Supabase upload
       const isAuth = await API.isAuthenticated();
-      let imageUrl = imageUri; // Default to local URI
-      
+      let imageUrl = imageUri;
+
       if (isAuth) {
-        console.log('📸 Compressing and uploading profile picture to Supabase storage...');
-        
-        // Compress and resize image
+        // Compress and resize image before upload
         const compressedImage = await ImageManipulator.manipulateAsync(
           imageUri,
-          [
-            { resize: { width: 400, height: 400 } }, // Resize to 400x400 max
-          ],
-          {
-            compress: 0.8, // 80% quality
-            format: ImageManipulator.SaveFormat.JPEG,
-          }
+          [{ resize: { width: 400, height: 400 } }],
+          { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
         );
-        
-        console.log('📸 Image compressed, size:', compressedImage.width, 'x', compressedImage.height);
-        
-        // Upload to backend Supabase storage endpoint
+
         try {
           const response = await API.uploadProfilePicture(compressedImage.uri);
           if (response.success) {
             imageUrl = response.profileImageUrl || response.imageUrl;
-            console.log('✅ Profile picture uploaded to Supabase storage:', imageUrl);
           }
         } catch (uploadError) {
-          // Handle expected error (endpoint not implemented)
-          if (uploadError.message === 'UPLOAD_ENDPOINT_NOT_IMPLEMENTED') {
-            console.log('⚠️ Profile picture upload endpoint not available, using local URI');
-          } else {
+          if (uploadError.message !== 'UPLOAD_ENDPOINT_NOT_IMPLEMENTED') {
             console.error('❌ Error uploading profile picture:', uploadError);
-            console.log('📸 Falling back to local URI');
           }
         }
-      } else {
-        console.log('⚠️ User not authenticated, using local URI');
       }
-      
-      // Just return the image URL - don't save here
-      // The caller (handleUpdate) will save everything together using saveUserData
+
       return { imageUrl };
     } catch (error) {
       console.error('❌ Error in uploadProfilePicture:', error);
-      // Return local URI as fallback
       return { imageUrl: imageUri };
     }
   };
@@ -502,61 +432,35 @@ export const UserProvider = ({ children }) => {
    */
   const syncWithBackend = async () => {
     try {
-      console.log('🔄 Syncing user data with backend...');
       const isAuth = await API.isAuthenticated();
-      
-      if (isAuth) {
-        // Load local data first to preserve it
-        const localData = await AsyncStorage.getItem('userData');
-        const localUser = localData ? JSON.parse(localData) : user;
-        
-        const backendProfile = await API.getProfile();
-        console.log('📥 Backend profile data:', backendProfile);
-        
-        // If backend profile is null (404), just use local data
-        if (!backendProfile) {
-          console.log('⚠️ No backend profile found, using local data only');
-          return localUser;
-        }
-        
-        // Merge: local data (preserve) -> backend data (update)
-        // Only use backend values if they're actually present and not empty
-        // This prevents overwriting local data with empty backend values
-        const profileData = backendProfile.profile || backendProfile;
-        const mergedUser = {
-          ...localUser,  // Start with local data (preserve existing)
-          // Explicitly preserve local values - only use backend if it has a value
-          // This prevents empty backend values from overwriting local data
-          firstName: (profileData.firstName && profileData.firstName.trim()) ? profileData.firstName : localUser.firstName || '',
-          lastName: (profileData.lastName && profileData.lastName.trim()) ? profileData.lastName : localUser.lastName || '',
-          email: (profileData.email && profileData.email.trim()) ? profileData.email : localUser.email || '',
-          phone: (profileData.phone && profileData.phone.trim()) ? profileData.phone : localUser.phone || '',
-          profileImage: profileData.profileImage || profileData.profileImageUrl || localUser.profileImage || localUser.profileImageUrl || null,
-          profileImageUrl: profileData.profileImageUrl || profileData.profileImage || localUser.profileImageUrl || localUser.profileImage || null,
-          // Preserve other local fields that might not be in backend
-          points: localUser.points ?? user.points ?? 0,
-          monthlyDonation: localUser.monthlyDonation ?? user.monthlyDonation ?? 15,
-          totalSavings: localUser.totalSavings ?? user.totalSavings ?? 0,
-          isLoggedIn: localUser.isLoggedIn ?? true,
-          isVerified: backendProfile.is_verified !== undefined ? (backendProfile.is_verified === 1 || backendProfile.is_verified === true) : (localUser.isVerified ?? false),
-          isLoading: false,
-        };
-        
-        setUser(mergedUser);
-        await AsyncStorage.setItem('userData', JSON.stringify(mergedUser));
-        
-        console.log('✅ User data synced with backend');
-        console.log('📥 Merged user data:', {
-          firstName: mergedUser.firstName,
-          lastName: mergedUser.lastName,
-          email: mergedUser.email,
-          phone: mergedUser.phone,
-        });
-        return mergedUser;
-      } else {
-        console.log('⚠️ User not authenticated, skipping sync');
-        return user;
-      }
+      if (!isAuth) return user;
+
+      const localData = await AsyncStorage.getItem('userData');
+      const localUser = localData ? JSON.parse(localData) : user;
+
+      const backendProfile = await API.getProfile();
+      if (!backendProfile) return localUser;
+
+      const profileData = backendProfile.profile || backendProfile;
+      const mergedUser = {
+        ...localUser,
+        firstName: (profileData.firstName && profileData.firstName.trim()) ? profileData.firstName : localUser.firstName || '',
+        lastName: (profileData.lastName && profileData.lastName.trim()) ? profileData.lastName : localUser.lastName || '',
+        email: (profileData.email && profileData.email.trim()) ? profileData.email : localUser.email || '',
+        phone: (profileData.phone && profileData.phone.trim()) ? profileData.phone : localUser.phone || '',
+        profileImage: profileData.profileImage || profileData.profileImageUrl || localUser.profileImage || localUser.profileImageUrl || null,
+        profileImageUrl: profileData.profileImageUrl || profileData.profileImage || localUser.profileImageUrl || localUser.profileImage || null,
+        points: localUser.points ?? user.points ?? 0,
+        monthlyDonation: localUser.monthlyDonation ?? user.monthlyDonation ?? 15,
+        totalSavings: localUser.totalSavings ?? user.totalSavings ?? 0,
+        isLoggedIn: localUser.isLoggedIn ?? true,
+        isVerified: backendProfile.is_verified !== undefined ? (backendProfile.is_verified === 1 || backendProfile.is_verified === true) : (localUser.isVerified ?? false),
+        isLoading: false,
+      };
+
+      setUser(mergedUser);
+      await AsyncStorage.setItem('userData', JSON.stringify(mergedUser));
+      return mergedUser;
     } catch (error) {
       console.error('❌ Error syncing with backend:', error);
       return user;
@@ -568,7 +472,6 @@ export const UserProvider = ({ children }) => {
    */
   const logout = async () => {
     try {
-      console.log('🚪 Logging out user...');
       await API.logout();
       await AsyncStorage.multiRemove([
         'authToken',
@@ -595,8 +498,6 @@ export const UserProvider = ({ children }) => {
         isLoggedIn: false,
         isLoading: false,
       });
-      
-      console.log('✅ User logged out successfully');
     } catch (error) {
       console.error('❌ Error logging out:', error);
     }
@@ -632,8 +533,6 @@ export const UserProvider = ({ children }) => {
         isLoggedIn: false,
         isLoading: false,
       });
-      
-      console.log('🗑️ All user data cleared');
     } catch (error) {
       console.error('❌ Error clearing data:', error);
     }
@@ -644,19 +543,12 @@ export const UserProvider = ({ children }) => {
    */
   const clearProfileImage = async () => {
     try {
-      console.log('🖼️ Clearing profile image...');
       const currentUser = await AsyncStorage.getItem('userData');
       if (currentUser) {
         const userData = JSON.parse(currentUser);
         userData.profileImage = '';
         await AsyncStorage.setItem('userData', JSON.stringify(userData));
-        
-        setUser(prev => ({
-          ...prev,
-          profileImage: ''
-        }));
-        
-        console.log('✅ Profile image cleared from local storage');
+        setUser(prev => ({ ...prev, profileImage: '' }));
       }
     } catch (error) {
       console.error('❌ Error clearing profile image:', error);
@@ -668,11 +560,9 @@ export const UserProvider = ({ children }) => {
    */
   const markAsVerified = async () => {
     try {
-      console.log('✅ Marking user as verified');
       const updatedUser = { ...user, isVerified: true };
       setUser(updatedUser);
       await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
-      console.log('✅ User verification status updated');
       return updatedUser;
     } catch (error) {
       console.error('❌ Error marking user as verified:', error);
@@ -683,28 +573,17 @@ export const UserProvider = ({ children }) => {
   const checkVerificationStatus = async () => {
     try {
       if (!user.email) return;
-      
-      console.log('🔍 Checking verification status from backend...');
       const response = await API.getProfile();
-      if (!response) {
-        console.log('⚠️ No profile found, skipping verification check');
-        return;
-      }
-      
       if (response && response.is_verified !== undefined) {
         const isVerified = response.is_verified === 1 || response.is_verified === true;
-        console.log('🔍 Backend verification status:', isVerified);
-        
         if (isVerified !== user.isVerified) {
-          console.log('🔄 Syncing verification status with backend');
           const updatedUser = { ...user, isVerified };
           setUser(updatedUser);
           await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
-          console.log('✅ Verification status synced');
         }
       }
-    } catch (error) {
-      console.log('⚠️ Could not check verification status:', error.message);
+    } catch {
+      // Non-critical — ignore
     }
   };
 
