@@ -27,17 +27,16 @@ export default function EditProfileScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [fieldsInitialized, setFieldsInitialized] = useState(false);
 
-  // Load user data on mount and when screen is focused
+  // Load user data and reset form on every focus so edits from other screens are reflected
   useFocusEffect(
     useCallback(() => {
+      setFieldsInitialized(false);
       loadUserData();
     }, [])
   );
 
   // Update form fields when user data loads
   useEffect(() => {
-    // Only update fields once when user data is first loaded
-    // This prevents clearing fields if user data is temporarily empty or changes
     if (user && !fieldsInitialized) {
       const hasData = user.firstName || user.lastName || user.email || user.phone;
       if (hasData) {

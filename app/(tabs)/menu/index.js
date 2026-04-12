@@ -75,7 +75,9 @@ export default function MenuScreen() {
             </View>
           )}
           <Text style={styles.name}>
-            {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : 'User Name'}
+            {(user.firstName || user.lastName)
+              ? `${user.firstName || ''} ${user.lastName || ''}`.trim()
+              : (user.email || 'Your Account')}
           </Text>
           <Text style={styles.email}>{user.email || 'user@example.com'}</Text>
           </LinearGradient>

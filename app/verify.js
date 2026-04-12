@@ -269,44 +269,6 @@ export default function UniversalVerifyHandler() {
           </View>
         )}
 
-        {/* Skip Verification Button (for testing) */}
-        {(verificationStatus === 'pending' || verificationStatus === 'verifying' || verificationStatus === 'error') && (
-          <View style={styles.skipContainer}>
-            <TouchableOpacity 
-              style={styles.skipButton}
-              onPress={() => {
-                Alert.alert(
-                  'Skip Verification',
-                  'This will skip email verification for testing purposes. Continue?',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Skip',
-                      onPress: () => {
-                        console.log('⚠️ Skipping verification for testing');
-                        // Mark as verified for testing
-                        markAsVerified().then(() => {
-                          // Navigate to next screen
-                          if (Platform.OS !== 'web') {
-                            router.replace('/signupFlow/explainerDonate');
-                          } else {
-                            Alert.alert(
-                              'Verification Skipped',
-                              'Verification skipped for testing. Please open the app to continue.',
-                              [{ text: 'OK' }]
-                            );
-                          }
-                        });
-                      }
-                    }
-                  ]
-                );
-              }}
-            >
-              <Text style={styles.skipButtonText}>Skip Verification (Testing)</Text>
-            </TouchableOpacity>
-          </View>
-        )}
       </View>
     </View>
   );

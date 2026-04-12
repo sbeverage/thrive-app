@@ -54,9 +54,13 @@ export default function InviteFriendsModal({ visible, onClose }) {
         setReferralLink(data.referralLink);
       } else {
         // Generate referral link if API doesn't return one
-        const userId = user?.id || user?.email?.split('@')[0] || 'user';
-        const link = `https://thrive-web-jet.vercel.app/signup?ref=${encodeURIComponent(userId)}`;
-        setReferralLink(link);
+        const userId = user?.id || user?.email?.split('@')[0];
+        if (userId) {
+          const link = `https://thrive-web-jet.vercel.app/signup?ref=${encodeURIComponent(userId)}`;
+          setReferralLink(link);
+        } else {
+          setReferralLink('');
+        }
       }
       
       // Use paidFriendsCount from API, fallback to friendsCount
@@ -75,10 +79,14 @@ export default function InviteFriendsModal({ visible, onClose }) {
       }
     } catch (error) {
       console.error('Error loading referral data:', error);
-      // Fallback: generate referral link
-      const userId = user?.id || user?.email?.split('@')[0] || 'user';
-      const link = `https://thrive-web-jet.vercel.app/signup?ref=${encodeURIComponent(userId)}`;
-      setReferralLink(link);
+      // Fallback: generate referral link only if we have a valid user identifier
+      const userId = user?.id || user?.email?.split('@')[0];
+      if (userId) {
+        const link = `https://thrive-web-jet.vercel.app/signup?ref=${encodeURIComponent(userId)}`;
+        setReferralLink(link);
+      } else {
+        setReferralLink('');
+      }
       setPaidFriendsCount(0);
       setFriendsCount(0);
       setApiMilestones([]);

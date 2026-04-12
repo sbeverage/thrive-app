@@ -273,34 +273,11 @@ export default function DonorInvitationVerifyScreen() {
           <Text style={styles.loadingText}>Verifying your email...</Text>
           <Text style={styles.loadingSubtext}>Please wait while we verify your invitation</Text>
           
-          {/* Skip Verification Button (for testing) */}
-          <TouchableOpacity 
-            style={styles.skipButton}
-            onPress={() => {
-              Alert.alert(
-                'Skip Verification',
-                'This will skip email verification for testing purposes. Continue?',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Skip',
-                    onPress: () => {
-                      console.log('⚠️ Skipping verification for testing');
-                      setVerified(true);
-                      setVerifying(false);
-                    }
-                  }
-                ]
-              );
-            }}
-          >
-            <Text style={styles.skipButtonText}>Skip Verification (Testing)</Text>
-          </TouchableOpacity>
         </View>
       </View>
     );
   }
-  
+
   // Error state if verification failed
   if (!verified && error) {
     return (
@@ -320,34 +297,11 @@ export default function DonorInvitationVerifyScreen() {
             <Text style={styles.buttonText}>Go to Login</Text>
           </TouchableOpacity>
           
-          {/* Skip Verification Button (for testing) */}
-          <TouchableOpacity 
-            style={styles.skipButton}
-            onPress={() => {
-              Alert.alert(
-                'Skip Verification',
-                'This will skip email verification for testing purposes. Continue?',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Skip',
-                    onPress: () => {
-                      console.log('⚠️ Skipping verification for testing');
-                      setVerified(true);
-                      setError('');
-                    }
-                  }
-                ]
-              );
-            }}
-          >
-            <Text style={styles.skipButtonText}>Skip Verification (Testing)</Text>
-          </TouchableOpacity>
         </View>
       </View>
     );
   }
-  
+
   // If in Safari/web and verified, show "Open in App" button instead of password form
   if (Platform.OS === 'web' && verified && typeof window !== 'undefined') {
     return (
@@ -580,38 +534,6 @@ export default function DonorInvitationVerifyScreen() {
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
             
-            {/* Skip Verification Button (for testing) */}
-            <TouchableOpacity 
-              style={styles.skipButton}
-              onPress={() => {
-                Alert.alert(
-                  'Skip Verification',
-                  'This will skip email verification and password creation for testing purposes. Continue?',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Skip',
-                      onPress: () => {
-                        console.log('⚠️ Skipping verification and password creation for testing');
-                        // Mark as verified and navigate to next step in signup flow
-                        saveUserData({
-                          email: email,
-                          firstName: name.split(' ')[0] || '',
-                          lastName: name.split(' ').slice(1).join(' ') || '',
-                          isLoggedIn: true,
-                          isVerified: true,
-                        }, false).then(() => {
-                          // Navigate to next step in signup flow
-                          router.replace('/signupFlow/explainerDonate');
-                        });
-                      }
-                    }
-                  ]
-                );
-              }}
-            >
-              <Text style={styles.skipButtonText}>Skip Verification (Testing)</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>

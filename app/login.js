@@ -199,10 +199,15 @@ export default function LoginScreen() {
   const handleAppleLogin = async () => {
     if (isSocialLoading) return;
     setIsSocialLoading(true);
-    const result = await signInWithApple();
-    if (result) {
-      await handleSocialLogin(result);
-    } else {
+    try {
+      const result = await signInWithApple();
+      if (result) {
+        await handleSocialLogin(result);
+      }
+    } catch (error) {
+      console.error('❌ Apple login error:', error);
+      Alert.alert('Login Failed', error.message || 'Apple login failed. Please try again.');
+    } finally {
       setIsSocialLoading(false);
     }
   };
@@ -210,10 +215,15 @@ export default function LoginScreen() {
   const handleGoogleLogin = async () => {
     if (isSocialLoading) return;
     setIsSocialLoading(true);
-    const result = await signInWithGoogle();
-    if (result) {
-      await handleSocialLogin(result);
-    } else {
+    try {
+      const result = await signInWithGoogle();
+      if (result) {
+        await handleSocialLogin(result);
+      }
+    } catch (error) {
+      console.error('❌ Google login error:', error);
+      Alert.alert('Login Failed', error.message || 'Google login failed. Please try again.');
+    } finally {
       setIsSocialLoading(false);
     }
   };

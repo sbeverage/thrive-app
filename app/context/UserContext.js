@@ -34,11 +34,10 @@ export const UserProvider = ({ children }) => {
     isLoading: true,
   });
 
-  // Load user data on app start
+  // Load user data on app start, then sync points sequentially to avoid race condition
   useEffect(() => {
-    loadUserData();
-    // Sync points from backend if authenticated
-    const syncPointsOnLoad = async () => {
+    const initializeData = async () => {
+      await loadUserData();
       try {
         const isAuth = await API.isAuthenticated();
         if (isAuth) {
@@ -48,7 +47,7 @@ export const UserProvider = ({ children }) => {
         console.log('⚠️ Could not sync points on load:', error.message);
       }
     };
-    syncPointsOnLoad();
+    initializeData();
   }, []);
 
   /**
@@ -59,15 +58,9 @@ export const UserProvider = ({ children }) => {
       const userData = await AsyncStorage.getItem('userData');
       
       let loadedUser;
-      
+
       if (userData) {
         const parsedUser = JSON.parse(userData);
-        console.log('📱 Loaded firstName:', parsedUser.firstName);
-        console.log('📱 Loaded lastName:', parsedUser.lastName);
-        console.log('📱 Loaded email:', parsedUser.email);
-        console.log('📱 Loaded phone:', parsedUser.phone);
-        console.log('📱 Loaded profileImage:', parsedUser.profileImage);
-        console.log('📱 Loaded profileImageUrl:', parsedUser.profileImageUrl);
         
         // Ensure all fields are properly set, including firstName and lastName
         // CRITICAL: Only use values from storage if they're actually present (not empty strings)
@@ -179,11 +172,6 @@ export const UserProvider = ({ children }) => {
    */
   const saveUserData = async (userData, saveToBackend = true) => {
     try {
-      console.log('💾 Saving user data:', userData);
-      console.log('💾 Current user state before save:', user);
-      console.log('💾 firstName in userData:', userData.firstName);
-      console.log('💾 lastName in userData:', userData.lastName);
-      
       // CRITICAL: Load existing data from storage first to preserve it
       // This prevents overwriting data when only partial updates are sent
       let existingData = {};
@@ -191,13 +179,6 @@ export const UserProvider = ({ children }) => {
         const storedData = await AsyncStorage.getItem('userData');
         if (storedData) {
           existingData = JSON.parse(storedData);
-          console.log('💾 Loaded existing data from storage to preserve:', {
-            firstName: existingData.firstName,
-            lastName: existingData.lastName,
-            email: existingData.email,
-            phone: existingData.phone,
-            profileImage: existingData.profileImage,
-          });
         }
       } catch (storageError) {
         console.warn('⚠️ Could not load existing data from storage:', storageError);
@@ -260,28 +241,10 @@ export const UserProvider = ({ children }) => {
         totalSavings: userData.totalSavings ?? existingData.totalSavings ?? user.totalSavings ?? 0,
         isVerified: userData.isVerified ?? existingData.isVerified ?? user.isVerified ?? false,
       };
-      console.log('💾 Updated user object:', updatedUser);
-      console.log('💾 Updated firstName:', updatedUser.firstName);
-      console.log('💾 Updated lastName:', updatedUser.lastName);
-      console.log('💾 Updated email:', updatedUser.email);
-      console.log('💾 Updated phone:', updatedUser.phone);
-      console.log('💾 Updated profileImage:', updatedUser.profileImage);
       setUser(updatedUser);
-      
+
       // Save to local storage
-      const dataToSave = JSON.stringify(updatedUser);
-      console.log('💾 Data being saved to storage:', dataToSave);
-      await AsyncStorage.setItem('userData', dataToSave);
-      console.log('✅ User data saved to local storage');
-      
-      // Verify what was actually saved
-      const verifyData = await AsyncStorage.getItem('userData');
-      const parsedVerify = JSON.parse(verifyData);
-      console.log('🔍 Verification - data in storage:', verifyData);
-      console.log('🔍 Verification - parsed firstName:', parsedVerify?.firstName);
-      console.log('🔍 Verification - parsed lastName:', parsedVerify?.lastName);
-      console.log('🔍 Verification - parsed email:', parsedVerify?.email);
-      console.log('🔍 Verification - parsed profileImage:', parsedVerify?.profileImage);
+      await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
       
       // Save to AWS backend if requested and user is authenticated
       if (saveToBackend) {

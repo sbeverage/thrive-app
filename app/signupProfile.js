@@ -109,18 +109,14 @@ export default function SignupProfile() {
     }
     
     try {
-      console.log('💾 Starting profile save process...');
-      console.log('📧 Email from params:', email);
-      console.log('📧 Email from user context:', user?.email);
-      
       // Get email from params, user context, or existing user data
       const emailToSave = email || user?.email || '';
-      console.log('📧 Email to save:', emailToSave);
-      
+
       if (!emailToSave) {
-        console.warn('⚠️ No email found - this should not happen during signup');
+        Alert.alert('Error', 'No email found for this account. Please try signing up again.');
+        return;
       }
-      
+
       // Prepare profile data
       const profileData = {
         firstName,
@@ -129,18 +125,20 @@ export default function SignupProfile() {
         email: emailToSave, // Use the determined email
       };
       
-      console.log('💾 Profile data to save:', profileData);
-      
       // Upload profile picture if selected
       if (profileImage) {
         try {
-          console.log('📸 Uploading profile picture...');
           const uploadResult = await uploadProfilePicture(profileImage);
-          profileData.profileImage = uploadResult.imageUrl; // Use profileImage instead of profileImageUrl
-          profileData.profileImageUrl = uploadResult.imageUrl; // Keep both for compatibility
+          profileData.profileImage = uploadResult.imageUrl;
+          profileData.profileImageUrl = uploadResult.imageUrl;
         } catch (uploadError) {
           console.error('❌ Profile picture upload failed:', uploadError);
-          // Continue without image - user can add later
+          Alert.alert(
+            'Photo Upload Failed',
+            'Your profile was saved, but the photo could not be uploaded. You can add it later from Edit Profile.',
+            [{ text: 'OK' }]
+          );
+          // Continue without image
         }
       }
       

@@ -224,7 +224,7 @@ export default function MainHome() {
   );
 
   // State for display location (updates when locationAddress changes)
-  const [displayLocation, setDisplayLocation] = useState('Home — Alpharetta, GA, USA');
+  const [displayLocation, setDisplayLocation] = useState('Your Area');
 
   // Update display location when locationAddress or userLocation changes
   useEffect(() => {
@@ -239,7 +239,7 @@ export default function MainHome() {
       setDisplayLocation('Current Location, USA');
       return;
     }
-    setDisplayLocation('Home — Alpharetta, GA, USA');
+    setDisplayLocation('Your Area');
   }, [locationAddress, userLocation, locationPermission]);
 
   // Get display location (for backwards compatibility)

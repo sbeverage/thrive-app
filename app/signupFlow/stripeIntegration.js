@@ -12,6 +12,7 @@ import { Asset } from 'expo-asset';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useBeneficiary } from '../context/BeneficiaryContext';
 import { useUser } from '../context/UserContext';
+import { SERVICE_FEE, STRIPE_CC_FEE_RATE, STRIPE_CC_FEE_FIXED } from '../utils/constants';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -91,12 +92,10 @@ export default function StripeIntegration() {
   };
 
   // Calculate fees breakdown
-  const SERVICE_FEE = 3.00; // Fixed $3 service fee
-  const CREDIT_CARD_FEE_RATE = 0.035; // 3.5% for Stripe processing
-  
-  // Calculate amounts
-  const subtotal = baseAmount + SERVICE_FEE; // Base amount + service fee
-  const creditCardFee = coverFees ? (subtotal * CREDIT_CARD_FEE_RATE) : 0;
+  // SERVICE_FEE: flat $3.00 platform fee
+  // Stripe credit card fee: 2.9% of total + $0.30 per transaction
+  const subtotal = baseAmount + SERVICE_FEE;
+  const creditCardFee = coverFees ? (subtotal * STRIPE_CC_FEE_RATE + STRIPE_CC_FEE_FIXED) : 0;
   const totalAmount = (subtotal + creditCardFee).toFixed(2);
 
   return (
@@ -196,7 +195,7 @@ export default function StripeIntegration() {
                   <View style={styles.labelWithToggle}>
                     <View style={styles.labelWithInfo}>
                       <Text style={styles.summaryLabel}>Credit Card Fees</Text>
-                      <Text style={styles.feePercentage}>(3.5%)</Text>
+                      <Text style={styles.feePercentage}>(2.9% + $0.30)</Text>
                     </View>
                     <TouchableOpacity
                       onPress={() => {

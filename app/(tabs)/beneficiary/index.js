@@ -84,9 +84,7 @@ export default function BeneficiaryScreen() {
         console.error('❌ Error saving favorites:', error);
       }
     };
-    if (favorites.length >= 0) { // Save even if empty array
-      saveFavorites();
-    }
+    saveFavorites();
   }, [favorites]);
   const [activeCategory, setActiveCategory] = useState('All');
   const [showMap, setShowMap] = useState(false);
@@ -142,34 +140,19 @@ export default function BeneficiaryScreen() {
   const loadBeneficiaries = async () => {
     try {
       setLoadingBeneficiaries(true);
-      console.log('📡 Loading beneficiaries from API...');
-      console.log('📡 API endpoint:', 'https://mdqgndyhzlnwojtubouh.supabase.co/functions/v1/api/charities');
-      
       const data = await API.getCharities();
-      console.log('✅ Beneficiaries loaded - Full response:', JSON.stringify(data, null, 2));
-      console.log('✅ Response type:', typeof data);
-      console.log('✅ Has charities property:', !!data?.charities);
-      console.log('✅ Charities is array:', Array.isArray(data?.charities));
-      console.log('✅ Number of charities:', data?.charities?.length || 0);
-      
+
       // Handle different response formats
       let charitiesArray = null;
       if (data && data.charities && Array.isArray(data.charities)) {
         charitiesArray = data.charities;
       } else if (Array.isArray(data)) {
-        // Handle case where response is directly an array
-        console.warn('⚠️ Response is directly an array, not wrapped in { charities: [...] }');
         charitiesArray = data;
       } else if (data && data.data && Array.isArray(data.data)) {
-        // Handle nested data property
-        console.warn('⚠️ Response has nested data property');
         charitiesArray = data.data;
       }
-      
+
       if (charitiesArray && charitiesArray.length > 0) {
-        console.log('✅ Processing', charitiesArray.length, 'charities from API');
-        console.log('✅ Charity names:', charitiesArray.map(c => c.name));
-        console.log('✅ Charity IDs:', charitiesArray.map(c => c.id));
         // Transform backend data to frontend format
         const transformed = charitiesArray.map(charity => {
           // Calculate distance from user location
@@ -220,27 +203,16 @@ export default function BeneficiaryScreen() {
         });
 
         setBeneficiaries(transformed);
-        console.log('✅ Beneficiaries transformed and set:', transformed.length);
-        console.log('✅ First 3 transformed beneficiaries:', transformed.slice(0, 3).map(b => ({ id: b.id, name: b.name })));
       } else {
-        console.warn('⚠️ Invalid data format from API');
-        console.warn('⚠️ Data received:', JSON.stringify(data, null, 2));
-        console.warn('⚠️ No beneficiaries available - showing empty state');
         setBeneficiaries([]);
       }
     } catch (error) {
-      console.error('❌ Failed to load beneficiaries from API:', error);
-      console.error('❌ Error message:', error.message);
-      console.error('❌ Error stack:', error.stack);
-      if (error.response) {
-        console.error('❌ Response status:', error.response.status);
-        console.error('❌ Response data:', JSON.stringify(error.response.data, null, 2));
-      }
-      if (error.request) {
-        console.error('❌ Request made but no response received');
-        console.error('❌ Request config:', JSON.stringify(error.config, null, 2));
-      }
-      console.log('🔄 No beneficiaries available - showing empty state');
+      console.error('❌ Failed to load beneficiaries from API:', error.message);
+      Alert.alert(
+        'Could Not Load Charities',
+        'There was a problem loading charities. Please check your connection and try again.',
+        [{ text: 'OK' }]
+      );
       setBeneficiaries([]);
     } finally {
       setLoadingBeneficiaries(false);

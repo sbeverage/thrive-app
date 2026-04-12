@@ -42,7 +42,8 @@ export default function CheckoutScreen() {
   const beneficiaryId = params.beneficiaryId;
   const beneficiaryName = params.beneficiaryName || 'Charity';
   const beneficiaryImage = params.beneficiaryImage ? { uri: params.beneficiaryImage } : null;
-  const amount = parseFloat(params.amount || '0');
+  const rawAmount = parseFloat(params.amount || '0');
+  const amount = (!isNaN(rawAmount) && rawAmount > 0) ? rawAmount : 0;
   const userCoveredFees = params.userCoveredFees === 'true';
   const donorMessage = params.donorMessage || '';
   const isAnonymous = params.isAnonymous === 'true';
@@ -54,8 +55,20 @@ export default function CheckoutScreen() {
   const [applePayAvailable, setApplePayAvailable] = useState(false);
   const [error, setError] = useState(null);
 
+  // Validate amount on mount
+  useEffect(() => {
+    if (amount <= 0) {
+      Alert.alert(
+        'Invalid Amount',
+        'The donation amount is invalid. Please go back and enter a valid amount.',
+        [{ text: 'OK', onPress: () => router.back() }]
+      );
+    }
+  }, []);
+
   // Initialize Stripe and check Apple Pay availability
   useEffect(() => {
+    if (amount <= 0) return;
     checkApplePaySupport();
     createPaymentIntent();
   }, []);

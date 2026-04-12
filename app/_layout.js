@@ -144,6 +144,8 @@ export default function Layout() {
         if (url) {
           handleDeepLink(url);
         }
+      }).catch((err) => {
+        console.error('❌ Error getting initial URL:', err);
       });
 
       return () => {
