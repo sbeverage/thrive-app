@@ -3,7 +3,7 @@
     "apps": [],
     "details": [
       {
-        "appID": "YOUR_TEAM_ID.com.thriveinitiative.app",
+        "appID": "6WKBA4GT9N.com.thriveinitiative.app",
         "paths": [
           "/verify",
           "/verify/*",
