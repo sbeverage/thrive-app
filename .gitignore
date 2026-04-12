@@ -34,8 +34,8 @@ yarn-error.*
 .env.*
 .env*.local
 
-# npm config (can contain auth tokens)
-.npmrc
+# npm config (can contain auth tokens — but .npmrc with only legacy-peer-deps is safe to commit)
+# .npmrc
 
 # local nested repos
 thrive-backend/
