@@ -1559,6 +1559,7 @@ const API = {
             ? { monthly_donation_id: monthlyDonationId }
             : {},
       });
+      console.log("💳 Getting monthly billing preview:=================>>>>>", response.data);
       return response.data;
     } catch (error) {
       if (error.response?.status === 404) {

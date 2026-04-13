@@ -312,16 +312,20 @@ export default function DonationSummary() {
     let nextAmt;
     if (nextFromPreview !== null) {
       nextAmt = nextFromPreview;
-    } else if (multiDistinct) {
-      nextAmt = minBreakdown;
     } else {
-      nextAmt =
-        Number(
-          activeSubscription?.next_amount ??
-            user.monthlyDonation ??
-            donationSummary?.total_monthly_amount ??
-            0,
-        ) || 0;
+      const nextFromSubscriptionOrProfile = Number(
+        activeSubscription?.next_amount ?? user.monthlyDonation ?? null,
+      );
+      if (
+        Number.isFinite(nextFromSubscriptionOrProfile) &&
+        nextFromSubscriptionOrProfile > 0
+      ) {
+        nextAmt = nextFromSubscriptionOrProfile;
+      } else if (multiDistinct) {
+        nextAmt = minBreakdown;
+      } else {
+        nextAmt = Number(donationSummary?.total_monthly_amount ?? 0) || 0;
+      }
     }
 
     return {
@@ -334,6 +338,12 @@ export default function DonationSummary() {
     donationSummary,
     user.monthlyDonation,
   ]);
+
+  useEffect(() => {
+    console.log("[DonationSummary ================== Next Amount", {
+      nextBillingAmount,
+    });
+  }, [nextBillingAmount]);
 
   const loadActiveSubscriptionId = async () => {
     try {
