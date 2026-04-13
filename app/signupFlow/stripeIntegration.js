@@ -192,11 +192,11 @@ export default function StripeIntegration() {
                 
                 {/* Credit Card Fees with Toggle */}
                 <View style={styles.summaryRow}>
-                  <View style={styles.labelWithToggle}>
-                    <View style={styles.labelWithInfo}>
-                      <Text style={styles.summaryLabel}>Credit Card Fees</Text>
-                      <Text style={styles.feePercentage}>(2.9% + $0.30)</Text>
-                    </View>
+                  <Text style={styles.summaryLabel}>Credit Card Fees</Text>
+                  <View style={styles.feeToggleRight}>
+                    <Text style={[styles.summaryAmount, !coverFees && styles.disabledAmount]}>
+                      ${coverFees ? creditCardFee.toFixed(2) : '0.00'}
+                    </Text>
                     <TouchableOpacity
                       onPress={() => {
                         if (!coverFees) setConfettiTrigger(true);
@@ -210,9 +210,6 @@ export default function StripeIntegration() {
                       </View>
                     </TouchableOpacity>
                   </View>
-                  <Text style={[styles.summaryAmount, !coverFees && styles.disabledAmount]}>
-                    ${coverFees ? creditCardFee.toFixed(2) : '0.00'}
-                  </Text>
                 </View>
                 
                 {/* Total - Prominent */}
@@ -567,6 +564,11 @@ const styles = StyleSheet.create({
   },
   toggleButton: {
     padding: 4,
+  },
+  feeToggleRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   totalSection: {
     marginTop: 8,
