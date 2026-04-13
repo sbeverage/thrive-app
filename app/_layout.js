@@ -1,13 +1,8 @@
 // file: app/_layout.js
+import * as Sentry from '@sentry/react-native';
 import { Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { View, StyleSheet, Text, TextInput } from 'react-native';
-
-// Prevent device font size settings from affecting app layout
-if (Text.defaultProps == null) Text.defaultProps = {};
-Text.defaultProps.allowFontScaling = false;
-if (TextInput.defaultProps == null) TextInput.defaultProps = {};
-TextInput.defaultProps.allowFontScaling = false;
 import { BeneficiaryProvider } from './context/BeneficiaryContext';
 import { UserProvider } from './context/UserContext';
 import { BeneficiaryFilterProvider } from './context/BeneficiaryFilterContext';
@@ -19,8 +14,24 @@ import { Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import { STRIPE_PUBLISHABLE_KEY } from './utils/constants';
+import ErrorBoundary from '../components/ErrorBoundary';
 
-export default function Layout() {
+// Initialize Sentry as early as possible so it captures all errors
+Sentry.init({
+  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN || '',
+  debug: false,
+  tracesSampleRate: 0.2,
+  enableAutoSessionTracking: true,
+  attachStacktrace: true,
+});
+
+// Prevent device font size settings from affecting app layout
+if (Text.defaultProps == null) Text.defaultProps = {};
+Text.defaultProps.allowFontScaling = false;
+if (TextInput.defaultProps == null) TextInput.defaultProps = {};
+TextInput.defaultProps.allowFontScaling = false;
+
+function Layout() {
   const router = useRouter();
 
   useEffect(() => {
@@ -34,7 +45,7 @@ export default function Layout() {
       if (typeof window !== 'undefined' && window.location) {
         return;
       }
-      
+
       try {
         // Parse URL
         let parsedUrl;
@@ -53,7 +64,7 @@ export default function Layout() {
             parsedUrl = new URL(url);
           }
         }
-        
+
         const pathname = parsedUrl.pathname || '';
         const searchParams = parsedUrl.searchParams || new URLSearchParams(parsedUrl.search || '');
         const token = searchParams.get('token');
@@ -90,7 +101,7 @@ export default function Layout() {
           }
           return;
         }
-        
+
         // Custom scheme verification success fallback
         if (url.startsWith('thriveapp://verify-success')) {
           router.replace('/signupFlow/explainerDonate');
@@ -106,11 +117,11 @@ export default function Layout() {
     if (typeof window !== 'undefined' && window.location) {
       return () => {};
     }
-    
+
     // Running in native app - set up deep link listeners
     try {
       const subscription = Linking.addEventListener('url', handleDeepLink);
-      
+
       // Check if app was opened with a deep link
       Linking.getInitialURL().then((url) => {
         if (url) {
@@ -130,35 +141,40 @@ export default function Layout() {
   }, [router]);
 
   return (
-    <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>
-      <UserProvider>
-        <BeneficiaryProvider>
-          <BeneficiaryFilterProvider>
-            <LocationProvider>
-              <DiscountProvider>
-                <DiscountFilterProvider>
+    <ErrorBoundary>
+      <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>
+        <UserProvider>
+          <BeneficiaryProvider>
+            <BeneficiaryFilterProvider>
+              <LocationProvider>
+                <DiscountProvider>
+                  <DiscountFilterProvider>
                     <SafeAreaView style={styles.safeArea}>
                       <View style={styles.container}>
-                        <Stack 
-                          screenOptions={{ 
+                        <Stack
+                          screenOptions={{
                             headerShown: false,
-                            gestureEnabled: false, // Disable swipe-back gesture to prevent accidental logout
+                            gestureEnabled: false,
                             animationEnabled: true,
-                            gestureDirection: 'horizontal', // Explicitly set direction
-                            fullScreenGestureEnabled: false, // Disable full screen gesture
-                          }} 
+                            gestureDirection: 'horizontal',
+                            fullScreenGestureEnabled: false,
+                          }}
                         />
                       </View>
                     </SafeAreaView>
-                </DiscountFilterProvider>
-              </DiscountProvider>
-            </LocationProvider>
-          </BeneficiaryFilterProvider>
-        </BeneficiaryProvider>
-      </UserProvider>
-    </StripeProvider>
+                  </DiscountFilterProvider>
+                </DiscountProvider>
+              </LocationProvider>
+            </BeneficiaryFilterProvider>
+          </BeneficiaryProvider>
+        </UserProvider>
+      </StripeProvider>
+    </ErrorBoundary>
   );
 }
+
+// Wrap with Sentry so all unhandled JS errors are captured automatically
+export default Sentry.wrap(Layout);
 
 const styles = StyleSheet.create({
   safeArea: {
