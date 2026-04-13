@@ -544,8 +544,7 @@ export default function MainHome() {
           </View>
         </ScrollView>
       </SafeAreaView>
-      <Tabs />
-      
+
       {/* Invite Friends Modal */}
       <InviteFriendsModal
         visible={showInviteModal}
