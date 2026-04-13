@@ -40,13 +40,18 @@ export default function VerifyEmailScreen() {
     }
   }, [token, email]);
 
-  // Auto-redirect if already verified (e.g. social login)
+  // Auto-redirect only if ALREADY verified when this screen first mounts
+  // (e.g. social login users who don't need email verification).
+  // Do NOT redirect if isVerified becomes true after mounting — that could be
+  // a background backend sync, and we don't want to skip the verify step for
+  // users who just created an account.
+  const wasVerifiedOnMount = React.useRef(user?.isVerified);
   useEffect(() => {
-    if (user?.isVerified) {
-      console.log('✅ User already verified, redirecting to onboarding...');
+    if (wasVerifiedOnMount.current) {
+      console.log('✅ User already verified on mount, redirecting to onboarding...');
       router.replace('/signupFlow/explainerDonate');
     }
-  }, [user?.isVerified]);
+  }, []);
 
   const handleVerification = async () => {
     if (!token || !email) return;
