@@ -10,7 +10,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/piggy-with-flowers.png",
+      "image": "./assets/images/initiative-app-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
