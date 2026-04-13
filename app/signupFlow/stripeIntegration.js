@@ -341,7 +341,7 @@ export default function StripeIntegration() {
           } catch (error) {
             console.error('Error resetting tutorial:', error);
           }
-          router.push('/(tabs)/home');
+          router.replace('/(tabs)/home');
         }}
       />
       

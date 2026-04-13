@@ -224,10 +224,12 @@ export default function SignupScreen() {
 
       // Use email from API response if available, otherwise use the one from form
       const userEmail = response?.user?.email || response?.email || emailTrim;
-      console.log('📧 Final email to use:', userEmail);
 
-      // Navigate to profile setup (points will be reset to 0 in signupProfile)
-      // Pass email as a string to ensure it's preserved
+      // Clear any stale verification state from a previous session so verifyEmail
+      // page doesn't immediately auto-redirect past itself
+      updateUserProfile({ email: userEmail, isVerified: false });
+
+      // Navigate to profile setup
       router.push({
         pathname: '/signupProfile',
         params: { email: userEmail }
