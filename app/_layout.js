@@ -18,7 +18,7 @@ import ErrorBoundary from '../components/ErrorBoundary';
 
 // Initialize Sentry as early as possible so it captures all errors
 Sentry.init({
-  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN || '',
+  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN || 'https://680cba8ad82311de70f4819ab349b969@o4511214501363712.ingest.us.sentry.io/4511214507786241',
   debug: false,
   tracesSampleRate: 0.2,
   enableAutoSessionTracking: true,

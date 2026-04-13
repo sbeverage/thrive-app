@@ -12,7 +12,7 @@
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "1079764121058-0jj3h2rm28c7jsk6e227s0eaasgtp0hb.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "1079764121058-6q0ua6k2j17mmf6e38o4b9tc4f1n53rc.apps.googleusercontent.com",
         "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51I1hawHeCafBpXfQZYUqZqKNh2pIiQ975wm9xUMvAdCnYhlmS8Glm9sDCyRZjzzJ6lazR4JChRu4rhJ4ZeOpnW3b00kbYiafyl",
-        "EXPO_PUBLIC_SENTRY_DSN": ""
+        "EXPO_PUBLIC_SENTRY_DSN": "https://680cba8ad82311de70f4819ab349b969@o4511214501363712.ingest.us.sentry.io/4511214507786241"
       },
       "ios": {
         "simulator": false
@@ -29,7 +29,7 @@
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "1079764121058-0jj3h2rm28c7jsk6e227s0eaasgtp0hb.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "1079764121058-6q0ua6k2j17mmf6e38o4b9tc4f1n53rc.apps.googleusercontent.com",
         "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51I1hawHeCafBpXfQZYUqZqKNh2pIiQ975wm9xUMvAdCnYhlmS8Glm9sDCyRZjzzJ6lazR4JChRu4rhJ4ZeOpnW3b00kbYiafyl",
-        "EXPO_PUBLIC_SENTRY_DSN": ""
+        "EXPO_PUBLIC_SENTRY_DSN": "https://680cba8ad82311de70f4819ab349b969@o4511214501363712.ingest.us.sentry.io/4511214507786241"
       },
       "ios": {
         "simulator": false
@@ -45,7 +45,7 @@
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "1079764121058-0jj3h2rm28c7jsk6e227s0eaasgtp0hb.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "1079764121058-6q0ua6k2j17mmf6e38o4b9tc4f1n53rc.apps.googleusercontent.com",
         "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51I1hawHeCafBpXfQZYUqZqKNh2pIiQ975wm9xUMvAdCnYhlmS8Glm9sDCyRZjzzJ6lazR4JChRu4rhJ4ZeOpnW3b00kbYiafyl",
-        "EXPO_PUBLIC_SENTRY_DSN": ""
+        "EXPO_PUBLIC_SENTRY_DSN": "https://680cba8ad82311de70f4819ab349b969@o4511214501363712.ingest.us.sentry.io/4511214507786241"
       },
       "ios": {
         "simulator": false
