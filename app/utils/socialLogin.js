@@ -2,18 +2,44 @@
  * Social Login Utilities
  * Uses native SDKs for Apple, Google, and Facebook authentication.
  * No expo-auth-session (browser popup) - all native OS-level popups.
+ *
+ * Modules are loaded lazily (inside functions) so a missing native binary
+ * (e.g. Expo Go) does not crash the entire app at startup.
  */
 
-import * as AppleAuthentication from 'expo-apple-authentication';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { LoginManager, AccessToken, Profile } from 'react-native-fbsdk-next';
 import { Platform, Alert } from 'react-native';
 
 let googleConfigured = false;
 let googleSignInInProgress = false;
 let facebookSignInInProgress = false;
 
-const ensureGoogleConfigured = () => {
+// Lazy getters — throw only when actually called, not at module load time
+const getGoogleSignin = () => {
+  try {
+    return require('@react-native-google-signin/google-signin').GoogleSignin;
+  } catch {
+    return null;
+  }
+};
+
+const getAppleAuth = () => {
+  try {
+    return require('expo-apple-authentication');
+  } catch {
+    return null;
+  }
+};
+
+const getFBSDK = () => {
+  try {
+    const sdk = require('react-native-fbsdk-next');
+    return { LoginManager: sdk.LoginManager, AccessToken: sdk.AccessToken, Profile: sdk.Profile };
+  } catch {
+    return null;
+  }
+};
+
+const ensureGoogleConfigured = (GoogleSignin) => {
   if (googleConfigured) return;
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
   const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
@@ -32,11 +58,16 @@ const ensureGoogleConfigured = () => {
 
 /**
  * Apple Sign In (iOS only, iOS 13+)
- * Uses expo-apple-authentication (native SDK)
  */
 export const signInWithApple = async () => {
   if (Platform.OS !== 'ios') {
     Alert.alert('Not Available', 'Apple Sign In is only available on iOS devices.');
+    return null;
+  }
+
+  const AppleAuthentication = getAppleAuth();
+  if (!AppleAuthentication) {
+    Alert.alert('Not Available', 'Apple Sign In is not available in this environment.');
     return null;
   }
 
@@ -54,9 +85,7 @@ export const signInWithApple = async () => {
       ],
     });
 
-    if (!credential) {
-      return null;
-    }
+    if (!credential) return null;
 
     return {
       provider: 'apple',
@@ -68,9 +97,7 @@ export const signInWithApple = async () => {
       authorizationCode: credential.authorizationCode,
     };
   } catch (error) {
-    if (error.code === 'ERR_CANCELED') {
-      return null;
-    }
+    if (error.code === 'ERR_CANCELED') return null;
     console.error('Apple Sign In error:', error);
     Alert.alert('Error', 'Apple Sign In failed. Please try again.');
     return null;
@@ -79,7 +106,6 @@ export const signInWithApple = async () => {
 
 /**
  * Google Sign In
- * Uses @react-native-google-signin/google-signin (native SDK)
  */
 export const signInWithGoogle = async () => {
   if (googleSignInInProgress) {
@@ -87,9 +113,15 @@ export const signInWithGoogle = async () => {
     return null;
   }
 
+  const GoogleSignin = getGoogleSignin();
+  if (!GoogleSignin) {
+    Alert.alert('Not Available', 'Google Sign In is not available in this environment.');
+    return null;
+  }
+
   try {
     googleSignInInProgress = true;
-    ensureGoogleConfigured();
+    ensureGoogleConfigured(GoogleSignin);
 
     if (!process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID && Platform.OS === 'android') {
       Alert.alert(
@@ -103,20 +135,16 @@ export const signInWithGoogle = async () => {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
     }
 
-    // Sign out first to ensure we get a fresh token (not a cached/expired one)
     try {
       await GoogleSignin.signOut();
     } catch (signOutError) {
-      // Ignore sign out errors - user might not be signed in
       console.log('📱 Google signOut (pre-login cleanup):', signOutError.message || 'OK');
     }
 
     const response = await GoogleSignin.signIn();
     console.log('📱 Google signIn response:', JSON.stringify(response, null, 2));
 
-    if (response.type === 'cancelled') {
-      return null;
-    }
+    if (response.type === 'cancelled') return null;
 
     let user;
     let idToken = null;
@@ -173,13 +201,9 @@ export const signInWithGoogle = async () => {
       error.code === 'SIGN_IN_REQUIRED' ||
       error.code === 'IN_PROGRESS';
 
-    if (cancelled) {
-      return null;
-    }
+    if (cancelled) return null;
 
     console.error('Google Sign In error:', error);
-    console.error('Google Sign In error code:', error.code);
-    console.error('Google Sign In error message:', error.message);
     Alert.alert('Error', `Google Sign In failed: ${error.message || 'Please try again.'}`);
     return null;
   } finally {
@@ -189,7 +213,6 @@ export const signInWithGoogle = async () => {
 
 /**
  * Facebook Sign In
- * Uses react-native-fbsdk-next (native SDK)
  */
 export const signInWithFacebook = async () => {
   if (facebookSignInInProgress) {
@@ -197,19 +220,24 @@ export const signInWithFacebook = async () => {
     return null;
   }
 
+  const fbsdk = getFBSDK();
+  if (!fbsdk) {
+    Alert.alert('Not Available', 'Facebook Sign In is not available in this environment.');
+    return null;
+  }
+
+  const { LoginManager, AccessToken, Profile } = fbsdk;
+
   try {
     facebookSignInInProgress = true;
     LoginManager.logOut();
 
-    // 'limited' is iOS-only (Limited Login); Android must use classic permissions
     const result =
       Platform.OS === 'ios'
         ? await LoginManager.logInWithPermissions(['public_profile', 'email'], 'limited')
         : await LoginManager.logInWithPermissions(['public_profile', 'email']);
 
-    if (result.isCancelled) {
-      return null;
-    }
+    if (result.isCancelled) return null;
 
     const tokenData = await AccessToken.getCurrentAccessToken();
     if (!tokenData) {
