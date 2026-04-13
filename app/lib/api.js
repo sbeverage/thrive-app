@@ -312,7 +312,7 @@ const API = {
   verifyEmail: async (token, email) => {
     try {
       // Use the correct backend endpoint: /api/auth/verify-email?token=...
-      const response = await api.get(`/api/auth/verify-email?token=${token}`);
+      const response = await api.get(`/api/auth/verify-email?token=${encodeURIComponent(token)}`);
       return response.data;
     } catch (error) {
       console.error('Email verification failed:', error);

@@ -78,7 +78,7 @@ function Layout() {
             return;
           }
           const emailParam = searchParams.get('email') || '';
-          router.push(`/verify?token=${token}&email=${encodeURIComponent(emailParam)}`);
+          router.push(`/verify?token=${encodeURIComponent(token)}&email=${encodeURIComponent(emailParam)}`);
           return;
         }
 
@@ -97,7 +97,7 @@ function Layout() {
           if (isInvitationToken) {
             router.push(`/donorInvitationVerify?token=${token}`);
           } else {
-            router.push(`/verify?token=${token}`);
+            router.push(`/verify?token=${encodeURIComponent(token)}`);
           }
           return;
         }

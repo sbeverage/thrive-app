@@ -224,31 +224,33 @@ export default function UniversalVerifyHandler() {
 
         {verificationStatus === 'error' && (
           <View style={styles.statusContainer}>
-            <AntDesign name="closecircle" size={60} color="#f44336" />
-            <Text style={styles.errorText}>Verification Failed</Text>
+            <AntDesign name="exclamationcircle" size={60} color="#DB8633" />
+            <Text style={styles.errorText}>Link Expired</Text>
             <Text style={styles.errorSubtext}>
-              {!token ? 'No verification token provided.' : 'The verification link is invalid or expired.'}
+              {!token
+                ? 'No verification token found. Please use the link from your email.'
+                : 'This link has expired or already been used. Request a fresh one below.'}
             </Text>
-            
+
             <View style={styles.buttonContainer}>
-              <TouchableOpacity style={styles.primaryButton} onPress={handleRetry}>
-                {Platform.OS === 'web' ? (
-                  <Text style={{ marginRight: 8 }}>{isMobile ? '←' : '📱'}</Text>
-                ) : (
-                  <AntDesign name={isMobile ? "left" : "mobile1"} size={20} color="#fff" style={{ marginRight: 8 }} />
-                )}
-                <Text style={styles.primaryButtonText}>
-                  {isMobile ? 'Back to App' : 'Open in Thrive App'}
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity style={styles.secondaryButton} onPress={handleResendEmail}>
+              <TouchableOpacity style={styles.primaryButton} onPress={handleResendEmail}>
                 {Platform.OS === 'web' ? (
                   <Text style={{ marginRight: 8 }}>✉️</Text>
                 ) : (
-                  <AntDesign name="mail" size={20} color="#2C3E50" style={{ marginRight: 8 }} />
+                  <AntDesign name="mail" size={20} color="#fff" style={{ marginRight: 8 }} />
                 )}
-                <Text style={styles.secondaryButtonText}>Resend Email</Text>
+                <Text style={styles.primaryButtonText}>Send New Link</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.secondaryButton} onPress={handleRetry}>
+                {Platform.OS === 'web' ? (
+                  <Text style={{ marginRight: 8 }}>←</Text>
+                ) : (
+                  <AntDesign name="left" size={20} color="#2C3E50" style={{ marginRight: 8 }} />
+                )}
+                <Text style={styles.secondaryButtonText}>
+                  {isMobile ? 'Back' : 'Open in Thrive App'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

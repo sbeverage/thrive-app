@@ -60,7 +60,7 @@ export default function VerifyEmailScreen() {
     setIsLoading(true);
 
     try {
-      const response = await API.verifyEmail(email, token);
+      const response = await API.verifyEmail(token, email);
       console.log('✅ Verification response:', response);
 
       // Check if verification was successful
@@ -190,31 +190,6 @@ export default function VerifyEmailScreen() {
               </View>
             )}
 
-            {/* Skip Verification Button (for testing) */}
-            <TouchableOpacity 
-              style={styles.skipButton}
-              onPress={() => {
-                Alert.alert(
-                  'Skip Verification',
-                  'This will skip email verification for testing purposes. Continue?',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Skip',
-                      onPress: () => {
-                        console.log('⚠️ Skipping verification for testing');
-                        // Mark as verified for testing
-                        markAsVerified();
-                        // Navigate to next step in signup flow
-                        router.replace('/signupFlow/explainerDonate');
-                      }
-                    }
-                  ]
-                );
-              }}
-            >
-              <Text style={styles.skipButtonText}>Skip Verification (Testing)</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -347,21 +322,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#4CA1AF',
     fontWeight: '500',
-  },
-  skipButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#999',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    marginTop: 24,
-    alignSelf: 'center',
-  },
-  skipButtonText: {
-    color: '#999',
-    fontSize: 14,
-    fontWeight: '500',
-    textAlign: 'center',
   },
 });
