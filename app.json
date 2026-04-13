@@ -5,7 +5,7 @@
     "slug": "thrive-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/piggy-with-flowers.png",
+    "icon": "./assets/images/initiative-app-icon.png",
     "scheme": "thriveapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
