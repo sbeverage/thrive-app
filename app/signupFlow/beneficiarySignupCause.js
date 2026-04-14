@@ -501,7 +501,7 @@ export default function BeneficiaryPreferences() {
                 strokeColor="#DB8633"
                 fillColor="rgba(219, 134, 51, 0.1)"
               />
-              {filteredBeneficiaries.map(b => (
+              {filteredBeneficiaries.filter(b => b.latitude != null && b.longitude != null).map(b => (
                 <Marker
                   key={b.id}
                   coordinate={{ latitude: b.latitude, longitude: b.longitude }}
