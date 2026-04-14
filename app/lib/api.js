@@ -9,6 +9,7 @@ const api = axios.create({
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
     // Supabase Edge Functions require apikey header for all requests
     // This is the project identifier, not user authentication
     'apikey': SUPABASE_ANON_KEY,

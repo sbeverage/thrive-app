@@ -11361,6 +11361,10 @@ async function handleAuthRoute(
     try {
       const url = new URL(req.url);
       let token = url.searchParams.get("token");
+      const wantsJson =
+        url.searchParams.get("format") === "json" ||
+        (req.headers.get("accept")?.includes("application/json") ?? false) ||
+        true; // Mobile app always wants JSON from this endpoint
 
       if (!token) {
         console.error("❌ No token provided in verify-email request");
