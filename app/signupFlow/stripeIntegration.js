@@ -194,9 +194,6 @@ export default function StripeIntegration() {
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Credit Card Fees</Text>
                   <View style={styles.feeToggleRight}>
-                    <Text style={[styles.summaryAmount, !coverFees && styles.disabledAmount]}>
-                      ${coverFees ? creditCardFee.toFixed(2) : '0.00'}
-                    </Text>
                     <TouchableOpacity
                       onPress={() => {
                         if (!coverFees) setConfettiTrigger(true);
@@ -209,6 +206,9 @@ export default function StripeIntegration() {
                         <View style={[styles.toggleThumb, coverFees && styles.toggleThumbActive]} />
                       </View>
                     </TouchableOpacity>
+                    <Text style={[styles.summaryAmount, !coverFees && styles.disabledAmount]}>
+                      ${coverFees ? creditCardFee.toFixed(2) : '0.00'}
+                    </Text>
                   </View>
                 </View>
                 

@@ -105,8 +105,8 @@ export default function UniversalVerifyHandler() {
     }
   };
 
-  // Verifying / success states — minimal, since they're transient
-  if (verificationStatus === 'verifying' || verificationStatus === 'success') {
+  // Verifying state — simple spinner
+  if (verificationStatus === 'verifying') {
     return (
       <View style={styles.loadingContainer}>
         <LinearGradient
@@ -114,23 +114,40 @@ export default function UniversalVerifyHandler() {
           style={styles.gradientBackground}
         />
         <View style={styles.loadingCard}>
-          {verificationStatus === 'verifying' ? (
-            <>
-              <ActivityIndicator size="large" color="#4CA1AF" />
-              <Text style={styles.loadingText}>Verifying your email...</Text>
-            </>
-          ) : (
-            <>
+          <ActivityIndicator size="large" color="#4CA1AF" />
+          <Text style={styles.loadingText}>Verifying your email...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Success state — matches verifyEmail.js card design
+  if (verificationStatus === 'success') {
+    return (
+      <View style={styles.container}>
+        <LinearGradient
+          colors={['#4CA1AF', '#2C3E50']}
+          style={styles.gradientBackground}
+        />
+        <ScrollView
+          style={styles.scrollContent}
+          contentContainerStyle={styles.scrollContentContainer}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.contentCard}>
+            <View style={styles.iconContainer}>
               <Image
-                source={require('../assets/icons/check-circle.png')}
-                style={{ width: 60, height: 60, tintColor: '#4CAF50' }}
+                source={require('../assets/images/piggy-email-verified.png')}
+                style={styles.piggyImage}
                 resizeMode="contain"
               />
-              <Text style={styles.successText}>Email Verified!</Text>
-              <Text style={styles.loadingText}>Taking you to the app...</Text>
-            </>
-          )}
-        </View>
+            </View>
+            <Text style={styles.title}>Email Verified!</Text>
+            <Text style={styles.description}>
+              Your email has been successfully verified. Taking you to the app...
+            </Text>
+          </View>
+        </ScrollView>
       </View>
     );
   }

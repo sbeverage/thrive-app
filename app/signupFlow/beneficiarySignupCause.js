@@ -84,10 +84,10 @@ export default function BeneficiaryPreferences() {
   const [submitError, setSubmitError] = useState('');
   const [favorites, setFavorites] = useState([]);
   
-  // Clear any previously saved beneficiary when starting signup flow
+  // Clear any previously saved beneficiary when starting signup flow (run once on mount only)
   useEffect(() => {
     setSelectedBeneficiary(null);
-  }, [setSelectedBeneficiary]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   
   // Load favorites from AsyncStorage on mount
   // IMPORTANT: Favorites should ONLY be set when the user explicitly selects them.
