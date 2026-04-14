@@ -114,8 +114,17 @@ export default function LoginScreen() {
           pathname: '/signupProfile',
           params: { email: response.user.email || emailTrim }
         });
-      } else if (response.user?.needsOnboarding && !hasLocalBeneficiary && !onboardingDoneLocally) {
-        router.replace('/signupFlow/explainerDonate');
+      } else if (response.user?.needsOnboarding && !onboardingDoneLocally) {
+        // Resume signup flow at the right step based on how far they got
+        if (hasLocalBeneficiary) {
+          // Already picked a cause — resume at donation amount
+          console.log('📱 Resuming signup flow at donationAmount (beneficiary already selected)');
+          router.replace('/signupFlow/donationAmount');
+        } else {
+          // Start from the beginning of the signup flow
+          console.log('📱 Starting signup flow from explainerDonate');
+          router.replace('/signupFlow/explainerDonate');
+        }
       } else {
         // Navigate to home on successful login
         router.replace('/home');
@@ -182,8 +191,17 @@ export default function LoginScreen() {
       saveLastLogin(socialData.provider);
 
       // Check if user needs to complete onboarding
-      if (response.user?.needsOnboarding && !hasLocalBeneficiary && !onboardingDoneLocally) {
-        router.replace('/signupFlow/explainerDonate');
+      if (response.user?.needsOnboarding && !onboardingDoneLocally) {
+        // Resume signup flow at the right step based on how far they got
+        if (hasLocalBeneficiary) {
+          // Already picked a cause — resume at donation amount
+          console.log('📱 Resuming signup flow at donationAmount (beneficiary already selected)');
+          router.replace('/signupFlow/donationAmount');
+        } else {
+          // Start from the beginning of the signup flow
+          console.log('📱 Starting signup flow from explainerDonate');
+          router.replace('/signupFlow/explainerDonate');
+        }
       } else {
         // Navigate to home on successful login
         router.replace('/home');
