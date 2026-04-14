@@ -348,16 +348,25 @@ export default function DiscountsScreen() {
   // Update location display when location context changes
   useEffect(() => {
     if (userLocation && locationPermission === 'granted') {
+      let display;
       // Use locationAddress from context if available (more accurate)
       if (locationAddress?.city && locationAddress?.state) {
-        const display = `${locationAddress.city}, ${locationAddress.state}`;
-        setLocationDisplay(display);
+        display = `${locationAddress.city}, ${locationAddress.state}`;
       } else {
         // Fallback to coordinates-based lookup
-        const friendlyName = getFriendlyLocationName(userLocation.latitude, userLocation.longitude);
-        setLocationDisplay(friendlyName);
+        display = getFriendlyLocationName(userLocation.latitude, userLocation.longitude);
       }
-      
+      setLocationDisplay(display);
+
+      // Auto-seed locationSearch with detected location so typing filters from here
+      setLocationSearch(prev => {
+        if (!prev) {
+          updateFilters({ location: display });
+          return display;
+        }
+        return prev;
+      });
+
       // Update map region
       setMapRegion({
         latitude: userLocation.latitude,

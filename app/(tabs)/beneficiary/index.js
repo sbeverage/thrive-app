@@ -32,7 +32,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export default function BeneficiaryScreen() {
   const router = useRouter();
   const { selectedBeneficiary, setSelectedBeneficiary } = useBeneficiary();
-  const { filters, clearFilters, hasActiveFilters } = useBeneficiaryFilter();
+  const { filters, updateFilters, clearFilters, hasActiveFilters } = useBeneficiaryFilter();
   const { location: userLocation, locationAddress, locationPermission, checkLocationPermission, refreshLocation, isLoadingLocation } = useLocation();
 
   const [searchText, setSearchText] = useState('');
@@ -91,6 +91,7 @@ export default function BeneficiaryScreen() {
   const [showMap, setShowMap] = useState(false);
   const [mapRegion, setMapRegion] = useState(getDefaultRegion());
   const [locationDisplay, setLocationDisplay] = useState('Detecting location...');
+  const [locationSearch, setLocationSearch] = useState('');
   const [isEditingLocation, setIsEditingLocation] = useState(false);
   
   // Add state for the mini popup
@@ -261,9 +262,9 @@ export default function BeneficiaryScreen() {
       matchesCategory = b.category === activeCategory;
     }
     
-    // Filter context filters
-    const matchesLocation = !filters.location || 
-                           b.location.toLowerCase().includes(filters.location.toLowerCase());
+    // Filter by location (from filter screen or main screen location input)
+    const locFilter = (filters.location && filters.location.trim()) || (locationSearch && locationSearch.trim()) || '';
+    const matchesLocation = !locFilter || (b.location && b.location.toLowerCase().includes(locFilter.toLowerCase()));
     
     const matchesCause = !filters.cause || b.category === filters.cause;
     
@@ -312,6 +313,8 @@ export default function BeneficiaryScreen() {
 
   const updateUserLocation = async () => {
     if (locationPermission === 'granted') {
+      setLocationSearch('');
+      updateFilters({ location: '' });
       await refreshLocation();
     } else {
       checkLocationPermission();
@@ -356,25 +359,32 @@ export default function BeneficiaryScreen() {
   useEffect(() => {
     const updateLocationDisplay = async () => {
       if (userLocation && locationPermission === 'granted') {
+        let display = 'Current Location';
+
         // Use locationAddress from context if available (more accurate)
         if (locationAddress?.city && locationAddress?.state) {
-          const display = `${locationAddress.city}, ${locationAddress.state}`;
-          setLocationDisplay(display);
-          console.log('📍 Location display updated:', display);
+          display = `${locationAddress.city}, ${locationAddress.state}`;
         } else if (userLocation.latitude && userLocation.longitude) {
           // Fallback: try to get friendly name from coordinates
           try {
-            const friendlyName = await getFriendlyLocationName(userLocation.latitude, userLocation.longitude);
-            setLocationDisplay(friendlyName);
-            console.log('📍 Location display updated (fallback):', friendlyName);
+            display = await getFriendlyLocationName(userLocation.latitude, userLocation.longitude);
           } catch (error) {
             console.error('Error getting friendly location name:', error);
-            setLocationDisplay('Current Location');
           }
-        } else {
-          setLocationDisplay('Current Location');
         }
-        
+
+        setLocationDisplay(display);
+        console.log('📍 Location display updated:', display);
+
+        // Auto-seed locationSearch with detected location so typing filters from here
+        setLocationSearch(prev => {
+          if (!prev) {
+            updateFilters({ location: display });
+            return display;
+          }
+          return prev;
+        });
+
         // Update map region
         setMapRegion({
           latitude: userLocation.latitude,
@@ -390,7 +400,7 @@ export default function BeneficiaryScreen() {
         setLocationDisplay('Tap to set location');
       }
     };
-    
+
     updateLocationDisplay();
   }, [userLocation, locationAddress, locationPermission, isLoadingLocation]);
 
@@ -445,21 +455,30 @@ export default function BeneficiaryScreen() {
           <Feather name="map-pin" size={16} color="#6d6e72" style={{ marginRight: 8 }} />
           {isEditingLocation ? (
             <TextInput
-              placeholder="Enter your location"
+              placeholder="Enter city or area (e.g. Atlanta)"
               placeholderTextColor="#6d6e72"
-              value={locationDisplay}
-              onChangeText={setLocationDisplay}
+              value={locationSearch}
+              onChangeText={(t) => {
+                setLocationSearch(t);
+                updateFilters({ location: t.trim() });
+              }}
               style={styles.locationInput}
               autoFocus
               onBlur={() => setIsEditingLocation(false)}
               onSubmitEditing={() => setIsEditingLocation(false)}
             />
           ) : (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.locationDisplay}
-              onPress={() => setIsEditingLocation(true)}
+              onPress={() => {
+                setIsEditingLocation(true);
+                if (!locationSearch) {
+                  setLocationSearch(locationDisplay);
+                  updateFilters({ location: locationDisplay.trim() });
+                }
+              }}
             >
-              <Text style={styles.locationText}>{locationDisplay}</Text>
+              <Text style={styles.locationText}>{locationSearch || locationDisplay}</Text>
               <Feather name="edit-2" size={14} color="#DB8633" style={{ marginLeft: 8 }} />
             </TouchableOpacity>
           )}

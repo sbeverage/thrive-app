@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
 import { getCurrentLocation, requestLocationPermission, getLocationWithAddress } from '../utils/locationService';
 
 const LOCATION_PERMISSION_ASKED_KEY = '@location_permission_asked';
@@ -22,7 +23,7 @@ export const LocationProvider = ({ children }) => {
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [hasAskedForPermission, setHasAskedForPermission] = useState(false);
 
-  // Load saved preference on mount
+  // Load saved preference on mount, and re-fetch location if permission already granted
   useEffect(() => {
     const loadSavedPreference = async () => {
       try {
@@ -30,6 +31,28 @@ export const LocationProvider = ({ children }) => {
         if (saved === 'true') {
           setHasAskedForPermission(true);
           console.log('📍 Loaded saved location permission preference: already asked');
+
+          // Check current permission status without prompting
+          const { status } = await Location.getForegroundPermissionsAsync();
+          if (status === 'granted') {
+            setLocationPermission('granted');
+            setIsLoadingLocation(true);
+            try {
+              const locationWithAddress = await getLocationWithAddress();
+              if (locationWithAddress) {
+                const { city, state, zipCode, country, street, ...coords } = locationWithAddress;
+                setLocation(coords);
+                setLocationAddress({ city, state, zipCode, country, street });
+                console.log('📍 Location restored on app launch:', { city, state });
+              }
+            } catch (error) {
+              console.error('Error fetching location on resume:', error);
+            } finally {
+              setIsLoadingLocation(false);
+            }
+          } else {
+            setLocationPermission('denied');
+          }
         }
       } catch (error) {
         console.error('Error loading location permission preference:', error);
