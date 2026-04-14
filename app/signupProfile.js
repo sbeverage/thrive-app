@@ -21,6 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from './context/UserContext';
 import { useLocalSearchParams } from 'expo-router';
+import API from './lib/api';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -144,7 +145,18 @@ export default function SignupProfile() {
       
       // Save profile data (this will save both locally and to backend)
       const savedUserData = await saveUserData({ ...profileData }, true);
-      
+
+      // Now that the name is saved, send the verification email.
+      // The backend /auth/resend-verification fetches first_name/last_name from the DB,
+      // so the greeting will say "Welcome, Stephanie!" instead of the email prefix.
+      try {
+        await API.resendVerification(emailToSave);
+        console.log('📧 Verification email sent with user name');
+      } catch (emailError) {
+        // Non-blocking — user can request a resend from the verify screen
+        console.warn('⚠️ Verification email send failed (user can resend):', emailError.message);
+      }
+
       // Navigate directly to email verification page with email
       router.push({
         pathname: '/verifyEmail',
