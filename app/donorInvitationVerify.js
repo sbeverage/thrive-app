@@ -47,6 +47,9 @@ export default function DonorInvitationVerifyScreen() {
   const [verifying, setVerifying] = useState(!!token);
   const [verified, setVerified] = useState(false);
   const [error, setError] = useState('');
+  const [requestEmail, setRequestEmail] = useState('');
+  const [requestLoading, setRequestLoading] = useState(false);
+  const [requestSent, setRequestSent] = useState(false);
   
   // Auto-verify token when component mounts
   useEffect(() => {
@@ -279,6 +282,23 @@ export default function DonorInvitationVerifyScreen() {
     );
   }
 
+  // Request new invite handler
+  const handleRequestNewInvite = async () => {
+    if (!requestEmail.trim()) {
+      Alert.alert('Email Required', 'Please enter the email address used for your invitation.');
+      return;
+    }
+    setRequestLoading(true);
+    try {
+      await API.requestNewInvite(requestEmail.trim().toLowerCase());
+      setRequestSent(true);
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Failed to send request. Please try again.');
+    } finally {
+      setRequestLoading(false);
+    }
+  };
+
   // Error state if verification failed
   if (!verified && error) {
     return (
@@ -287,18 +307,59 @@ export default function DonorInvitationVerifyScreen() {
           colors={['#2C3E50', '#4CA1AF']}
           style={styles.gradientBackground}
         />
-        <View style={styles.errorContainer}>
-          <AntDesign name="closecircle" size={60} color="#ff4d4f" />
-          <Text style={styles.errorTitle}>Verification Failed</Text>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() => router.replace('/login')}
-          >
-            <Text style={styles.buttonText}>Go to Login</Text>
-          </TouchableOpacity>
-          
-        </View>
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          <View style={styles.contentCard}>
+            <View style={styles.errorIconContainer}>
+              <AntDesign name="closecircle" size={60} color="#ff4d4f" />
+            </View>
+            <Text style={styles.errorTitle}>Invitation Link Expired</Text>
+            <Text style={styles.errorText}>
+              This invite link is invalid or has already been used. Enter your email below to receive a fresh invitation.
+            </Text>
+
+            {requestSent ? (
+              <View style={styles.successBanner}>
+                <AntDesign name="checkcircle" size={20} color="#52c41a" style={{ marginRight: 8 }} />
+                <Text style={styles.successText}>
+                  Check your inbox! A new invite link has been sent if an account exists for that email.
+                </Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Your Email Address</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={requestEmail}
+                    onChangeText={setRequestEmail}
+                    placeholder="Enter your email"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+                <TouchableOpacity
+                  style={[styles.button, requestLoading && styles.buttonDisabled]}
+                  onPress={handleRequestNewInvite}
+                  disabled={requestLoading}
+                >
+                  {requestLoading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.buttonText}>Request New Invite</Text>
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => router.replace('/login')}
+            >
+              <Text style={styles.cancelButtonText}>Back to Login</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </View>
     );
   }
@@ -582,19 +643,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
+  errorIconContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+    marginTop: 8,
+  },
   errorTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#ff4d4f',
-    marginTop: 16,
-    marginBottom: 8,
+    color: '#324E58',
+    marginBottom: 10,
+    textAlign: 'center',
   },
   errorText: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#666',
     textAlign: 'center',
     marginBottom: 24,
-    paddingHorizontal: 20,
+    lineHeight: 22,
+  },
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#f6ffed',
+    borderWidth: 1,
+    borderColor: '#b7eb8f',
+    borderRadius: 8,
+    padding: 14,
+    marginBottom: 20,
+  },
+  successText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#389e0d',
+    lineHeight: 20,
   },
   scrollContent: {
     flexGrow: 1,

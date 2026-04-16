@@ -12024,6 +12024,82 @@ async function handleAuthRoute(
     }
   }
 
+  // POST /auth/request-new-invite
+  // Allows a donor whose invite link is expired/consumed to request a fresh one.
+  // Generates a 64-char token so the app routes to /donorInvitationVerify.
+  if (method === "POST" && route === "/auth/request-new-invite") {
+    try {
+      const body = await req.json();
+      const {email} = body;
+
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return new Response(
+          JSON.stringify({success: false, error: "Valid email is required."}),
+          {headers: {...corsHeaders, "Content-Type": "application/json"}, status: 400},
+        );
+      }
+
+      // Look up donor by email
+      const {data: users} = await supabase
+        .from("users")
+        .select("id, email, first_name, last_name, role, account_status, is_verified")
+        .eq("email", email.toLowerCase().trim())
+        .eq("role", "donor")
+        .limit(1);
+
+      // Always return a generic success (don't leak whether email exists)
+      const genericSuccess = new Response(
+        JSON.stringify({success: true, message: "If an account exists for this email, a new invitation has been sent."}),
+        {headers: {...corsHeaders, "Content-Type": "application/json"}, status: 200},
+      );
+
+      if (!users || users.length === 0) {
+        console.log("⚠️ request-new-invite: donor not found for", email);
+        return genericSuccess;
+      }
+
+      const donor = users[0];
+
+      // If donor has fully completed signup (active + verified, no token needed), don't resend
+      if (donor.is_verified && donor.account_status === "active") {
+        console.log("ℹ️ request-new-invite: donor already active, skipping resend for", email);
+        return genericSuccess;
+      }
+
+      // Generate fresh 64-char invitation token
+      const tokenArray = new Uint8Array(32);
+      crypto.getRandomValues(tokenArray);
+      const newToken = Array.from(tokenArray, (b) => b.toString(16).padStart(2, "0")).join("");
+
+      await supabase
+        .from("users")
+        .update({
+          verification_token: newToken,
+          is_verified: false,
+          account_status: "active",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", donor.id);
+
+      const fullName = `${donor.first_name || ""} ${donor.last_name || ""}`.trim();
+      sendInvitationEmail({
+        to: donor.email,
+        name: fullName || donor.email.split("@")[0],
+        verificationToken: newToken,
+        donorId: donor.id,
+      }).catch((e) => console.error("❌ request-new-invite email error:", e));
+
+      console.log("✅ request-new-invite: resent invite to", email);
+      return genericSuccess;
+    } catch (err) {
+      console.error("❌ request-new-invite error:", err);
+      return new Response(
+        JSON.stringify({success: false, error: "Server error. Please try again."}),
+        {headers: {...corsHeaders, "Content-Type": "application/json"}, status: 500},
+      );
+    }
+  }
+
   // DELETE /auth/delete-user
   if (method === "DELETE" && route === "/auth/delete-user") {
     try {

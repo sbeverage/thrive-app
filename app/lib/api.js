@@ -526,6 +526,23 @@ const API = {
   },
 
   /**
+   * Request a fresh invitation email when the original link is expired/consumed.
+   * Backend generates a new 64-char token and resends the invite email.
+   */
+  requestNewInvite: async (email) => {
+    try {
+      const response = await api.post('/api/auth/request-new-invite', { email });
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.error ||
+          error.response?.data?.message ||
+          'Failed to request new invite. Please try again.',
+      );
+    }
+  },
+
+  /**
    * Complete donor invitation signup
    * Creates password and completes account setup
    * Uses /api/auth/signup endpoint which handles both regular signups and invited donors
