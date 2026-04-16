@@ -1,5 +1,6 @@
 // file: app/_layout.js
 import * as Sentry from '@sentry/react-native';
+import * as Updates from 'expo-updates';
 import { Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { View, StyleSheet, Text, TextInput } from 'react-native';
@@ -33,6 +34,23 @@ TextInput.defaultProps.allowFontScaling = false;
 
 function Layout() {
   const router = useRouter();
+
+  // Check for OTA updates on every launch and apply immediately
+  useEffect(() => {
+    const checkForUpdate = async () => {
+      try {
+        if (__DEV__) return; // Skip in local dev (no OTA in Expo Go / Metro)
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync(); // Restart app with new bundle
+        }
+      } catch (e) {
+        // Silently ignore — update check failing should never crash the app
+      }
+    };
+    checkForUpdate();
+  }, []);
 
   useEffect(() => {
     // Handle deep links when app is already running
