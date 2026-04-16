@@ -10721,20 +10721,14 @@ async function handleAuthRoute(
         finalUserName: userName,
       });
 
-      // Send verification email (async - don't wait for it)
-      // sendInvitationEmail uses APP_BASE_URL env var (defaults to https://thrive-web-jet.vercel.app)
-      sendInvitationEmail({
-        to: email,
-        name: userName,
-        verificationToken: token,
-        donorId: newUser.id,
-      }).catch((emailError) => {
-        console.error("❌ Error sending verification email:", emailError);
-        // Don't fail the request if email fails - user can resend later
-      });
+      // NOTE: Verification email is NOT sent here.
+      // The frontend will send it after the user completes their profile (first/last name),
+      // so the greeting reads "Welcome, Stephanie!" instead of the email prefix.
+      // The token is stored in the DB and the frontend calls /auth/resend-verification
+      // (which fetches the saved name) after profile setup is complete.
 
       console.log("✅ User created successfully:", email);
-      console.log("📧 Verification email should be sent to:", email);
+      console.log("📧 Verification email will be sent after profile setup");
       if (stripeSubscriptionInfo) {
         console.log(
           "💳 Stripe subscription setup complete:",
