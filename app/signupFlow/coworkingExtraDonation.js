@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, Dimensions } from 'react-native';
-import Slider from '@react-native-community/slider';
+import { View, Text, TextInput, Alert, StyleSheet, TouchableOpacity, ScrollView, Image, Dimensions } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from '../context/UserContext';
@@ -16,11 +15,17 @@ export default function CoworkingExtraDonation() {
   const { selectedBeneficiary } = useBeneficiary();
 
   const sponsorAmount = parseFloat(params.sponsorAmount || '15');
-  const [extraAmount, setExtraAmount] = useState(5);
+  const [extraAmountText, setExtraAmountText] = useState('');
+  const extraAmount = parseInt(extraAmountText, 10) || 0;
 
   const totalMonthlyDonation = sponsorAmount + extraAmount;
 
   const handleContinue = async () => {
+    if (!extraAmount || extraAmount < 1) {
+      Alert.alert('Amount Required', 'Please enter a whole dollar amount to give.');
+      return;
+    }
+
     await saveUserData({
       coworking: true,
       sponsorAmount: sponsorAmount,
@@ -63,29 +68,28 @@ export default function CoworkingExtraDonation() {
           <Image source={require('../../assets/images/piggy-coin.png')} style={styles.piggy} />
           <Text style={styles.title}>Add Extra Support</Text>
           <Text style={styles.subtitle}>
-            Coworking covers ${sponsorAmount.toFixed(0)}. You can add $5+ more.
+            Coworking covers ${sponsorAmount.toFixed(0)}/month. How much more would you like to add?
           </Text>
 
           <View style={styles.amountCard}>
-            <Text style={styles.amountText}>${extraAmount.toFixed(0)}</Text>
-            <Text style={styles.amountLabel}>extra per month</Text>
+            <Text style={styles.dollarSign}>$</Text>
+            <TextInput
+              style={styles.amountInput}
+              value={extraAmountText}
+              onChangeText={(t) => setExtraAmountText(t.replace(/[^0-9]/g, ''))}
+              placeholder="0"
+              placeholderTextColor="#aaa"
+              keyboardType="number-pad"
+              maxLength={5}
+            />
+            <Text style={styles.amountLabel}>per month</Text>
           </View>
 
-          <Slider
-            style={styles.slider}
-            minimumValue={5}
-            maximumValue={250}
-            step={1}
-            value={extraAmount}
-            onValueChange={setExtraAmount}
-            minimumTrackTintColor="#4CA1AF"
-            maximumTrackTintColor="#e0e0e0"
-            thumbTintColor="#DB8633"
-          />
-
-          <Text style={styles.totalText}>
-            Total monthly impact: ${totalMonthlyDonation.toFixed(0)}
-          </Text>
+          {extraAmount > 0 && (
+            <Text style={styles.totalText}>
+              Total monthly impact: ${totalMonthlyDonation.toFixed(0)}
+            </Text>
+          )}
 
           <TouchableOpacity style={styles.primaryButton} onPress={handleContinue}>
             <Text style={styles.primaryButtonText}>Continue to Payment</Text>
@@ -123,15 +127,23 @@ const styles = StyleSheet.create({
   amountCard: {
     backgroundColor: '#F5F5FA',
     borderRadius: 16,
-    paddingVertical: 12,
+    paddingVertical: 16,
     paddingHorizontal: 24,
     marginBottom: 16,
     alignItems: 'center',
     width: SCREEN_WIDTH * 0.6
   },
-  amountText: { fontSize: 28, fontWeight: '700', color: '#324E58' },
-  amountLabel: { fontSize: 14, color: '#8E9BAE' },
-  slider: { width: '100%', height: 40, marginVertical: 12 },
+  dollarSign: { fontSize: 28, fontWeight: '700', color: '#324E58', position: 'absolute', left: 24, top: 16 },
+  amountInput: {
+    fontSize: 36,
+    fontWeight: '700',
+    color: '#324E58',
+    textAlign: 'center',
+    minWidth: 80,
+    paddingHorizontal: 8,
+    paddingTop: 0,
+  },
+  amountLabel: { fontSize: 14, color: '#8E9BAE', marginTop: 4 },
   totalText: { fontSize: 16, color: '#324E58', marginBottom: 20 },
   primaryButton: {
     width: '100%',

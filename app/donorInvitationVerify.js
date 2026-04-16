@@ -77,6 +77,7 @@ export default function DonorInvitationVerifyScreen() {
         
         setEmail(response.user.email || '');
         setName(response.user.name || response.user.firstName || '');
+        setPhone(response.user.phone || '');
         const isCoworkingInvite = response.user.coworking === true || response.user.inviteType === 'coworking';
         const rawSponsor = parseFloat(response.user.sponsorAmount || 0);
         setCoworking(isCoworkingInvite);

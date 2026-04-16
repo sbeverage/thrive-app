@@ -6,6 +6,7 @@ import ProfileCompleteModal from '../../components/ProfileCompleteModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUser } from '../context/UserContext';
 import { useBeneficiary } from '../context/BeneficiaryContext';
+import API from '../lib/api';
 
 export default function CoworkingDonationPrompt() {
   const router = useRouter();
@@ -27,6 +28,16 @@ export default function CoworkingDonationPrompt() {
       externalBilled: true,
       inviteType: 'coworking'
     }, true);
+
+    // Save selected beneficiary to backend profile
+    if (selectedBeneficiary?.id) {
+      try {
+        await API.saveProfile({ beneficiary: selectedBeneficiary.id });
+      } catch (err) {
+        console.warn('⚠️ Could not save beneficiary to profile:', err.message);
+      }
+    }
+
     setShowModal(true);
   };
 

@@ -11466,7 +11466,7 @@ async function handleAuthRoute(
       const fullUserResult = await supabase
         .from("users")
         .select(
-          "id, email, first_name, last_name, role, verification_token, account_status, is_verified, coworking, invite_type, sponsor_amount, sponsor_source, external_billed, extra_donation_amount, total_monthly_donation",
+          "id, email, first_name, last_name, phone, role, verification_token, account_status, is_verified, coworking, invite_type, sponsor_amount, sponsor_source, external_billed, extra_donation_amount, total_monthly_donation",
         )
         .eq("verification_token", token)
         .eq("role", "donor")
@@ -11555,6 +11555,9 @@ async function handleAuthRoute(
         id: user.id,
         email: user.email,
         name: fullName || user.email.split("@")[0],
+        firstName: user.first_name || "",
+        lastName: user.last_name || "",
+        phone: user.phone || null,
         role: user.role,
         isVerified: true,
         status: user.account_status,
