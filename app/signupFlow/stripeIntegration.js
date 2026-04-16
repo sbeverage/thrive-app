@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from “react”;
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -13,32 +13,32 @@ import {
   ScrollView,
   Modal,
   Alert,
-} from “react-native”;
-import { useRouter } from “expo-router”;
-import { AntDesign } from “@expo/vector-icons”;
-import ProfileCompleteModal from “../../components/ProfileCompleteModal”;
-import { LinearGradient } from “expo-linear-gradient”;
-import { Animated } from “react-native”;
-import ConfettiCannon from “react-native-confetti-cannon”;
-import { useLocalSearchParams } from “expo-router”;
-import { SvgXml } from “react-native-svg”;
-import { Asset } from “expo-asset”;
-import AsyncStorage from “@react-native-async-storage/async-storage”;
-import { useStripe } from “@stripe/stripe-react-native”;
-import { useBeneficiary } from “../context/BeneficiaryContext”;
-import { useUser } from “../context/UserContext”;
-import API from “../lib/api”;
+} from "react-native";
+import { useRouter } from "expo-router";
+import { AntDesign } from "@expo/vector-icons";
+import ProfileCompleteModal from "../../components/ProfileCompleteModal";
+import { LinearGradient } from "expo-linear-gradient";
+import { Animated } from "react-native";
+import ConfettiCannon from "react-native-confetti-cannon";
+import { useLocalSearchParams } from "expo-router";
+import { SvgXml } from "react-native-svg";
+import { Asset } from "expo-asset";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useStripe } from "@stripe/stripe-react-native";
+import { useBeneficiary } from "../context/BeneficiaryContext";
+import { useUser } from "../context/UserContext";
+import API from "../lib/api";
 import {
   hasMonthlySubscriptionPaymentSheet,
   presentMonthlySubscriptionPaymentSheet,
-} from “../utils/monthlySubscriptionPaymentSheet”;
-import { resolveCheckoutBeneficiaryId } from “../utils/resolveCheckoutBeneficiaryId”;
+} from "../utils/monthlySubscriptionPaymentSheet";
+import { resolveCheckoutBeneficiaryId } from "../utils/resolveCheckoutBeneficiaryId";
 
-const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get(“window”);
+const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 
 /** Platform service fee (USD) — included in Stripe subscription total. */
 const SERVICE_FEE = 3.0;
-/** Applied to (donation + service fee) when “cover fees” is on — same value drives UI label + amount sent to Stripe. */
+/** Applied to (donation + service fee) when "cover fees" is on — same value drives UI label + amount sent to Stripe. */
 const CREDIT_CARD_FEE_RATE = 0.035;
 const CREDIT_CARD_FEE_LABEL = `(${(CREDIT_CARD_FEE_RATE * 100).toFixed(1)}%)`;
 
