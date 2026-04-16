@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // 1. Create the context
@@ -28,8 +28,8 @@ export const BeneficiaryProvider = ({ children }) => {
     loadSavedBeneficiary();
   }, []);
 
-  // Expose a reload function that can be called after login
-  const reloadBeneficiary = async () => {
+  // Stable references — avoids useFocusEffect / useEffect re-firing every parent render
+  const reloadBeneficiary = useCallback(async () => {
     try {
       const saved = await AsyncStorage.getItem('selectedBeneficiary');
       if (saved) {
@@ -42,10 +42,9 @@ export const BeneficiaryProvider = ({ children }) => {
       console.error('❌ Error reloading beneficiary:', error);
     }
     return null;
-  };
+  }, []);
 
-  // Save beneficiary when it changes
-  const saveBeneficiary = async (beneficiary) => {
+  const saveBeneficiary = useCallback(async (beneficiary) => {
     try {
       if (beneficiary) {
         await AsyncStorage.setItem('selectedBeneficiary', JSON.stringify(beneficiary));
@@ -57,7 +56,7 @@ export const BeneficiaryProvider = ({ children }) => {
       console.error('Error saving beneficiary:', error);
       setSelectedBeneficiary(beneficiary);
     }
-  };
+  }, []);
 
   return (
     <BeneficiaryContext.Provider value={{ selectedBeneficiary, setSelectedBeneficiary: saveBeneficiary, reloadBeneficiary }}>

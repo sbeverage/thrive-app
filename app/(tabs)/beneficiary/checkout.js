@@ -21,11 +21,15 @@ import { useStripe } from '@stripe/stripe-react-native';
 import API from '../../lib/api';
 import { STRIPE_PUBLISHABLE_KEY, STRIPE_CC_FEE_RATE, STRIPE_CC_FEE_FIXED } from '../../utils/constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  hasMonthlySubscriptionPaymentSheet,
+  presentMonthlySubscriptionPaymentSheet,
+} from '../../utils/monthlySubscriptionPaymentSheet';
 
 export default function CheckoutScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { initPaymentSheet, presentPaymentSheet, isApplePaySupported } = useStripe();
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
   
   // Check if Stripe is properly initialized
   useEffect(() => {
@@ -51,11 +55,10 @@ export default function CheckoutScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [confettiTrigger, setConfettiTrigger] = useState(false);
-  const [paymentIntent, setPaymentIntent] = useState(null);
-  const [applePayAvailable, setApplePayAvailable] = useState(false);
+  const [paymentSheetData, setPaymentSheetData] = useState(null);
   const [error, setError] = useState(null);
 
-  // Validate amount on mount
+  // Validate amount and initialize Stripe Payment Sheet
   useEffect(() => {
     if (amount <= 0) {
       Alert.alert(
@@ -63,52 +66,33 @@ export default function CheckoutScreen() {
         'The donation amount is invalid. Please go back and enter a valid amount.',
         [{ text: 'OK', onPress: () => router.back() }]
       );
+      return;
     }
-  }, []);
-
-  // Initialize Stripe and check Apple Pay availability
-  useEffect(() => {
-    if (amount <= 0) return;
-    checkApplePaySupport();
     createPaymentIntent();
   }, []);
-
-  const checkApplePaySupport = async () => {
-    try {
-      const supported = await isApplePaySupported();
-      setApplePayAvailable(supported);
-    } catch (error) {
-      console.error('Error checking Apple Pay support:', error);
-      setApplePayAvailable(false);
-    }
-  };
 
   const createPaymentIntent = async () => {
     try {
       setIsProcessing(true);
       setError(null);
 
-      const giftData = {
+      // Stripe endpoint should receive the final charge amount when fees are covered
+      const processingFeeAmount = userCoveredFees ? amount * 0.029 + 0.30 : 0;
+      const chargeAmount = Number((amount + processingFeeAmount).toFixed(2));
+
+      const paymentData = {
         beneficiary_id: beneficiaryId,
-        amount: amount,
+        amount: chargeAmount,
         currency: 'USD',
-        user_covered_fees: userCoveredFees,
-        donor_message: donorMessage,
-        is_anonymous: isAnonymous,
       };
 
-      const response = await API.createOneTimeGiftPaymentIntent(giftData);
-      
-      if (response.success && response.payment_intent) {
-        setPaymentIntent(response.payment_intent);
-        
-        // Initialize payment sheet for Apple Pay
-        if (applePayAvailable) {
-          await initializePaymentSheet(response.payment_intent);
-        }
-      } else {
+      const response = await API.createOneTimePaymentSheet(paymentData);
+
+      if (!hasMonthlySubscriptionPaymentSheet(response)) {
         throw new Error('Failed to create payment intent');
       }
+
+      setPaymentSheetData(response);
     } catch (error) {
       console.error('Error creating payment intent:', error);
       setError(error.message || 'Failed to initialize payment. Please try again.');
@@ -118,61 +102,8 @@ export default function CheckoutScreen() {
     }
   };
 
-  const initializePaymentSheet = async (paymentIntentData) => {
-    try {
-      const { error: initError } = await initPaymentSheet({
-        merchantDisplayName: 'THRIVE Initiative',
-        paymentIntentClientSecret: paymentIntentData.client_secret,
-        applePay: {
-          merchantCountryCode: 'US',
-        },
-        style: 'alwaysDark',
-      });
-
-      if (initError) {
-        console.error('Payment sheet initialization error:', initError);
-        // Don't show error to user, just disable Apple Pay
-        setApplePayAvailable(false);
-      }
-    } catch (error) {
-      console.error('Error initializing payment sheet:', error);
-      setApplePayAvailable(false);
-    }
-  };
-
-  const handleApplePay = async () => {
-    if (!paymentIntent) {
-      Alert.alert('Error', 'Payment not initialized. Please try again.');
-      return;
-    }
-
-    try {
-      setIsProcessing(true);
-      setError(null);
-
-      const { error: presentError } = await presentPaymentSheet();
-
-      if (presentError) {
-        if (presentError.code !== 'Canceled') {
-          console.error('Payment sheet error:', presentError);
-          Alert.alert('Payment Failed', presentError.message || 'Payment could not be completed.');
-        }
-        setIsProcessing(false);
-        return;
-      }
-
-      // Payment succeeded, confirm with backend
-      await confirmPayment(paymentIntent.id, null, 'apple_pay');
-    } catch (error) {
-      console.error('Apple Pay error:', error);
-      setError(error.message || 'Apple Pay payment failed.');
-      Alert.alert('Error', error.message || 'Apple Pay payment failed.');
-      setIsProcessing(false);
-    }
-  };
-
   const handleCardPayment = async () => {
-    if (!paymentIntent) {
+    if (!paymentSheetData) {
       Alert.alert('Error', 'Payment not initialized. Please try again.');
       return;
     }
@@ -181,47 +112,30 @@ export default function CheckoutScreen() {
       setIsProcessing(true);
       setError(null);
 
-      // For card payments, we'll use the payment sheet as well
-      // This allows users to enter card details securely
-      const { error: presentError } = await presentPaymentSheet();
+      const payResult = await presentMonthlySubscriptionPaymentSheet(
+        { initPaymentSheet, presentPaymentSheet },
+        paymentSheetData,
+      );
 
-      if (presentError) {
-        if (presentError.code !== 'Canceled') {
-          console.error('Payment sheet error:', presentError);
-          Alert.alert('Payment Failed', presentError.message || 'Payment could not be completed.');
+      if (!payResult.ok) {
+        if (!payResult.canceled && payResult.error) {
+          Alert.alert(
+            'Payment Failed',
+            payResult.error.message || 'Payment could not be completed.',
+          );
         }
         setIsProcessing(false);
         return;
       }
 
-      // Payment succeeded, confirm with backend
-      await confirmPayment(paymentIntent.id, null, 'card');
+      await saveTransaction({});
+      setIsProcessing(false);
+      setConfettiTrigger(true);
+      setShowSuccess(true);
     } catch (error) {
       console.error('Card payment error:', error);
       setError(error.message || 'Card payment failed.');
       Alert.alert('Error', error.message || 'Card payment failed.');
-      setIsProcessing(false);
-    }
-  };
-
-  const confirmPayment = async (paymentIntentId, paymentMethodId, paymentMethodType) => {
-    try {
-      const response = await API.confirmOneTimeGiftPayment(paymentIntentId, paymentMethodId);
-
-      if (response.success && response.gift) {
-        // Save transaction to local storage
-        await saveTransaction(response.transaction);
-
-        setIsProcessing(false);
-        setConfettiTrigger(true);
-        setShowSuccess(true);
-      } else {
-        throw new Error('Payment confirmation failed');
-      }
-    } catch (error) {
-      console.error('Error confirming payment:', error);
-      setError(error.message || 'Failed to confirm payment.');
-      Alert.alert('Error', error.message || 'Failed to confirm payment.');
       setIsProcessing(false);
     }
   };
@@ -234,14 +148,14 @@ export default function CheckoutScreen() {
       transactions.unshift({
         id: transaction.id || Date.now().toString(),
         type: 'donation',
-        beneficiaryName: transaction.beneficiary_name || beneficiaryName,
-        amount: transaction.amount || `$${amount.toFixed(2)}`,
-        date: transaction.date || new Date().toLocaleDateString('en-US', { 
+        beneficiaryName: transaction?.beneficiary_name || beneficiaryName,
+        amount: transaction?.amount || `$${amount.toFixed(2)}`,
+        date: transaction?.date || new Date().toLocaleDateString('en-US', { 
           month: 'short', 
           day: 'numeric', 
           year: 'numeric' 
         }),
-        status: transaction.status || 'completed',
+        status: transaction?.status || 'completed',
         isOneTimeGift: true,
       });
       
@@ -331,32 +245,9 @@ export default function CheckoutScreen() {
         )}
 
         {/* Payment Methods */}
-        {paymentIntent && (
+        {paymentSheetData && (
           <View style={styles.paymentMethodsCard}>
             <Text style={styles.sectionTitle}>Payment Method</Text>
-
-            {/* Apple Pay Button */}
-            {applePayAvailable && (
-              <>
-                <TouchableOpacity
-                  style={styles.applePayButton}
-                  onPress={handleApplePay}
-                  disabled={isProcessing}
-                >
-                  {isProcessing ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.applePayText}>Pay with Apple Pay</Text>
-                  )}
-                </TouchableOpacity>
-
-                <View style={styles.dividerContainer}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>or</Text>
-                  <View style={styles.dividerLine} />
-                </View>
-              </>
-            )}
 
             {/* Card Payment Button */}
             <TouchableOpacity
@@ -380,7 +271,7 @@ export default function CheckoutScreen() {
         )}
 
         {/* Loading State */}
-        {!paymentIntent && isProcessing && (
+        {!paymentSheetData && isProcessing && (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#DB8633" />
             <Text style={styles.loadingText}>Initializing payment...</Text>

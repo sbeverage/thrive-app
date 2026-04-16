@@ -1,6 +1,6 @@
 // File: app/(tabs)/menu/transactionHistory.js
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -14,48 +14,52 @@ import {
   Alert,
   RefreshControl,
   ActivityIndicator,
-} from 'react-native';
-import { AntDesign, Feather } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { useUser } from '../../context/UserContext';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import API from '../../lib/api';
+} from "react-native";
+import { AntDesign, Feather } from "@expo/vector-icons";
+import { useRouter, useFocusEffect } from "expo-router";
+import { useUser } from "../../context/UserContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import API from "../../lib/api";
 
 function toMetadataObject(metadata) {
   if (metadata == null) return {};
-  if (typeof metadata === 'string') {
+  if (typeof metadata === "string") {
     try {
       return JSON.parse(metadata);
     } catch {
       return {};
     }
   }
-  return typeof metadata === 'object' ? metadata : {};
+  return typeof metadata === "object" ? metadata : {};
 }
 
 function parseMoneyRaw(val) {
-  if (val == null || val === '') return null;
-  const n = parseFloat(String(val).replace(/[$,]/g, ''));
+  if (val == null || val === "") return null;
+  const n = parseFloat(String(val).replace(/[$,]/g, ""));
   return Number.isFinite(n) ? n : null;
 }
 
 /** Amount counted toward “Total Spent” for one list item (discount vs donation). */
 function getTransactionSpentAmount(item) {
   const isDonation =
-    item.type === 'donation' ||
-    item.type === 'one_time_gift' ||
+    item.type === "donation" ||
+    item.type === "monthly_donation" ||
+    item.type === "one_time_gift" ||
     item.isOneTimeGift;
   if (isDonation) {
-    if (item.amount == null || item.amount === '') return 0;
-    return typeof item.amount === 'string'
-      ? parseFloat(item.amount.replace(/[$,]/g, '')) || 0
+    if (item.amount == null || item.amount === "") return 0;
+    return typeof item.amount === "string"
+      ? parseFloat(item.amount.replace(/[$,]/g, "")) || 0
       : parseFloat(item.amount) || 0;
   }
-  if (typeof item.spentNumeric === 'number' && Number.isFinite(item.spentNumeric)) {
+  if (
+    typeof item.spentNumeric === "number" &&
+    Number.isFinite(item.spentNumeric)
+  ) {
     return item.spentNumeric;
   }
-  if (item.spending != null && item.spending !== '') {
-    return parseFloat(String(item.spending).replace(/[$,]/g, '')) || 0;
+  if (item.spending != null && item.spending !== "") {
+    return parseFloat(String(item.spending).replace(/[$,]/g, "")) || 0;
   }
   return 0;
 }
@@ -63,7 +67,7 @@ function getTransactionSpentAmount(item) {
 export default function TransactionHistory() {
   const router = useRouter();
   const { user, loadUserData, addSavings } = useUser();
-  const [selectedFilter, setSelectedFilter] = useState('all');
+  const [selectedFilter, setSelectedFilter] = useState("all");
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [transactions, setTransactions] = useState([]);
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -74,8 +78,8 @@ export default function TransactionHistory() {
 
   // Debug logging
   useEffect(() => {
-    console.log('🔍 TransactionHistory - User data:', user);
-    console.log('🔍 TransactionHistory - Total savings:', user.totalSavings);
+    console.log("🔍 TransactionHistory - User data:", user);
+    console.log("🔍 TransactionHistory - Total savings:", user.totalSavings);
   }, [user]);
 
   // Load user data when component mounts
@@ -89,102 +93,172 @@ export default function TransactionHistory() {
     useCallback(() => {
       loadUserData();
       loadTransactions(1, false);
-      setRefreshTrigger(prev => prev + 1);
-    }, [])
+      setRefreshTrigger((prev) => prev + 1);
+    }, []),
   );
 
   // Load transactions from backend API with fallback to local storage
   // Merges local-only transactions (from Discount Redeemed when API fails) with backend data
   const loadTransactions = async (pageNum = 1, append = false) => {
+    const profileBeneficiary =
+      user?.selectedBeneficiary || user?.referredCharity || null;
     try {
       setIsLoading(true);
-      
+
       // Load local transactions to merge with backend (local-only items have numeric string ids)
-      const localRaw = await AsyncStorage.getItem('userTransactions');
+      const localRaw = await AsyncStorage.getItem("userTransactions");
       const localTransactions = localRaw ? JSON.parse(localRaw) : [];
-      const localOnlyIds = new Set(
-        localTransactions
-          .filter(t => t.id && /^\d+$/.test(String(t.id)))
-          .map(t => t.id)
-      );
 
       // Try to load from backend API
       try {
         const response = await API.getTransactions(pageNum, 20);
         const backendTransactions = response.transactions || [];
-        
+
         // Transform backend transactions to match frontend format
         const transformedBackend = backendTransactions.map((t) => {
           const meta = toMetadataObject(t.metadata);
-          const isGift = t.type === 'one_time_gift' || t.type === 'donation';
+          const isDonationLike =
+            t.type === "one_time_gift" ||
+            t.type === "donation" ||
+            t.type === "monthly_donation";
+          const isGift = t.type === "one_time_gift" || t.type === "donation";
 
           let spentNum = parseMoneyRaw(t.spending);
           if (spentNum == null) spentNum = parseMoneyRaw(meta.spending);
-          if (spentNum == null && t.type === 'redemption' && t.amount != null && t.amount !== '') {
+          if (
+            spentNum == null &&
+            (t.type === "redemption" ||
+              t.type === "monthly_donation" ||
+              t.type === "donation") &&
+            t.amount != null &&
+            t.amount !== ""
+          ) {
             spentNum = parseMoneyRaw(t.amount);
           }
 
           let savingsNum = parseMoneyRaw(t.savings);
           if (savingsNum == null) savingsNum = parseMoneyRaw(meta.savings);
+          if (savingsNum == null && t.type === "monthly_donation") {
+            savingsNum = 0;
+          }
 
           const amountNum = parseMoneyRaw(t.amount);
+
+          let beneficiaryName = t.beneficiary_name;
+          if (
+            !beneficiaryName &&
+            t.beneficiary_id != null &&
+            profileBeneficiary?.id === t.beneficiary_id
+          ) {
+            beneficiaryName = profileBeneficiary.name;
+          }
+          if (!beneficiaryName) {
+            beneficiaryName =
+              user?.selectedBeneficiary?.name ||
+              user?.referredCharity?.name ||
+              "Charity";
+          }
+
+          const brandName =
+            t.vendor_name || beneficiaryName || meta.vendor_name || "Unknown";
 
           return {
             id: t.id,
             type: t.type,
-            brand: t.vendor_name || t.beneficiary_name || meta.vendor_name || 'Unknown',
-            date: new Date(t.created_at).toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric',
+            brand: brandName,
+            date: new Date(t.created_at).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
             }),
-            discount: t.description || '',
+            discount: t.description || "",
             spending: spentNum != null ? `$${spentNum.toFixed(2)}` : undefined,
-            savings: savingsNum != null ? `$${savingsNum.toFixed(2)}` : undefined,
+            savings:
+              savingsNum != null ? `$${savingsNum.toFixed(2)}` : undefined,
             amount: amountNum != null ? `$${amountNum.toFixed(2)}` : undefined,
-            spentNumeric: isGift ? undefined : spentNum != null ? spentNum : undefined,
+            spentNumeric: isDonationLike
+              ? undefined
+              : spentNum != null
+                ? spentNum
+                : undefined,
             isOneTimeGift: isGift,
-            beneficiaryName: t.beneficiary_name,
-            logo: t.vendor_logo || require('../../../assets/images/child-cancer.jpg'),
+            isMonthlyDonation: t.type === "monthly_donation",
+            beneficiaryName,
+            logo:
+              t.vendor_logo ||
+              require("../../../assets/images/child-cancer.jpg"),
           };
         });
 
-        // Merge: backend + local-only (saved when Discount Redeemed API failed)
-        const localOnly = localTransactions.filter(t => localOnlyIds.has(t.id));
-        const merged = [...localOnly, ...transformedBackend].sort((a, b) => {
+        // Merge: server is source of truth — only add locals whose id is NOT on the server
+        // (e.g. discount redemption saved offline). Previously we prepended almost all cached
+        // rows again and doubled history, inflating Total Spent.
+        const backendIdSet = new Set(
+          transformedBackend.map((t) => String(t.id)),
+        );
+        const localOnly = localTransactions.filter(
+          (t) =>
+            t.id != null &&
+            String(t.id).trim() !== "" &&
+            !backendIdSet.has(String(t.id)),
+        );
+        const merged = [...transformedBackend, ...localOnly].sort((a, b) => {
           const dateA = new Date(a.date);
           const dateB = new Date(b.date);
           return dateB - dateA;
         });
 
         if (append) {
-          setTransactions(prev => [...prev, ...merged]);
+          setTransactions((prev) => [...prev, ...merged]);
         } else {
           setTransactions(merged);
         }
 
-        setHasMore(response.pagination?.has_more || false);
+        const pg = response.pagination;
+        const morePages =
+          pg?.has_more ??
+          (pg?.page != null &&
+            pg?.totalPages != null &&
+            Number(pg.page) < Number(pg.totalPages));
+        setHasMore(!!morePages);
         setPage(pageNum);
-        console.log('✅ Loaded transactions:', merged.length, '(backend:', transformedBackend.length, ', local-only:', localOnly.length, ')');
-        
+        console.log(
+          "✅ Loaded transactions:",
+          merged.length,
+          "(backend:",
+          transformedBackend.length,
+          ", local-only:",
+          localOnly.length,
+          ")",
+        );
+
         // Save merged result to local storage as backup
         if (!append) {
-          await AsyncStorage.setItem('userTransactions', JSON.stringify(merged));
+          await AsyncStorage.setItem(
+            "userTransactions",
+            JSON.stringify(merged),
+          );
         }
       } catch (apiError) {
-        console.warn('⚠️ Backend API failed, falling back to local storage:', apiError.message);
-        
+        console.warn(
+          "⚠️ Backend API failed, falling back to local storage:",
+          apiError.message,
+        );
+
         // Fallback to local storage
         if (localTransactions.length > 0) {
           setTransactions(localTransactions);
-          console.log('✅ Loaded transactions from local storage:', localTransactions.length);
+          console.log(
+            "✅ Loaded transactions from local storage:",
+            localTransactions.length,
+          );
         } else {
           setTransactions([]);
-          console.log('📭 No transactions found');
+          console.log("📭 No transactions found");
         }
       }
     } catch (error) {
-      console.error('❌ Error loading transactions:', error);
+      console.error("❌ Error loading transactions:", error);
       setTransactions([]);
     } finally {
       setIsLoading(false);
@@ -202,55 +276,76 @@ export default function TransactionHistory() {
   // Save transactions to AsyncStorage
   const saveTransactions = async (newTransactions) => {
     try {
-      await AsyncStorage.setItem('userTransactions', JSON.stringify(newTransactions));
+      await AsyncStorage.setItem(
+        "userTransactions",
+        JSON.stringify(newTransactions),
+      );
       setTransactions(newTransactions);
-      console.log('✅ Saved transactions to storage:', newTransactions.length);
+      console.log("✅ Saved transactions to storage:", newTransactions.length);
     } catch (error) {
-      console.error('❌ Error saving transactions:', error);
+      console.error("❌ Error saving transactions:", error);
     }
   };
 
   // Update transaction amounts
-  const updateTransactionAmounts = (transactionId, newSpendingAmount, newSavingsAmount) => {
-    const updatedTransactions = transactions.map(transaction => {
+  const updateTransactionAmounts = (
+    transactionId,
+    newSpendingAmount,
+    newSavingsAmount,
+  ) => {
+    const updatedTransactions = transactions.map((transaction) => {
+      console.log(
+        "🔍 TransactionHistory - updating transaction:=====================`",
+        transaction,
+      );
       if (transaction.id === transactionId) {
-        const oldSavings = transaction.savings 
-          ? parseFloat(transaction.savings.replace('$', '')) 
+        const oldSavings = transaction.savings
+          ? parseFloat(transaction.savings.replace("$", ""))
           : 0;
-        const newSavings = parseFloat(newSavingsAmount.replace('$', ''));
+        const newSavings = parseFloat(newSavingsAmount.replace("$", ""));
         const difference = newSavings - oldSavings;
-        
+
         // Update the transaction
         const updatedTransaction = {
           ...transaction,
-          spending: newSpendingAmount.startsWith('$') ? newSpendingAmount : `$${newSpendingAmount}`,
-          savings: newSavingsAmount.startsWith('$') ? newSavingsAmount : `$${newSavingsAmount}`,
+          spending: newSpendingAmount.startsWith("$")
+            ? newSpendingAmount
+            : `$${newSpendingAmount}`,
+          savings: newSavingsAmount.startsWith("$")
+            ? newSavingsAmount
+            : `$${newSavingsAmount}`,
         };
-        
+
         // Update total savings in user context
         if (difference !== 0) {
           addSavings(difference);
         }
-        
+
         return updatedTransaction;
       }
       return transaction;
     });
-    
+
     saveTransactions(updatedTransactions);
     setEditingTransaction(null);
   };
 
   // Delete transaction
   const deleteTransaction = (transactionId) => {
-    const transactionToDelete = transactions.find(t => t.id === transactionId);
+    const transactionToDelete = transactions.find(
+      (t) => t.id === transactionId,
+    );
     if (transactionToDelete && transactionToDelete.savings) {
       // Subtract the savings from total when deleting (only for regular transactions)
-      const savingsAmount = parseFloat(transactionToDelete.savings.replace('$', ''));
+      const savingsAmount = parseFloat(
+        transactionToDelete.savings.replace("$", ""),
+      );
       addSavings(-savingsAmount); // Subtract the amount
     }
-    
-    const updatedTransactions = transactions.filter(t => t.id !== transactionId);
+
+    const updatedTransactions = transactions.filter(
+      (t) => t.id !== transactionId,
+    );
     saveTransactions(updatedTransactions);
   };
 
@@ -258,14 +353,18 @@ export default function TransactionHistory() {
   const totalSavings = user.totalSavings || 0;
   const totalSpent = transactions.reduce(
     (sum, item) => sum + getTransactionSpentAmount(item),
-    0
+    0,
   );
 
   const renderItem = ({ item }) => {
-    // Check if this is a one-time gift donation
-    const isDonation = item.type === 'donation' || item.isOneTimeGift;
-    
-    if (isDonation) {
+    const isDonationLike =
+      item.type === "donation" ||
+      item.type === "monthly_donation" ||
+      item.isOneTimeGift;
+
+    if (isDonationLike) {
+      const isMonthly =
+        item.type === "monthly_donation" || item.isMonthlyDonation;
       return (
         <View style={styles.transactionCard}>
           <View style={styles.cardHeader}>
@@ -274,13 +373,21 @@ export default function TransactionHistory() {
                 <Feather name="heart" size={24} color="#DB8633" />
               </View>
               <View style={styles.brandInfo}>
-                <Text style={styles.brandName}>{item.beneficiaryName || 'Charity'}</Text>
+                <Text style={styles.brandName}>
+                  {item.beneficiaryName || "Charity"}
+                </Text>
                 <Text style={styles.transactionDate}>{item.date}</Text>
               </View>
             </View>
             <View style={styles.donationBadge}>
-              <Feather name="gift" size={14} color="#10B981" />
-              <Text style={styles.donationBadgeText}>One-Time Gift</Text>
+              <Feather
+                name={isMonthly ? "repeat" : "gift"}
+                size={14}
+                color="#10B981"
+              />
+              <Text style={styles.donationBadgeText}>
+                {isMonthly ? "Monthly Donation" : "One-Time Gift"}
+              </Text>
             </View>
           </View>
 
@@ -304,7 +411,7 @@ export default function TransactionHistory() {
             </View>
           </View>
           <View style={styles.cardActions}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.actionButton}
               onPress={() => setEditingTransaction(item)}
             >
@@ -337,10 +444,13 @@ export default function TransactionHistory() {
     <View style={styles.container} key={refreshTrigger}>
       {/* Standardized Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)/menu')}>
-          <Image 
-            source={require('../../../assets/icons/arrow-left.png')} 
-            style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.push("/(tabs)/menu")}
+        >
+          <Image
+            source={require("../../../assets/icons/arrow-left.png")}
+            style={{ width: 24, height: 24, tintColor: "#324E58" }}
           />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Transaction History</Text>
@@ -356,7 +466,7 @@ export default function TransactionHistory() {
           <Text style={styles.summaryValue}>${totalSpent.toFixed(2)}</Text>
           <Text style={styles.summaryLabel}>Total Spent</Text>
         </View>
-        
+
         <View style={styles.summaryCard}>
           <View style={styles.summaryIcon}>
             <Feather name="trending-up" size={20} color="#10B981" />
@@ -378,7 +488,8 @@ export default function TransactionHistory() {
           <FlatList
             data={transactions}
             keyExtractor={(item, index) => {
-              const id = item.id != null && item.id !== '' ? String(item.id) : null;
+              const id =
+                item.id != null && item.id !== "" ? String(item.id) : null;
               return id ? `tx-${id}-${index}` : `tx-local-${index}`;
             }}
             renderItem={renderItem}
@@ -407,7 +518,8 @@ export default function TransactionHistory() {
             <Feather name="shopping-bag" size={48} color="#D1D5DB" />
             <Text style={styles.noTransactionsTitle}>No Transactions Yet</Text>
             <Text style={styles.noTransactionsText}>
-              Your discount redemptions will appear here once you start using discounts through the app.
+              Your discount redemptions will appear here once you start using
+              discounts through the app.
             </Text>
           </View>
         )}
@@ -420,7 +532,11 @@ export default function TransactionHistory() {
         onClose={() => setEditingTransaction(null)}
         onSave={(newSpendingAmount, newSavingsAmount) => {
           if (editingTransaction) {
-            updateTransactionAmounts(editingTransaction.id, newSpendingAmount, newSavingsAmount);
+            updateTransactionAmounts(
+              editingTransaction.id,
+              newSpendingAmount,
+              newSavingsAmount,
+            );
           }
         }}
       />
@@ -430,26 +546,30 @@ export default function TransactionHistory() {
 
 // Edit Transaction Modal Component
 function EditSavingsModal({ visible, transaction, onClose, onSave }) {
-  const [spendingAmount, setSpendingAmount] = useState('');
-  const [savingsAmount, setSavingsAmount] = useState('');
+  const [spendingAmount, setSpendingAmount] = useState("");
+  const [savingsAmount, setSavingsAmount] = useState("");
 
   // Pre-populate amounts when editing
   useEffect(() => {
     if (transaction) {
-      setSpendingAmount(transaction.spending ? transaction.spending.replace('$', '') : '');
-      setSavingsAmount(transaction.savings ? transaction.savings.replace('$', '') : '');
+      setSpendingAmount(
+        transaction.spending ? transaction.spending.replace("$", "") : "",
+      );
+      setSavingsAmount(
+        transaction.savings ? transaction.savings.replace("$", "") : "",
+      );
     }
   }, [transaction]);
 
   const handleSave = () => {
     // Basic validation
     if (!spendingAmount || isNaN(parseFloat(spendingAmount))) {
-      Alert.alert('Invalid Amount', 'Please enter a valid spending amount.');
+      Alert.alert("Invalid Amount", "Please enter a valid spending amount.");
       return;
     }
-    
+
     if (!savingsAmount || isNaN(parseFloat(savingsAmount))) {
-      Alert.alert('Invalid Amount', 'Please enter a valid savings amount.');
+      Alert.alert("Invalid Amount", "Please enter a valid savings amount.");
       return;
     }
 
@@ -457,8 +577,8 @@ function EditSavingsModal({ visible, transaction, onClose, onSave }) {
     const savings = parseFloat(savingsAmount);
     if (savings > spending) {
       Alert.alert(
-        'Invalid Amount',
-        'Savings cannot be greater than your total bill. Please enter a savings amount that does not exceed the amount spent.'
+        "Invalid Amount",
+        "Savings cannot be greater than your total bill. Please enter a savings amount that does not exceed the amount spent.",
       );
       return;
     }
@@ -469,7 +589,11 @@ function EditSavingsModal({ visible, transaction, onClose, onSave }) {
   if (!transaction) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+    >
       <View style={styles.modalContainer}>
         <View style={styles.modalHeader}>
           <TouchableOpacity onPress={onClose}>
@@ -485,13 +609,22 @@ function EditSavingsModal({ visible, transaction, onClose, onSave }) {
           {/* Transaction Info Display */}
           <View style={styles.transactionInfoCard}>
             <View style={styles.transactionInfoHeader}>
-              <Image source={transaction.logo} style={styles.transactionInfoLogo} />
+              <Image
+                source={transaction.logo}
+                style={styles.transactionInfoLogo}
+              />
               <View style={styles.transactionInfoDetails}>
-                <Text style={styles.transactionInfoBrand}>{transaction.brand}</Text>
-                <Text style={styles.transactionInfoDate}>{transaction.date}</Text>
+                <Text style={styles.transactionInfoBrand}>
+                  {transaction.brand}
+                </Text>
+                <Text style={styles.transactionInfoDate}>
+                  {transaction.date}
+                </Text>
               </View>
             </View>
-            <Text style={styles.transactionInfoDiscount}>{transaction.discount}</Text>
+            <Text style={styles.transactionInfoDiscount}>
+              {transaction.discount}
+            </Text>
           </View>
 
           {/* Spending Input */}
@@ -539,13 +672,13 @@ function EditSavingsModal({ visible, transaction, onClose, onSave }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     padding: 20,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 20,
     paddingTop: 5,
   },
@@ -554,10 +687,10 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#6d6e72',
+    fontWeight: "700",
+    color: "#6d6e72",
     flex: 1,
-    textAlign: 'center',
+    textAlign: "center",
   },
   headerSpacer: {
     width: 32,
@@ -566,15 +699,15 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   summarySection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: 20,
   },
   summaryCard: {
-    backgroundColor: '#F9FAFB',
+    backgroundColor: "#F9FAFB",
     borderRadius: 12,
     padding: 15,
-    alignItems: 'center',
+    alignItems: "center",
     flex: 1,
     marginHorizontal: 5,
   },
@@ -583,13 +716,13 @@ const styles = StyleSheet.create({
   },
   summaryValue: {
     fontSize: 24,
-    fontWeight: '700',
-    color: '#324E58',
+    fontWeight: "700",
+    color: "#324E58",
     marginBottom: 5,
   },
   summaryLabel: {
     fontSize: 12,
-    color: '#888',
+    color: "#888",
   },
   transactionsSection: {
     marginTop: 20,
@@ -597,8 +730,8 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#324E58',
+    fontWeight: "700",
+    color: "#324E58",
     marginBottom: 15,
   },
   transactionsList: {
@@ -608,34 +741,34 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   transactionCard: {
-    backgroundColor: '#F9FAFB',
+    backgroundColor: "#F9FAFB",
     borderRadius: 12,
     padding: 15,
     marginBottom: 15,
   },
   cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 10,
   },
   cardActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   actionButton: {
     padding: 8,
     marginLeft: 8,
   },
   brandSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     flex: 1,
   },
   brandLogo: {
     width: 40,
     height: 40,
-    resizeMode: 'contain',
+    resizeMode: "contain",
     borderRadius: 8,
     marginRight: 10,
   },
@@ -644,24 +777,24 @@ const styles = StyleSheet.create({
   },
   brandName: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#324E58',
+    fontWeight: "700",
+    color: "#324E58",
   },
   transactionDate: {
     fontSize: 12,
-    color: '#888',
+    color: "#888",
   },
   statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E0F2F7',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#E0F2F7",
     borderRadius: 10,
     paddingVertical: 4,
     paddingHorizontal: 8,
   },
   statusText: {
     fontSize: 12,
-    color: '#10B981',
+    color: "#10B981",
     marginLeft: 5,
   },
   discountSection: {
@@ -669,104 +802,104 @@ const styles = StyleSheet.create({
   },
   discountLabel: {
     fontSize: 12,
-    color: '#999',
+    color: "#999",
     marginBottom: 5,
   },
   discountValue: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#324E58',
+    fontWeight: "700",
+    color: "#324E58",
   },
   financialSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   financialItem: {
-    alignItems: 'center',
+    alignItems: "center",
   },
   financialLabel: {
     fontSize: 12,
-    color: '#999',
+    color: "#999",
   },
   spentAmount: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#324E58',
+    fontWeight: "700",
+    color: "#324E58",
   },
   financialDivider: {
     width: 1,
-    height: '80%',
-    backgroundColor: '#eee',
+    height: "80%",
+    backgroundColor: "#eee",
   },
   savedAmount: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#324E58',
+    fontWeight: "700",
+    color: "#324E58",
   },
   noTransactionsMessage: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingVertical: 60,
     paddingHorizontal: 40,
   },
   noTransactionsTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#324E58',
+    fontWeight: "700",
+    color: "#324E58",
     marginTop: 16,
     marginBottom: 8,
   },
   noTransactionsText: {
     fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
+    color: "#6B7280",
+    textAlign: "center",
     lineHeight: 20,
     marginBottom: 24,
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingVertical: 60,
   },
   loadingText: {
     marginTop: 12,
     fontSize: 14,
-    color: '#6B7280',
+    color: "#6B7280",
   },
   footerLoader: {
     paddingVertical: 20,
-    alignItems: 'center',
+    alignItems: "center",
   },
   // Modal styles
   modalContainer: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: "#E5E7EB",
   },
   modalCancelButton: {
     fontSize: 16,
-    color: '#6B7280',
+    color: "#6B7280",
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#324E58',
+    fontWeight: "700",
+    color: "#324E58",
   },
   modalSaveButton: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#DB8633',
+    fontWeight: "600",
+    color: "#DB8633",
   },
   modalContent: {
     flex: 1,
@@ -777,37 +910,37 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#324E58',
+    fontWeight: "600",
+    color: "#324E58",
     marginBottom: 8,
   },
   textInput: {
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: "#D1D5DB",
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 16,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: "#F9FAFB",
   },
   // Transaction info card styles
   transactionInfoCard: {
-    backgroundColor: '#F9FAFB',
+    backgroundColor: "#F9FAFB",
     borderRadius: 12,
     padding: 16,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: "#E5E7EB",
   },
   transactionInfoHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 12,
   },
   transactionInfoLogo: {
     width: 40,
     height: 40,
-    resizeMode: 'contain',
+    resizeMode: "contain",
     borderRadius: 8,
     marginRight: 12,
   },
@@ -816,64 +949,64 @@ const styles = StyleSheet.create({
   },
   transactionInfoBrand: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#324E58',
+    fontWeight: "700",
+    color: "#324E58",
     marginBottom: 4,
   },
   transactionInfoDate: {
     fontSize: 12,
-    color: '#6B7280',
+    color: "#6B7280",
   },
   transactionInfoDiscount: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#324E58',
+    fontWeight: "600",
+    color: "#324E58",
     marginBottom: 8,
   },
   transactionInfoSpending: {
     fontSize: 14,
-    color: '#6B7280',
+    color: "#6B7280",
   },
   // Currency input styles
   currencyInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: "#D1D5DB",
     borderRadius: 8,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: "#F9FAFB",
     paddingHorizontal: 12,
   },
   currencySymbol: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#324E58',
+    fontWeight: "600",
+    color: "#324E58",
     marginRight: 8,
   },
   currencyTextInput: {
     flex: 1,
     paddingVertical: 12,
     fontSize: 18,
-    fontWeight: '600',
-    color: '#324E58',
+    fontWeight: "600",
+    color: "#324E58",
   },
   inputHelperText: {
     fontSize: 12,
-    color: '#6B7280',
+    color: "#6B7280",
     marginTop: 8,
     lineHeight: 16,
   },
   // Donation-specific styles
   donationLogo: {
-    backgroundColor: '#FFF5EB',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#FFF5EB",
+    justifyContent: "center",
+    alignItems: "center",
     borderRadius: 8,
   },
   donationBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ECFDF5',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
     borderRadius: 12,
     paddingVertical: 4,
     paddingHorizontal: 8,
@@ -881,20 +1014,20 @@ const styles = StyleSheet.create({
   },
   donationBadgeText: {
     fontSize: 11,
-    fontWeight: '600',
-    color: '#10B981',
+    fontWeight: "600",
+    color: "#10B981",
   },
   donationSection: {
     marginTop: 12,
   },
   donationLabel: {
     fontSize: 12,
-    color: '#999',
+    color: "#999",
     marginBottom: 4,
   },
   donationAmount: {
     fontSize: 20,
-    fontWeight: '700',
-    color: '#10B981',
+    fontWeight: "700",
+    color: "#10B981",
   },
 });

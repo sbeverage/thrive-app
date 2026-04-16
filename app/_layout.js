@@ -13,7 +13,7 @@ import { useEffect } from 'react';
 import { Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StripeProvider } from '@stripe/stripe-react-native';
-import { STRIPE_PUBLISHABLE_KEY } from './utils/constants';
+import { STRIPE_PUBLISHABLE_KEY, STRIPE_MERCHANT_IDENTIFIER } from './utils/constants';
 import ErrorBoundary from '../components/ErrorBoundary';
 
 // Initialize Sentry as early as possible so it captures all errors
@@ -142,7 +142,10 @@ function Layout() {
 
   return (
     <ErrorBoundary>
-      <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>
+      <StripeProvider
+        publishableKey={STRIPE_PUBLISHABLE_KEY}
+        merchantIdentifier={STRIPE_MERCHANT_IDENTIFIER}
+      >
         <UserProvider>
           <BeneficiaryProvider>
             <BeneficiaryFilterProvider>

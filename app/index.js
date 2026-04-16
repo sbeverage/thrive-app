@@ -97,14 +97,9 @@ export default function Index() {
     const checkUserStatus = async () => {
       try {
         const token = await AsyncStorage.getItem('authToken');
-        const userDataString = await AsyncStorage.getItem('userData');
-        
-        if (token && userDataString) {
-          const userData = JSON.parse(userDataString);
-          if (userData.isLoggedIn) {
-            console.log('📱 User already logged in, redirecting from index to home...');
-            router.replace('/home');
-          }
+        if (token) {
+          console.log('📱 Auth token found, redirecting from index to home...');
+          router.replace('/home');
         }
       } catch (error) {
         console.error('Error checking user status in index:', error);
