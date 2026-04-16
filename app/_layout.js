@@ -39,14 +39,13 @@ function Layout() {
   useEffect(() => {
     const checkForUpdate = async () => {
       try {
-        if (__DEV__) return; // Skip in local dev (no OTA in Expo Go / Metro)
         const update = await Updates.checkForUpdateAsync();
         if (update.isAvailable) {
           await Updates.fetchUpdateAsync();
-          await Updates.reloadAsync(); // Restart app with new bundle
+          await Updates.reloadAsync();
         }
       } catch (e) {
-        // Silently ignore — update check failing should never crash the app
+        // Silently ignore — fails gracefully in local dev / Expo Go
       }
     };
     checkForUpdate();
