@@ -16,7 +16,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { AntDesign } from '@expo/vector-icons';
+import { AntDesign, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import API from './lib/api';
@@ -200,6 +200,7 @@ export default function DonorInvitationVerifyScreen() {
       // 4. Mark user as active
       // 5. Return auth token
       const response = await API.completeDonorInvitation({
+        email: email,
         token: token,
         password: password,
         confirmPassword: confirmPassword,
@@ -529,15 +530,11 @@ export default function DonorInvitationVerifyScreen() {
                   style={styles.eyeButton}
                   onPress={() => setShowPassword(!showPassword)}
                 >
-                  {Platform.OS === 'web' ? (
-                    <Text>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
-                  ) : (
-                    <AntDesign 
-                      name={showPassword ? 'eye' : 'eyeo'} 
-                      size={20} 
-                      color="#6d6e72" 
-                    />
-                  )}
+                  <Ionicons
+                    name={showPassword ? 'eye-outline' : 'eye-off-outline'}
+                    size={20}
+                    color="#6d6e72"
+                  />
                 </TouchableOpacity>
               </View>
             </View>
@@ -557,15 +554,11 @@ export default function DonorInvitationVerifyScreen() {
                   style={styles.eyeButton}
                   onPress={() => setShowConfirmPassword(!showConfirmPassword)}
                 >
-                  {Platform.OS === 'web' ? (
-                    <Text>{showConfirmPassword ? '👁️' : '👁️‍🗨️'}</Text>
-                  ) : (
-                    <AntDesign 
-                      name={showConfirmPassword ? 'eye' : 'eyeo'} 
-                      size={20} 
-                      color="#6d6e72" 
-                    />
-                  )}
+                  <Ionicons
+                    name={showConfirmPassword ? 'eye-outline' : 'eye-off-outline'}
+                    size={20}
+                    color="#6d6e72"
+                  />
                 </TouchableOpacity>
               </View>
             </View>
