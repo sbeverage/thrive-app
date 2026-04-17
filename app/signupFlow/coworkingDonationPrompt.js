@@ -83,6 +83,7 @@ export default function CoworkingDonationPrompt() {
           try {
             await AsyncStorage.removeItem('@thrive_walkthrough_completed');
             await AsyncStorage.removeItem('@thrive_walkthrough_current_step');
+            await AsyncStorage.removeItem('signupFlowPending');
           } catch (error) {
             console.error('Error resetting tutorial:', error);
           }

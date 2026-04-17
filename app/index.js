@@ -98,14 +98,27 @@ export default function Index() {
       try {
         const token = await AsyncStorage.getItem('authToken');
         if (token) {
+          // Check if the user closed the app mid signup-flow and needs to resume
+          const pendingRaw = await AsyncStorage.getItem('signupFlowPending');
+          if (pendingRaw) {
+            try {
+              const pending = JSON.parse(pendingRaw);
+              console.log('📱 Resuming pending signup flow:', pending.route);
+              router.replace({ pathname: pending.route, params: pending.params });
+              return;
+            } catch (_) {
+              // Malformed entry — clear it and fall through to home
+              await AsyncStorage.removeItem('signupFlowPending');
+            }
+          }
           console.log('📱 Auth token found, redirecting from index to home...');
-          router.replace('/home');
+          router.replace('/(tabs)/home');
         }
       } catch (error) {
         console.error('Error checking user status in index:', error);
       }
     };
-    
+
     checkUserStatus();
   }, []);
 

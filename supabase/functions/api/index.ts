@@ -9878,6 +9878,7 @@ async function handleAuthRoute(
         monthlyDonation, // alternative field name
         referralToken, // referral token from referral link
         referrerId, // direct referrer ID (alternative to token)
+        token: inviteToken, // invitation verification token (for invited donor completion)
       } = body;
 
       // Validate required fields
@@ -9921,14 +9922,49 @@ async function handleAuthRoute(
       const userRole = role && validRoles.includes(role) ? role : "donor";
 
       // Check if user exists
-      // Use .limit(1) instead of .single() to avoid errors when user doesn't exist
-      const {data: existing, error: existingError} = await supabase
-        .from("users")
-        .select(
-          "id, email, account_status, is_verified, role, verification_token",
-        )
-        .eq("email", email)
-        .limit(1);
+      // If an invitation token is provided, look up by token first so we find the
+      // exact invited donor row even when the same email exists on another account.
+      let existing: any[] | null = null;
+      let existingError: any = null;
+      let foundByToken = false;
+
+      if (inviteToken) {
+        const tokenLookup = await supabase
+          .from("users")
+          .select(
+            "id, email, account_status, is_verified, role, verification_token",
+          )
+          .eq("verification_token", inviteToken)
+          .eq("role", "donor")
+          .limit(1);
+        existingError = tokenLookup.error;
+        existing = tokenLookup.data;
+        if (existing && existing.length > 0) {
+          foundByToken = true;
+        } else {
+          // Token not found or already consumed — fall back to email lookup
+          const emailLookup = await supabase
+            .from("users")
+            .select(
+              "id, email, account_status, is_verified, role, verification_token",
+            )
+            .eq("email", email)
+            .eq("role", "donor")
+            .limit(1);
+          existingError = emailLookup.error;
+          existing = emailLookup.data;
+        }
+      } else {
+        const emailLookup = await supabase
+          .from("users")
+          .select(
+            "id, email, account_status, is_verified, role, verification_token",
+          )
+          .eq("email", email)
+          .limit(1);
+        existingError = emailLookup.error;
+        existing = emailLookup.data;
+      }
 
       // If there was an error (unexpected)
       if (existingError) {
@@ -9946,11 +9982,15 @@ async function handleAuthRoute(
       if (existing && existing.length > 0) {
         const existingUser = existing[0];
 
-        // Check if user is an invited donor (pending_verification or email_verified status)
-        if (
+        // Allow completion when:
+        // - Found by invitation token (token is proof of invitation regardless of status), OR
+        // - Found by email with an invitation-specific account_status
+        const isInvitedDonor =
+          foundByToken ||
           existingUser.account_status === "pending_verification" ||
-          existingUser.account_status === "email_verified"
-        ) {
+          existingUser.account_status === "email_verified";
+
+        if (isInvitedDonor) {
           // User is completing invitation signup - update password and activate account
           console.log("✅ Invited donor completing signup:", email);
 
@@ -10206,6 +10246,7 @@ async function handleAuthRoute(
 
             return new Response(
               JSON.stringify({
+                success: true,
                 message: "Signup completed successfully!",
                 user: {
                   id: updatedUser.id,
@@ -13603,7 +13644,7 @@ async function handleDiscountRoute(
           )
         `,
         )
-        .eq("is_active", true);
+        .neq("is_active", false);
 
       // Filter by active and not expired
       const today = new Date().toISOString().split("T")[0];
@@ -15644,16 +15685,16 @@ async function handleCharityRoute(
       }
 
       // Filter by active status (default to only active charities)
+      // NULL is treated as active — only explicit false hides a charity
       if (isActive === "false") {
         query = query.eq("is_active", false);
       } else {
-        // Default to only active charities
-        query = query.eq("is_active", true);
+        query = query.neq("is_active", false);
       }
 
       // Filter by verification status - only show verified charities in mobile app
-      // This ensures unverified charities don't appear until admin verifies them
-      query = query.eq("verification_status", true);
+      // NULL is treated as verified (default) — only explicit false hides a charity
+      query = query.neq("verification_status", false);
 
       const {data: charities, error} = await query.order("name", {
         ascending: true,

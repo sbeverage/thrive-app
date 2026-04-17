@@ -141,6 +141,7 @@ export default function StripeIntegration() {
     try {
       await AsyncStorage.removeItem("@thrive_walkthrough_completed");
       await AsyncStorage.removeItem("@thrive_walkthrough_current_step");
+      await AsyncStorage.removeItem("signupFlowPending");
       const completedEmail = (user?.email || "").toLowerCase();
       if (completedEmail) {
         await AsyncStorage.setItem(
@@ -590,6 +591,7 @@ export default function StripeIntegration() {
           try {
             await AsyncStorage.removeItem("@thrive_walkthrough_completed");
             await AsyncStorage.removeItem("@thrive_walkthrough_current_step");
+            await AsyncStorage.removeItem("signupFlowPending");
             const completedEmail = (user?.email || "").toLowerCase();
             if (completedEmail) {
               await AsyncStorage.setItem(

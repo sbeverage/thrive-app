@@ -20,6 +20,7 @@ import { AntDesign, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import API from './lib/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUser } from './context/UserContext';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -240,8 +241,15 @@ export default function DonorInvitationVerifyScreen() {
           [
             {
               text: 'Get Started',
-              onPress: () => {
+              onPress: async () => {
                 if (coworking) {
+                  // Persist the pending flow so the user resumes here if they close the app
+                  try {
+                    await AsyncStorage.setItem('signupFlowPending', JSON.stringify({
+                      route: '/signupFlow/explainerDonate',
+                      params: { flow: 'coworking', sponsorAmount: (sponsorAmount || 15).toString() }
+                    }));
+                  } catch (_) {}
                   router.replace({
                     pathname: '/signupFlow/explainerDonate',
                     params: { flow: 'coworking', sponsorAmount: (sponsorAmount || 15).toString() }

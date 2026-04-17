@@ -626,7 +626,7 @@ export default function BeneficiaryPreferences() {
               {filteredBeneficiaries.filter(b => b.latitude != null && b.longitude != null).map(b => (
                 <Marker
                   key={b.id}
-                  coordinate={{ latitude: b.latitude, longitude: b.longitude }}
+                  coordinate={{ latitude: parseFloat(b.latitude), longitude: parseFloat(b.longitude) }}
                   title={b.name}
                   description={b.category}
                   onPress={() => {
