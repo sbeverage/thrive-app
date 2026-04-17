@@ -24,7 +24,7 @@ import {
 export default function MainHome() {
   const router = useRouter();
   const navigation = useNavigation();
-  const { selectedBeneficiary } = useBeneficiary();
+  const { selectedBeneficiary, reloadBeneficiary } = useBeneficiary();
   const { user, loadUserData } = useUser();
   const { location: userLocation, locationAddress, locationPermission, checkLocationPermission } = useLocation();
   const { vendors, discounts, loadDiscounts } = useDiscount();
@@ -46,6 +46,7 @@ export default function MainHome() {
       const loadData = async () => {
         try {
           await loadUserData();
+          await reloadBeneficiary();
         } catch (error) {
           console.error('❌ Error loading user data on home page:', error);
         }
