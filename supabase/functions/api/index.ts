@@ -904,6 +904,7 @@ async function createStripeSubscriptionSetup(
   const formData = new URLSearchParams();
   formData.append("customer", customerId);
   formData.append("items[0][price_data][currency]", currency);
+  formData.append("items[0][price_data][product_data][name]", "Monthly Donation");
   formData.append("items[0][price_data][recurring][interval]", "month");
   formData.append("items[0][price_data][recurring][interval_count]", "1");
   formData.append(
