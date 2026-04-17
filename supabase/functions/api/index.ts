@@ -895,28 +895,43 @@ async function createStripeSubscriptionSetup(
 }> {
   const stripe = getStripeClient();
 
-  // Create a price for the subscription amount
-  // Note: In production, you might want to create prices in Stripe Dashboard and use price IDs
-  // For now, we'll create a subscription with a custom amount
+  // Step 1: Create a recurring Price object with an inline product.
+  // Using the /prices endpoint supports product_data[name] on all API versions,
+  // avoiding the "unknown parameter: product_data" error on the subscriptions endpoint.
+  const priceFormData = new URLSearchParams();
+  priceFormData.append("unit_amount", Math.round(amount * 100).toString());
+  priceFormData.append("currency", currency);
+  priceFormData.append("recurring[interval]", "month");
+  priceFormData.append("recurring[interval_count]", "1");
+  priceFormData.append("product_data[name]", "Monthly Donation");
 
-  // Create subscription with payment behavior set to default_incomplete
-  // This requires payment method setup before activation
+  const priceResponse = await fetch(`${stripe.baseUrl}/prices`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${stripe.secretKey}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: priceFormData.toString(),
+  });
+
+  if (!priceResponse.ok) {
+    const priceError = await priceResponse.json();
+    throw new Error(
+      `Stripe price creation error: ${priceError.error?.message || "Unknown error"}`,
+    );
+  }
+
+  const price = await priceResponse.json();
+
+  // Step 2: Create subscription using the price ID
   const formData = new URLSearchParams();
   formData.append("customer", customerId);
-  formData.append("items[0][price_data][currency]", currency);
-  formData.append("items[0][price_data][product_data][name]", "Monthly Donation");
-  formData.append("items[0][price_data][recurring][interval]", "month");
-  formData.append("items[0][price_data][recurring][interval_count]", "1");
-  formData.append(
-    "items[0][price_data][unit_amount]",
-    Math.round(amount * 100).toString(),
-  );
+  formData.append("items[0][price]", price.id);
   formData.append("payment_behavior", "default_incomplete");
   formData.append(
     "payment_settings[save_default_payment_method]",
     "on_subscription",
   );
-  // Specify accepted payment method types for this subscription
   formData.append("payment_settings[payment_method_types][]", "card");
   formData.append("expand[]", "latest_invoice.payment_intent");
 
