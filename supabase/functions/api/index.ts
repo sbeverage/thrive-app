@@ -12516,6 +12516,31 @@ async function handleAuthRoute(
         });
       }
 
+      // Resolve full beneficiary object so the app can display it immediately
+      const charityId =
+        user.preferences?.preferredCharity ||
+        user.preferences?.beneficiary ||
+        null;
+
+      let selectedBeneficiary: any = null;
+      if (charityId) {
+        const {data: charity} = await supabase
+          .from("charities")
+          .select("id, name, description, logo_url, category")
+          .eq("id", charityId)
+          .single();
+        if (charity) {
+          selectedBeneficiary = {
+            id: charity.id,
+            name: charity.name || "",
+            description: charity.description || null,
+            logo_url: charity.logo_url || "",
+            category: charity.category || null,
+            image: charity.logo_url ? {uri: charity.logo_url} : null,
+          };
+        }
+      }
+
       // Return profile data in the format the app expects
       return new Response(
         JSON.stringify({
@@ -12541,14 +12566,10 @@ async function handleAuthRoute(
             monthlyDonation: user.preferences?.monthlyDonation || null,
             points: user.preferences?.points || null,
             totalSavings: user.preferences?.totalSavings || null,
-            preferredCharity:
-              user.preferences?.preferredCharity ||
-              user.preferences?.beneficiary ||
-              null,
-            beneficiary:
-              user.preferences?.beneficiary ||
-              user.preferences?.preferredCharity ||
-              null,
+            preferredCharity: charityId,
+            beneficiary: charityId,
+            selectedBeneficiary,
+            referredCharity: selectedBeneficiary,
             isVerified: user.is_verified || false,
             accountStatus: user.account_status || "active",
           },
