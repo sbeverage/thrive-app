@@ -91,8 +91,10 @@ export default function StripeIntegration() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("card"); // 'card' or 'applepay'
   const [showServiceFeeInfo, setShowServiceFeeInfo] = useState(false);
 
-  // Donation + static $3 service fee + optional card processing (matches UI total)
-  const donationSubtotal = totalMonthlyDonation + SERVICE_FEE;
+  // For coworking extras, the sponsor amount ($15) is already billed externally —
+  // only charge the user's extra donation. For all other flows, charge the full donation.
+  const chargeBase = isCoworkingExtra ? baseAmount : totalMonthlyDonation;
+  const donationSubtotal = chargeBase + SERVICE_FEE;
   const creditCardFee = coverFees ? donationSubtotal * CREDIT_CARD_FEE_RATE : 0;
   const totalAmountNumber = donationSubtotal + creditCardFee;
   const totalAmount = totalAmountNumber.toFixed(2);
@@ -340,8 +342,11 @@ export default function StripeIntegration() {
                 {isCoworkingExtra && sponsorAmount > 0 ? (
                   <>
                     <View style={styles.summaryRow}>
-                      <Text style={styles.summaryLabel}>Coworking Sponsor</Text>
-                      <Text style={styles.summaryAmount}>
+                      <Text style={[styles.summaryLabel, styles.coveredLabel]}>
+                        Coworking Sponsor{'\n'}
+                        <Text style={styles.coveredNote}>(already billed by coworking)</Text>
+                      </Text>
+                      <Text style={[styles.summaryAmount, styles.coveredAmount]}>
                         ${sponsorAmount.toFixed(2)}
                       </Text>
                     </View>
@@ -351,14 +356,6 @@ export default function StripeIntegration() {
                       </Text>
                       <Text style={styles.summaryAmount}>
                         ${baseAmount.toFixed(2)}
-                      </Text>
-                    </View>
-                    <View style={styles.summaryRow}>
-                      <Text style={styles.summaryLabel}>
-                        Total Monthly Donation
-                      </Text>
-                      <Text style={styles.summaryAmount}>
-                        ${totalMonthlyDonation.toFixed(2)}
                       </Text>
                     </View>
                   </>
@@ -823,6 +820,18 @@ const styles = StyleSheet.create({
   },
   disabledAmount: {
     color: "#9ca3af",
+  },
+  coveredLabel: {
+    color: "#9ca3af",
+  },
+  coveredNote: {
+    fontSize: 11,
+    color: "#b0b3b8",
+    fontWeight: "400",
+  },
+  coveredAmount: {
+    color: "#9ca3af",
+    textDecorationLine: "line-through",
   },
   labelWithInfo: {
     flexDirection: "row",

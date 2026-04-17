@@ -54,11 +54,11 @@ export default function CoworkingDonationPrompt() {
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.card}>
           <Image source={require('../../assets/images/bolt-piggy.png')} style={styles.piggy} />
-          <Text style={styles.title}>Coworking Donation</Text>
+          <Text style={styles.title}>You're Already Making an Impact!</Text>
           <Text style={styles.subtitle}>
-            THRIVE Coworking contributes ${sponsorAmount.toFixed(0)}/month to {charityName}.
+            With your coworking membership, you're already giving ${sponsorAmount.toFixed(0)}/month to {charityName}.
           </Text>
-          <Text style={styles.question}>Would you like to give more?</Text>
+          <Text style={styles.question}>Want to go a little further? Even a small extra gift can create an even bigger ripple for those who need it.</Text>
           <View style={styles.buttonRow}>
             <TouchableOpacity style={styles.secondaryButton} onPress={completeWithoutExtra}>
               <Text style={styles.secondaryButtonText}>No thanks</Text>
@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
   piggy: { width: 90, height: 90, resizeMode: 'contain', marginBottom: 16 },
   title: { fontSize: 22, fontWeight: '700', color: '#324E58', marginBottom: 8, textAlign: 'center' },
   subtitle: { fontSize: 16, color: '#4CA1AF', textAlign: 'center', marginBottom: 16 },
-  question: { fontSize: 16, color: '#324E58', textAlign: 'center', marginBottom: 20 },
+  question: { fontSize: 15, color: '#6d6e72', textAlign: 'center', marginBottom: 20, lineHeight: 22 },
   buttonRow: { flexDirection: 'row', gap: 12 },
   secondaryButton: {
     flex: 1,
