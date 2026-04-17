@@ -915,13 +915,8 @@ async function createStripeSubscriptionSetup(
     "payment_settings[save_default_payment_method]",
     "on_subscription",
   );
-  // Enable Apple Pay and other digital wallets for subscriptions
+  // Specify accepted payment method types for this subscription
   formData.append("payment_settings[payment_method_types][]", "card");
-  // Enable automatic payment methods (Apple Pay, Google Pay, etc.) for subscriptions
-  formData.append(
-    "payment_settings[automatic_payment_methods][enabled]",
-    "true",
-  );
   formData.append("expand[]", "latest_invoice.payment_intent");
 
   // Add metadata
