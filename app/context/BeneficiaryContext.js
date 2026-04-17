@@ -47,11 +47,30 @@ export const BeneficiaryProvider = ({ children }) => {
   const saveBeneficiary = useCallback(async (beneficiary) => {
     try {
       if (beneficiary) {
-        await AsyncStorage.setItem('selectedBeneficiary', JSON.stringify(beneficiary));
+        // Normalize before storage: strip non-serializable fields (require() returns a module
+        // ID number that becomes meaningless after JSON round-trip if there is no logo_url)
+        const imageUri = beneficiary.image?.uri || beneficiary.logo_url || beneficiary.imageUrl || null;
+        const toStore = {
+          id: beneficiary.id,
+          name: beneficiary.name || '',
+          category: beneficiary.category || '',
+          description: beneficiary.description ?? null,
+          logo_url: beneficiary.logo_url || beneficiary.imageUrl || null,
+          image: imageUri ? { uri: imageUri } : null,
+          location: beneficiary.location || '',
+          about: beneficiary.about || '',
+          website: beneficiary.website || '',
+          phone: beneficiary.phone || '',
+          ein: beneficiary.ein || '',
+          latitude: beneficiary.latitude ?? null,
+          longitude: beneficiary.longitude ?? null,
+        };
+        await AsyncStorage.setItem('selectedBeneficiary', JSON.stringify(toStore));
+        setSelectedBeneficiary({ ...beneficiary, image: imageUri ? { uri: imageUri } : beneficiary.image });
       } else {
         await AsyncStorage.removeItem('selectedBeneficiary');
+        setSelectedBeneficiary(null);
       }
-      setSelectedBeneficiary(beneficiary);
     } catch (error) {
       console.error('Error saving beneficiary:', error);
       setSelectedBeneficiary(beneficiary);

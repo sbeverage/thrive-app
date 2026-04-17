@@ -221,10 +221,17 @@ export default function BeneficiaryScreen() {
     }
   };
 
-  // Load beneficiaries when component mounts or user location changes
+  // Load beneficiaries on mount
   useEffect(() => {
     loadBeneficiaries();
   }, []);
+
+  // Reload beneficiaries every time the tab is focused (catches admin additions/changes)
+  useFocusEffect(
+    useCallback(() => {
+      loadBeneficiaries();
+    }, [])
+  );
 
   // Recalculate distances when user location changes
   useEffect(() => {

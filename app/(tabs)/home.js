@@ -380,7 +380,11 @@ export default function MainHome() {
               activeOpacity={0.9}
             >
               <View style={styles.beneficiaryImageContainer}>
-                <Image source={selectedBeneficiary.image} style={styles.beneficiaryImage} resizeMode="cover" />
+                <Image
+                  source={selectedBeneficiary.image || require('../../assets/images/charity-water.jpg')}
+                  style={styles.beneficiaryImage}
+                  resizeMode="cover"
+                />
                 <LinearGradient
                   colors={['transparent', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.7)']}
                   style={styles.beneficiaryImageOverlay}

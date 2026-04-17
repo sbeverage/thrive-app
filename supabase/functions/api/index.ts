@@ -15860,21 +15860,18 @@ async function handleCharityRoute(
         query = query.eq("category", category);
       }
 
-      // Filter by active status (default to only active charities)
-      // NULL is treated as active — only explicit false hides a charity
+      // Only show active charities (is_active = true); exclude soft-deleted ones (is_active = false)
       if (isActive === "false") {
         query = query.eq("is_active", false);
       } else {
-        query = query.neq("is_active", false);
+        query = query.eq("is_active", true);
       }
-
-      // Filter by verification status - only show verified charities in mobile app
-      // NULL is treated as verified (default) — only explicit false hides a charity
-      query = query.neq("verification_status", false);
 
       const {data: charities, error} = await query.order("name", {
         ascending: true,
       });
+
+      console.log(`📊 GET /charities active count: ${charities?.length ?? 0}`);
 
       if (error) {
         console.error("Error fetching charities:", error);
