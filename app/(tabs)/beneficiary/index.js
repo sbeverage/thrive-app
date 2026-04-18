@@ -1022,15 +1022,15 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 20,
-    paddingTop: 30,
+    paddingTop: 12,
     paddingBottom: 15,
   },
   sectionHeader: {
     paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 12,
-    marginBottom: 15,
-    marginHorizontal: -20, // Negative margin to offset parent padding for consistent measurement
+    paddingTop: 8,
+    paddingBottom: 8,
+    marginBottom: 8,
+    marginHorizontal: -20,
   },
   sectionTitle: {
     fontSize: 20,

@@ -1,16 +1,16 @@
 {
   "expo": {
     "owner": "sbeverage",
-    "name": "THRIVE Initiative",
+    "name": "THRIVE",
     "slug": "thrive-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/initiative-app-icon.png",
+    "icon": "./assets/images/piggy-heart.png",
     "scheme": "thriveapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/initiative-app-icon.png",
+      "image": "./assets/images/piggy-heart.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -64,7 +64,7 @@
       "package": "com.thriveinitiative.app",
       "versionCode": 1,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/initiative-app-icon.png",
+        "foregroundImage": "./assets/images/piggy-heart.png",
         "backgroundColor": "#ffffff"
       },
       "permissions": [

@@ -88,12 +88,14 @@ export default function SuggestCard({ type = 'vendor', searchQuery = '', onSubmi
 
       {/* Name Input */}
       <View style={styles.inputWrapper}>
-        <Feather
-          name={isVendor ? 'briefcase' : 'heart'}
-          size={18}
-          color="#DB8633"
-          style={styles.inputIcon}
-        />
+        {isVendor ? (
+          <Feather name="briefcase" size={18} color="#DB8633" style={styles.inputIcon} />
+        ) : (
+          <Image
+            source={require('../assets/icons/heart.png')}
+            style={[styles.inputIcon, { width: 18, height: 18, tintColor: '#DB8633' }]}
+          />
+        )}
         <TextInput
           style={styles.input}
           placeholder={isVendor ? 'Business name' : 'Organization name'}
@@ -130,12 +132,14 @@ export default function SuggestCard({ type = 'vendor', searchQuery = '', onSubmi
         disabled={isSubmitting}
         activeOpacity={0.85}
       >
-        <Text style={styles.buttonText}>
-          {isSubmitting ? 'Sending...' : 'Send Suggestion'}
-        </Text>
-        {!isSubmitting && (
-          <Feather name="send" size={16} color="#fff" style={{ marginLeft: 8 }} />
-        )}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={styles.buttonText}>
+            {isSubmitting ? 'Sending...' : 'Send Suggestion'}
+          </Text>
+          {!isSubmitting && (
+            <Feather name="send" size={16} color="#fff" style={{ marginLeft: 8 }} />
+          )}
+        </View>
       </TouchableOpacity>
 
       <Text style={styles.footer}>We personally review every suggestion ❤️</Text>

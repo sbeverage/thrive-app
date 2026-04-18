@@ -217,11 +217,14 @@ export default function DiscountsScreen() {
       }
     });
     
-    // Sort categories and add 'All' at the beginning
-    const sortedCategories = Array.from(categories).sort();
-    const result = ['All', ...sortedCategories];
-    console.log('🏷️ Available categories/tags from vendors:', result);
-    return result;
+    // Order by preferred sequence, then alphabetical for any extras
+    const preferred = ['restaurant', 'retail', 'coworking'];
+    const all = Array.from(categories);
+    const ordered = [
+      ...preferred.filter(c => all.some(a => a.toLowerCase() === c)),
+      ...all.filter(a => !preferred.includes(a.toLowerCase())).sort(),
+    ];
+    return ['All', ...ordered];
   }, [vendors]);
 
   // Transform vendors data to match the expected format

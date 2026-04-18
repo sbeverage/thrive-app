@@ -18005,15 +18005,27 @@ async function handleInvitationRoute(
   if (method === "POST" && route === "/invitations/vendor") {
     try {
       const body = await req.json();
-      const {contact_name, company_name, email, phone, website, message} = body;
+      const {contact_name: bodyContactName, company_name, email: bodyEmail, phone, website, message} = body;
+
+      // Auto-populate contact info from authenticated user if not supplied
+      let contact_name = bodyContactName;
+      let email = bodyEmail;
+      if (userId && (!contact_name || !email)) {
+        const {data: userData} = await supabase
+          .from("users")
+          .select("first_name, last_name, email")
+          .eq("id", userId)
+          .single();
+        if (userData) {
+          contact_name = contact_name || `${userData.first_name || ''} ${userData.last_name || ''}`.trim();
+          email = email || userData.email;
+        }
+      }
 
       if (!contact_name || !email) {
         return new Response(
           JSON.stringify({error: "contact_name and email are required"}),
-          {
-            headers: {"Content-Type": "application/json"},
-            status: 400,
-          },
+          {headers: {"Content-Type": "application/json"}, status: 400},
         );
       }
 
@@ -18073,15 +18085,27 @@ async function handleInvitationRoute(
   if (method === "POST" && route === "/invitations/beneficiary") {
     try {
       const body = await req.json();
-      const {contact_name, company_name, email, phone, website, message} = body;
+      const {contact_name: bodyContactName, company_name, email: bodyEmail, phone, website, message} = body;
+
+      // Auto-populate contact info from authenticated user if not supplied
+      let contact_name = bodyContactName;
+      let email = bodyEmail;
+      if (userId && (!contact_name || !email)) {
+        const {data: userData} = await supabase
+          .from("users")
+          .select("first_name, last_name, email")
+          .eq("id", userId)
+          .single();
+        if (userData) {
+          contact_name = contact_name || `${userData.first_name || ''} ${userData.last_name || ''}`.trim();
+          email = email || userData.email;
+        }
+      }
 
       if (!contact_name || !email) {
         return new Response(
           JSON.stringify({error: "contact_name and email are required"}),
-          {
-            headers: {"Content-Type": "application/json"},
-            status: 400,
-          },
+          {headers: {"Content-Type": "application/json"}, status: 400},
         );
       }
 
