@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 
 
-import { Feather, AntDesign } from '@expo/vector-icons';
+import { Feather, AntDesign, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -603,7 +603,16 @@ export default function DiscountsScreen() {
               style={[styles.scopeBtn, activeScope === scope && styles.scopeBtnActive]}
               onPress={() => setActiveScope(scope)}
             >
-              <Text style={[styles.scopeText, activeScope === scope && styles.scopeTextActive]}>{scope}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                {scope === 'Favorites' && (
+                  <MaterialIcons
+                    name={activeScope === 'Favorites' ? 'favorite' : 'favorite-border'}
+                    size={14}
+                    color={activeScope === scope ? '#DB8633' : '#666'}
+                  />
+                )}
+                <Text style={[styles.scopeText, activeScope === scope && styles.scopeTextActive]}>{scope}</Text>
+              </View>
             </TouchableOpacity>
           ))}
         </View>
