@@ -80,9 +80,9 @@ const VoucherCard = ({ logo, brand, discounts, discountId, vendor, onPress, vend
               hitSlop={{ top: 8, bottom: 4, left: 8, right: 8 }}
               style={{ marginBottom: 8 }}
             >
-              <AntDesign
-                name={isFavorited ? 'heart' : 'hearto'}
-                size={18}
+              <MaterialCommunityIcons
+                name={isFavorited ? 'heart' : 'heart-outline'}
+                size={20}
                 color={isFavorited ? '#e74c3c' : '#DB8C0E'}
               />
             </TouchableOpacity>

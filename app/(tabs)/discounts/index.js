@@ -617,7 +617,7 @@ export default function DiscountsScreen() {
               onPress={() => handleCategoryPress(tag)}
             >
               <Text style={[styles.tagText, activeCategory === tag && styles.tagTextActive]}>
-                {tag === 'All' ? 'All' : `${tag}${categoryCounts[tag] ? ` (${categoryCounts[tag]})` : ''}`}
+                {tag}
               </Text>
             </TouchableOpacity>
           ))}
