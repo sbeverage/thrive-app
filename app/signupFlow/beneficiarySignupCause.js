@@ -760,7 +760,7 @@ export default function BeneficiaryPreferences() {
                     {submitted ? (
                       <View style={styles.successMessage}>
                         <Text style={styles.successText}>
-                          ✅ Request submitted! Thank you — we'll review and add
+                          Request submitted! Thank you — we'll review and add
                           them soon.
                         </Text>
                       </View>
@@ -1284,13 +1284,15 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   successMessage: {
-    backgroundColor: "#e8f5e9",
+    backgroundColor: "#FFF5EB",
+    borderWidth: 1,
+    borderColor: "#DB8633",
     padding: 15,
     borderRadius: 8,
     marginTop: 10,
   },
   successText: {
-    color: "#2e7d32",
+    color: "#92400e",
     fontWeight: "600",
     textAlign: "center",
   },

@@ -1972,6 +1972,20 @@ const API = {
    * Returns: { success: true, invitation: {...} }
    * Note: This endpoint works with or without authentication
    */
+  submitVendorRequest: async ({ name, website }) => {
+    try {
+      const response = await api.post('/api/invitations/vendor', {
+        company_name: name,
+        website,
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(
+        error.response?.data?.message || 'Failed to submit request. Please try again.',
+      );
+    }
+  },
+
   submitBeneficiaryRequest: async (requestData) => {
     try {
       console.log("📝 Submitting beneficiary request:", {

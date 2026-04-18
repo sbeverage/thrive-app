@@ -164,9 +164,23 @@ export default function LoginScreen() {
       }
     } catch (error) {
       console.error("❌ Login error:", error);
-      const errorMessage =
-        error.message || "Login failed. Please check your credentials.";
-      Alert.alert("Login Error", errorMessage);
+      const status = error.response?.status ?? (error.originalStatus);
+      const code = error.response?.data?.code;
+      const isNotFound = status === 404 || code === "USER_NOT_FOUND" ||
+        (error.message || '').toLowerCase().includes("no account found");
+
+      if (isNotFound) {
+        Alert.alert(
+          "No Account Found",
+          "We couldn't find an account with that email. Would you like to sign up?",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Sign Up", onPress: () => router.push("/signup") },
+          ],
+        );
+      } else {
+        Alert.alert("Login Error", error.message || "Login failed. Please check your credentials.");
+      }
     } finally {
       setIsLoggingIn(false);
     }

@@ -253,13 +253,25 @@ export default function VendorDetails() {
 
   const handleCall = () => {
     if (vendor?.phone) {
-      Linking.openURL(`tel:${vendor.phone}`);
+      const cleaned = vendor.phone.replace(/[^\d+]/g, '');
+      Linking.openURL(`tel:${cleaned}`);
     }
   };
 
   const handleWebsite = () => {
     if (vendor?.website) {
-      Linking.openURL(vendor.website);
+      const url = vendor.website.startsWith('http') ? vendor.website : `https://${vendor.website}`;
+      Linking.openURL(url);
+    }
+  };
+
+  const handleAddress = () => {
+    if (vendor?.address) {
+      const { street, city, state, zipCode } = vendor.address;
+      const query = encodeURIComponent(`${street}, ${city}, ${state} ${zipCode}`);
+      Linking.openURL(`maps://?q=${query}`).catch(() =>
+        Linking.openURL(`https://maps.google.com/?q=${query}`)
+      );
     }
   };
 
@@ -557,7 +569,7 @@ export default function VendorDetails() {
             )}
 
             {vendor.address && (
-              <View style={styles.contactRow}>
+              <TouchableOpacity style={styles.contactRow} onPress={handleAddress}>
                 {Platform.OS === 'web' ? (
                   <Text style={{ fontSize: 20, marginRight: 12 }}>📍</Text>
                 ) : (
@@ -566,7 +578,12 @@ export default function VendorDetails() {
                 <Text style={styles.contactText}>
                   {vendor.address.street}, {vendor.address.city}, {vendor.address.state} {vendor.address.zipCode}
                 </Text>
-              </View>
+                {Platform.OS === 'web' ? (
+                  <Text style={{ fontSize: 16, color: '#8E9BAE' }}>›</Text>
+                ) : (
+                  <AntDesign name="right" size={16} color="#8E9BAE" />
+                )}
+              </TouchableOpacity>
             )}
           </View>
 
@@ -650,9 +667,10 @@ export default function VendorDetails() {
         <View style={styles.modalBackground}>
           <View style={styles.modalContent}>
             <View style={styles.modalIconContainer}>
-              <Image 
-                source={require('../../../assets/icons/question.png')} 
-                style={{ width: 48, height: 48, tintColor: '#DB8633' }} 
+              <Image
+                source={require('../../../assets/images/piggy-coin.png')}
+                style={{ width: 72, height: 72 }}
+                resizeMode="contain"
               />
             </View>
             <Text style={styles.modalTitle}>Ready to Redeem?</Text>

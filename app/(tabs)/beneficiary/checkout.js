@@ -302,7 +302,11 @@ export default function CheckoutScreen() {
               />
             )}
             <View style={styles.successIconContainer}>
-              <AntDesign name="checkcircle" size={64} color="#10B981" />
+              <Image
+                source={require('../../../assets/images/piggy-confetti.png')}
+                style={{ width: 80, height: 80 }}
+                resizeMode="contain"
+              />
             </View>
             <Text style={styles.successTitle}>Thank You! 🎉</Text>
             <Text style={styles.successMessage}>
@@ -534,6 +538,9 @@ const styles = StyleSheet.create({
   },
   successIconContainer: {
     marginBottom: 16,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   successTitle: {
     fontSize: 24,
@@ -558,13 +565,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#DB8633',
     borderRadius: 12,
     paddingVertical: 14,
-    paddingHorizontal: 32,
-    minWidth: 120,
+    alignSelf: 'stretch',
+    alignItems: 'center',
   },
   successButtonText: {
     fontSize: 16,
     fontWeight: '700',
     color: '#fff',
+    textAlign: 'center',
   },
 });
 

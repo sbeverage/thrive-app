@@ -160,7 +160,20 @@ export default function TransactionHistory() {
           }
 
           const brandName =
-            t.vendor_name || beneficiaryName || meta.vendor_name || "Unknown";
+            t.vendor_name || t.vendors?.name || meta.vendor_name || (isDonationLike ? beneficiaryName : null) || beneficiaryName || "Unknown";
+
+          // Use vendor logo from join if available
+          const vendorLogo = t.vendors?.logo_url
+            ? {uri: t.vendors.logo_url}
+            : t.vendor_logo
+              ? {uri: t.vendor_logo}
+              : require("../../../assets/images/piggy-coin.png");
+
+          // Clean up description: strip raw redemption code prefix
+          const rawDescription = t.description || "";
+          const cleanDescription = rawDescription.startsWith("Discount redemption: ")
+            ? rawDescription.slice("Discount redemption: ".length)
+            : rawDescription;
 
           return {
             id: t.id,
@@ -171,7 +184,7 @@ export default function TransactionHistory() {
               day: "numeric",
               year: "numeric",
             }),
-            discount: t.description || "",
+            discount: cleanDescription,
             spending: spentNum != null ? `$${spentNum.toFixed(2)}` : undefined,
             savings:
               savingsNum != null ? `$${savingsNum.toFixed(2)}` : undefined,
@@ -184,9 +197,7 @@ export default function TransactionHistory() {
             isOneTimeGift: isGift,
             isMonthlyDonation: t.type === "monthly_donation",
             beneficiaryName,
-            logo:
-              t.vendor_logo ||
-              require("../../../assets/images/child-cancer.jpg"),
+            logo: vendorLogo,
           };
         });
 

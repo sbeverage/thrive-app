@@ -10885,14 +10885,22 @@ async function handleAuthRoute(
         .eq("email", email)
         .limit(1);
 
-      // If error or no user found
-      if (userError || !users || users.length === 0) {
+      // If error querying users table
+      if (userError) {
         return new Response(
-          JSON.stringify({message: "Invalid email or password."}),
-          {
-            headers: {"Content-Type": "application/json"},
-            status: 401,
-          },
+          JSON.stringify({message: "Login failed. Please try again."}),
+          {headers: {"Content-Type": "application/json"}, status: 500},
+        );
+      }
+
+      // Email not found — distinct 404 so the client can prompt signup
+      if (!users || users.length === 0) {
+        return new Response(
+          JSON.stringify({
+            code: "USER_NOT_FOUND",
+            message: "No account found for this email. Please sign up.",
+          }),
+          {headers: {"Content-Type": "application/json"}, status: 404},
         );
       }
 
@@ -14267,25 +14275,9 @@ async function handleDiscountRoute(
         // Don't fail the request if redemption tracking fails
       }
 
-      // Create transaction record
-      if (redemption) {
-        await supabase.from("transactions").insert([
-          {
-            user_id: userId,
-            type: "redemption",
-            amount: totalSavings ? parseFloat(totalSavings) : null,
-            description: `Discount redemption: ${discount.discount_code}`,
-            reference_id: redemption.id,
-            reference_type: "discount",
-            discount_id: discount.id,
-            vendor_id: discount.vendor_id,
-            discount_code: discount.discount_code,
-            savings: totalSavings ? parseFloat(totalSavings) : null,
-            spending: totalBill ? parseFloat(totalBill) : null,
-            status: "completed",
-          },
-        ]);
-      }
+      // Transaction record is created by the client (DiscountApproved screen)
+      // after the user enters their actual bill amount, so we don't create a
+      // skeleton record here to avoid duplicate entries in transaction history.
 
       // 7. Calculate remaining uses after redemption
       let remainingUses: number | string | null = null;
@@ -17312,7 +17304,7 @@ async function handleTransactionRoute(
 
       let query = supabase
         .from("transactions")
-        .select("*", {count: "exact"})
+        .select("*, vendors(id, name, logo_url)", {count: "exact"})
         .eq("user_id", userId)
         .order("created_at", {ascending: false})
         .range((page - 1) * limit, page * limit - 1);

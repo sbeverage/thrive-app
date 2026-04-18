@@ -16,8 +16,12 @@ import {
 
 
 import { Feather, AntDesign } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
 import { useRouter, useFocusEffect } from 'expo-router';
 import VoucherCard from '../../../components/VoucherCard';
+import SuggestCard from '../../../components/SuggestCard';
+import API from '../../lib/api';
 import MapView, { Marker } from 'react-native-maps';
 import { getCurrentLocation, getDefaultRegion, calculateDistance } from '../../utils/locationService';
 import { useLocation } from '../../context/LocationContext';
@@ -49,6 +53,13 @@ export default function DiscountsScreen() {
   // Filter context
   const { filters, updateFilters } = useDiscountFilter();
   const [locationSearch, setLocationSearch] = useState(''); // Location filter from main screen (tap location row to search)
+  const [activeScope, setActiveScope] = useState('All');
+  const [favorites, setFavorites] = useState(new Set());
+  const [geocodedCoords, setGeocodedCoords] = useState({});
+
+  const DEFAULT_LAT = 34.0754;
+  const DEFAULT_LNG = -84.2941;
+  const GEOCODE_CACHE_KEY = '@thrive_geocache';
 
   // Sync category pill and location search with filter screen when filters applied
   useEffect(() => {
@@ -59,6 +70,75 @@ export default function DiscountsScreen() {
       setLocationSearch(filters.location);
     }
   }, [filters.category, filters.location]);
+
+  // Load favorites from storage on mount
+  useEffect(() => {
+    AsyncStorage.getItem('@thrive_favorites').then(stored => {
+      if (stored) setFavorites(new Set(JSON.parse(stored)));
+    });
+  }, []);
+
+  // Geocode vendor addresses that are missing real coordinates
+  useEffect(() => {
+    if (!vendors || vendors.length === 0) return;
+
+    const runGeocode = async () => {
+      const cached = await AsyncStorage.getItem(GEOCODE_CACHE_KEY);
+      const cache = cached ? JSON.parse(cached) : {};
+      setGeocodedCoords(cache);
+
+      const needsGeocode = vendors.filter(v => {
+        if (cache[String(v.id)]) return false;
+        const lat = Number(v.address?.latitude);
+        const lng = Number(v.address?.longitude);
+        return !lat || !lng || (lat === DEFAULT_LAT && lng === DEFAULT_LNG);
+      });
+
+      if (needsGeocode.length === 0) return;
+
+      const updated = { ...cache };
+      let changed = false;
+
+      for (const vendor of needsGeocode) {
+        const addr = vendor.address;
+        if (!addr) continue;
+        const parts = [addr.street, addr.city, addr.state, addr.zipCode].filter(Boolean);
+        if (parts.length === 0) continue;
+
+        try {
+          const results = await Location.geocodeAsync(parts.join(', '));
+          if (results?.length > 0) {
+            updated[String(vendor.id)] = {
+              latitude: results[0].latitude,
+              longitude: results[0].longitude,
+            };
+            changed = true;
+          }
+        } catch (_) {}
+
+        // Brief pause to avoid rate limiting Apple Maps geocoder
+        await new Promise(r => setTimeout(r, 250));
+      }
+
+      if (changed) {
+        setGeocodedCoords(updated);
+        await AsyncStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(updated));
+      }
+    };
+
+    runGeocode();
+  }, [vendors]);
+
+  const toggleFavorite = (vendorId) => {
+    setFavorites(prev => {
+      const next = new Set(prev);
+      const key = String(vendorId);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      AsyncStorage.setItem('@thrive_favorites', JSON.stringify([...next]));
+      return next;
+    });
+  };
 
   const handleCategoryPress = (tag) => {
     setActiveCategory(tag);
@@ -179,21 +259,30 @@ export default function DiscountsScreen() {
       }
       // If no valid logoUrl/imageUrl, logoSource will be null and VoucherCard will use fallback
       
+      // Resolve coordinates: prefer stored lat/lng, fall back to geocoded cache, then default
+      const geo = geocodedCoords[String(vendor.id)];
+      const storedLat = Number(vendor.address?.latitude);
+      const storedLng = Number(vendor.address?.longitude);
+      const hasRealStored = storedLat && storedLng &&
+        !(storedLat === DEFAULT_LAT && storedLng === DEFAULT_LNG);
+      const latitude = hasRealStored ? storedLat : (geo?.latitude || DEFAULT_LAT);
+      const longitude = hasRealStored ? storedLng : (geo?.longitude || DEFAULT_LNG);
+
       return {
         id: vendor.id,
         brandName: vendor.name,
         category: vendor.category,
-        tags: vendor.tags || [], // Include tags array
+        tags: vendor.tags || [],
         imageUrl: logoSource,
         discountText: `${vendorDiscounts.length} discount${vendorDiscounts.length !== 1 ? 's' : ''} available`,
-        latitude: vendor.address?.latitude || 34.0754,
-        longitude: vendor.address?.longitude || -84.2941,
+        latitude,
+        longitude,
         location: `${vendor.address?.city || 'Alpharetta'}, ${vendor.address?.state || 'GA'}`,
-        vendor: vendor, // Include full vendor data
-        discountId: vendorDiscounts.length > 0 ? vendorDiscounts[0].id : null // Use first discount ID
+        vendor: vendor,
+        discountId: vendorDiscounts.length > 0 ? vendorDiscounts[0].id : null
       };
     });
-  }, [vendors, discounts]);
+  }, [vendors, discounts, geocodedCoords]);
 
   // Map filter type options to discount type values
   const typeFilterMap = {
@@ -205,9 +294,9 @@ export default function DiscountsScreen() {
   const filteredVendors = transformedVendors.filter(v => {
     const matchesSearch = v.brandName.toLowerCase().includes(searchQuery.toLowerCase());
 
-    // Filter by location (from filter screen or main screen location input when user types)
+    // Filter by location (only when explicitly set via filter screen or user typing)
     let matchesLocation = true;
-    const locFilter = (filters.location && filters.location.trim()) || (locationSearch && locationSearch.trim()) || '';
+    const locFilter = (filters.location && filters.location.trim()) || '';
     if (locFilter) {
       const loc = locFilter.toLowerCase();
       matchesLocation = (v.location && v.location.toLowerCase().includes(loc));
@@ -276,8 +365,34 @@ export default function DiscountsScreen() {
       }
     }
 
-    return matchesSearch && matchesLocation && matchesRadius && matchesType && matchesCategory;
+    // Scope filter
+    let matchesScope = true;
+    if (activeScope === 'Nearby') {
+      if (userLocation && v.latitude && v.longitude) {
+        const nearbyRadius = filters.radius
+          ? parseFloat(String(filters.radius).replace(/[^\d.]/g, '')) || 50
+          : 50;
+        const dist = calculateDistance(userLocation.latitude, userLocation.longitude, v.latitude, v.longitude);
+        matchesScope = dist !== null && dist <= nearbyRadius;
+      } else {
+        matchesScope = false;
+      }
+    } else if (activeScope === 'Favorites') {
+      matchesScope = favorites.has(String(v.id));
+    }
+
+    return matchesSearch && matchesLocation && matchesRadius && matchesType && matchesCategory && matchesScope;
   });
+
+  // Count vendors per category for badge display (scope + search applied, category not applied)
+  const categoryCounts = useMemo(() => {
+    const counts = {};
+    transformedVendors.forEach(v => {
+      const cats = new Set([v.category, ...(v.tags || [])].filter(Boolean));
+      cats.forEach(c => { counts[c] = (counts[c] || 0) + 1; });
+    });
+    return counts;
+  }, [transformedVendors]);
 
   const highlightedVendors = filteredVendors.slice(0, 2);
   const remainingVendors = filteredVendors.slice(2);
@@ -358,12 +473,9 @@ export default function DiscountsScreen() {
       }
       setLocationDisplay(display);
 
-      // Auto-seed locationSearch with detected location so typing filters from here
+      // Show detected city in the input field (display only - don't apply as filter)
       setLocationSearch(prev => {
-        if (!prev) {
-          updateFilters({ location: display });
-          return display;
-        }
+        if (!prev) return display;
         return prev;
       });
 
@@ -483,6 +595,20 @@ export default function DiscountsScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Scope Selector */}
+        <View style={styles.scopeRow}>
+          {['All', 'Nearby', 'Favorites'].map(scope => (
+            <TouchableOpacity
+              key={scope}
+              style={[styles.scopeBtn, activeScope === scope && styles.scopeBtnActive]}
+              onPress={() => setActiveScope(scope)}
+            >
+              <Text style={[styles.scopeText, activeScope === scope && styles.scopeTextActive]}>{scope}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Category Pills */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagsRow}>
           {availableCategories.map(tag => (
             <TouchableOpacity
@@ -490,7 +616,9 @@ export default function DiscountsScreen() {
               style={[styles.tag, activeCategory === tag && styles.tagActive]}
               onPress={() => handleCategoryPress(tag)}
             >
-              <Text style={[styles.tagText, activeCategory === tag && styles.tagTextActive]}>{tag}</Text>
+              <Text style={[styles.tagText, activeCategory === tag && styles.tagTextActive]}>
+                {tag === 'All' ? 'All' : `${tag}${categoryCounts[tag] ? ` (${categoryCounts[tag]})` : ''}`}
+              </Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -631,49 +759,27 @@ export default function DiscountsScreen() {
             )}
           </View>
         ) : (
-          <ScrollView 
+          <ScrollView
             style={styles.listContainer}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
+            automaticallyAdjustKeyboardInsets={true}
+            keyboardShouldPersistTaps="handled"
           >
             {filteredVendors.length > 0 ? (
-              <>
-                <View ref={discountsSectionRef}>
-                  <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Nearby Discounts</Text>
-                    <Text style={styles.sectionSubtitle}>{filteredVendors.length} businesses found</Text>
-                  </View>
-
-                  {highlightedVendors.map((item) => {
-                    // Find discount for this vendor
-                    const vendorDiscount = discounts.find(d => {
-                      const discountVendorId = d.vendorId?.toString() || d.vendorId;
-                      const vendorId = item.id?.toString() || item.id;
-                      return discountVendorId === vendorId;
-                    });
-                    
-                    return (
-                      <VoucherCard
-                        key={item.id}
-                        brand={item.brandName}
-                        logo={item.imageUrl}
-                        discounts={item.discountText}
-                        discountId={vendorDiscount?.id || item.discountId}
-                        vendor={item.vendor}
-                        vendorId={item.id}
-                      />
-                    );
-                  })}
+              <View ref={discountsSectionRef}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>
+                    {activeScope === 'Favorites' ? 'Favorited Vendors' : activeScope === 'Nearby' ? 'Nearby Discounts' : 'All Discounts'}
+                  </Text>
+                  <Text style={styles.sectionSubtitle}>{filteredVendors.length} business{filteredVendors.length !== 1 ? 'es' : ''} found</Text>
                 </View>
-
-                {remainingVendors.map((item) => {
-                  // Find discount for this vendor
+                {filteredVendors.map(item => {
                   const vendorDiscount = discounts.find(d => {
                     const discountVendorId = d.vendorId?.toString() || d.vendorId;
                     const vendorId = item.id?.toString() || item.id;
                     return discountVendorId === vendorId;
                   });
-                  
                   return (
                     <VoucherCard
                       key={item.id}
@@ -683,91 +789,44 @@ export default function DiscountsScreen() {
                       discountId={vendorDiscount?.id || item.discountId}
                       vendor={item.vendor}
                       vendorId={item.id}
+                      isFavorited={favorites.has(String(item.id))}
+                      onToggleFavorite={() => toggleFavorite(item.id)}
                     />
                   );
                 })}
-
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>All Discounts</Text>
-                  <Text style={styles.sectionSubtitle}>Browse all available offers</Text>
-            </View>
-
-                {filteredVendors.map((item) => {
-                  // Find discount for this vendor
-                  const vendorDiscount = discounts.find(d => {
-                    const discountVendorId = d.vendorId?.toString() || d.vendorId;
-                    const vendorId = item.id?.toString() || item.id;
-                    return discountVendorId === vendorId;
-                  });
-                  
-                  return (
-                    <VoucherCard
-                      key={`all-${item.id}`}
-                      brand={item.brandName}
-                      logo={item.imageUrl}
-                      discounts={item.discountText}
-                      discountId={vendorDiscount?.id || item.discountId}
-                      vendor={item.vendor}
-                      vendorId={item.id}
-                    />
-                  );
-                })}
-              </>
+              </View>
             ) : (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyTitle}>No results found</Text>
-                <Text style={styles.emptySubtitle}>
-                  {searchQuery ? `No businesses found for "${searchQuery}"` : 'Try adjusting your search or filters'}
-                </Text>
-                
-                {searchQuery && (
-                  <View style={styles.requestSection}>
-                    <Text style={styles.requestTitle}>Want to see "{searchQuery}" here?</Text>
-                    <Text style={styles.requestSubtitle}>Drop their info below and we'll add them soon!</Text>
-
-                {submitted ? (
-                      <View style={styles.successMessage}>
-                        <Text style={styles.successText}>✅ Request submitted! Thank you — we'll review and add them soon.</Text>
-                      </View>
+                {activeScope === 'Favorites' ? (
+                  <>
+                    <Text style={styles.emptyTitle}>No favorites yet</Text>
+                    <Text style={styles.emptySubtitle}>Tap the heart on any vendor card to save it here</Text>
+                  </>
+                ) : activeScope === 'Nearby' && !userLocation ? (
+                  <>
+                    <Text style={styles.emptyTitle}>Location not available</Text>
+                    <Text style={styles.emptySubtitle}>Enable location access to see vendors near you</Text>
+                  </>
                 ) : (
-                      <View style={styles.requestForm}>
-                    <TextInput
-                      value={businessName}
-                      onChangeText={setBusinessName}
-                      placeholder="Full Business Name"
-                      placeholderTextColor="#999"
-                      style={styles.input}
-                    />
-                    <TextInput
-                      value={businessUrl}
-                      onChangeText={setBusinessUrl}
-                      placeholder="Website URL"
-                      placeholderTextColor="#999"
-                      autoCapitalize="none"
-                      style={styles.input}
-                    />
-                    <TouchableOpacity
-                      style={styles.requestButton}
-                      onPress={() => {
-                        if (businessName.trim() && businessUrl.trim()) {
-                          setSubmitted(true);
-                        } else {
-                          alert('Please fill out both fields.');
-                        }
-                      }}
-                    >
-                          <Text style={styles.requestButtonText}>Submit Request</Text>
-                    </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
+                  <>
+                    <Text style={styles.emptyTitle}>No results found</Text>
+                    <Text style={styles.emptySubtitle}>
+                      {searchQuery ? `No businesses found for "${searchQuery}"` : 'Try adjusting your search or filters'}
+                    </Text>
+                  </>
                 )}
+                
+                <SuggestCard
+                  type="vendor"
+                  searchQuery={searchQuery}
+                  onSubmit={({ name, website }) => API.submitVendorRequest({ name, website })}
+                />
               </View>
             )}
           </ScrollView>
         )}
       </View>
-      
+
       {/* Tutorial */}
       {showTutorial && currentStep && (
         <WalkthroughTutorial
@@ -844,6 +903,31 @@ const styles = StyleSheet.create({
   refreshLocationButton: {
     padding: 8,
     marginLeft: 8,
+  },
+  scopeRow: {
+    flexDirection: 'row',
+    marginBottom: 12,
+    gap: 8,
+  },
+  scopeBtn: {
+    paddingVertical: 7,
+    paddingHorizontal: 18,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#e1e1e5',
+    backgroundColor: '#fff',
+  },
+  scopeBtnActive: {
+    borderColor: '#DB8633',
+    backgroundColor: '#FFF5EB',
+  },
+  scopeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+  },
+  scopeTextActive: {
+    color: '#DB8633',
   },
   tagsRow: {
     paddingBottom: 12,

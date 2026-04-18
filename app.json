@@ -1,7 +1,7 @@
 {
   "expo": {
     "owner": "sbeverage",
-    "name": "thrive-app",
+    "name": "THRIVE Initiative",
     "slug": "thrive-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -64,7 +64,7 @@
       "package": "com.thriveinitiative.app",
       "versionCode": 1,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/piggy-with-flowers.png",
+        "foregroundImage": "./assets/images/initiative-app-icon.png",
         "backgroundColor": "#ffffff"
       },
       "permissions": [

@@ -295,7 +295,7 @@ export default function InviteFriendsModal({ visible, onClose }) {
                   >
                     <View style={styles.milestoneIcon}>
                       {(milestone.unlocked || paidFriendsCount >= milestone.count) ? (
-                        <AntDesign name="checkcircle" size={24} color="#10B981" />
+                        <AntDesign name="checkcircle" size={24} color="#DB8633" />
                       ) : (
                         <View style={styles.milestoneIconLocked}>
                           <Text style={styles.milestoneIconText}>{milestone.count}</Text>

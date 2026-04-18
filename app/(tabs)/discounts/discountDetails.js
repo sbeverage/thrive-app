@@ -240,13 +240,25 @@ export default function DiscountDetails() {
 
   const handleCall = () => {
     if (discount?.vendor?.phone) {
-      Linking.openURL(`tel:${discount.vendor.phone}`);
+      const cleaned = discount.vendor.phone.replace(/[^\d+]/g, '');
+      Linking.openURL(`tel:${cleaned}`);
     }
   };
 
   const handleWebsite = () => {
     if (discount?.vendor?.website) {
-      Linking.openURL(discount.vendor.website);
+      const url = discount.vendor.website.startsWith('http') ? discount.vendor.website : `https://${discount.vendor.website}`;
+      Linking.openURL(url);
+    }
+  };
+
+  const handleAddress = () => {
+    if (discount?.vendor?.address) {
+      const { street, city, state, zipCode } = discount.vendor.address;
+      const query = encodeURIComponent(`${street}, ${city}, ${state} ${zipCode}`);
+      Linking.openURL(`maps://?q=${query}`).catch(() =>
+        Linking.openURL(`https://maps.google.com/?q=${query}`)
+      );
     }
   };
 
@@ -464,7 +476,7 @@ export default function DiscountDetails() {
           )}
         </TouchableOpacity>
 
-        <View style={styles.contactRow}>
+        <TouchableOpacity style={styles.contactRow} onPress={handleAddress}>
           {Platform.OS === 'web' ? (
             <Text style={{ fontSize: 20, marginRight: 12 }}>📍</Text>
           ) : (
@@ -473,7 +485,12 @@ export default function DiscountDetails() {
           <Text style={styles.contactText}>
             {discount.vendor.address.street}, {discount.vendor.address.city}, {discount.vendor.address.state} {discount.vendor.address.zipCode}
           </Text>
-        </View>
+          {Platform.OS === 'web' ? (
+            <Text style={{ fontSize: 16, color: '#8E9BAE' }}>›</Text>
+          ) : (
+            <AntDesign name="right" size={16} color="#8E9BAE" />
+          )}
+        </TouchableOpacity>
       </View>
 
       {/* Social Links */}

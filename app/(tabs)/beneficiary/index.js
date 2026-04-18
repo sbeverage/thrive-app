@@ -27,6 +27,7 @@ import { getCurrentLocation, getDefaultRegion, calculateDistance, formatDistance
 import WalkthroughTutorial from '../../../components/WalkthroughTutorial';
 import { useTutorial } from '../../../hooks/useTutorial';
 import API from '../../lib/api';
+import SuggestCard from '../../../components/SuggestCard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function BeneficiaryScreen() {
@@ -269,8 +270,8 @@ export default function BeneficiaryScreen() {
       matchesCategory = b.category === activeCategory;
     }
     
-    // Filter by location (from filter screen or main screen location input)
-    const locFilter = (filters.location && filters.location.trim()) || (locationSearch && locationSearch.trim()) || '';
+    // Filter by location (only when explicitly set via filter screen or user typing)
+    const locFilter = (filters.location && filters.location.trim()) || '';
     const matchesLocation = !locFilter || (b.location && b.location.toLowerCase().includes(locFilter.toLowerCase()));
     
     const matchesCause = !filters.cause || b.category === filters.cause;
@@ -383,12 +384,9 @@ export default function BeneficiaryScreen() {
         setLocationDisplay(display);
         console.log('📍 Location display updated:', display);
 
-        // Auto-seed locationSearch with detected location so typing filters from here
+        // Show detected city in the input field (display only - don't apply as filter)
         setLocationSearch(prev => {
-          if (!prev) {
-            updateFilters({ location: display });
-            return display;
-          }
+          if (!prev) return display;
           return prev;
         });
 
@@ -603,10 +601,12 @@ export default function BeneficiaryScreen() {
             </MapView>
           )
         ) : (
-          <ScrollView 
+          <ScrollView
             style={styles.listContainer}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
+            automaticallyAdjustKeyboardInsets={true}
+            keyboardShouldPersistTaps="handled"
           >
             {loadingBeneficiaries ? (
               <View style={{ padding: 40, alignItems: 'center' }}>
@@ -775,106 +775,13 @@ export default function BeneficiaryScreen() {
                   {searchText ? `No beneficiaries found for "${searchText}"` : 'Try adjusting your search or filters'}
                 </Text>
                 
-                {searchText && (
-                  <View style={styles.requestSection}>
-                    <Text style={styles.requestTitle}>Want to see "{searchText}" here?</Text>
-                    <Text style={styles.requestSubtitle}>Drop their info below and we'll add them soon!</Text>
-
-                    {submitted ? (
-                      <View style={styles.successMessage}>
-                        <Text style={styles.successText}>✅ Request submitted! Thank you — we'll review and add them soon.</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.requestForm}>
-                        <TextInput
-                          value={businessName}
-                          onChangeText={setBusinessName}
-                          placeholder="Full Organization Name *"
-                          placeholderTextColor="#999"
-                          style={styles.input}
-                        />
-                        <TextInput
-                          value={businessUrl}
-                          onChangeText={setBusinessUrl}
-                          placeholder="Website URL *"
-                          placeholderTextColor="#999"
-                          autoCapitalize="none"
-                          style={styles.input}
-                        />
-                        <TextInput
-                          value={contactName}
-                          onChangeText={setContactName}
-                          placeholder="Your Name (Optional)"
-                          placeholderTextColor="#999"
-                          style={styles.input}
-                        />
-                        <TextInput
-                          value={contactEmail}
-                          onChangeText={setContactEmail}
-                          placeholder="Your Email (Optional)"
-                          placeholderTextColor="#999"
-                          autoCapitalize="none"
-                          keyboardType="email-address"
-                          style={styles.input}
-                        />
-                        {submitError ? (
-                          <Text style={styles.errorText}>{submitError}</Text>
-                        ) : null}
-                        <TouchableOpacity
-                          style={[styles.requestButton, isSubmitting && styles.requestButtonDisabled]}
-                          onPress={async () => {
-                            if (!businessName.trim()) {
-                              setSubmitError('Please enter the organization name.');
-                              return;
-                            }
-                            if (!businessUrl.trim()) {
-                              setSubmitError('Please enter the website URL.');
-                              return;
-                            }
-                            
-                            // Validate email format if provided
-                            if (contactEmail.trim()) {
-                              const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                              if (!emailRegex.test(contactEmail.trim())) {
-                                setSubmitError('Please enter a valid email address.');
-                                return;
-                              }
-                            }
-
-                            setIsSubmitting(true);
-                            setSubmitError('');
-                            
-                            try {
-                              await API.submitBeneficiaryRequest({
-                                contact_name: contactName.trim() || null,
-                                company_name: businessName.trim(),
-                                email: contactEmail.trim() ? contactEmail.trim().toLowerCase() : null,
-                                website: businessUrl.trim(),
-                              });
-                              
-                              setSubmitted(true);
-                              // Clear form after successful submission
-                              setBusinessName('');
-                              setBusinessUrl('');
-                              setContactName('');
-                              setContactEmail('');
-                            } catch (error) {
-                              console.error('Failed to submit beneficiary request:', error);
-                              setSubmitError(error.message || 'Failed to submit request. Please try again.');
-                            } finally {
-                              setIsSubmitting(false);
-                            }
-                          }}
-                          disabled={isSubmitting}
-                        >
-                          <Text style={styles.requestButtonText}>
-                            {isSubmitting ? 'Submitting...' : 'Submit Request'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
-                )}
+                <SuggestCard
+                  type="charity"
+                  searchQuery={searchText}
+                  onSubmit={({ name, website }) =>
+                    API.submitBeneficiaryRequest({ company_name: name, website })
+                  }
+                />
               </View>
             )}
           </ScrollView>
@@ -1297,13 +1204,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   successMessage: {
-    backgroundColor: '#e8f5e9',
+    backgroundColor: '#FFF5EB',
+    borderWidth: 1,
+    borderColor: '#DB8633',
     padding: 15,
     borderRadius: 8,
     marginTop: 10,
   },
   successText: {
-    color: '#2e7d32',
+    color: '#92400e',
     fontWeight: '600',
     textAlign: 'center',
   },

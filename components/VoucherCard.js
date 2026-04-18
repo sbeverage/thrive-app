@@ -7,10 +7,10 @@ import {
   TouchableOpacity,
   Platform,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, AntDesign } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-const VoucherCard = ({ logo, brand, discounts, discountId, vendor, onPress, vendorId }) => {
+const VoucherCard = ({ logo, brand, discounts, discountId, vendor, onPress, vendorId, isFavorited, onToggleFavorite }) => {
   const router = useRouter();
 
   const getDiscountLabel = () => {
@@ -75,10 +75,21 @@ const VoucherCard = ({ logo, brand, discounts, discountId, vendor, onPress, vend
 
           {/* Right Section */}
           <View style={styles.rightSide}>
+            <TouchableOpacity
+              onPress={() => onToggleFavorite?.()}
+              hitSlop={{ top: 8, bottom: 4, left: 8, right: 8 }}
+              style={{ marginBottom: 8 }}
+            >
+              <AntDesign
+                name={isFavorited ? 'heart' : 'hearto'}
+                size={18}
+                color={isFavorited ? '#e74c3c' : '#DB8C0E'}
+              />
+            </TouchableOpacity>
             {Platform.OS === 'web' ? (
-              <Text style={{ fontSize: 24 }}>🎫</Text>
+              <Text style={{ fontSize: 20 }}>🎫</Text>
             ) : (
-              <MaterialCommunityIcons name="ticket-percent" size={24} color="#DB8C0E" />
+              <MaterialCommunityIcons name="ticket-percent" size={20} color="#DB8C0E" />
             )}
           </View>
         </View>

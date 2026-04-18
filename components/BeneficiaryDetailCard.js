@@ -593,7 +593,11 @@ export default function BeneficiaryDetailCard({ data, onSelect, showBackArrow = 
               />
             )}
             <View style={styles.giftSuccessIconContainer}>
-              <AntDesign name="checkcircle" size={64} color="#10B981" />
+              <Image
+                source={require('../assets/images/piggy-confetti.png')}
+                style={{ width: 100, height: 100 }}
+                resizeMode="contain"
+              />
             </View>
             <Text style={styles.giftSuccessTitle}>Thank You! 🎉</Text>
             <Text style={styles.giftSuccessMessage}>
