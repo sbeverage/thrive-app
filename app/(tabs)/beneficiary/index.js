@@ -24,8 +24,6 @@ import { useBeneficiaryFilter } from '../../context/BeneficiaryFilterContext';
 import { useLocation } from '../../context/LocationContext';
 import MapView, { Marker, Circle } from 'react-native-maps';
 import { getCurrentLocation, getDefaultRegion, calculateDistance, formatDistance } from '../../utils/locationService';
-import WalkthroughTutorial from '../../../components/WalkthroughTutorial';
-import { useTutorial } from '../../../hooks/useTutorial';
 import API from '../../lib/api';
 import SuggestCard from '../../../components/SuggestCard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -98,39 +96,6 @@ export default function BeneficiaryScreen() {
   // Add state for the mini popup
   const [miniPopupVisible, setMiniPopupVisible] = useState(false);
   
-  // Tutorial
-  const beneficiarySectionRef = useRef(null);
-  const {
-    showTutorial,
-    currentStep,
-    highlightPosition,
-    elementRef: tutorialElementRef,
-    handleNext,
-    handleSkip,
-  } = useTutorial('beneficiary');
-  
-  // Set the ref for the tutorial to measure
-  useEffect(() => {
-    if (showTutorial && beneficiarySectionRef.current) {
-      tutorialElementRef.current = beneficiarySectionRef.current;
-    }
-  }, [showTutorial, tutorialElementRef]);
-  
-  // Check tutorial when screen is focused
-  useFocusEffect(
-    useCallback(() => {
-      const timer = setTimeout(() => {
-        if (showTutorial && beneficiarySectionRef.current) {
-          console.log('📚 Setting tutorial element ref for beneficiary');
-          tutorialElementRef.current = beneficiarySectionRef.current;
-        } else if (beneficiarySectionRef.current) {
-          // Always set the ref if element exists
-          tutorialElementRef.current = beneficiarySectionRef.current;
-        }
-      }, 800);
-      return () => clearTimeout(timer);
-    }, [showTutorial, tutorialElementRef])
-  );
   const [selectedBeneficiaryForPopup, setSelectedBeneficiaryForPopup] = useState(null);
 
   const categories = ['All', 'Favorites', 'Animal Welfare', 'Arts & Culture', 'Childhood Illness', 'Disabilities', 'Disaster Relief', 'Education', 'Elderly Care', 'Environment', 'Healthcare', 'Homelessness', 'Hunger Relief', 'International Aid', 'Low Income Families', 'Veterans', 'Youth Development'];
@@ -879,19 +844,6 @@ export default function BeneficiaryScreen() {
         </TouchableOpacity>
       </Modal>
       
-      {/* Tutorial */}
-      {showTutorial && currentStep && (
-        <WalkthroughTutorial
-          visible={showTutorial}
-          currentStep={currentStep.stepNumber}
-          totalSteps={currentStep.totalSteps}
-          highlightPosition={highlightPosition}
-          title={currentStep.title}
-          description={currentStep.description}
-          onNext={handleNext}
-          onSkip={handleSkip}
-        />
-      )}
     </SafeAreaView>
   );
 }

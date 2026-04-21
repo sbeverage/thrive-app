@@ -159,15 +159,13 @@ export default function MainHome() {
   };
   
   // Tutorial
-  const impactCardRef = useRef(null);
   const {
     showTutorial,
-    currentStep,
-    highlightPosition,
-    elementRef: tutorialElementRef,
+    currentStepIndex,
+    totalSteps,
     handleNext,
     handleSkip,
-  } = useTutorial('home');
+  } = useTutorial();
   
   // Disable swipe-back gesture and prevent back navigation to index/login
   useFocusEffect(
@@ -200,28 +198,6 @@ export default function MainHome() {
     }, [navigation])
   );
 
-  // Set the ref for the tutorial to measure
-  useEffect(() => {
-    if (showTutorial && impactCardRef.current) {
-      tutorialElementRef.current = impactCardRef.current;
-    }
-  }, [showTutorial, tutorialElementRef]);
-  
-  // Check tutorial when screen is focused (after signup)
-  useFocusEffect(
-    useCallback(() => {
-      // Small delay to ensure screen is fully rendered
-      const timer = setTimeout(() => {
-        if (showTutorial && impactCardRef.current) {
-          tutorialElementRef.current = impactCardRef.current;
-        } else if (impactCardRef.current) {
-          // Always set the ref if element exists, even if tutorial not showing yet
-          tutorialElementRef.current = impactCardRef.current;
-        }
-      }, 1500);
-      return () => clearTimeout(timer);
-    }, [showTutorial, tutorialElementRef])
-  );
 
   // State for display location (updates when locationAddress changes)
   const [displayLocation, setDisplayLocation] = useState('Your Area');
@@ -563,14 +539,11 @@ export default function MainHome() {
       />
       
       {/* Tutorial */}
-      {showTutorial && currentStep && (
+      {showTutorial && (
         <WalkthroughTutorial
           visible={showTutorial}
-          currentStep={currentStep.stepNumber}
-          totalSteps={currentStep.totalSteps}
-          highlightPosition={highlightPosition}
-          title={currentStep.title}
-          description={currentStep.description}
+          currentStepIndex={currentStepIndex}
+          totalSteps={totalSteps}
           onNext={handleNext}
           onSkip={handleSkip}
         />

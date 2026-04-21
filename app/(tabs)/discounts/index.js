@@ -28,8 +28,6 @@ import { getCurrentLocation, getDefaultRegion, calculateDistance } from '../../u
 import { useLocation } from '../../context/LocationContext';
 import { useDiscount } from '../../context/DiscountContext';
 import { useDiscountFilter } from '../../context/DiscountFilterContext';
-import WalkthroughTutorial from '../../../components/WalkthroughTutorial';
-import { useTutorial } from '../../../hooks/useTutorial';
 
 
 // Note: Vendors should have logoUrl from the admin panel
@@ -153,36 +151,6 @@ export default function DiscountsScreen() {
   // Discount context
   const { discounts, vendors, isLoading: isLoadingDiscounts, loadDiscounts } = useDiscount();
   
-  // Tutorial
-  const discountsSectionRef = useRef(null);
-  const {
-    showTutorial,
-    currentStep,
-    highlightPosition,
-    elementRef: tutorialElementRef,
-    handleNext,
-    handleSkip,
-  } = useTutorial('discounts');
-  
-  // Set the ref for the tutorial to measure
-  useEffect(() => {
-    if (showTutorial && discountsSectionRef.current) {
-      tutorialElementRef.current = discountsSectionRef.current;
-    }
-  }, [showTutorial, tutorialElementRef]);
-  
-  // Check tutorial when screen is focused
-  useFocusEffect(
-    useCallback(() => {
-      const timer = setTimeout(() => {
-        if (showTutorial && discountsSectionRef.current) {
-          console.log('📚 Setting tutorial element ref for discounts');
-          tutorialElementRef.current = discountsSectionRef.current;
-        }
-      }, 800);
-      return () => clearTimeout(timer);
-    }, [showTutorial, tutorialElementRef])
-  );
   
   // Debug: Log vendors and discounts when they change
   useEffect(() => {
@@ -864,19 +832,6 @@ export default function DiscountsScreen() {
         )}
       </View>
 
-      {/* Tutorial */}
-      {showTutorial && currentStep && (
-        <WalkthroughTutorial
-          visible={showTutorial}
-          currentStep={currentStep.stepNumber}
-          totalSteps={currentStep.totalSteps}
-          highlightPosition={highlightPosition}
-          title={currentStep.title}
-          description={currentStep.description}
-          onNext={handleNext}
-          onSkip={handleSkip}
-        />
-      )}
     </SafeAreaView>
   );
 }

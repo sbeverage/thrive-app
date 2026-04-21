@@ -126,9 +126,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   iconContainerInactive: {
-    backgroundColor: '#FFF5EB',
-    borderWidth: 1.5,
-    borderColor: '#DB8633',
+    backgroundColor: 'transparent',
   },
   iconContainerActive: {
     backgroundColor: '#DB8633',
@@ -146,7 +144,7 @@ const styles = StyleSheet.create({
     tintColor: '#FFFFFF',
   },
   tabIconInactive: {
-    tintColor: '#DB8633',
+    tintColor: '#9AABB8',
   },
   tabLabel: {
     marginTop: 3,
