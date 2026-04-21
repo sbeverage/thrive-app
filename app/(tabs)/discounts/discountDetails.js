@@ -542,9 +542,10 @@ export default function DiscountDetails() {
       <View style={styles.hoursCard}>
         <Text style={styles.sectionTitle}>Business Hours</Text>
         {(() => {
+          if (!discount.vendor?.hours) return <Text style={styles.hoursUnavailable}>Hours not available</Text>;
           // Define day order: Monday through Sunday
           const dayOrder = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-          
+
           // Sort entries by day order
           const sortedHours = Object.entries(discount.vendor.hours).sort(([dayA], [dayB]) => {
             const indexA = dayOrder.indexOf(dayA.toLowerCase());
@@ -849,6 +850,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  hoursUnavailable: {
+    fontSize: 14,
+    color: '#aaa',
+    fontStyle: 'italic',
+    paddingVertical: 8,
   },
   hoursRow: {
     flexDirection: 'row',
