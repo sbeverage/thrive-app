@@ -51,7 +51,7 @@ export default function AppLayout() {
       <BeneficiaryProvider>
         <View style={{ flex: 1, backgroundColor: '#fff' }}>
           {/* Only apply paddingBottom if footer is visible */}
-          <View style={{ flex: 1, paddingBottom: hideFooter ? 0 : 70 }}>
+          <View style={{ flex: 1, paddingBottom: hideFooter ? 0 : 60 }}>
             <Slot />
           </View>
 
@@ -69,32 +69,12 @@ export default function AppLayout() {
                       router.push(`/${tab.name}`);
                     }}
                   >
-                    {focused ? (
-                      <View style={[styles.iconContainer, styles.iconContainerActive]}>
-                        <Image
-                          source={tab.icon}
-                          style={[styles.tabIcon, styles.tabIconActive]}
-                        />
-                      </View>
-                    ) : (Platform.OS === 'web' || Platform.OS === 'android') ? (
-                      <View style={styles.iconContainerGlassFallback}>
-                        <Image
-                          source={tab.icon}
-                          style={styles.tabIcon}
-                        />
-                      </View>
-                    ) : (
-                      <BlurView
-                        intensity={70}
-                        tint="light"
-                        style={styles.iconContainerGlass}
-                      >
-                        <Image
-                          source={tab.icon}
-                          style={styles.tabIcon}
-                        />
-                      </BlurView>
-                    )}
+                    <View style={[styles.iconContainer, focused ? styles.iconContainerActive : styles.iconContainerInactive]}>
+                      <Image
+                        source={tab.icon}
+                        style={[styles.tabIcon, focused ? styles.tabIconActive : styles.tabIconInactive]}
+                      />
+                    </View>
                     <Text style={[
                       styles.tabLabel,
                       focused && styles.tabLabelActive
@@ -119,13 +99,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: '#ffffff',
-    height: 70,
+    height: 60,
     flexDirection: 'row',
     justifyContent: 'space-around',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     zIndex: 99,
-    paddingBottom: 16,
-    paddingTop: 12,
+    paddingBottom: 8,
+    paddingTop: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.08,
@@ -134,62 +114,43 @@ const styles = StyleSheet.create({
   },
   footerItem: {
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     flex: 1,
-    height: 50,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    marginTop: -8,
+    marginTop: -18,
   },
   iconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'transparent',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  iconContainerGlass: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  iconContainerGlassFallback: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(142, 155, 174, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(142, 155, 174, 0.25)',
+  iconContainerInactive: {
+    backgroundColor: '#FFF5EB',
+    borderWidth: 1.5,
+    borderColor: '#DB8633',
   },
   iconContainerActive: {
     backgroundColor: '#DB8633',
-    width: 52,
-    height: 52,
-    borderRadius: 26,
     shadowColor: '#DB8633',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.3,
     shadowRadius: 6,
     elevation: 5,
   },
   tabIcon: {
     width: 22,
     height: 22,
-    tintColor: '#8E9BAE',
   },
   tabIconActive: {
     tintColor: '#FFFFFF',
   },
+  tabIconInactive: {
+    tintColor: '#DB8633',
+  },
   tabLabel: {
-    marginTop: 4,
-    fontSize: 12,
+    marginTop: 3,
+    fontSize: 11,
     color: '#8E9BAE',
     fontWeight: 'bold',
   },

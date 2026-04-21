@@ -958,17 +958,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   tag: {
-    backgroundColor: '#f0f0f5',
+    backgroundColor: '#f2f2f2',
     borderRadius: 20,
     paddingVertical: 8,
     paddingHorizontal: 15,
     marginRight: 10,
-    borderWidth: 1,
-    borderColor: '#e1e1e5',
   },
   tagActive: {
-    backgroundColor: '#DB8633',
-    borderColor: '#DB8633',
+    backgroundColor: '#FFF5EB',
+    borderWidth: 1,
+    borderColor: '#D0861F',
   },
   tagContent: {
     flexDirection: 'row',
@@ -982,7 +981,8 @@ const styles = StyleSheet.create({
     color: '#6d6e72',
   },
   tagTextActive: {
-    color: '#fff',
+    color: '#D0861F',
+    fontWeight: '600',
   },
   toggleRow: {
     flexDirection: 'row',

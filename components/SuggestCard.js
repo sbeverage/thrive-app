@@ -132,14 +132,12 @@ export default function SuggestCard({ type = 'vendor', searchQuery = '', onSubmi
         disabled={isSubmitting}
         activeOpacity={0.85}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={styles.buttonText}>
-            {isSubmitting ? 'Sending...' : 'Send Suggestion'}
-          </Text>
-          {!isSubmitting && (
-            <Feather name="send" size={16} color="#fff" style={{ marginLeft: 8 }} />
-          )}
-        </View>
+        <Text style={styles.buttonText}>
+          {isSubmitting ? 'Sending...' : 'Send Suggestion'}
+        </Text>
+        {!isSubmitting && (
+          <Feather name="send" size={15} color="#fff" style={{ marginLeft: 6 }} />
+        )}
       </TouchableOpacity>
 
       <Text style={styles.footer}>We personally review every suggestion ❤️</Text>
