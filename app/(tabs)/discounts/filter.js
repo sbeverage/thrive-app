@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  ActivityIndicator,
+  Image,
 } from 'react-native';
 import { Feather, AntDesign } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -13,12 +15,11 @@ import { useDiscountFilter } from '../../context/DiscountFilterContext';
 import { useLocation } from '../../context/LocationContext';
 
 const radiusOptions = ['1 mile', '5 miles', '10 miles', '25 miles'];
-const typeOptions = ['Percentage', 'Buy One Get One', 'Free Item'];
-const categoryOptions = [
-  'Coffee Shop', 'Electronics', 'Shopping Store', 'Fitness',
-  'Health & Wellness', 'Beauty', 'Restaurants', 'Fast Food',
-  'Entertainment', 'Travel', 'Home Services', 'Automotive',
-  'Clothing', 'Grocery', 'Books & Stationery', 'Coworking'
+const typeOptions = [
+  { label: 'Percentage', value: 'Percentage' },
+  { label: 'Fixed Amount', value: 'Fixed Amount' },
+  { label: 'Buy 1 Get 1', value: 'Buy 1 Get 1' },
+  { label: 'Free', value: 'Free' },
 ];
 const availabilityOptions = ['In-Store', 'Online', 'Both'];
 
@@ -26,34 +27,67 @@ export default function FilterScreen() {
   const router = useRouter();
   const { filters, updateFilters, clearFilters, hasActiveFilters } = useDiscountFilter();
   const { locationAddress, refreshLocation, locationPermission, checkLocationPermission } = useLocation();
+
   const [location, setLocation] = useState(filters.location || '');
   const [radius, setRadius] = useState(filters.radius || '');
   const [type, setType] = useState(filters.type || '');
-  const [category, setCategory] = useState(filters.category || '');
   const [availability, setAvailability] = useState(filters.availability || '');
-  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const [showFavorites, setShowFavorites] = useState(filters.showFavorites || false);
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const debounceRef = useRef(null);
 
+  // Pre-fill location with current location on first open if not already set
   useEffect(() => {
-    setLocation(filters.location || '');
-    setRadius(filters.radius || '');
-    setType(filters.type || '');
-    setCategory(filters.category || '');
-    setAvailability(filters.availability || '');
-  }, [filters.location, filters.radius, filters.type, filters.category, filters.availability]);
+    if (!filters.location && locationAddress?.city && locationAddress?.state) {
+      setLocation(`${locationAddress.city}, ${locationAddress.state}`);
+    }
+  }, []);
 
   const handleUseCurrentLocation = async () => {
     if (locationPermission !== 'granted') {
       checkLocationPermission();
       return;
     }
+    setIsLoadingLocation(true);
     await refreshLocation();
+    setIsLoadingLocation(false);
     if (locationAddress?.city && locationAddress?.state) {
-      setLocation(`${locationAddress.city}, ${locationAddress.state}`);
+      const loc = `${locationAddress.city}, ${locationAddress.state}`;
+      setLocation(loc);
+      setLocationSuggestions([]);
     }
   };
 
+  const handleLocationChange = (text) => {
+    setLocation(text);
+    setLocationSuggestions([]);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (text.trim().length < 2) return;
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text)}&format=json&addressdetails=1&limit=5&countrycodes=us`,
+          { headers: { 'User-Agent': 'ThriveApp/1.0' } }
+        );
+        const data = await res.json();
+        const suggestions = data
+          .filter(r => r.address?.city || r.address?.town || r.address?.village || r.address?.county)
+          .map(r => {
+            const city = r.address?.city || r.address?.town || r.address?.village || r.address?.county || '';
+            const state = r.address?.state || '';
+            return city && state ? `${city}, ${state}` : null;
+          })
+          .filter(Boolean)
+          .filter((v, i, a) => a.indexOf(v) === i)
+          .slice(0, 5);
+        setLocationSuggestions(suggestions);
+      } catch {}
+    }, 400);
+  };
+
   const handleApplyFilters = () => {
-    updateFilters({ location, radius, type, category, availability });
+    updateFilters({ location, radius, type, availability, showFavorites });
     router.back();
   };
 
@@ -62,118 +96,117 @@ export default function FilterScreen() {
     setLocation('');
     setRadius('');
     setType('');
-    setCategory('');
     setAvailability('');
+    setShowFavorites(false);
+    setLocationSuggestions([]);
   };
 
-  const renderHorizontalOptions = (options, selected, setSelected) => (
+  const renderPills = (options, selected, setSelected) => (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scrollRow}>
-      {options.map((option) => (
-        <TouchableOpacity
-          key={option}
-          style={[
-            styles.optionPill,
-            selected === option && styles.optionSelected,
-          ]}
-          onPress={() => setSelected(option)}
-        >
-          <Text
-            style={[
-              styles.optionText,
-              selected === option && styles.optionTextSelected,
-            ]}
+      {options.map((opt) => {
+        const label = typeof opt === 'string' ? opt : opt.label;
+        const value = typeof opt === 'string' ? opt : opt.value;
+        const isSelected = selected === value;
+        return (
+          <TouchableOpacity
+            key={value}
+            style={[styles.pill, isSelected && styles.pillSelected]}
+            onPress={() => setSelected(isSelected ? '' : value)}
           >
-            {option}
-          </Text>
-        </TouchableOpacity>
-      ))}
+            <Text style={[styles.pillText, isSelected && styles.pillTextSelected]}>{label}</Text>
+          </TouchableOpacity>
+        );
+      })}
     </ScrollView>
   );
 
   return (
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <TouchableOpacity onPress={() => router.push('/(tabs)/discounts')} style={styles.closeButton}>
+      <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
         <AntDesign name="close" size={24} color="#21555b" />
       </TouchableOpacity>
 
-      <Text style={styles.header}>Filters for discount</Text>
+      <Text style={styles.header}>Filter Discounts</Text>
 
-      {/* Search Input */}
+      {/* Location */}
       <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Search discount near by you</Text>
+        <Text style={styles.label}>Search near a location</Text>
         <View style={styles.inputRow}>
+          <Feather name="map-pin" size={18} color="#DB8633" style={{ marginRight: 8 }} />
           <TextInput
-            placeholder="Search Location"
-            placeholderTextColor="#6d6e72"
+            placeholder="City, State"
+            placeholderTextColor="#aaa"
             value={location}
-            onChangeText={setLocation}
+            onChangeText={handleLocationChange}
             style={styles.input}
+            autoCapitalize="words"
           />
+          {location.length > 0 && (
+            <TouchableOpacity onPress={() => { setLocation(''); setLocationSuggestions([]); }} style={styles.clearX}>
+              <AntDesign name="closecircle" size={16} color="#bbb" />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity onPress={handleUseCurrentLocation} style={styles.iconTouchable}>
-            <Feather name="crosshair" size={20} color="#DB8633" style={styles.icon} />
+            {isLoadingLocation
+              ? <ActivityIndicator size="small" color="#DB8633" />
+              : <Feather name="crosshair" size={20} color="#DB8633" />
+            }
           </TouchableOpacity>
         </View>
+        {locationSuggestions.length > 0 && (
+          <View style={styles.suggestionsBox}>
+            {locationSuggestions.map((s) => (
+              <TouchableOpacity
+                key={s}
+                style={styles.suggestionRow}
+                onPress={() => { setLocation(s); setLocationSuggestions([]); }}
+              >
+                <Feather name="map-pin" size={14} color="#DB8633" style={{ marginRight: 8 }} />
+                <Text style={styles.suggestionText}>{s}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </View>
 
       {/* Radius */}
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>Select radius</Text>
-        {renderHorizontalOptions(radiusOptions, radius, setRadius)}
+        {renderPills(radiusOptions, radius, setRadius)}
+      </View>
+
+      {/* Show Favorites Only */}
+      <View style={styles.fieldGroup}>
+        <Text style={styles.label}>Show favorites only</Text>
+        <TouchableOpacity
+          style={[styles.favToggle, showFavorites && styles.favToggleActive]}
+          onPress={() => setShowFavorites(p => !p)}
+        >
+          {showFavorites
+            ? <AntDesign name="heart" size={18} color="#D0861F" />
+            : <Image source={require('../../../assets/icons/heart.png')} style={{ width: 18, height: 18, tintColor: '#D0861F' }} />
+          }
+          <Text style={[styles.favToggleText, showFavorites && styles.favToggleTextActive]}>
+            {showFavorites ? 'Showing Favorites Only' : 'Show All Favorites'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Discount Type */}
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>Discount type</Text>
-        {renderHorizontalOptions(typeOptions, type, setType)}
+        {renderPills(typeOptions, type, setType)}
       </View>
 
       {/* Availability */}
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>Availability</Text>
-        {renderHorizontalOptions(availabilityOptions, availability, setAvailability)}
-      </View>
-
-      {/* Category Dropdown */}
-      <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Discount category</Text>
-        <TouchableOpacity
-          style={styles.dropdownToggle}
-          onPress={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
-        >
-          <Text style={styles.dropdownToggleText}>{category || 'Select Category'}</Text>
-          <Feather name={isCategoryDropdownOpen ? 'chevron-up' : 'chevron-down'} size={18} color="#666" />
-        </TouchableOpacity>
-        {isCategoryDropdownOpen && (
-          <ScrollView style={styles.dropdownScroll}>
-            {categoryOptions.map((option) => (
-              <TouchableOpacity
-                key={option}
-                style={[
-                  styles.dropdownItem,
-                  category === option && styles.dropdownItemSelected,
-                ]}
-                onPress={() => {
-                  setCategory(option);
-                  setIsCategoryDropdownOpen(false);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.optionText,
-                    category === option && styles.optionTextSelected,
-                  ]}
-                >
-                  {option}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
+        {renderPills(availabilityOptions, availability, setAvailability)}
       </View>
 
       {hasActiveFilters() && (
         <TouchableOpacity style={styles.clearButton} onPress={handleClearFilters}>
-          <Text style={styles.clearButtonText}>Clear Filters</Text>
+          <Text style={styles.clearButtonText}>Clear All Filters</Text>
         </TouchableOpacity>
       )}
       <TouchableOpacity style={styles.button} onPress={handleApplyFilters}>
@@ -192,7 +225,7 @@ const styles = StyleSheet.create({
   closeButton: {
     position: 'absolute',
     top: 16,
-    left: 16,
+    right: 16,
     zIndex: 10,
   },
   header: {
@@ -200,116 +233,125 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#21555b',
     marginTop: 48,
-    marginBottom: 16,
+    marginBottom: 20,
   },
   fieldGroup: {
     marginBottom: 24,
   },
   label: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#324E58',
-    fontWeight: '500',
+    fontWeight: '600',
     marginBottom: 10,
   },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f5f5fa',
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: 10,
+    borderWidth: 1.5,
     borderColor: '#e1e1e5',
-    paddingHorizontal: 15,
+    paddingHorizontal: 12,
+    height: 50,
   },
   input: {
     flex: 1,
-    height: 48,
-    fontSize: 16,
+    fontSize: 15,
     color: '#324E58',
   },
-  icon: {
-    marginLeft: 8,
+  clearX: {
+    padding: 4,
+    marginRight: 4,
   },
   iconTouchable: {
-    padding: 8,
+    padding: 6,
+    marginLeft: 4,
+  },
+  suggestionsBox: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    marginTop: 6,
+    overflow: 'hidden',
+  },
+  suggestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  suggestionText: {
+    fontSize: 14,
+    color: '#324E58',
   },
   scrollRow: {
     flexDirection: 'row',
   },
-  optionPill: {
+  pill: {
     backgroundColor: '#f5f5fa',
-    paddingVertical: 10,
+    paddingVertical: 9,
     paddingHorizontal: 16,
     borderRadius: 20,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#e1e1e5',
     marginRight: 8,
   },
-  optionSelected: {
+  pillSelected: {
     backgroundColor: '#FFF5EB',
     borderColor: '#D0861F',
   },
-  optionText: {
+  pillText: {
     fontSize: 14,
     color: '#666',
+    fontWeight: '500',
   },
-  optionTextSelected: {
+  pillTextSelected: {
+    color: '#D0861F',
+    fontWeight: '700',
+  },
+  favToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#f5f5fa',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#e1e1e5',
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+  },
+  favToggleActive: {
+    backgroundColor: '#FFF5EB',
+    borderColor: '#D0861F',
+  },
+  favToggleText: {
+    fontSize: 15,
+    color: '#324E58',
+    fontWeight: '500',
+  },
+  favToggleTextActive: {
     color: '#D0861F',
     fontWeight: '600',
   },
-  dropdownToggle: {
-    backgroundColor: '#f5f5fa',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e1e1e5',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  dropdownToggleText: {
-    fontSize: 16,
-    color: '#324E58',
-  },
-  dropdownScroll: {
-    maxHeight: 180,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    paddingVertical: 4,
-  },
-  dropdownItem: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#f5f5fa',
-    borderWidth: 1,
-    borderColor: '#e1e1e5',
-    marginVertical: 4,
-    marginHorizontal: 4,
-  },
-  dropdownItemSelected: {
-    backgroundColor: '#FFF5EB',
-    borderColor: '#D0861F',
-  },
   clearButton: {
     backgroundColor: 'transparent',
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 14,
+    borderRadius: 10,
     alignItems: 'center',
-    marginTop: 16,
-    borderWidth: 1,
+    marginTop: 8,
+    borderWidth: 1.5,
     borderColor: '#e1e1e5',
   },
   clearButtonText: {
     color: '#666',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
   },
   button: {
-    backgroundColor: '#D0861F',
+    backgroundColor: '#21555b',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -318,6 +360,6 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });

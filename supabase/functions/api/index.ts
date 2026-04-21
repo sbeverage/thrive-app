@@ -3031,6 +3031,7 @@ async function handleAdminDiscounts(
       endDate,
       isActive,
       terms,
+      availability,
     } = body;
 
     if (!vendorId || !title) {
@@ -3083,6 +3084,7 @@ async function handleAdminDiscounts(
       end_date: endDate || null,
       is_active: isActive !== undefined ? isActive : true,
       terms: terms || null,
+      availability: availability || null,
     };
 
     // Explicitly remove any fields that don't exist in the database
@@ -3207,6 +3209,7 @@ async function handleAdminDiscounts(
       endDate,
       isActive,
       terms,
+      availability,
     } = body;
 
     // Ensure tags is array for JSONB
@@ -3244,6 +3247,7 @@ async function handleAdminDiscounts(
       end_date: endDate || null,
       is_active: isActive !== undefined ? isActive : true,
       terms: terms || null,
+      availability: availability || null,
       updated_at: new Date().toISOString(),
     };
 
@@ -13907,6 +13911,7 @@ async function handleDiscountRoute(
           endDate: discount.end_date,
           isActive: discount.is_active,
           terms: discount.terms,
+          availability: discount.availability || null,
           createdAt: discount.created_at,
           updatedAt: discount.updated_at,
           vendor: discount.vendor || null,

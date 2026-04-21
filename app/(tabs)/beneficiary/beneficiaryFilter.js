@@ -13,29 +13,32 @@ import {
 import { Feather, AntDesign } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useBeneficiaryFilter } from '../../context/BeneficiaryFilterContext';
+import { useLocation } from '../../context/LocationContext';
 
 const typeOptions = ['Small', 'Medium', 'Large'];
+// Must match the categories used in the charities table
 const causeOptions = [
-  'Childhood Illness',
-  'Foster Care',
-  'Disabilities',
-  'Mental Health',
   'Animal Welfare',
-  'Anti-Human Trafficking',
-  'Rehabilitation',
-  'Low Income Families',
+  'Arts & Culture',
+  'Childhood Illness',
+  'Disabilities',
+  'Disaster Relief',
   'Education',
-];
-const emergencyOptions = [
-  'Myanmar Earthquake',
-  '2025 U.S. South/Midwest Tornadoes',
-  'Kentucky Flooding',
+  'Elderly Care',
+  'Environment',
+  'Healthcare',
+  'Homelessness',
+  'Hunger Relief',
+  'International Aid',
+  'Low Income Families',
+  'Veterans',
+  'Youth Development',
 ];
 
 export default function BeneficiaryFilter() {
   const { filters, updateFilters } = useBeneficiaryFilter();
   const [isCauseDropdownOpen, setIsCauseDropdownOpen] = useState(false);
-  const [isEmergencyDropdownOpen, setIsEmergencyDropdownOpen] = useState(false);
+  const { locationAddress, refreshLocation, locationPermission, checkLocationPermission } = useLocation();
   const router = useRouter();
 
   const handleApplyFilters = () => {
@@ -78,13 +81,30 @@ export default function BeneficiaryFilter() {
         <Text style={styles.label}>Search nearby you</Text>
         <View style={styles.inputRow}>
           <TextInput
-            placeholder="Search Location"
-            placeholderTextColor="#6d6e72"
+            placeholder={locationAddress?.city ? `${locationAddress.city}, ${locationAddress.state}` : 'City, State'}
+            placeholderTextColor="#aaa"
             value={filters.location}
             onChangeText={(text) => updateFilters({ location: text })}
             style={styles.input}
+            autoCapitalize="words"
           />
-          <Feather name="crosshair" size={20} color="#666" style={styles.icon} />
+          {filters.location.length > 0 && (
+            <TouchableOpacity onPress={() => updateFilters({ location: '' })} style={{ padding: 4, marginRight: 4 }}>
+              <AntDesign name="closecircle" size={16} color="#bbb" />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={async () => {
+              if (locationPermission !== 'granted') { checkLocationPermission(); return; }
+              await refreshLocation();
+              if (locationAddress?.city && locationAddress?.state) {
+                updateFilters({ location: `${locationAddress.city}, ${locationAddress.state}` });
+              }
+            }}
+            style={styles.iconTouchable}
+          >
+            <Feather name="crosshair" size={20} color="#DB8633" />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -151,36 +171,6 @@ export default function BeneficiaryFilter() {
         {renderOptions(typeOptions, filters.type, (type) => updateFilters({ type }))}
       </View>
 
-      {/* Emergency Dropdown */}
-      <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Who needs help now?</Text>
-        <TouchableOpacity
-          style={styles.dropdownToggle}
-          onPress={() => setIsEmergencyDropdownOpen(!isEmergencyDropdownOpen)}
-        >
-          <Text style={styles.dropdownToggleText}>{filters.emergency || 'Choose an Emergency Relief Program'}</Text>
-          <Feather name={isEmergencyDropdownOpen ? 'chevron-up' : 'chevron-down'} size={18} color="#666" />
-        </TouchableOpacity>
-        {isEmergencyDropdownOpen && (
-          <ScrollView style={styles.dropdownScroll}>
-            {emergencyOptions.map(option => (
-              <TouchableOpacity
-                key={option}
-                style={[styles.dropdownItem, filters.emergency === option && styles.dropdownItemSelected]}
-                onPress={() => {
-                  updateFilters({ emergency: option });
-                  setIsEmergencyDropdownOpen(false);
-                }}
-              >
-                <Text style={[styles.optionText, filters.emergency === option && styles.optionTextSelected]}>
-                  {option}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
-      </View>
-
       {/* Continue Button */}
       <TouchableOpacity style={styles.button} onPress={handleApplyFilters}>
         <Text style={styles.buttonText}>Apply Filters</Text>
@@ -230,6 +220,10 @@ const styles = StyleSheet.create({
   },
   icon: {
     marginLeft: 8,
+  },
+  iconTouchable: {
+    padding: 6,
+    marginLeft: 4,
   },
   optionsContainer: {
     flexDirection: 'row',

@@ -17,6 +17,7 @@ export const DiscountFilterProvider = ({ children }) => {
     type: '',
     category: '',
     availability: '',
+    showFavorites: false,
   });
 
   const updateFilters = (newFilters) => {
@@ -30,6 +31,7 @@ export const DiscountFilterProvider = ({ children }) => {
       type: '',
       category: '',
       availability: '',
+      showFavorites: false,
     });
   };
 
@@ -39,7 +41,8 @@ export const DiscountFilterProvider = ({ children }) => {
       filters.radius ||
       filters.type ||
       filters.category ||
-      filters.availability
+      filters.availability ||
+      filters.showFavorites
     );
   };
 

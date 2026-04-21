@@ -51,7 +51,7 @@ export default function AppLayout() {
       <BeneficiaryProvider>
         <View style={{ flex: 1, backgroundColor: '#fff' }}>
           {/* Only apply paddingBottom if footer is visible */}
-          <View style={{ flex: 1, paddingBottom: hideFooter ? 0 : 60 }}>
+          <View style={{ flex: 1, paddingBottom: hideFooter ? 0 : 46 }}>
             <Slot />
           </View>
 
@@ -99,12 +99,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: '#ffffff',
-    height: 60,
+    height: 46,
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'flex-start',
     zIndex: 99,
-    paddingBottom: 8,
+    paddingBottom: 0,
     paddingTop: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
@@ -116,7 +116,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-start',
     flex: 1,
-    marginTop: -18,
+    marginTop: -22,
   },
   iconContainer: {
     width: 50,

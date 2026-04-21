@@ -51,7 +51,7 @@ export default function DiscountsScreen() {
   const { location: userLocation, locationAddress, locationPermission, checkLocationPermission, refreshLocation, isLoadingLocation } = useLocation();
 
   // Filter context
-  const { filters, updateFilters } = useDiscountFilter();
+  const { filters, updateFilters, hasActiveFilters } = useDiscountFilter();
   const [locationSearch, setLocationSearch] = useState(''); // Location filter from main screen (tap location row to search)
   const [activeScope, setActiveScope] = useState('All');
   const [favorites, setFavorites] = useState(new Set());
@@ -290,8 +290,11 @@ export default function DiscountsScreen() {
   // Map filter type options to discount type values
   const typeFilterMap = {
     'Percentage': 'percentage',
+    'Fixed Amount': 'fixed',
+    'Buy 1 Get 1': 'bogo',
     'Buy One Get One': 'bogo',
     'Free Item': 'free',
+    'Free': 'free',
   };
 
   const filteredVendors = transformedVendors.filter(v => {
@@ -368,6 +371,21 @@ export default function DiscountsScreen() {
       }
     }
 
+    // Availability filter
+    let matchesAvailability = true;
+    if (filters.availability) {
+      const avMap = { 'In-Store': 'in-store', 'Online': 'online', 'Both': 'both' };
+      const target = avMap[filters.availability] || filters.availability.toLowerCase();
+      const vendorDiscounts = discounts.filter(d =>
+        (d.vendorId?.toString() || d.vendorId) === (v.id?.toString() || v.id)
+      );
+      matchesAvailability = vendorDiscounts.some(d => {
+        const av = (d.availability || '').toLowerCase();
+        if (target === 'both') return av === 'both' || av === 'in-store' || av === 'online';
+        return av === target || av === 'both' || av === '';
+      });
+    }
+
     // Scope filter
     let matchesScope = true;
     if (activeScope === 'Nearby') {
@@ -384,7 +402,10 @@ export default function DiscountsScreen() {
       matchesScope = favorites.has(String(v.id));
     }
 
-    return matchesSearch && matchesLocation && matchesRadius && matchesType && matchesCategory && matchesScope;
+    // showFavorites filter from filter screen
+    const matchesFavoritesFilter = !filters.showFavorites || favorites.has(String(v.id));
+
+    return matchesSearch && matchesLocation && matchesRadius && matchesType && matchesCategory && matchesScope && matchesAvailability && matchesFavoritesFilter;
   });
 
   // Count vendors per category for badge display (scope + search applied, category not applied)
@@ -534,11 +555,14 @@ export default function DiscountsScreen() {
             onChangeText={setSearchQuery}
             style={styles.searchInput}
           />
-          <TouchableOpacity onPress={() => router.push('/(tabs)/discounts/filter')} style={{ marginLeft: 10 }}>
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)/discounts/filter')}
+            style={[styles.filterIconBtn, hasActiveFilters() && styles.filterIconBtnActive]}
+          >
             {Platform.OS === 'web' ? (
               <Text style={{ fontSize: 22 }}>🔽</Text>
             ) : (
-              <Feather name="filter" size={22} color="#DB8633" />
+              <Feather name="filter" size={20} color={hasActiveFilters() ? '#fff' : '#DB8633'} />
             )}
           </TouchableOpacity>
         </View>
@@ -985,6 +1009,20 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   toggleActive: {
+    backgroundColor: '#21555b',
+  },
+  filterIconBtn: {
+    marginLeft: 10,
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#FFF5EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#DB8633',
+  },
+  filterIconBtnActive: {
     backgroundColor: '#DB8633',
   },
   toggleText: {
