@@ -506,20 +506,26 @@ export default function MainHome() {
                 </View>
               </View>
               
-              {/* Badges Display */}
-              {badges.length > 0 && (
-                <View style={styles.homeBadgesContainer}>
-                  <Text style={styles.homeBadgesLabel}>Your Badges</Text>
-                  <View style={styles.homeBadgesList}>
-                    {badges.map((badge, index) => (
-                      <View key={index} style={styles.homeBadgeItem}>
-                        <AntDesign name="star" size={20} color="#DB8633" />
-                        <Text style={styles.homeBadgeName}>{badge.name}</Text>
+              {/* Badges Display — always show all tiers */}
+              <View style={styles.homeBadgesContainer}>
+                <Text style={styles.homeBadgesLabel}>Recognition Badges</Text>
+                <View style={styles.homeBadgesList}>
+                  {REFERRAL_TIERS.map((tier, index) => {
+                    const unlocked = paidFriendsCount >= tier.count;
+                    return (
+                      <View key={index} style={[styles.homeBadgeItem, !unlocked && styles.homeBadgeItemLocked]}>
+                        <AntDesign name="star" size={20} color={unlocked ? '#DB8633' : '#ccc'} />
+                        <Text style={[styles.homeBadgeName, !unlocked && styles.homeBadgeNameLocked]}>
+                          {tier.shortLabel}
+                        </Text>
+                        {!unlocked && (
+                          <Text style={styles.homeBadgeLockHint}>{tier.count} friend{tier.count > 1 ? 's' : ''}</Text>
+                        )}
                       </View>
-                    ))}
-                  </View>
+                    );
+                  })}
                 </View>
-              )}
+              </View>
               
               <View style={styles.inviteProgressContainer}>
                 <Text style={styles.inviteProgressText}>
@@ -830,6 +836,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#324E58',
+  },
+  homeBadgeItemLocked: {
+    borderColor: '#ddd',
+    backgroundColor: '#f7f7f7',
+    opacity: 0.7,
+  },
+  homeBadgeNameLocked: {
+    color: '#aaa',
+  },
+  homeBadgeLockHint: {
+    fontSize: 10,
+    color: '#bbb',
+    fontStyle: 'italic',
   },
   inviteProgressContainer: {
     alignItems: 'center',
