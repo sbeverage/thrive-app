@@ -2026,6 +2026,91 @@ async function getJwtPayload(authHeader: string | null): Promise<any | null> {
   }
 }
 
+async function handleFeedbackRoute(
+  req: Request,
+  supabase: any,
+  userId: string | null,
+): Promise<Response> {
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 405,
+    });
+  }
+
+  const body = await req.json();
+  const { rating, feedbackType, message } = body;
+
+  if (!rating || !message?.trim()) {
+    return new Response(JSON.stringify({ error: "Rating and message are required." }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 400,
+    });
+  }
+
+  let userName = "App User";
+  let userEmail = "unknown";
+  if (userId) {
+    const { data: userData } = await supabase
+      .from("users")
+      .select("first_name, last_name, email")
+      .eq("id", userId)
+      .single();
+    if (userData) {
+      userName = `${userData.first_name || ""} ${userData.last_name || ""}`.trim() || "App User";
+      userEmail = userData.email || "unknown";
+    }
+  }
+
+  const ratingLabel = ["", "Poor", "Fair", "Good", "Very Good", "Excellent"][rating] || rating;
+  const typeLabel = feedbackType || "general";
+
+  const emailHtml = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <h2 style="color:#DB8633">New App Feedback</h2>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
+        <tr><td style="padding:8px;font-weight:600;color:#324E58;width:140px">From</td><td style="padding:8px;color:#555">${userName} (${userEmail})</td></tr>
+        <tr style="background:#f9f9f9"><td style="padding:8px;font-weight:600;color:#324E58">Type</td><td style="padding:8px;color:#555">${typeLabel}</td></tr>
+        <tr><td style="padding:8px;font-weight:600;color:#324E58">Rating</td><td style="padding:8px;color:#555">${rating}/5 — ${ratingLabel}</td></tr>
+      </table>
+      <div style="background:#fafafa;border-left:4px solid #DB8633;padding:16px;border-radius:4px">
+        <p style="margin:0;color:#324E58;line-height:1.6">${message.replace(/\n/g, "<br>")}</p>
+      </div>
+      <p style="margin-top:24px;font-size:12px;color:#aaa">Sent from THRIVE app</p>
+    </div>
+  `;
+
+  const emailService = Deno.env.get("EMAIL_SERVICE") || "resend";
+  const toEmail = "info@jointhriveinitiative.org";
+
+  try {
+    if (emailService === "resend") {
+      const resendApiKey = Deno.env.get("RESEND_API_KEY");
+      if (!resendApiKey) {
+        console.warn("⚠️ RESEND_API_KEY not set — feedback not emailed");
+      } else {
+        await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${resendApiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from: "THRIVE App <noreply@jointhriveinitiative.org>",
+            to: [toEmail],
+            subject: `[THRIVE Feedback] ${typeLabel} — ${ratingLabel} (${rating}/5)`,
+            html: emailHtml,
+          }),
+        });
+      }
+    }
+  } catch (e) {
+    console.error("Failed to send feedback email:", e);
+  }
+
+  return new Response(JSON.stringify({ success: true }), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    status: 200,
+  });
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -2297,6 +2382,10 @@ serve(async (req) => {
     // Webhooks routes
     else if (route.startsWith("/webhooks")) {
       response = await handleWebhookRoute(req, supabase, route, method);
+    }
+    // Feedback route
+    else if (route === "/feedback") {
+      response = await handleFeedbackRoute(req, supabase, userId);
     }
     // Health check
     else if (route === "/" || route === "/health") {

@@ -16,12 +16,14 @@ import {
 import { AntDesign, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import API from '../../lib/api';
 
 export default function FeedbackScreen() {
   const router = useRouter();
   const [rating, setRating] = useState(0);
   const [feedback, setFeedback] = useState('');
   const [feedbackType, setFeedbackType] = useState('general');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const feedbackTypes = [
     { id: 'general', label: 'General', icon: 'message-circle' },
@@ -34,36 +36,36 @@ export default function FeedbackScreen() {
     setRating(value);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (rating === 0) {
       Alert.alert('Rating Required', 'Please select a rating before submitting feedback.');
       return;
     }
-    
     if (!feedback.trim()) {
       Alert.alert('Feedback Required', 'Please write your feedback before submitting.');
       return;
     }
 
-    // You can later send this data to your backend
-    console.log('Rating:', rating);
-    console.log('Feedback Type:', feedbackType);
-    console.log('Feedback:', feedback);
-    
-    Alert.alert(
-      '🎉 Thank You!',
-      'Your feedback has been submitted successfully. We appreciate your input!',
-      [
-        { 
-          text: 'OK', 
+    setIsSubmitting(true);
+    try {
+      await API.submitFeedback({ rating, feedbackType, message: feedback.trim() });
+      Alert.alert(
+        'Thank You!',
+        'Your feedback has been submitted. We appreciate your input!',
+        [{
+          text: 'OK',
           onPress: () => {
             setRating(0);
             setFeedback('');
             setFeedbackType('general');
-          }
-        }
-      ]
-    );
+          },
+        }],
+      );
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Something went wrong. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -184,26 +186,26 @@ export default function FeedbackScreen() {
         </View>
 
         {/* Submit Button */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[
             styles.submitButton,
-            (!rating || !feedback.trim()) && styles.submitButtonDisabled
-          ]} 
+            (!rating || !feedback.trim() || isSubmitting) && styles.submitButtonDisabled
+          ]}
           onPress={handleSubmit}
-          disabled={!rating || !feedback.trim()}
+          disabled={!rating || !feedback.trim() || isSubmitting}
         >
           <LinearGradient
-            colors={rating && feedback.trim() ? ["#DB8633", "#E5A04A"] : ["#E2E8F0", "#CBD5E1"]}
+            colors={rating && feedback.trim() && !isSubmitting ? ["#DB8633", "#E5A04A"] : ["#E2E8F0", "#CBD5E1"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.submitButtonGradient}
           >
-            <Feather name="send" size={20} color={rating && feedback.trim() ? "#ffffff" : "#9CA3AF"} />
+            <Feather name="send" size={20} color={rating && feedback.trim() && !isSubmitting ? "#ffffff" : "#9CA3AF"} />
             <Text style={[
               styles.submitButtonText,
-              (!rating || !feedback.trim()) && styles.submitButtonTextDisabled
+              (!rating || !feedback.trim() || isSubmitting) && styles.submitButtonTextDisabled
             ]}>
-              Send Feedback
+              {isSubmitting ? 'Sending...' : 'Send Feedback'}
             </Text>
           </LinearGradient>
         </TouchableOpacity>

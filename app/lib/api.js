@@ -1933,6 +1933,16 @@ const API = {
     }
   },
 
+  submitFeedback: async ({ rating, feedbackType, message }) => {
+    try {
+      const response = await api.post("/api/feedback", { rating, feedbackType, message });
+      return response.data;
+    } catch (error) {
+      console.error("Submit feedback failed:", error);
+      throw new Error(error.response?.data?.message || "Failed to submit feedback.");
+    }
+  },
+
   /**
    * Get invitation history
    * Returns: { invitations: [...] }
