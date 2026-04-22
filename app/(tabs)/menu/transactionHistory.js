@@ -177,6 +177,8 @@ export default function TransactionHistory() {
 
           return {
             id: t.id,
+            giftId: t.gift_id ?? null,
+            donationId: t.donation_id ?? null,
             type: t.type,
             brand: brandName,
             date: new Date(t.created_at).toLocaleDateString("en-US", {
@@ -201,11 +203,27 @@ export default function TransactionHistory() {
           };
         });
 
+        // Deduplicate backend transactions by gift_id / donation_id
+        // (Stripe webhook retries can insert the same gift twice)
+        const seenGiftIds = new Set();
+        const seenDonationIds = new Set();
+        const dedupedBackend = transformedBackend.filter((t) => {
+          if (t.giftId) {
+            if (seenGiftIds.has(t.giftId)) return false;
+            seenGiftIds.add(t.giftId);
+          }
+          if (t.donationId) {
+            if (seenDonationIds.has(t.donationId)) return false;
+            seenDonationIds.add(t.donationId);
+          }
+          return true;
+        });
+
         // Merge: server is source of truth — only add locals whose id is NOT on the server
         // (e.g. discount redemption saved offline). Previously we prepended almost all cached
         // rows again and doubled history, inflating Total Spent.
         const backendIdSet = new Set(
-          transformedBackend.map((t) => String(t.id)),
+          dedupedBackend.map((t) => String(t.id)),
         );
         const localOnly = localTransactions.filter(
           (t) =>
@@ -213,7 +231,7 @@ export default function TransactionHistory() {
             String(t.id).trim() !== "" &&
             !backendIdSet.has(String(t.id)),
         );
-        const merged = [...transformedBackend, ...localOnly].sort((a, b) => {
+        const merged = [...dedupedBackend, ...localOnly].sort((a, b) => {
           const dateA = new Date(a.date);
           const dateB = new Date(b.date);
           return dateB - dateA;

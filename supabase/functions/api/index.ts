@@ -15625,20 +15625,23 @@ async function handleWebhookRoute(
                 .eq("id", gift.user_id);
             }
 
-            // Create transaction record
-            await supabase.from("transactions").insert([
-              {
-                user_id: gift.user_id,
-                type: "one_time_gift",
-                amount: parseFloat(gift.amount),
-                description: `One-time gift to beneficiary ${gift.beneficiary_id}`,
-                reference_id: gift.id,
-                reference_type: "gift",
-                gift_id: gift.id,
-                beneficiary_id: gift.beneficiary_id,
-                status: "completed",
-              },
-            ]);
+            // Create transaction record — upsert on gift_id to be idempotent
+            await supabase.from("transactions").upsert(
+              [
+                {
+                  user_id: gift.user_id,
+                  type: "one_time_gift",
+                  amount: parseFloat(gift.amount),
+                  description: `One-time gift to beneficiary ${gift.beneficiary_id}`,
+                  reference_id: gift.id,
+                  reference_type: "gift",
+                  gift_id: gift.id,
+                  beneficiary_id: gift.beneficiary_id,
+                  status: "completed",
+                },
+              ],
+              { onConflict: "gift_id", ignoreDuplicates: true },
+            );
 
             console.log("✅ Gift updated to succeeded:", gift.id);
           }
@@ -15773,20 +15776,23 @@ async function handleWebhookRoute(
                 })
                 .eq("id", donation.id);
 
-              // Create transaction record
-              await supabase.from("transactions").insert([
-                {
-                  user_id: donation.user_id,
-                  type: "monthly_donation",
-                  amount: amount,
-                  description: `Monthly donation to beneficiary ${donation.beneficiary_id}`,
-                  reference_id: donation.id,
-                  reference_type: "donation",
-                  donation_id: donation.id,
-                  beneficiary_id: donation.beneficiary_id,
-                  status: "completed",
-                },
-              ]);
+              // Create transaction record — upsert on stripe_invoice_id to be idempotent
+              await supabase.from("transactions").upsert(
+                [
+                  {
+                    user_id: donation.user_id,
+                    type: "monthly_donation",
+                    amount: amount,
+                    description: `Monthly donation to beneficiary ${donation.beneficiary_id}`,
+                    reference_id: invoice.id,
+                    reference_type: "donation",
+                    donation_id: donation.id,
+                    beneficiary_id: donation.beneficiary_id,
+                    status: "completed",
+                  },
+                ],
+                { onConflict: "reference_id", ignoreDuplicates: true },
+              );
 
               console.log(
                 "✅ Monthly donation payment succeeded:",
