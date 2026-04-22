@@ -563,7 +563,7 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   headerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  logo: { width: 130, height: 40 },
+  logo: { width: 160, height: 50 },
   rightIcons: { flexDirection: 'row', alignItems: 'center' },
   iconButton: { marginLeft: 12 },
   iconWhite: { width: 22, height: 22, resizeMode: 'contain', tintColor: 'white' },
