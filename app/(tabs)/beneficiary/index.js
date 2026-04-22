@@ -48,6 +48,7 @@ export default function BeneficiaryScreen() {
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
   const [pendingBeneficiary, setPendingBeneficiary] = useState(null);
   const [favorites, setFavorites] = useState([]);
+  const beneficiarySectionRef = useRef(null);
   
   // Load favorites from AsyncStorage on mount
   // IMPORTANT: Favorites should ONLY be set when the user explicitly selects them.
@@ -726,7 +727,8 @@ export default function BeneficiaryScreen() {
                             style={styles.changeToThisButton}
                             onPress={(e) => {
                               e.stopPropagation();
-                              setSelectedBeneficiary(b);
+                              setPendingBeneficiary(b);
+                              setConfirmModalVisible(true);
                             }}
                           >
                             <Text style={styles.changeToThisButtonText}>Select</Text>

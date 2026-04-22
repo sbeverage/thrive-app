@@ -484,21 +484,23 @@ export default function DiscountDetails() {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.contactRow} onPress={handleAddress}>
-          {Platform.OS === 'web' ? (
-            <Text style={{ fontSize: 20, marginRight: 12 }}>📍</Text>
-          ) : (
-            <Feather name="map-pin" size={20} color="#DB8633" />
-          )}
-          <Text style={styles.contactText}>
-            {discount.vendor.address.street}, {discount.vendor.address.city}, {discount.vendor.address.state} {discount.vendor.address.zipCode}
-          </Text>
-          {Platform.OS === 'web' ? (
-            <Text style={{ fontSize: 16, color: '#8E9BAE' }}>›</Text>
-          ) : (
-            <AntDesign name="right" size={16} color="#8E9BAE" />
-          )}
-        </TouchableOpacity>
+        {discount.vendor?.address && (
+          <TouchableOpacity style={styles.contactRow} onPress={handleAddress}>
+            {Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 20, marginRight: 12 }}>📍</Text>
+            ) : (
+              <Feather name="map-pin" size={20} color="#DB8633" />
+            )}
+            <Text style={styles.contactText}>
+              {[discount.vendor.address.street, discount.vendor.address.city, discount.vendor.address.state, discount.vendor.address.zipCode].filter(Boolean).join(', ')}
+            </Text>
+            {Platform.OS === 'web' ? (
+              <Text style={{ fontSize: 16, color: '#8E9BAE' }}>›</Text>
+            ) : (
+              <AntDesign name="right" size={16} color="#8E9BAE" />
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Social Links */}
