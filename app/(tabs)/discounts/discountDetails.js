@@ -365,7 +365,15 @@ export default function DiscountDetails() {
           </View>
         </View>
         
-        <Text style={styles.vendorDescription}>{discount.vendor.description}</Text>
+        {(() => {
+          let desc = discount.vendor.description;
+          if (desc && typeof desc === 'string') {
+            try { desc = JSON.parse(desc).description || desc; } catch {}
+          } else if (desc && typeof desc === 'object') {
+            desc = desc.description || null;
+          }
+          return desc ? <Text style={styles.vendorDescription}>{desc}</Text> : null;
+        })()}
       </View>
 
       {/* Usage Limit Display */}

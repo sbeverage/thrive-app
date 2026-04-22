@@ -346,8 +346,8 @@ export default function DiscountsScreen() {
       setMapRegion({
         latitude: userLocation.latitude,
         longitude: userLocation.longitude,
-        latitudeDelta: 0.0922,
-        longitudeDelta: 0.0421,
+        latitudeDelta: 0.04,
+        longitudeDelta: 0.04,
       });
     }
   };
@@ -421,8 +421,8 @@ export default function DiscountsScreen() {
       setMapRegion({
         latitude: userLocation.latitude,
         longitude: userLocation.longitude,
-        latitudeDelta: 0.0922,
-        longitudeDelta: 0.0421,
+        latitudeDelta: 0.04,
+        longitudeDelta: 0.04,
       });
     } else if (locationPermission === 'denied') {
       setLocationDisplay('Location not available');
@@ -432,19 +432,10 @@ export default function DiscountsScreen() {
   }, [userLocation, locationAddress, locationPermission]);
 
   const handleViewDetails = (vendor) => {
-    setSelectedMarker(null); // Close info window
-    // Find the discount for this vendor
-    const vendorDiscount = discounts.find(d => d.vendorId === vendor.id || d.vendorId === vendor.id.toString());
-    if (vendorDiscount) {
-      // Navigate to discount details page
-      router.push({
-        pathname: '/(tabs)/discounts/discountDetails',
-        params: { discountId: vendorDiscount.id }
-      });
-    } else {
-      // If no discount found, still navigate to vendor page as fallback
-      router.push(`/discounts/${vendor.id}`);
-    }
+    setSelectedMarker(null);
+    // Switch to list view and search for this vendor so user sees all their discounts
+    setShowMap(false);
+    setSearchQuery(vendor.brandName);
   };
 
   const handleGetDirections = (vendor) => {
@@ -580,33 +571,35 @@ export default function DiscountsScreen() {
                 showsTraffic={false}
                 showsIndoors={false}
               >
-                {/* Test marker to verify map is working */}
-                <Marker
-                  coordinate={{
-                    latitude: 34.0754,
-                    longitude: -84.2941,
-                  }}
-                  title="Test Marker - Alpharetta"
-                  description="This is a test marker in Alpharetta"
-                  pinColor="red"
-                />
-                
-                {filteredVendors.map((vendor) => {
-                  console.log('Rendering marker for:', vendor.brandName, 'at:', vendor.latitude, vendor.longitude);
-                  return (
-                    <Marker
-                      key={vendor.id}
-                      coordinate={{
-                        latitude: vendor.latitude || 34.0522,
-                        longitude: vendor.longitude || -118.2437,
-                      }}
-                      title={vendor.brandName}
-                      description={vendor.category}
-                      onPress={() => setSelectedMarker(vendor)}
-                      pinColor="#DB8633"
-                    />
-                  );
-                })}
+                {filteredVendors.map((vendor) => (
+                  <Marker
+                    key={vendor.id}
+                    coordinate={{
+                      latitude: vendor.latitude || DEFAULT_LAT,
+                      longitude: vendor.longitude || DEFAULT_LNG,
+                    }}
+                    onPress={() => setSelectedMarker(vendor)}
+                    tracksViewChanges={false}
+                  >
+                    <View style={styles.customMarkerContainer}>
+                      <View style={styles.customMarkerBubble}>
+                        {vendor.imageUrl ? (
+                          <Image
+                            source={{ uri: vendor.imageUrl }}
+                            style={styles.customMarkerLogo}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <Feather name="tag" size={12} color="#fff" />
+                        )}
+                        <Text style={styles.customMarkerText} numberOfLines={1}>
+                          {vendor.brandName}
+                        </Text>
+                      </View>
+                      <View style={styles.customMarkerTail} />
+                    </View>
+                  </Marker>
+                ))}
               </MapView>
             )}
             
@@ -614,7 +607,13 @@ export default function DiscountsScreen() {
             {selectedMarker && (
               <View style={styles.infoWindow}>
                 <View style={styles.infoWindowHeader}>
-                  <Image source={selectedMarker.imageUrl} style={styles.infoWindowLogo} />
+                  {selectedMarker.imageUrl ? (
+                    <Image source={{ uri: selectedMarker.imageUrl }} style={styles.infoWindowLogo} resizeMode="cover" />
+                  ) : (
+                    <View style={[styles.infoWindowLogo, styles.infoWindowLogoFallback]}>
+                      <Feather name="tag" size={22} color="#21555b" />
+                    </View>
+                  )}
                   <View style={styles.infoWindowText}>
                     <Text style={styles.infoWindowTitle}>{selectedMarker.brandName}</Text>
                     <Text style={styles.infoWindowCategory}>{selectedMarker.category}</Text>
@@ -1157,6 +1156,51 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
+  },
+  customMarkerContainer: {
+    alignItems: 'center',
+  },
+  customMarkerBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#21555b',
+    borderRadius: 20,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+    maxWidth: 160,
+    gap: 5,
+  },
+  customMarkerLogo: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#fff',
+  },
+  customMarkerText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    flexShrink: 1,
+  },
+  customMarkerTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 7,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#21555b',
+  },
+  infoWindowLogoFallback: {
+    backgroundColor: '#e8f0f1',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

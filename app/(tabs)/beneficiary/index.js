@@ -255,15 +255,19 @@ export default function BeneficiaryScreen() {
   const highlightedBeneficiaries = filteredBeneficiaries.slice(0, 2);
   const remainingBeneficiaries = filteredBeneficiaries.slice(2);
 
-  const handleConfirmBeneficiary = () => {
-    if (pendingBeneficiary) {
-      setSelectedBeneficiary(pendingBeneficiary);
-      setSuccessMessage("Awesome! You've selected your cause!");
-      setShowSuccessModal(true);
-      setConfettiTrigger(true);
-      setConfirmModalVisible(false);
-      setPendingBeneficiary(null);
+  const handleConfirmBeneficiary = async () => {
+    if (!pendingBeneficiary) return;
+    setConfirmModalVisible(false);
+    try {
+      await API.saveProfile({ beneficiary: pendingBeneficiary.id });
+    } catch (e) {
+      console.warn('⚠️ Could not persist beneficiary to server:', e.message);
     }
+    setSelectedBeneficiary(pendingBeneficiary);
+    setSuccessMessage("Awesome! You've selected your cause!");
+    setShowSuccessModal(true);
+    setConfettiTrigger(true);
+    setPendingBeneficiary(null);
   };
 
   const toggleFavorite = id => {
