@@ -461,11 +461,9 @@ export default function BeneficiaryScreen() {
             >
               <View style={styles.tagContent}>
                 {tag === 'Favorites' && (
-                  <MaterialIcons 
-                    name="favorite-border" 
-                    size={14} 
-                    color={activeCategory === tag ? '#fff' : '#666'} 
-                    style={styles.tagIcon} 
+                  <Image
+                    source={require('../../../assets/icons/heart.png')}
+                    style={[styles.tagIcon, { width: 14, height: 14, tintColor: activeCategory === tag ? '#D0861F' : '#666' }]}
                   />
                 )}
                 <Text style={[styles.tagText, activeCategory === tag && styles.tagTextActive]}>{tag}</Text>
@@ -949,7 +947,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   toggleActive: {
-    backgroundColor: '#DB8633',
+    backgroundColor: '#21555b',
   },
   toggleText: {
     fontSize: 14,
@@ -1047,7 +1045,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   viewDetailsButton: {
-    backgroundColor: '#f5f5fa',
+    backgroundColor: '#FFF5EB',
     borderWidth: 1,
     borderColor: '#DB8633',
     borderRadius: 8,

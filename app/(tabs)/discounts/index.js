@@ -542,10 +542,9 @@ export default function DiscountsScreen() {
               onPress={() => updateFilters({ showFavorites: !filters.showFavorites, category: '' })}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                <AntDesign
-                  name={filters.showFavorites ? 'heart' : 'hearto'}
-                  size={13}
-                  color={filters.showFavorites ? '#D0861F' : '#666'}
+                <Image
+                  source={require('../../../assets/icons/heart.png')}
+                  style={{ width: 13, height: 13, tintColor: filters.showFavorites ? '#D0861F' : '#666' }}
                 />
                 <Text style={[styles.tagText, filters.showFavorites && styles.tagTextActive]}>Favorites</Text>
               </View>

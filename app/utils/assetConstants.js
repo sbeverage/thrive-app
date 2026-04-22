@@ -22,6 +22,16 @@ export const VIDEO_ASSETS = {
   DONATION_EXPLAINER: `${SUPABASE_STORAGE_BASE}/assets/videos/donation-explainer.mp4`,
 };
 
+// Badge Assets
+export const BADGE_ASSETS = {
+  SUPPORTER: `${SUPABASE_STORAGE_BASE}/assets/badges/supporter.png`,
+  SPOTLIGHT: `${SUPABASE_STORAGE_BASE}/assets/badges/spotlight.png`,
+  CHAMPION: `${SUPABASE_STORAGE_BASE}/assets/badges/champion.png`,
+  SUPPORTER_LOCKED: `${SUPABASE_STORAGE_BASE}/assets/badges/supporter-locked.png`,
+  SPOTLIGHT_LOCKED: `${SUPABASE_STORAGE_BASE}/assets/badges/spotlight-locked.png`,
+  CHAMPION_LOCKED: `${SUPABASE_STORAGE_BASE}/assets/badges/champion-locked.png`,
+};
+
 // Image Assets (Most frequently used)
 export const IMAGE_ASSETS = {
   // Logos

@@ -20,6 +20,7 @@ import {
   nextMilestoneFromPaidCount,
   tiersUnlockedCount,
 } from '../constants/referralRewards';
+import { BADGE_ASSETS } from '../utils/assetConstants';
 
 export default function MainHome() {
   const router = useRouter();
@@ -492,10 +493,14 @@ export default function MainHome() {
               <View style={styles.inviteBadgesRow}>
                 {REFERRAL_TIERS.map((tier, index) => {
                   const unlocked = paidFriendsCount >= tier.count;
-                  const icons = ['🌱', '⭐', '🏆'];
+                  const badgeImages = [BADGE_ASSETS.SUPPORTER, BADGE_ASSETS.SPOTLIGHT, BADGE_ASSETS.CHAMPION];
+                  const badgeImagesLocked = [BADGE_ASSETS.SUPPORTER_LOCKED, BADGE_ASSETS.SPOTLIGHT_LOCKED, BADGE_ASSETS.CHAMPION_LOCKED];
                   return (
                     <View key={index} style={[styles.badgeCard, unlocked && styles.badgeCardUnlocked]}>
-                      <Text style={styles.badgeIcon}>{icons[index]}</Text>
+                      <Image
+                        source={{ uri: unlocked ? badgeImages[index] : badgeImagesLocked[index] }}
+                        style={[styles.badgeImage, !unlocked && styles.badgeImageLocked]}
+                      />
                       <Text style={[styles.badgeName, !unlocked && styles.badgeNameLocked]}>
                         {tier.shortLabel}
                       </Text>
@@ -813,9 +818,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#e8f4f5',
     borderColor: '#21555b',
   },
-  badgeIcon: {
-    fontSize: 26,
+  badgeImage: {
+    width: 56,
+    height: 56,
     marginBottom: 6,
+    resizeMode: 'contain',
+  },
+  badgeImageLocked: {
+    opacity: 0.6,
   },
   badgeName: {
     fontSize: 12,

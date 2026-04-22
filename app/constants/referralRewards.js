@@ -12,17 +12,17 @@ export const REFERRAL_TIERS = [
   },
   {
     count: 3,
-    reward: 'Champion Badge',
-    description:
-      'Earn the Champion badge when three friends are making a difference together.',
-    shortLabel: 'Champion',
-  },
-  {
-    count: 5,
-    reward: 'Website spotlight',
+    reward: 'Website Spotlight',
     description:
       'Be featured on our website as a top community ambassador.',
     shortLabel: 'Spotlight',
+  },
+  {
+    count: 5,
+    reward: 'Champion Badge',
+    description:
+      'Earn the Champion badge when five friends are making a difference together.',
+    shortLabel: 'Champion',
   },
 ];
 
