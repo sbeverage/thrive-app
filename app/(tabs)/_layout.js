@@ -3,11 +3,14 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Tabs, Slot, useRouter, usePathname } from 'expo-router';
 import { View, TouchableOpacity, Image, StyleSheet, Text, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BeneficiaryProvider } from '../context/BeneficiaryContext';
 
 export default function AppLayout() {
   const router = useRouter();
   const pathname = usePathname();
+  const insets = useSafeAreaInsets();
+  const NAV_HEIGHT = 46 + insets.bottom;
 
   // Sync active tab with current pathname
   const getActiveTab = () => {
@@ -51,41 +54,44 @@ export default function AppLayout() {
       <BeneficiaryProvider>
         <View style={{ flex: 1, backgroundColor: '#fff' }}>
           {/* Only apply paddingBottom if footer is visible */}
-          <View style={{ flex: 1, paddingBottom: hideFooter ? 0 : 46 }}>
+          <View style={{ flex: 1, paddingBottom: hideFooter ? 0 : NAV_HEIGHT }}>
             <Slot />
           </View>
 
           {!hideFooter && (
-            <View style={styles.footerNavWrapper}>
-              <BlurView intensity={90} tint="light" style={StyleSheet.absoluteFill} />
-              {tabs.map((tab, idx) => {
-                const focused = activeTab === tab.name;
-                
-                return (
-                  <TouchableOpacity
-                    key={tab.name}
-                    style={styles.footerItem}
-                    onPress={() => {
-                      setActiveTab(tab.name);
-                      router.push(`/${tab.name}`);
-                    }}
-                  >
-                    <View style={[styles.iconContainer, focused ? styles.iconContainerActive : styles.iconContainerInactive]}>
-                      <Image
-                        source={tab.icon}
-                        style={[styles.tabIcon, focused ? styles.tabIconActive : styles.tabIconInactive]}
-                      />
-                    </View>
-                    <Text style={[
-                      styles.tabLabel,
-                      focused && styles.tabLabelActive
-                    ]}>
-                      {tab.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            <>
+              {/* Glass bar background — clipped so blur stays in bounds */}
+              <View style={[styles.footerBarBg, { height: NAV_HEIGHT }]}>
+                <BlurView intensity={90} tint="light" style={StyleSheet.absoluteFill} />
+              </View>
+
+              {/* Tab items — overflow visible so active circle pops above bar */}
+              <View style={[styles.footerNavWrapper, { bottom: insets.bottom }]}>
+                {tabs.map((tab) => {
+                  const focused = activeTab === tab.name;
+                  return (
+                    <TouchableOpacity
+                      key={tab.name}
+                      style={[styles.footerItem, focused ? styles.footerItemActive : styles.footerItemInactive]}
+                      onPress={() => {
+                        setActiveTab(tab.name);
+                        router.push(`/${tab.name}`);
+                      }}
+                    >
+                      <View style={[styles.iconContainer, focused ? styles.iconContainerActive : styles.iconContainerInactive]}>
+                        <Image
+                          source={tab.icon}
+                          style={[styles.tabIcon, focused ? styles.tabIconActive : styles.tabIconInactive]}
+                        />
+                      </View>
+                      <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
+                        {tab.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
           )}
         </View>
       </BeneficiaryProvider>
@@ -94,25 +100,35 @@ export default function AppLayout() {
 }
 
 const styles = StyleSheet.create({
-  footerNavWrapper: {
+  footerBarBg: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: 46,
+    overflow: 'hidden',
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(0,0,0,0.08)',
+  },
+  footerNavWrapper: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 71,
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'flex-start',
     zIndex: 99,
-    overflow: 'hidden',
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(0,0,0,0.08)',
   },
   footerItem: {
     alignItems: 'center',
     justifyContent: 'flex-start',
     flex: 1,
-    marginTop: -22,
+  },
+  footerItemActive: {
+    marginTop: -25,
+  },
+  footerItemInactive: {
+    paddingTop: 29,
   },
   iconContainer: {
     width: 50,

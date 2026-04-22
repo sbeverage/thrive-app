@@ -532,16 +532,29 @@ export default function DiscountsScreen() {
             contentContainerStyle={{ paddingRight: 8 }}
           >
             <TouchableOpacity
-              style={[styles.tag, !filters.category && styles.tagActive]}
-              onPress={() => updateFilters({ category: '' })}
+              style={[styles.tag, !filters.category && !filters.showFavorites && styles.tagActive]}
+              onPress={() => updateFilters({ category: '', showFavorites: false })}
             >
-              <Text style={[styles.tagText, !filters.category && styles.tagTextActive]}>All</Text>
+              <Text style={[styles.tagText, !filters.category && !filters.showFavorites && styles.tagTextActive]}>All</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tag, filters.showFavorites && styles.tagActive]}
+              onPress={() => updateFilters({ showFavorites: !filters.showFavorites, category: '' })}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <AntDesign
+                  name={filters.showFavorites ? 'heart' : 'hearto'}
+                  size={13}
+                  color={filters.showFavorites ? '#D0861F' : '#666'}
+                />
+                <Text style={[styles.tagText, filters.showFavorites && styles.tagTextActive]}>Favorites</Text>
+              </View>
             </TouchableOpacity>
             {Object.entries(categoryCounts).map(([cat]) => (
               <TouchableOpacity
                 key={cat}
                 style={[styles.tag, filters.category === cat && styles.tagActive]}
-                onPress={() => updateFilters({ category: filters.category === cat ? '' : cat })}
+                onPress={() => updateFilters({ category: filters.category === cat ? '' : cat, showFavorites: false })}
               >
                 <Text style={[styles.tagText, filters.category === cat && styles.tagTextActive]}>
                   {cat}

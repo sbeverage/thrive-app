@@ -392,9 +392,9 @@ export default function BeneficiaryScreen() {
 
         {/* Search Row */}
         <View style={styles.searchRow}>
-          <Image 
-            source={require('../../../assets/icons/search-icon.png')} 
-            style={{ width: 18, height: 18, tintColor: '#6d6e72', marginRight: 8 }} 
+          <Image
+            source={require('../../../assets/icons/search-icon.png')}
+            style={{ width: 18, height: 18, tintColor: '#6d6e72', marginRight: 8 }}
           />
           <TextInput
             placeholder="Search Beneficiaries"
@@ -403,26 +403,6 @@ export default function BeneficiaryScreen() {
             onChangeText={setSearchText}
             style={styles.searchInput}
           />
-          <TouchableOpacity 
-            onPress={() => router.push('/(tabs)/beneficiary/beneficiaryFilter')} 
-            style={[
-              { marginLeft: 10, padding: 4, borderRadius: 4 },
-              hasActiveFilters() && { backgroundColor: '#FFF5EB' }
-            ]}
-          >
-            <Feather name="filter" size={22} color={hasActiveFilters() ? "#D0861F" : "#DB8633"} />
-            {hasActiveFilters() && (
-              <View style={{
-                position: 'absolute',
-                top: -2,
-                right: -2,
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: '#D0861F'
-              }} />
-            )}
-          </TouchableOpacity>
         </View>
 
         {/* Location Input */}
@@ -585,9 +565,18 @@ export default function BeneficiaryScreen() {
             ) : filteredBeneficiaries.length > 0 ? (
               <>
                 <View ref={beneficiarySectionRef}>
-                  <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Nearby Causes</Text>
-                    <Text style={styles.sectionSubtitle}>{filteredBeneficiaries.length} organizations found</Text>
+                  <View style={[styles.sectionHeader, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+                    <View>
+                      <Text style={styles.sectionTitle}>Nearby Causes</Text>
+                      <Text style={styles.sectionSubtitle}>{filteredBeneficiaries.length} organizations found</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => router.push('/(tabs)/beneficiary/beneficiaryFilter')}
+                      style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
+                    >
+                      <Feather name="filter" size={15} color={hasActiveFilters() ? '#fff' : '#DB8633'} />
+                      <Text style={[styles.filterBtnText, hasActiveFilters() && styles.filterBtnTextActive]}>Filter</Text>
+                    </TouchableOpacity>
                   </View>
 
                   {highlightedBeneficiaries.map((b) => (
@@ -1332,6 +1321,28 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  filterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#DB8633',
+    backgroundColor: '#FFF5EB',
+  },
+  filterBtnActive: {
+    backgroundColor: '#DB8633',
+  },
+  filterBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#DB8633',
+  },
+  filterBtnTextActive: {
+    color: '#fff',
   },
   clearFiltersContainer: {
     paddingHorizontal: 20,
