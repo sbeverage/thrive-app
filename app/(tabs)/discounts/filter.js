@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import { Feather, AntDesign } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useDiscountFilter } from '../../context/DiscountFilterContext';
 import { useLocation } from '../../context/LocationContext';
+import { useDiscount } from '../../context/DiscountContext';
 
 const radiusOptions = ['1 mile', '5 miles', '10 miles', '25 miles'];
 const typeOptions = [
@@ -27,12 +28,24 @@ export default function FilterScreen() {
   const router = useRouter();
   const { filters, updateFilters, clearFilters, hasActiveFilters } = useDiscountFilter();
   const { locationAddress, refreshLocation, locationPermission, checkLocationPermission } = useLocation();
+  const { vendors } = useDiscount();
 
   const [location, setLocation] = useState(filters.location || '');
   const [radius, setRadius] = useState(filters.radius || '');
   const [type, setType] = useState(filters.type || '');
   const [availability, setAvailability] = useState(filters.availability || '');
+  const [category, setCategory] = useState(filters.category || '');
   const [showFavorites, setShowFavorites] = useState(filters.showFavorites || false);
+
+  const categoryOptions = useMemo(() => {
+    if (!vendors) return [];
+    const cats = new Set();
+    vendors.forEach(v => {
+      if (v.category) cats.add(v.category);
+      if (v.tags && Array.isArray(v.tags)) v.tags.forEach(t => { if (t) cats.add(t); });
+    });
+    return Array.from(cats).sort();
+  }, [vendors]);
   const [locationSuggestions, setLocationSuggestions] = useState([]);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const debounceRef = useRef(null);
@@ -87,7 +100,7 @@ export default function FilterScreen() {
   };
 
   const handleApplyFilters = () => {
-    updateFilters({ location, radius, type, availability, showFavorites });
+    updateFilters({ location, radius, type, availability, category, showFavorites });
     router.back();
   };
 
@@ -97,6 +110,7 @@ export default function FilterScreen() {
     setRadius('');
     setType('');
     setAvailability('');
+    setCategory('');
     setShowFavorites(false);
     setLocationSuggestions([]);
   };
@@ -203,6 +217,14 @@ export default function FilterScreen() {
         <Text style={styles.label}>Availability</Text>
         {renderPills(availabilityOptions, availability, setAvailability)}
       </View>
+
+      {/* Category */}
+      {categoryOptions.length > 0 && (
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>Category</Text>
+          {renderPills(categoryOptions, category, setCategory)}
+        </View>
+      )}
 
       {hasActiveFilters() && (
         <TouchableOpacity style={styles.clearButton} onPress={handleClearFilters}>

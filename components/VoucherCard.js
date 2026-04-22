@@ -10,7 +10,7 @@ import {
 import { MaterialCommunityIcons, AntDesign } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-const VoucherCard = ({ logo, brand, discounts, discountId, vendor, onPress, vendorId, isFavorited, onToggleFavorite }) => {
+const VoucherCard = ({ logo, brand, discounts, discountId, vendor, onPress, vendorId, isFavorited, onToggleFavorite, category }) => {
   const router = useRouter();
 
   const getDiscountLabel = () => {
@@ -62,6 +62,9 @@ const VoucherCard = ({ logo, brand, discounts, discountId, vendor, onPress, vend
             />
             <View style={styles.textContainer}>
               <Text style={styles.brand}>{brand}</Text>
+              {category ? (
+                <Text style={styles.categoryLabel}>{category}</Text>
+              ) : null}
               <Text style={styles.discountBadge}>{getDiscountLabel()}</Text>
             </View>
           </View>
@@ -101,7 +104,7 @@ const VoucherCard = ({ logo, brand, discounts, discountId, vendor, onPress, vend
   );
 };
 
-const CARD_HEIGHT = 100;
+const CARD_HEIGHT = 110;
 const NOTCH_SIZE = 12;
 
 const styles = StyleSheet.create({
@@ -140,6 +143,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#1C4F7D',
+  },
+  categoryLabel: {
+    fontSize: 11,
+    color: '#8E9BAE',
+    textTransform: 'capitalize',
+    marginTop: 2,
+    marginBottom: 2,
   },
   discountBadge: {
     alignSelf: 'flex-start',

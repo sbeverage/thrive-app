@@ -433,9 +433,10 @@ export default function DiscountsScreen() {
 
   const handleViewDetails = (vendor) => {
     setSelectedMarker(null);
-    // Switch to list view and search for this vendor so user sees all their discounts
-    setShowMap(false);
-    setSearchQuery(vendor.brandName);
+    router.push({
+      pathname: '/(tabs)/discounts/[id]',
+      params: { id: vendor.id.toString() },
+    });
   };
 
   const handleGetDirections = (vendor) => {
@@ -460,6 +461,11 @@ export default function DiscountsScreen() {
             onChangeText={setSearchQuery}
             style={styles.searchInput}
           />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <AntDesign name="closecircle" size={16} color="#bbb" />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Location Input */}
@@ -698,6 +704,7 @@ export default function DiscountsScreen() {
                       discountId={vendorDiscount?.id || item.discountId}
                       vendor={item.vendor}
                       vendorId={item.id}
+                      category={item.category || (item.tags && item.tags[0]) || null}
                       isFavorited={favorites.has(String(item.id))}
                       onToggleFavorite={() => toggleFavorite(item.id)}
                     />

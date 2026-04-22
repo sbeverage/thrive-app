@@ -57,6 +57,7 @@ export default function AppLayout() {
 
           {!hideFooter && (
             <View style={styles.footerNavWrapper}>
+              <BlurView intensity={90} tint="light" style={StyleSheet.absoluteFill} />
               {tabs.map((tab, idx) => {
                 const focused = activeTab === tab.name;
                 
@@ -98,19 +99,14 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#ffffff',
     height: 46,
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'flex-start',
     zIndex: 99,
-    paddingBottom: 0,
-    paddingTop: 0,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 6,
+    overflow: 'hidden',
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(0,0,0,0.08)',
   },
   footerItem: {
     alignItems: 'center',

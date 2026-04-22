@@ -458,70 +458,78 @@ export default function MainHome() {
           {/* Divider */}
           <View style={{ height: 1, backgroundColor: '#E5E7EB', opacity: 0.7, marginVertical: 8, width: '100%' }} />
 
-          {/* Enhanced Invite Section */}
+          {/* Grow Your Impact — Redesigned */}
           <View style={styles.inviteSectionWrapper}>
-            <View style={styles.inviteSectionHeader}>
+            {/* Gradient header with stats */}
+            <LinearGradient
+              colors={['#1a3a42', '#21555b']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.inviteGradientHeader}
+            >
               <Text style={styles.inviteSectionTitle}>Grow Your Impact</Text>
               <Text style={styles.inviteSectionSubtitle}>
-                Invite friends—unlock recognition while keeping donations focused on causes.
+                Invite friends & unlock recognition while amplifying your cause.
               </Text>
-            </View>
-            
-            <View style={styles.inviteCard}>
               <View style={styles.inviteStatsContainer}>
                 <View style={styles.inviteStatItem}>
                   <Text style={styles.inviteStatNumber}>{paidFriendsCount}</Text>
-                  <Text style={styles.inviteStatLabel}>Friends Making{'\n'}a Difference</Text>
+                  <Text style={styles.inviteStatLabel}>Active{'\n'}Friends</Text>
                 </View>
                 <View style={styles.inviteStatDivider} />
                 <View style={styles.inviteStatItem}>
                   <Text style={styles.inviteStatNumber}>
                     {tiersUnlockedCount(referralMilestones)}/{REFERRAL_TIERS.length}
                   </Text>
-                  <Text style={styles.inviteStatLabel}>Recognition{'\n'}tiers unlocked</Text>
+                  <Text style={styles.inviteStatLabel}>Badges{'\n'}Earned</Text>
                 </View>
               </View>
-              
-              {/* Badges Display — always show all tiers */}
-              <View style={styles.homeBadgesContainer}>
-                <Text style={styles.homeBadgesLabel}>Recognition Badges</Text>
-                <View style={styles.homeBadgesList}>
-                  {REFERRAL_TIERS.map((tier, index) => {
-                    const unlocked = paidFriendsCount >= tier.count;
-                    return (
-                      <View key={index} style={[styles.homeBadgeItem, !unlocked && styles.homeBadgeItemLocked]}>
-                        <AntDesign name="star" size={20} color={unlocked ? '#DB8633' : '#ccc'} />
-                        <Text style={[styles.homeBadgeName, !unlocked && styles.homeBadgeNameLocked]}>
-                          {tier.shortLabel}
+            </LinearGradient>
+
+            {/* Body: badges + progress + button */}
+            <View style={styles.inviteBodySection}>
+              <Text style={styles.inviteBadgesLabel}>Recognition Badges</Text>
+              <View style={styles.inviteBadgesRow}>
+                {REFERRAL_TIERS.map((tier, index) => {
+                  const unlocked = paidFriendsCount >= tier.count;
+                  const icons = ['🌱', '⭐', '🏆'];
+                  return (
+                    <View key={index} style={[styles.badgeCard, unlocked && styles.badgeCardUnlocked]}>
+                      <Text style={styles.badgeIcon}>{icons[index]}</Text>
+                      <Text style={[styles.badgeName, !unlocked && styles.badgeNameLocked]}>
+                        {tier.shortLabel}
+                      </Text>
+                      {unlocked ? (
+                        <Text style={styles.badgeEarned}>Earned ✓</Text>
+                      ) : (
+                        <Text style={styles.badgeRequirement}>
+                          {tier.count} friend{tier.count > 1 ? 's' : ''}
                         </Text>
-                        {!unlocked && (
-                          <Text style={styles.homeBadgeLockHint}>{tier.count} friend{tier.count > 1 ? 's' : ''}</Text>
-                        )}
-                      </View>
-                    );
-                  })}
-                </View>
+                      )}
+                    </View>
+                  );
+                })}
               </View>
-              
+
               <View style={styles.inviteProgressContainer}>
                 <Text style={styles.inviteProgressText}>
                   {paidFriendsCount >= REFERRAL_TIERS[REFERRAL_TIERS.length - 1].count
-                    ? 'Every recognition tier unlocked—thank you!'
-                    : `${Math.max(0, nextMilestone.count - paidFriendsCount)} more ${nextMilestone.count - paidFriendsCount === 1 ? 'active friend' : 'active friends'} to unlock ${nextMilestone.reward}`}
+                    ? '🎉 All recognition tiers unlocked — thank you!'
+                    : `${Math.max(0, nextMilestone.count - paidFriendsCount)} more active friend${nextMilestone.count - paidFriendsCount === 1 ? '' : 's'} to unlock ${nextMilestone.reward}`}
                 </Text>
                 <View style={styles.inviteProgressBar}>
-                  <View style={[styles.inviteProgressFill, { 
+                  <View style={[styles.inviteProgressFill, {
                     width: `${(() => {
                       const maxTier = REFERRAL_TIERS[REFERRAL_TIERS.length - 1].count;
                       if (paidFriendsCount >= maxTier) return 100;
                       const denom = Math.max(1, nextMilestone.count);
                       return Math.min((paidFriendsCount / denom) * 100, 100);
-                    })()}%` 
+                    })()}%`
                   }]} />
                 </View>
               </View>
-              
-              <TouchableOpacity 
+
+              <TouchableOpacity
                 style={styles.inviteCardButton}
                 onPress={() => setShowInviteModal(true)}
               >
@@ -724,134 +732,136 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     marginBottom: 40,
-    backgroundColor: '#F4F6F8',
-    padding: 20,
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
   },
-  inviteSectionHeader: {
-    alignItems: 'center',
-    marginBottom: 15,
+  inviteGradientHeader: {
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 28,
   },
   inviteSectionTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#324E58',
-    marginBottom: 5,
-    textAlign: 'center',
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 6,
   },
   inviteSectionSubtitle: {
-    fontSize: 16,
-    color: '#7A8D9C',
-    textAlign: 'center',
-  },
-  inviteCard: {
-    alignItems: 'center',
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.75)',
+    lineHeight: 20,
     marginBottom: 20,
   },
   inviteStatsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 15,
-    paddingHorizontal: 20,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  inviteStatItem: {
+    flex: 1,
     alignItems: 'center',
+    paddingVertical: 14,
   },
   inviteStatDivider: {
     width: 1,
-    height: 40,
-    backgroundColor: '#E5E7EB',
-  },
-  inviteStatItem: {
-    alignItems: 'center',
-    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    marginVertical: 10,
   },
   inviteStatNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#DB8633',
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#fff',
   },
   inviteStatLabel: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.75)',
+    textAlign: 'center',
+    marginTop: 3,
+  },
+  inviteBodySection: {
+    padding: 20,
+  },
+  inviteBadgesLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#8E9BAE',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 12,
+  },
+  inviteBadgesRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 20,
+  },
+  badgeCard: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 6,
+    borderWidth: 1.5,
+    borderColor: '#e9ecef',
+  },
+  badgeCardUnlocked: {
+    backgroundColor: '#e8f4f5',
+    borderColor: '#21555b',
+  },
+  badgeIcon: {
+    fontSize: 26,
+    marginBottom: 6,
+  },
+  badgeName: {
     fontSize: 12,
-    color: '#7A8D9C',
-    marginTop: 5,
+    fontWeight: '700',
+    color: '#21555b',
+    marginBottom: 3,
     textAlign: 'center',
   },
-  homeBadgesContainer: {
-    marginBottom: 15,
-    paddingTop: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+  badgeNameLocked: {
+    color: '#aaa',
   },
-  homeBadgesLabel: {
-    fontSize: 12,
+  badgeEarned: {
+    fontSize: 10,
+    color: '#21555b',
     fontWeight: '600',
-    color: '#324E58',
+  },
+  badgeRequirement: {
+    fontSize: 10,
+    color: '#bbb',
+    textAlign: 'center',
+  },
+  inviteProgressContainer: {
+    marginBottom: 20,
+  },
+  inviteProgressText: {
+    fontSize: 13,
+    color: '#6b7280',
     marginBottom: 8,
     textAlign: 'center',
   },
-  homeBadgesList: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  homeBadgeItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: '#DB8633',
-    borderStyle: 'dashed',
-    gap: 6,
-  },
-  homeBadgeName: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#324E58',
-  },
-  homeBadgeItemLocked: {
-    borderColor: '#ddd',
-    backgroundColor: '#f7f7f7',
-    opacity: 0.7,
-  },
-  homeBadgeNameLocked: {
-    color: '#aaa',
-  },
-  homeBadgeLockHint: {
-    fontSize: 10,
-    color: '#bbb',
-    fontStyle: 'italic',
-  },
-  inviteProgressContainer: {
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  inviteProgressText: {
-    fontSize: 14,
-    color: '#7A8D9C',
-    marginBottom: 5,
-    textAlign: 'center',
-  },
   inviteProgressBar: {
-    width: '100%',
-    height: 8,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 4,
+    height: 6,
+    backgroundColor: '#e9ecef',
+    borderRadius: 3,
     overflow: 'hidden',
   },
   inviteProgressFill: {
     height: '100%',
     backgroundColor: '#DB8633',
-    borderRadius: 4,
+    borderRadius: 3,
   },
-
   inviteCardButton: {
     backgroundColor: '#DB8633',
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: 16,
-    marginTop: 15,
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: 'center',
     shadowColor: '#DB8633',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -859,24 +869,9 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   inviteCardButtonText: {
-    color: 'white',
+    color: '#fff',
     fontSize: 16,
     fontWeight: '700',
-  },
-  inviteSocialProof: {
-    backgroundColor: '#F0F2F5',
-    padding: 15,
-    borderRadius: 12,
-    marginTop: 10,
-  },
-  inviteSocialProofText: {
-    fontSize: 14,
-    color: '#324E58',
-    lineHeight: 20,
-  },
-  inviteSocialProofAuthor: {
-    fontWeight: '700',
-    color: '#DB8633',
   },
   testButtonText: {
     fontSize: 20,
