@@ -523,6 +523,34 @@ export default function DiscountsScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Category Tag Pills */}
+        {Object.keys(categoryCounts).length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.tagsRow}
+            contentContainerStyle={{ paddingRight: 8 }}
+          >
+            <TouchableOpacity
+              style={[styles.tag, !filters.category && styles.tagActive]}
+              onPress={() => updateFilters({ category: '' })}
+            >
+              <Text style={[styles.tagText, !filters.category && styles.tagTextActive]}>All</Text>
+            </TouchableOpacity>
+            {Object.entries(categoryCounts).map(([cat]) => (
+              <TouchableOpacity
+                key={cat}
+                style={[styles.tag, filters.category === cat && styles.tagActive]}
+                onPress={() => updateFilters({ category: filters.category === cat ? '' : cat })}
+              >
+                <Text style={[styles.tagText, filters.category === cat && styles.tagTextActive]}>
+                  {cat}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+
         {/* List/Map Toggle */}
         <View style={styles.toggleRow}>
           <TouchableOpacity 
@@ -821,8 +849,8 @@ const styles = StyleSheet.create({
     color: '#DB8633',
   },
   tagsRow: {
-    paddingBottom: 12,
-    paddingLeft: 4,
+    marginBottom: 10,
+    marginTop: 4,
   },
   tag: {
     paddingVertical: 8,
@@ -901,7 +929,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5fa',
   },
   listContent: {
-    paddingBottom: 40,
+    paddingBottom: 80,
   },
   sectionHeader: {
     paddingHorizontal: 20,
