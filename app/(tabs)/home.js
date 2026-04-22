@@ -329,7 +329,7 @@ export default function MainHome() {
             <Text style={styles.locationText}>Home — {getDisplayLocation()}</Text>
           </LinearGradient>
 
-          <View style={styles.monthlyCardWrapper} ref={impactCardRef}>
+          <View style={styles.monthlyCardWrapper}>
             <MonthlyImpactCard 
               key={`${monthlyDonation}-${monthlySavings}`}
               monthlyDonation={monthlyDonation} 
