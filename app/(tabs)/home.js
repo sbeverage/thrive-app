@@ -327,7 +327,6 @@ export default function MainHome() {
             </View>
 
             <Text style={styles.affirmationText}>"You're someone's reason to smile today!"</Text>
-            <Text style={styles.locationText}>Home — {getDisplayLocation()}</Text>
           </LinearGradient>
 
           <View style={styles.monthlyCardWrapper}>
@@ -584,8 +583,7 @@ const styles = StyleSheet.create({
   profileLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   profilePic: { width: 50, height: 50, borderRadius: 25 },
   greetingText: { fontSize: 20, fontWeight: '700', color: '#FFFFFF', marginLeft: 10 },
-  affirmationText: { fontSize: 16, color: '#E5E8EA', fontStyle: 'italic', marginTop: 12 },
-  locationText: { fontSize: 14, color: '#C7D0D8', marginTop: 6, marginBottom: 80 },
+  affirmationText: { fontSize: 16, color: '#E5E8EA', fontStyle: 'italic', marginTop: 12, marginBottom: 96 },
   monthlyCardWrapper: { marginTop: -90, marginHorizontal: 20, zIndex: 10 },
   sectionHeader: { fontSize: 20, fontWeight: '700', color: '#324E58' },
   sectionHeaderRow: { 
@@ -736,6 +734,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     borderRadius: 20,
     overflow: 'hidden',
+    marginTop: 30,
     marginBottom: 40,
     backgroundColor: '#fff',
     shadowColor: '#000',

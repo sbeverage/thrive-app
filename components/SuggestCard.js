@@ -61,8 +61,8 @@ export default function SuggestCard({ type = 'vendor', searchQuery = '', onSubmi
       <Image
         source={
           isVendor
-            ? require('../assets/images/piggy-coin.png')
-            : require('../assets/images/piggy-money.png')
+            ? require('../assets/images/bolt-piggy.png')
+            : require('../assets/images/piggy-coin.png')
         }
         style={styles.icon}
         resizeMode="contain"
@@ -132,15 +132,23 @@ export default function SuggestCard({ type = 'vendor', searchQuery = '', onSubmi
         disabled={isSubmitting}
         activeOpacity={0.85}
       >
-        <Text style={styles.buttonText}>
-          {isSubmitting ? 'Sending...' : 'Send Suggestion'}
-        </Text>
-        {!isSubmitting && (
-          <Feather name="send" size={15} color="#fff" style={{ marginLeft: 6 }} />
-        )}
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20 }}>
+          <Text style={styles.buttonText}>
+            {isSubmitting ? 'Sending...' : 'Send Suggestion'}
+          </Text>
+          {!isSubmitting && (
+            <Feather name="send" size={15} color="#fff" style={{ marginLeft: 8 }} />
+          )}
+        </View>
       </TouchableOpacity>
 
-      <Text style={styles.footer}>We personally review every suggestion ❤️</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 18 }}>
+        <Text style={styles.footer}>We personally review every suggestion </Text>
+        <Image
+          source={require('../assets/icons/heart.png')}
+          style={{ width: 13, height: 13, tintColor: '#DB8633' }}
+        />
+      </View>
     </View>
   );
 }
@@ -210,7 +218,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   button: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#DB8633',
@@ -231,11 +238,8 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
-    flex: 1,
-    textAlign: 'center',
   },
   footer: {
-    marginTop: 18,
     fontSize: 13,
     color: '#c0c8d0',
     textAlign: 'center',
