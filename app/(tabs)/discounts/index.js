@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 
 
-import { Feather, AntDesign, MaterialIcons } from '@expo/vector-icons';
+import { Feather, AntDesign } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -35,7 +35,6 @@ import { useDiscountFilter } from '../../context/DiscountFilterContext';
 
 export default function DiscountsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
   const [businessName, setBusinessName] = useState('');
   const [businessUrl, setBusinessUrl] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -52,7 +51,6 @@ export default function DiscountsScreen() {
   // Filter context
   const { filters, updateFilters, hasActiveFilters } = useDiscountFilter();
   const [locationSearch, setLocationSearch] = useState(''); // Location filter from main screen (tap location row to search)
-  const [activeScope, setActiveScope] = useState('All');
   const [favorites, setFavorites] = useState(new Set());
   const [geocodedCoords, setGeocodedCoords] = useState({});
 
@@ -60,15 +58,12 @@ export default function DiscountsScreen() {
   const DEFAULT_LNG = -84.2941;
   const GEOCODE_CACHE_KEY = '@thrive_geocache';
 
-  // Sync category pill and location search with filter screen when filters applied
+  // Sync location search with filter screen
   useEffect(() => {
-    if (filters.category && filters.category !== activeCategory) {
-      setActiveCategory(filters.category);
-    }
     if (filters.location && filters.location !== locationSearch) {
       setLocationSearch(filters.location);
     }
-  }, [filters.category, filters.location]);
+  }, [filters.location]);
 
   // Load favorites from storage on mount
   useEffect(() => {
@@ -139,14 +134,6 @@ export default function DiscountsScreen() {
     });
   };
 
-  const handleCategoryPress = (tag) => {
-    setActiveCategory(tag);
-    if (tag === 'All') {
-      updateFilters({ category: '' });
-    } else {
-      updateFilters({ category: tag });
-    }
-  };
 
   // Discount context
   const { discounts, vendors, isLoading: isLoadingDiscounts, loadDiscounts } = useDiscount();
@@ -303,41 +290,15 @@ export default function DiscountsScreen() {
       });
     }
 
-    // Filter by category (from filter screen or pill selection)
-    const categoryToMatch = filters.category || (activeCategory !== 'All' ? activeCategory : null);
+    // Filter by category (from filter screen only)
     let matchesCategory = true;
-    if (categoryToMatch) {
-      matchesCategory = false;
-      if (v.category && v.category.toLowerCase() === categoryToMatch.toLowerCase()) matchesCategory = true;
-      if (!matchesCategory && v.tags && Array.isArray(v.tags)) {
-        matchesCategory = v.tags.some(tag =>
-          tag && typeof tag === 'string' && tag.toLowerCase() === categoryToMatch.toLowerCase()
-        );
-      }
-      if (!matchesCategory && v.vendor) {
-        if (v.vendor.category && v.vendor.category.toLowerCase() === categoryToMatch.toLowerCase()) matchesCategory = true;
-        if (!matchesCategory && v.vendor.tags && Array.isArray(v.vendor.tags)) {
-          matchesCategory = v.vendor.tags.some(tag =>
-            tag && typeof tag === 'string' && tag.toLowerCase() === categoryToMatch.toLowerCase()
-          );
-        }
-      }
-    } else if (activeCategory !== 'All') {
-      matchesCategory = false;
-      if (v.category && v.category.toLowerCase() === activeCategory.toLowerCase()) matchesCategory = true;
-      if (!matchesCategory && v.tags && Array.isArray(v.tags)) {
-        matchesCategory = v.tags.some(tag =>
-          tag && typeof tag === 'string' && tag.toLowerCase() === activeCategory.toLowerCase()
-        );
-      }
-      if (!matchesCategory && v.vendor) {
-        if (v.vendor.category && v.vendor.category.toLowerCase() === activeCategory.toLowerCase()) matchesCategory = true;
-        if (!matchesCategory && v.vendor.tags && Array.isArray(v.vendor.tags)) {
-          matchesCategory = v.vendor.tags.some(tag =>
-            tag && typeof tag === 'string' && tag.toLowerCase() === activeCategory.toLowerCase()
-          );
-        }
-      }
+    if (filters.category) {
+      const cat = filters.category.toLowerCase();
+      matchesCategory =
+        (v.category && v.category.toLowerCase() === cat) ||
+        (v.tags && v.tags.some(t => t && t.toLowerCase() === cat)) ||
+        (v.vendor?.category && v.vendor.category.toLowerCase() === cat) ||
+        (v.vendor?.tags && v.vendor.tags.some(t => t && t.toLowerCase() === cat));
     }
 
     // Availability filter
@@ -355,26 +316,10 @@ export default function DiscountsScreen() {
       });
     }
 
-    // Scope filter
-    let matchesScope = true;
-    if (activeScope === 'Nearby') {
-      if (userLocation && v.latitude && v.longitude) {
-        const nearbyRadius = filters.radius
-          ? parseFloat(String(filters.radius).replace(/[^\d.]/g, '')) || 50
-          : 50;
-        const dist = calculateDistance(userLocation.latitude, userLocation.longitude, v.latitude, v.longitude);
-        matchesScope = dist !== null && dist <= nearbyRadius;
-      } else {
-        matchesScope = false;
-      }
-    } else if (activeScope === 'Favorites') {
-      matchesScope = favorites.has(String(v.id));
-    }
-
     // showFavorites filter from filter screen
     const matchesFavoritesFilter = !filters.showFavorites || favorites.has(String(v.id));
 
-    return matchesSearch && matchesLocation && matchesRadius && matchesType && matchesCategory && matchesScope && matchesAvailability && matchesFavoritesFilter;
+    return matchesSearch && matchesLocation && matchesRadius && matchesType && matchesCategory && matchesAvailability && matchesFavoritesFilter;
   });
 
   // Count vendors per category for badge display (scope + search applied, category not applied)
@@ -524,16 +469,6 @@ export default function DiscountsScreen() {
             onChangeText={setSearchQuery}
             style={styles.searchInput}
           />
-          <TouchableOpacity
-            onPress={() => router.push('/(tabs)/discounts/filter')}
-            style={[styles.filterIconBtn, hasActiveFilters() && styles.filterIconBtnActive]}
-          >
-            {Platform.OS === 'web' ? (
-              <Text style={{ fontSize: 22 }}>🔽</Text>
-            ) : (
-              <Feather name="filter" size={20} color={hasActiveFilters() ? '#fff' : '#DB8633'} />
-            )}
-          </TouchableOpacity>
         </View>
 
         {/* Location Input */}
@@ -590,43 +525,6 @@ export default function DiscountsScreen() {
             )}
           </TouchableOpacity>
         </View>
-
-        {/* Scope Selector */}
-        <View style={styles.scopeRow}>
-          {['All', 'Nearby', 'Favorites'].map(scope => (
-            <TouchableOpacity
-              key={scope}
-              style={[styles.scopeBtn, activeScope === scope && styles.scopeBtnActive]}
-              onPress={() => setActiveScope(scope)}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                {scope === 'Favorites' && (
-                  <MaterialIcons
-                    name={activeScope === 'Favorites' ? 'favorite' : 'favorite-border'}
-                    size={14}
-                    color={activeScope === scope ? '#DB8633' : '#666'}
-                  />
-                )}
-                <Text style={[styles.scopeText, activeScope === scope && styles.scopeTextActive]}>{scope}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Category Pills */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagsRow}>
-          {availableCategories.map(tag => (
-            <TouchableOpacity
-              key={tag}
-              style={[styles.tag, activeCategory === tag && styles.tagActive]}
-              onPress={() => handleCategoryPress(tag)}
-            >
-              <Text style={[styles.tagText, activeCategory === tag && styles.tagTextActive]}>
-                {tag}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
 
         {/* List/Map Toggle */}
         <View style={styles.toggleRow}>
@@ -772,12 +670,19 @@ export default function DiscountsScreen() {
             keyboardShouldPersistTaps="handled"
           >
             {filteredVendors.length > 0 ? (
-              <View ref={discountsSectionRef}>
+              <View>
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>
-                    {activeScope === 'Favorites' ? 'Favorited Vendors' : activeScope === 'Nearby' ? 'Nearby Discounts' : 'All Discounts'}
-                  </Text>
-                  <Text style={styles.sectionSubtitle}>{filteredVendors.length} business{filteredVendors.length !== 1 ? 'es' : ''} found</Text>
+                  <View>
+                    <Text style={styles.sectionTitle}>All Discounts</Text>
+                    <Text style={styles.sectionSubtitle}>{filteredVendors.length} business{filteredVendors.length !== 1 ? 'es' : ''} found</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => router.push('/(tabs)/discounts/filter')}
+                    style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
+                  >
+                    <Feather name="filter" size={15} color={hasActiveFilters() ? '#fff' : '#DB8633'} />
+                    <Text style={[styles.filterBtnText, hasActiveFilters() && styles.filterBtnTextActive]}>Filter</Text>
+                  </TouchableOpacity>
                 </View>
                 {filteredVendors.map(item => {
                   const vendorDiscount = discounts.find(d => {
@@ -802,24 +707,12 @@ export default function DiscountsScreen() {
               </View>
             ) : (
               <View style={styles.emptyState}>
-                {activeScope === 'Favorites' ? (
-                  <>
-                    <Text style={styles.emptyTitle}>No favorites yet</Text>
-                    <Text style={styles.emptySubtitle}>Tap the heart on any vendor card to save it here</Text>
-                  </>
-                ) : activeScope === 'Nearby' && !userLocation ? (
-                  <>
-                    <Text style={styles.emptyTitle}>Location not available</Text>
-                    <Text style={styles.emptySubtitle}>Enable location access to see vendors near you</Text>
-                  </>
-                ) : (
-                  <>
-                    <Text style={styles.emptyTitle}>No results found</Text>
-                    <Text style={styles.emptySubtitle}>
-                      {searchQuery ? `No businesses found for "${searchQuery}"` : 'Try adjusting your search or filters'}
-                    </Text>
-                  </>
-                )}
+                <>
+                  <Text style={styles.emptyTitle}>No results found</Text>
+                  <Text style={styles.emptySubtitle}>
+                    {searchQuery ? `No businesses found for "${searchQuery}"` : 'Try adjusting your search or filters'}
+                  </Text>
+                </>
                 
                 <SuggestCard
                   type="vendor"
@@ -1006,8 +899,33 @@ const styles = StyleSheet.create({
   },
   sectionHeader: {
     paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingTop: 20,
     paddingBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  filterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#DB8633',
+    backgroundColor: '#FFF5EB',
+  },
+  filterBtnActive: {
+    backgroundColor: '#DB8633',
+  },
+  filterBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#DB8633',
+  },
+  filterBtnTextActive: {
+    color: '#fff',
   },
   sectionTitle: {
     fontSize: 18,
