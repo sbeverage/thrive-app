@@ -10,7 +10,8 @@ export default function AppLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const NAV_HEIGHT = 46 + insets.bottom;
+  const effectiveInset = Math.min(insets.bottom, 4);
+  const NAV_HEIGHT = 46 + effectiveInset;
 
   // Sync active tab with current pathname
   const getActiveTab = () => {
@@ -37,11 +38,7 @@ export default function AppLayout() {
 
   // Hide footer on detail and fullscreen pages
   const isDetailPage = /^\/discounts\/[^\/]+$/.test(pathname);
-  const hideFooterPages = [
-    '/discounts/globalSearch',
-    '/discounts/globalSearchFilter',
-  ];
-  const hideFooter = isDetailPage || hideFooterPages.includes(pathname);
+  const hideFooter = isDetailPage;
 
   const tabs = [
     { name: 'home', label: 'Home', icon: require('../../assets/icons/home.png') },
@@ -66,7 +63,7 @@ export default function AppLayout() {
               </View>
 
               {/* Tab items — overflow visible so active circle pops above bar */}
-              <View style={[styles.footerNavWrapper, { bottom: insets.bottom }]}>
+              <View style={[styles.footerNavWrapper, { bottom: effectiveInset }]}>
                 {tabs.map((tab) => {
                   const focused = activeTab === tab.name;
                   return (
@@ -113,7 +110,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    height: 71,
+    height: 76,
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'flex-start',
@@ -125,10 +122,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   footerItemActive: {
-    marginTop: -25,
+    marginTop: 5,
   },
   footerItemInactive: {
-    paddingTop: 29,
+    paddingTop: 37,
   },
   iconContainer: {
     width: 50,
@@ -139,6 +136,8 @@ const styles = StyleSheet.create({
   },
   iconContainerInactive: {
     backgroundColor: 'transparent',
+    width: 24,
+    height: 24,
   },
   iconContainerActive: {
     backgroundColor: '#DB8633',
@@ -159,7 +158,7 @@ const styles = StyleSheet.create({
     tintColor: '#9AABB8',
   },
   tabLabel: {
-    marginTop: 3,
+    marginTop: 2,
     fontSize: 11,
     color: '#8E9BAE',
     fontWeight: 'bold',

@@ -49,7 +49,7 @@ export default function DiscountsScreen() {
   const { location: userLocation, locationAddress, locationPermission, checkLocationPermission, refreshLocation, isLoadingLocation } = useLocation();
 
   // Filter context
-  const { filters, updateFilters, hasActiveFilters } = useDiscountFilter();
+  const { filters, updateFilters, clearFilters, hasActiveFilters } = useDiscountFilter();
   const [locationSearch, setLocationSearch] = useState(''); // Location filter from main screen (tap location row to search)
   const [favorites, setFavorites] = useState(new Set());
   const [geocodedCoords, setGeocodedCoords] = useState({});
@@ -563,6 +563,19 @@ export default function DiscountsScreen() {
           </ScrollView>
         )}
 
+        {/* Clear Filters Button - only show when filters are active */}
+        {hasActiveFilters() && (
+          <View style={styles.clearFiltersContainer}>
+            <TouchableOpacity
+              style={styles.clearFiltersButton}
+              onPress={clearFilters}
+            >
+              <Feather name="x" size={16} color="#D0861F" />
+              <Text style={styles.clearFiltersText}>Clear Filters</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* List/Map Toggle */}
         <View style={styles.toggleRow}>
           <TouchableOpacity 
@@ -649,6 +662,15 @@ export default function DiscountsScreen() {
               </MapView>
             )}
             
+            {/* Floating Filter Button */}
+            <TouchableOpacity
+              style={[styles.mapFilterBtn, styles.mapFilterBtnActive]}
+              onPress={() => router.push('/(tabs)/discounts/filter')}
+            >
+              <Feather name="filter" size={15} color="#fff" />
+              <Text style={[styles.mapFilterBtnText, styles.mapFilterBtnTextActive]}>Filter</Text>
+            </TouchableOpacity>
+
             {/* Custom Info Window */}
             {selectedMarker && (
               <View style={styles.infoWindow}>
@@ -752,19 +774,27 @@ export default function DiscountsScreen() {
                 })}
               </View>
             ) : (
-              <View style={styles.emptyState}>
-                <>
+              <View>
+                <View style={[styles.sectionHeader, { justifyContent: 'flex-end' }]}>
+                  <TouchableOpacity
+                    onPress={() => router.push('/(tabs)/discounts/filter')}
+                    style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
+                  >
+                    <Feather name="filter" size={15} color={hasActiveFilters() ? '#fff' : '#DB8633'} />
+                    <Text style={[styles.filterBtnText, hasActiveFilters() && styles.filterBtnTextActive]}>Filter</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={[styles.emptyState, { paddingTop: 24 }]}>
                   <Text style={styles.emptyTitle}>No results found</Text>
                   <Text style={styles.emptySubtitle}>
                     {searchQuery ? `No businesses found for "${searchQuery}"` : 'Try adjusting your search or filters'}
                   </Text>
-                </>
-                
-                <SuggestCard
-                  type="vendor"
-                  searchQuery={searchQuery}
-                  onSubmit={({ name, website }) => API.submitVendorRequest({ name, website })}
-                />
+                  <SuggestCard
+                    type="vendor"
+                    searchQuery={searchQuery}
+                    onSubmit={({ name, website }) => API.submitVendorRequest({ name, website })}
+                  />
+                </View>
               </View>
             )}
           </ScrollView>
@@ -885,6 +915,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#D0861F',
     fontWeight: '600',
+  },
+  clearFiltersContainer: {
+    paddingBottom: 8,
+  },
+  clearFiltersButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF5EB',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#D0861F',
+    alignSelf: 'flex-start',
+  },
+  clearFiltersText: {
+    color: '#D0861F',
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 4,
   },
   toggleRow: {
     flexDirection: 'row',
@@ -1248,6 +1298,38 @@ const styles = StyleSheet.create({
     backgroundColor: '#e8f0f1',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  mapFilterBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#DB8633',
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
+    zIndex: 100,
+  },
+  mapFilterBtnActive: {
+    backgroundColor: '#DB8633',
+    borderColor: '#DB8633',
+  },
+  mapFilterBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#DB8633',
+  },
+  mapFilterBtnTextActive: {
+    color: '#fff',
   },
 });
 

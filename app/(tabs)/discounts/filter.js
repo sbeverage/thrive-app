@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
-import { Feather, AntDesign } from '@expo/vector-icons';
+import { Feather, AntDesign, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useDiscountFilter } from '../../context/DiscountFilterContext';
 import { useLocation } from '../../context/LocationContext';
@@ -50,12 +50,13 @@ export default function FilterScreen() {
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const debounceRef = useRef(null);
 
-  // Pre-fill location with current location on first open if not already set
+  // Pre-fill location with current location on first open if not already set.
+  // Depends on locationAddress so it fires when GPS resolves after mount.
   useEffect(() => {
-    if (!filters.location && locationAddress?.city && locationAddress?.state) {
+    if (!location && locationAddress?.city && locationAddress?.state) {
       setLocation(`${locationAddress.city}, ${locationAddress.state}`);
     }
-  }, []);
+  }, [locationAddress]);
 
   const handleUseCurrentLocation = async () => {
     if (locationPermission !== 'granted') {
@@ -163,7 +164,7 @@ export default function FilterScreen() {
           <TouchableOpacity onPress={handleUseCurrentLocation} style={styles.iconTouchable}>
             {isLoadingLocation
               ? <ActivityIndicator size="small" color="#DB8633" />
-              : <Feather name="crosshair" size={20} color="#DB8633" />
+              : <Ionicons name="navigate" size={20} color="#DB8633" />
             }
           </TouchableOpacity>
         </View>

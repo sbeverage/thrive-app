@@ -98,6 +98,7 @@ export default function BeneficiaryScreen() {
   const [miniPopupVisible, setMiniPopupVisible] = useState(false);
   
   const [selectedBeneficiaryForPopup, setSelectedBeneficiaryForPopup] = useState(null);
+  const [selectedMarker, setSelectedMarker] = useState(null);
 
   const categories = ['All', 'Favorites', 'Animal Welfare', 'Arts & Culture', 'Childhood Illness', 'Disabilities', 'Disaster Relief', 'Education', 'Elderly Care', 'Environment', 'Healthcare', 'Homelessness', 'Hunger Relief', 'International Aid', 'Low Income Families', 'Veterans', 'Youth Development'];
 
@@ -507,47 +508,117 @@ export default function BeneficiaryScreen() {
       {/* Content Area */}
       <View style={styles.content}>
         {showMap ? (
-          Platform.OS === 'web' ? (
-            <View style={[StyleSheet.absoluteFill, styles.webMapFallback]}>
-              <Text style={styles.webMapText}>Map view is not available on web</Text>
-              <Text style={styles.webMapSubtext}>Please use the mobile app for full map functionality</Text>
-              <TouchableOpacity 
-                style={styles.switchToListButton}
-                onPress={() => setShowMap(false)}
+          <View style={styles.mapContainer}>
+            {Platform.OS === 'web' ? (
+              <View style={[StyleSheet.absoluteFill, styles.webMapFallback]}>
+                <Text style={styles.webMapText}>Map view is not available on web</Text>
+                <Text style={styles.webMapSubtext}>Please use the mobile app for full map functionality</Text>
+                <TouchableOpacity
+                  style={styles.switchToListButton}
+                  onPress={() => setShowMap(false)}
+                >
+                  <Text style={styles.switchToListButtonText}>Switch to List View</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <MapView
+                style={StyleSheet.absoluteFill}
+                initialRegion={mapRegion}
+                region={mapRegion}
+                showsUserLocation={true}
+                showsMyLocationButton={true}
+                onMapReady={updateMapRegion}
               >
-                <Text style={styles.switchToListButtonText}>Switch to List View</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <MapView
-              style={StyleSheet.absoluteFill}
-              initialRegion={mapRegion}
-              region={mapRegion}
-              showsUserLocation={true}
-              showsMyLocationButton={true}
-              onMapReady={updateMapRegion}
-            >
-              <Circle
-                center={{ latitude: mapRegion.latitude, longitude: mapRegion.longitude }}
-                radius={15000}
-                strokeColor="#DB8633"
-                fillColor="rgba(219, 134, 51, 0.1)"
-              />
-              {!loadingBeneficiaries && filteredBeneficiaries.filter(b => b.latitude != null && b.longitude != null).map(b => (
-                <Marker
-                  key={b.id}
-                  coordinate={{ latitude: parseFloat(b.latitude), longitude: parseFloat(b.longitude) }}
-                  title={b.name}
-                  description={b.category}
-                  onPress={() => {
-                    setSelectedBeneficiaryForPopup(b);
-                    setMiniPopupVisible(true);
-                  }}
-                  pinColor="#DB8633"
+                <Circle
+                  center={{ latitude: mapRegion.latitude, longitude: mapRegion.longitude }}
+                  radius={15000}
+                  strokeColor="#DB8633"
+                  fillColor="rgba(219, 134, 51, 0.1)"
                 />
-              ))}
-            </MapView>
-          )
+                {!loadingBeneficiaries && filteredBeneficiaries.filter(b => b.latitude != null && b.longitude != null).map(b => (
+                  <Marker
+                    key={b.id}
+                    coordinate={{ latitude: parseFloat(b.latitude), longitude: parseFloat(b.longitude) }}
+                    onPress={() => setSelectedMarker(b)}
+                    tracksViewChanges={false}
+                  >
+                    <View style={styles.customMarkerContainer}>
+                      <View style={styles.customMarkerBubble}>
+                        {b.image && typeof b.image === 'object' && b.image.uri ? (
+                          <Image source={{ uri: b.image.uri }} style={styles.customMarkerLogo} resizeMode="cover" />
+                        ) : (
+                          <Feather name="heart" size={12} color="#fff" />
+                        )}
+                        <Text style={styles.customMarkerText} numberOfLines={1}>{b.name}</Text>
+                      </View>
+                      <View style={styles.customMarkerTail} />
+                    </View>
+                  </Marker>
+                ))}
+              </MapView>
+            )}
+
+            {/* Floating Filter Button */}
+            <TouchableOpacity
+              style={[styles.mapFilterBtn, styles.mapFilterBtnActive]}
+              onPress={() => router.push('/(tabs)/beneficiary/beneficiaryFilter')}
+            >
+              <Feather name="filter" size={15} color="#fff" />
+              <Text style={[styles.mapFilterBtnText, styles.mapFilterBtnTextActive]}>Filter</Text>
+            </TouchableOpacity>
+
+            {/* Inline Info Window */}
+            {selectedMarker && (
+              <View style={styles.infoWindow}>
+                <View style={styles.infoWindowHeader}>
+                  {selectedMarker.image && typeof selectedMarker.image === 'object' && selectedMarker.image.uri ? (
+                    <Image source={{ uri: selectedMarker.image.uri }} style={styles.infoWindowLogo} resizeMode="cover" />
+                  ) : (
+                    <View style={[styles.infoWindowLogo, styles.infoWindowLogoFallback]}>
+                      <Feather name="heart" size={22} color="#21555b" />
+                    </View>
+                  )}
+                  <View style={styles.infoWindowText}>
+                    <Text style={styles.infoWindowTitle}>{selectedMarker.name}</Text>
+                    <Text style={styles.infoWindowCategory}>{selectedMarker.category}</Text>
+                    <Text style={styles.infoWindowLocation}>{selectedMarker.location}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.closeButton}
+                    onPress={() => setSelectedMarker(null)}
+                  >
+                    <AntDesign name="close" size={20} color="#666" />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.infoWindowActions}>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => {
+                      setSelectedMarker(null);
+                      router.push({
+                        pathname: '/(tabs)/beneficiary/beneficiaryDetail',
+                        params: { id: selectedMarker.id.toString() },
+                      });
+                    }}
+                  >
+                    <Feather name="info" size={16} color="#fff" />
+                    <Text style={styles.actionButtonText}>View Details</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionButtonSecondary}
+                    onPress={() => {
+                      setPendingBeneficiary(selectedMarker);
+                      setSelectedMarker(null);
+                      setConfirmModalVisible(true);
+                    }}
+                  >
+                    <Feather name="heart" size={16} color="#DB8633" />
+                    <Text style={styles.actionButtonTextSecondary}>Select</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
         ) : (
           <ScrollView
             style={styles.listContainer}
@@ -563,11 +634,7 @@ export default function BeneficiaryScreen() {
             ) : filteredBeneficiaries.length > 0 ? (
               <>
                 <View ref={beneficiarySectionRef}>
-                  <View style={[styles.sectionHeader, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
-                    <View>
-                      <Text style={styles.sectionTitle}>Nearby Causes</Text>
-                      <Text style={styles.sectionSubtitle}>{filteredBeneficiaries.length} organizations found</Text>
-                    </View>
+                  <View style={[styles.sectionHeader, { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }]}>
                     <TouchableOpacity
                       onPress={() => router.push('/(tabs)/beneficiary/beneficiaryFilter')}
                       style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
@@ -727,19 +794,29 @@ export default function BeneficiaryScreen() {
                 ))}
               </>
             ) : (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyTitle}>No results found</Text>
-                <Text style={styles.emptySubtitle}>
-                  {searchText ? `No beneficiaries found for "${searchText}"` : 'Try adjusting your search or filters'}
-                </Text>
-                
-                <SuggestCard
-                  type="charity"
-                  searchQuery={searchText}
-                  onSubmit={({ name, website }) =>
-                    API.submitBeneficiaryRequest({ company_name: name, website })
-                  }
-                />
+              <View>
+                <View style={[styles.sectionHeader, { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }]}>
+                  <TouchableOpacity
+                    onPress={() => router.push('/(tabs)/beneficiary/beneficiaryFilter')}
+                    style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
+                  >
+                    <Feather name="filter" size={15} color={hasActiveFilters() ? '#fff' : '#DB8633'} />
+                    <Text style={[styles.filterBtnText, hasActiveFilters() && styles.filterBtnTextActive]}>Filter</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyTitle}>No results found</Text>
+                  <Text style={styles.emptySubtitle}>
+                    {searchText ? `No beneficiaries found for "${searchText}"` : 'Try adjusting your search or filters'}
+                  </Text>
+                  <SuggestCard
+                    type="charity"
+                    searchQuery={searchText}
+                    onSubmit={({ name, website }) =>
+                      API.submitBeneficiaryRequest({ company_name: name, website })
+                    }
+                  />
+                </View>
               </View>
             )}
           </ScrollView>
@@ -972,9 +1049,9 @@ const styles = StyleSheet.create({
   },
   sectionHeader: {
     paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 8,
-    marginBottom: 8,
+    paddingTop: 12,
+    paddingBottom: 4,
+    marginBottom: 4,
     marginHorizontal: -20,
   },
   sectionTitle: {
@@ -1085,7 +1162,7 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     flex: 1,
-    paddingTop: 60,
+    paddingTop: 20,
     alignItems: 'center',
   },
   emptyTitle: {
@@ -1356,5 +1433,173 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     marginLeft: 4,
+  },
+  mapContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  mapFilterBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#DB8633',
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
+    zIndex: 100,
+  },
+  mapFilterBtnActive: {
+    backgroundColor: '#DB8633',
+    borderColor: '#DB8633',
+  },
+  mapFilterBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#DB8633',
+  },
+  mapFilterBtnTextActive: {
+    color: '#fff',
+  },
+  customMarkerContainer: {
+    alignItems: 'center',
+  },
+  customMarkerBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#21555b',
+    borderRadius: 20,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+    maxWidth: 160,
+    gap: 5,
+  },
+  customMarkerLogo: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#fff',
+  },
+  customMarkerText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    flexShrink: 1,
+  },
+  customMarkerTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 7,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#21555b',
+  },
+  infoWindow: {
+    position: 'absolute',
+    bottom: 120,
+    left: 20,
+    right: 20,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 9999,
+  },
+  infoWindowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  infoWindowLogo: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  infoWindowLogoFallback: {
+    backgroundColor: '#e8f0f1',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  infoWindowText: {
+    flex: 1,
+  },
+  infoWindowTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#324E58',
+    marginBottom: 4,
+  },
+  infoWindowCategory: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 2,
+  },
+  infoWindowLocation: {
+    fontSize: 12,
+    color: '#8E9BAE',
+  },
+  closeButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f5f5fa',
+  },
+  infoWindowActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DB8633',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    gap: 8,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  actionButtonSecondary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#DB8633',
+    gap: 8,
+  },
+  actionButtonTextSecondary: {
+    color: '#DB8633',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

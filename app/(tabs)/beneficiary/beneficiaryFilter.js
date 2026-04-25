@@ -1,6 +1,6 @@
 // File: app/(tabs)/beneficiaryFilter.js
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,8 +9,9 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
+  ActivityIndicator,
 } from 'react-native';
-import { Feather, AntDesign } from '@expo/vector-icons';
+import { Feather, AntDesign, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useBeneficiaryFilter } from '../../context/BeneficiaryFilterContext';
 import { useLocation } from '../../context/LocationContext';
@@ -38,8 +39,46 @@ const causeOptions = [
 export default function BeneficiaryFilter() {
   const { filters, updateFilters } = useBeneficiaryFilter();
   const [isCauseDropdownOpen, setIsCauseDropdownOpen] = useState(false);
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const debounceRef = useRef(null);
   const { locationAddress, refreshLocation, locationPermission, checkLocationPermission } = useLocation();
   const router = useRouter();
+
+  const handleLocationChange = (text) => {
+    updateFilters({ location: text });
+    setLocationSuggestions([]);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (text.trim().length < 2) return;
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(text)}&format=json&addressdetails=1&limit=5&countrycodes=us`,
+          { headers: { 'User-Agent': 'ThriveApp/1.0' } }
+        );
+        const data = await res.json();
+        const suggestions = data
+          .filter(r => r.address?.city || r.address?.town || r.address?.village || r.address?.county)
+          .map(r => {
+            const city = r.address?.city || r.address?.town || r.address?.village || r.address?.county || '';
+            const state = r.address?.state || '';
+            return city && state ? `${city}, ${state}` : null;
+          })
+          .filter(Boolean)
+          .filter((v, i, a) => a.indexOf(v) === i)
+          .slice(0, 5);
+        setLocationSuggestions(suggestions);
+      } catch {}
+    }, 400);
+  };
+
+  // Pre-fill location with current location on first open if not already set.
+  // Depends on locationAddress so it fires when GPS resolves after mount.
+  useEffect(() => {
+    if (!filters.location && locationAddress?.city && locationAddress?.state) {
+      updateFilters({ location: `${locationAddress.city}, ${locationAddress.state}` });
+    }
+  }, [locationAddress]);
 
   const handleApplyFilters = () => {
     // Filters are already updated in state via the form inputs
@@ -80,32 +119,53 @@ export default function BeneficiaryFilter() {
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>Search nearby you</Text>
         <View style={styles.inputRow}>
+          <Feather name="map-pin" size={18} color="#DB8633" style={{ marginRight: 8 }} />
           <TextInput
-            placeholder={locationAddress?.city ? `${locationAddress.city}, ${locationAddress.state}` : 'City, State'}
+            placeholder="City, State"
             placeholderTextColor="#aaa"
             value={filters.location}
-            onChangeText={(text) => updateFilters({ location: text })}
+            onChangeText={handleLocationChange}
             style={styles.input}
             autoCapitalize="words"
           />
           {filters.location.length > 0 && (
-            <TouchableOpacity onPress={() => updateFilters({ location: '' })} style={{ padding: 4, marginRight: 4 }}>
+            <TouchableOpacity onPress={() => { updateFilters({ location: '' }); setLocationSuggestions([]); }} style={{ padding: 4, marginRight: 4 }}>
               <AntDesign name="closecircle" size={16} color="#bbb" />
             </TouchableOpacity>
           )}
           <TouchableOpacity
             onPress={async () => {
               if (locationPermission !== 'granted') { checkLocationPermission(); return; }
+              setIsLoadingLocation(true);
               await refreshLocation();
+              setIsLoadingLocation(false);
               if (locationAddress?.city && locationAddress?.state) {
                 updateFilters({ location: `${locationAddress.city}, ${locationAddress.state}` });
+                setLocationSuggestions([]);
               }
             }}
             style={styles.iconTouchable}
           >
-            <Feather name="crosshair" size={20} color="#DB8633" />
+            {isLoadingLocation
+              ? <ActivityIndicator size="small" color="#DB8633" />
+              : <Ionicons name="navigate" size={20} color="#DB8633" />
+            }
           </TouchableOpacity>
         </View>
+        {locationSuggestions.length > 0 && (
+          <View style={styles.suggestionsBox}>
+            {locationSuggestions.map((s) => (
+              <TouchableOpacity
+                key={s}
+                style={styles.suggestionRow}
+                onPress={() => { updateFilters({ location: s }); setLocationSuggestions([]); }}
+              >
+                <Feather name="map-pin" size={14} color="#DB8633" style={{ marginRight: 8 }} />
+                <Text style={styles.suggestionText}>{s}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </View>
 
       {/* Favorites Filter */}
@@ -224,6 +284,26 @@ const styles = StyleSheet.create({
   iconTouchable: {
     padding: 6,
     marginLeft: 4,
+  },
+  suggestionsBox: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e1e1e5',
+    marginTop: 6,
+    overflow: 'hidden',
+  },
+  suggestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  suggestionText: {
+    fontSize: 14,
+    color: '#324E58',
   },
   optionsContainer: {
     flexDirection: 'row',

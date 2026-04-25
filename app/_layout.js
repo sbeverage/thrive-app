@@ -3,7 +3,7 @@ import * as Sentry from '@sentry/react-native';
 import * as Updates from 'expo-updates';
 import { Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { View, StyleSheet, Text, TextInput } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { BeneficiaryProvider } from './context/BeneficiaryContext';
 import { UserProvider } from './context/UserContext';
 import { BeneficiaryFilterProvider } from './context/BeneficiaryFilterContext';
@@ -17,6 +17,7 @@ import { StripeProvider } from '@stripe/stripe-react-native';
 import { STRIPE_PUBLISHABLE_KEY, STRIPE_MERCHANT_IDENTIFIER } from './utils/constants';
 import ErrorBoundary from '../components/ErrorBoundary';
 
+
 // Initialize Sentry as early as possible so it captures all errors
 Sentry.init({
   dsn: process.env.EXPO_PUBLIC_SENTRY_DSN || 'https://680cba8ad82311de70f4819ab349b969@o4511214501363712.ingest.us.sentry.io/4511214507786241',
@@ -25,12 +26,6 @@ Sentry.init({
   enableAutoSessionTracking: true,
   attachStacktrace: true,
 });
-
-// Prevent device font size settings from affecting app layout
-if (Text.defaultProps == null) Text.defaultProps = {};
-Text.defaultProps.allowFontScaling = false;
-if (TextInput.defaultProps == null) TextInput.defaultProps = {};
-TextInput.defaultProps.allowFontScaling = false;
 
 function Layout() {
   const router = useRouter();

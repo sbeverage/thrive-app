@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ScrollView, Modal, Dimensions, Platform, Keyboard, KeyboardAvoidingView, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { AntDesign, Ionicons } from '@expo/vector-icons';
@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from '../../context/UserContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import API from '../../lib/api';
+import ConfettiCannon from 'react-native-confetti-cannon';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -57,8 +58,14 @@ export default function DiscountApproved() {
           ? `${usageLimitTotal} time${usageLimitTotal !== 1 ? 's' : ''} per month`
           : 'Unlimited';
   
+  const confettiRef = useRef(null);
   const [totalBill, setTotalBill] = useState('');
   const [totalDiscount, setTotalDiscount] = useState('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => confettiRef.current?.start(), 300);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Only allow numbers and one decimal point
   const filterNumericInput = (text) => {
@@ -273,62 +280,11 @@ export default function DiscountApproved() {
             <View style={styles.codeDisplay}>
               <Text style={styles.codeText}>{discountCode}</Text>
             </View>
-            <Text style={styles.codeInstructions}>Show this code at checkout</Text>
+            <Text style={styles.codeInstructions}>Use this code at checkout</Text>
+            {description ? (
+              <Text style={styles.codeDescription}>{description}</Text>
+            ) : null}
           </View>
-        </View>
-
-        {/* What You Get - Highlight Section */}
-        <View style={styles.highlightSection}>
-          <View style={styles.highlightIcon}>
-            {Platform.OS === 'web' ? (
-              <Text style={{ fontSize: 32 }}>🎁</Text>
-            ) : (
-              <Ionicons name="gift" size={32} color="#DB8633" />
-            )}
-          </View>
-          <Text style={styles.highlightTitle}>Discount Details</Text>
-          
-          {/* Discount Value */}
-          <View style={styles.discountDetailsContainer}>
-            {discountType && discountValue !== null && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Discount:</Text>
-                <Text style={styles.detailValue}>
-                  {discountType === 'percentage' 
-                    ? `${discountValue}% off`
-                    : discountType === 'fixed'
-                    ? `$${discountValue} off`
-                    : discountType === 'bogo'
-                    ? 'Buy one, get one'
-                    : discountTitle}
-                </Text>
-              </View>
-            )}
-            
-            {/* Max Discount (if applicable) */}
-            {maxDiscount && maxDiscount > 0 && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Maximum:</Text>
-                <Text style={styles.detailValue}>Up to ${maxDiscount}</Text>
-              </View>
-            )}
-            
-            {/* Usage Limit */}
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Usage:</Text>
-              <Text style={styles.detailValue}>{usageDisplay}</Text>
-            </View>
-            
-            {/* Description if available */}
-            {description && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Details:</Text>
-                <Text style={styles.detailValue}>{description}</Text>
-              </View>
-            )}
-          </View>
-          
-          <Text style={styles.highlightSubtext}>Present this code at checkout</Text>
         </View>
 
         {/* Savings Tracking Section */}
@@ -418,6 +374,17 @@ export default function DiscountApproved() {
 
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Confetti burst on arrival */}
+      <ConfettiCannon
+        ref={confettiRef}
+        count={120}
+        origin={{ x: SCREEN_WIDTH / 2, y: -10 }}
+        autoStart={false}
+        fadeOut
+        fallSpeed={2800}
+        colors={['#DB8633', '#21555b', '#FFC857', '#10B981', '#fff']}
+      />
 
       {/* Success Modal */}
       <Modal visible={showModal} transparent animationType="fade">
@@ -579,15 +546,18 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   codeDisplay: {
-    backgroundColor: '#DB8633',
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: '#21555b',
+    borderRadius: 12,
     paddingVertical: 20,
     paddingHorizontal: 32,
-    borderRadius: 16,
-    marginBottom: 16,
+    marginBottom: 12,
     alignItems: 'center',
+    width: '100%',
   },
   codeText: {
-    color: '#fff',
+    color: '#21555b',
     fontSize: 26,
     fontWeight: '900',
     letterSpacing: 3,
@@ -597,79 +567,18 @@ const styles = StyleSheet.create({
     color: '#64748B',
     textAlign: 'center',
     lineHeight: 20,
+    marginBottom: 4,
   },
-
-  // Highlight Section
-  highlightSection: {
-    backgroundColor: '#FFF7ED',
-    borderRadius: 20,
-    padding: 28,
-    marginBottom: 24,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FED7AA',
-    zIndex: 2,
-  },
-  highlightIcon: {
-    backgroundColor: '#fff',
-    borderRadius: 50,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  highlightTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#92400E',
-    marginBottom: 12,
-  },
-  highlightDiscount: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#DB8633',
+  codeDescription: {
+    fontSize: 14,
+    color: '#64748B',
     textAlign: 'center',
-    marginBottom: 8,
-    letterSpacing: 1,
-  },
-  discountDetailsContainer: {
-    width: '100%',
-    marginTop: 16,
-    marginBottom: 16,
-    paddingTop: 16,
+    lineHeight: 20,
+    marginTop: 12,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#FED7AA',
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-    paddingHorizontal: 4,
-  },
-  detailLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#92400E',
-    flex: 1,
-    marginRight: 12,
-  },
-  detailValue: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#1E293B',
-    flex: 2,
-    textAlign: 'right',
-  },
-  highlightSubtext: {
-    fontSize: 14,
-    color: '#92400E',
-    textAlign: 'center',
-    fontWeight: '500',
-    marginTop: 8,
+    borderTopColor: '#E2E8F0',
+    width: '100%',
   },
 
   // Savings Section

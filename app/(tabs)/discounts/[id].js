@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { AntDesign, Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useDiscount } from '../../context/DiscountContext';
 import { useUser } from '../../context/UserContext';
 import API from '../../lib/api';
@@ -318,36 +319,36 @@ export default function VendorDetails() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Scrollable Content */}
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={{ paddingBottom: 20 }}
+        contentContainerStyle={{ paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.card}>
-          {/* Compact Horizontal Header */}
-          <View style={styles.compactHeader}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={() => router.back()}
-            >
-              <Image 
-                source={require('../../../assets/icons/arrow-left.png')} 
-                style={{ width: 20, height: 20, tintColor: '#324E58' }} 
-              />
-            </TouchableOpacity>
-            <View style={styles.vendorInfoRow}>
-              <Image source={logoSource} style={styles.compactLogo} />
-              <View style={styles.vendorTextContainer}>
-                <Text style={styles.vendorName} numberOfLines={1}>{vendor.name}</Text>
-                {vendor.category && (
-                  <Text style={styles.categoryText} numberOfLines={1}>{vendor.category}</Text>
-                )}
-              </View>
-            </View>
+        {/* Teal Gradient Header */}
+        <LinearGradient
+          colors={['#21555b', '#2d7a82']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradientHeader}
+        >
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <Image
+              source={require('../../../assets/icons/arrow-left.png')}
+              style={{ width: 20, height: 20, tintColor: '#fff' }}
+            />
+          </TouchableOpacity>
+          <View style={styles.headerLogoWrap}>
+            <Image source={logoSource} style={styles.headerLogo} />
           </View>
+          <Text style={styles.headerVendorName} numberOfLines={1}>{vendor.name}</Text>
+          {vendor.category && (
+            <Text style={styles.headerCategoryText}>{vendor.category}</Text>
+          )}
+        </LinearGradient>
 
-          {/* AVAILABLE DISCOUNTS - IMMEDIATELY VISIBLE */}
+        {/* White body with rounded top */}
+        <View style={styles.bodyContent}>
+          {/* Available Discounts */}
           <View style={styles.discountsSection}>
             <View style={styles.discountsHeader}>
               <Text style={styles.sectionTitle}>Available Discounts</Text>
@@ -357,42 +358,42 @@ export default function VendorDetails() {
                 </Text>
               </View>
             </View>
-            
+
             {vendorDiscounts.length > 0 ? (
-              vendorDiscounts.map(discount => {
-                // Format discount amount (H2)
+              [...vendorDiscounts].sort((a, b) => {
+                const isReached = (d) => {
+                  let raw = d.usageLimit || d.usage_limit || null;
+                  let limit = null;
+                  if (raw !== null && raw !== undefined && raw !== '') {
+                    const trimmed = typeof raw === 'string' ? raw.trim() : String(raw);
+                    if (trimmed.toLowerCase() !== 'unlimited' && trimmed !== '') {
+                      const n = parseInt(trimmed, 10);
+                      if (!isNaN(n) && n > 0) limit = n;
+                    }
+                  }
+                  if (limit === null) return false;
+                  const used = redemptionCounts[d.id] || 0;
+                  return used >= limit;
+                };
+                return isReached(a) - isReached(b);
+              }).map(discount => {
                 const formatDiscountAmount = () => {
-                  if (!discount.discountType || !discount.discountValue) {
-                    return null; // No discount amount to show
-                  }
-                  
+                  if (!discount.discountType) return null;
+                  if (discount.discountType === 'free') return 'Free Item';
+                  if (discount.discountType === 'bogo') return 'Buy one, get one';
+                  if (!discount.discountValue) return null;
                   const value = discount.discountValue;
-                  
-                  if (discount.discountType === 'percentage') {
-                    return `${value}% off`;
-                  } else if (discount.discountType === 'fixed') {
-                    return `$${value} off`;
-                  } else if (discount.discountType === 'bogo') {
-                    return 'Buy one, get one';
-                  } else if (discount.discountType === 'free') {
-                    return 'Free Item';
-                  }
+                  if (discount.discountType === 'percentage') return `${value}% off`;
+                  if (discount.discountType === 'fixed') return `$${value} off`;
                   return null;
                 };
 
-                // Get usage limit from backend - backend now returns usageLimit (camelCase)
-                // Backend returns: usageLimit (string) - e.g., "5" or "unlimited"
                 let rawUsageLimit = discount.usageLimit || discount.usage_limit || null;
-                
-                // Convert to number, handling string values like "5", "0", "", null, undefined, "unlimited"
                 let usageLimit = null;
                 if (rawUsageLimit !== null && rawUsageLimit !== undefined && rawUsageLimit !== '') {
-                  // Handle string values - parse to integer
                   let numValue;
                   if (typeof rawUsageLimit === 'string') {
-                    // Trim whitespace and parse
                     const trimmed = rawUsageLimit.trim();
-                    // Check for "unlimited" or empty string
                     if (trimmed.toLowerCase() === 'unlimited' || trimmed === '') {
                       usageLimit = null;
                     } else {
@@ -401,96 +402,88 @@ export default function VendorDetails() {
                   } else {
                     numValue = Number(rawUsageLimit);
                   }
-                  
-                  // Only set usageLimit if we got a valid positive number
                   if (numValue !== undefined && !isNaN(numValue) && numValue > 0) {
                     usageLimit = numValue;
                   }
                 }
-                
+
                 const timesUsed = redemptionCounts[discount.id] || 0;
                 const remainingUses = usageLimit ? Math.max(0, usageLimit - timesUsed) : null;
-                // Limit is reached when: timesUsed >= usageLimit OR remainingUses === 0
-                // This handles both cases: when timesUsed equals or exceeds the limit
                 const isLimitReached = usageLimit !== null && usageLimit > 0 && (timesUsed >= usageLimit || remainingUses === 0);
-                
-                console.log(`🔍 Discount ${discount.id} - usageLimit: ${usageLimit}, timesUsed: ${timesUsed}, remainingUses: ${remainingUses}, isLimitReached: ${isLimitReached}`);
-                
-                // Debug: Log the redemption counts state
-                console.log(`📊 Current redemptionCounts state:`, redemptionCounts);
-                
-                // Format usage text
+
                 let usageText;
                 if (usageLimit) {
                   if (isLimitReached) {
-                    usageText = `Limit reached (${timesUsed}/${usageLimit} used this month)`;
+                    usageText = `${timesUsed}/${usageLimit} used this month`;
                   } else {
-                    usageText = `${remainingUses} of ${usageLimit} uses remaining this month`;
+                    usageText = `${remainingUses} of ${usageLimit} left this month`;
                   }
                 } else {
-                  usageText = 'Unlimited uses per month';
+                  usageText = 'Unlimited uses';
                 }
 
                 const discountAmount = formatDiscountAmount();
-                
+
                 return (
-                  <View key={discount.id} style={[
-                    styles.discountCard,
-                    isLimitReached && styles.discountCardDisabled
-                  ]}>
-                    <View style={styles.discountInfo}>
-                      {/* H1: Title */}
-                      <Text style={[
-                        styles.discountTitle,
-                        isLimitReached && styles.discountTextDisabled
-                      ]}>{discount.title}</Text>
-                      
-                      {/* H2: Discount Amount */}
+                  <View key={discount.id} style={[styles.discountCard, isLimitReached && styles.discountCardDisabled]}>
+                    {/* Coupon band */}
+                    <LinearGradient
+                      colors={isLimitReached ? ['#9CA3AF', '#B0BEC5'] : ['#F2A84E', '#DB8633']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.discountBand}
+                    >
+                      {discountAmount ? (
+                        <Text style={styles.bandAmount}>{discountAmount}</Text>
+                      ) : (
+                        <Text style={styles.bandTitle} numberOfLines={1}>{discount.title}</Text>
+                      )}
+                      {isLimitReached && (
+                        <View style={styles.limitBadge}>
+                          <Text style={styles.limitBadgeText}>Limit Reached</Text>
+                        </View>
+                      )}
+                    </LinearGradient>
+
+                    {/* Card body */}
+                    <View style={styles.discountBody}>
                       {discountAmount && (
-                        <Text style={[
-                          styles.discountAmount,
-                          isLimitReached && styles.discountTextDisabled
-                        ]}>{discountAmount}</Text>
+                        <Text style={[styles.discountTitle, isLimitReached && styles.discountTextDisabled]}>
+                          {discount.title}
+                        </Text>
                       )}
-                      
-                      {/* H3: Applies to (Description) */}
                       {discount.description && discount.description !== discount.terms && (
-                        <Text style={[
-                          styles.discountAppliesTo,
-                          isLimitReached && styles.discountTextDisabled
-                        ]}>{discount.description}</Text>
+                        <Text style={[styles.discountAppliesTo, isLimitReached && styles.discountTextDisabled]} numberOfLines={2}>
+                          {discount.description}
+                        </Text>
                       )}
-                      
-                      {/* H4: Frequency */}
-                      <Text style={isLimitReached ? styles.discountFrequencyReached : styles.discountFrequency}>
-                        {usageText}
-                      </Text>
-                      
-                      {/* H5: Terms */}
+                      <View style={styles.discountFooter}>
+                        <View style={[styles.usagePill, isLimitReached && styles.usagePillReached]}>
+                          <Text style={[styles.usagePillText, isLimitReached && styles.usagePillTextReached]}>
+                            {usageText}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={[styles.redeemBtn, (isRedeeming || isLimitReached) && styles.redeemBtnDisabled]}
+                          onPress={() => {
+                            if (!isLimitReached) {
+                              setSelectedDiscount(discount);
+                              setShowConfirmModal(true);
+                            }
+                          }}
+                          disabled={isRedeeming || isLimitReached}
+                        >
+                          <Text style={styles.redeemText}>
+                            {isLimitReached ? 'Used' : 'Redeem'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                       {discount.terms && (
-                        <Text style={[
-                          styles.discountTerms,
-                          isLimitReached && styles.discountTextDisabled
-                        ]}>{discount.terms}</Text>
+                        <Text style={[styles.discountTerms, isLimitReached && styles.discountTextDisabled]}>
+                          {discount.terms}
+                        </Text>
                       )}
                     </View>
-                    <TouchableOpacity
-                      style={[
-                        styles.redeemBtn, 
-                        (isRedeeming || isLimitReached) && styles.redeemBtnDisabled
-                      ]}
-                      onPress={() => {
-                        if (!isLimitReached) {
-                          setSelectedDiscount(discount);
-                          setShowConfirmModal(true);
-                        }
-                      }}
-                      disabled={isRedeeming || isLimitReached}
-                    >
-                      <Text style={styles.redeemText}>
-                        {isLimitReached ? 'Limit Reached' : 'Redeem'}
-                      </Text>
-                    </TouchableOpacity>
                   </View>
                 );
               })
@@ -503,27 +496,21 @@ export default function VendorDetails() {
 
           {/* About Section */}
           {(() => {
-            // Parse description if it's JSON, otherwise use as-is
             let aboutText = '';
             if (vendor.description) {
               try {
-                // Try to parse as JSON
-                const parsed = typeof vendor.description === 'string' 
-                  ? JSON.parse(vendor.description) 
+                const parsed = typeof vendor.description === 'string'
+                  ? JSON.parse(vendor.description)
                   : vendor.description;
-                
-                // If it's an object, extract the description field
                 if (typeof parsed === 'object' && parsed !== null) {
                   aboutText = parsed.description || parsed.about || '';
                 } else {
                   aboutText = vendor.description;
                 }
               } catch (e) {
-                // If parsing fails, use the description as-is
                 aboutText = vendor.description;
               }
             }
-            
             return aboutText ? (
               <View style={styles.aboutSection}>
                 <Text style={styles.sectionTitle}>About Us</Text>
@@ -535,7 +522,6 @@ export default function VendorDetails() {
           {/* Contact Information */}
           <View style={styles.contactSection}>
             <Text style={styles.sectionTitle}>Contact Information</Text>
-            
             {vendor.phone && (
               <TouchableOpacity style={styles.contactRow} onPress={handleCall}>
                 {Platform.OS === 'web' ? (
@@ -551,7 +537,6 @@ export default function VendorDetails() {
                 )}
               </TouchableOpacity>
             )}
-
             {vendor.website && (
               <TouchableOpacity style={styles.contactRow} onPress={handleWebsite}>
                 {Platform.OS === 'web' ? (
@@ -567,7 +552,6 @@ export default function VendorDetails() {
                 )}
               </TouchableOpacity>
             )}
-
             {vendor.address && (
               <TouchableOpacity style={styles.contactRow} onPress={handleAddress}>
                 {Platform.OS === 'web' ? (
@@ -589,47 +573,28 @@ export default function VendorDetails() {
 
           {/* Social Links */}
           {vendor.socialLinks && (vendor.socialLinks.facebook || vendor.socialLinks.instagram || vendor.socialLinks.twitter) && (
-            <View style={styles.socialSection}>
-              <Text style={styles.sectionTitle}>Follow Us</Text>
-              <View style={styles.socialLinks}>
-                {vendor.socialLinks.facebook && (
-                  <TouchableOpacity 
-                    style={styles.socialButton} 
-                    onPress={() => handleSocial('facebook')}
-                  >
-                    {Platform.OS === 'web' ? (
-                      <Text style={{ fontSize: 24 }}>📘</Text>
-                    ) : (
-                      <Feather name="facebook" size={24} color="#1877F2" />
-                    )}
-                  </TouchableOpacity>
-                )}
-                {vendor.socialLinks.instagram && (
-                  <TouchableOpacity 
-                    style={styles.socialButton} 
-                    onPress={() => handleSocial('instagram')}
-                  >
-                    {Platform.OS === 'web' ? (
-                      <Text style={{ fontSize: 24 }}>📷</Text>
-                    ) : (
-                      <Feather name="instagram" size={24} color="#E4405F" />
-                    )}
-                  </TouchableOpacity>
-                )}
-                {vendor.socialLinks.twitter && (
-                  <TouchableOpacity 
-                    style={styles.socialButton} 
-                    onPress={() => handleSocial('twitter')}
-                  >
-                    {Platform.OS === 'web' ? (
-                      <Text style={{ fontSize: 24 }}>🐦</Text>
-                    ) : (
-                      <Feather name="twitter" size={24} color="#1DA1F2" />
-                    )}
-                  </TouchableOpacity>
-                )}
+            <>
+              <View style={styles.socialSection}>
+                <Text style={styles.sectionTitle}>Follow Us</Text>
+                <View style={styles.socialLinks}>
+                  {vendor.socialLinks.facebook && (
+                    <TouchableOpacity style={styles.socialButton} onPress={() => handleSocial('facebook')}>
+                      {Platform.OS === 'web' ? <Text style={{ fontSize: 24 }}>📘</Text> : <Feather name="facebook" size={24} color="#1877F2" />}
+                    </TouchableOpacity>
+                  )}
+                  {vendor.socialLinks.instagram && (
+                    <TouchableOpacity style={styles.socialButton} onPress={() => handleSocial('instagram')}>
+                      {Platform.OS === 'web' ? <Text style={{ fontSize: 24 }}>📷</Text> : <Feather name="instagram" size={24} color="#E4405F" />}
+                    </TouchableOpacity>
+                  )}
+                  {vendor.socialLinks.twitter && (
+                    <TouchableOpacity style={styles.socialButton} onPress={() => handleSocial('twitter')}>
+                      {Platform.OS === 'web' ? <Text style={{ fontSize: 24 }}>🐦</Text> : <Feather name="twitter" size={24} color="#1DA1F2" />}
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
-            </View>
+            </>
           )}
 
           {/* Business Hours */}
@@ -637,19 +602,14 @@ export default function VendorDetails() {
             <View style={styles.hoursSection}>
               <Text style={styles.sectionTitle}>Business Hours</Text>
               {(() => {
-                // Define day order: Monday through Sunday
                 const dayOrder = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-                
-                // Sort entries by day order
                 const sortedHours = Object.entries(vendor.hours).sort(([dayA], [dayB]) => {
                   const indexA = dayOrder.indexOf(dayA.toLowerCase());
                   const indexB = dayOrder.indexOf(dayB.toLowerCase());
-                  // If day not found in order, put it at the end
                   if (indexA === -1) return 1;
                   if (indexB === -1) return -1;
                   return indexA - indexB;
                 });
-                
                 return sortedHours.map(([day, hours]) => (
                   <View key={day} style={styles.hoursRow}>
                     <Text style={styles.dayText}>{day.charAt(0).toUpperCase() + day.slice(1)}</Text>
@@ -673,16 +633,13 @@ export default function VendorDetails() {
                 resizeMode="contain"
               />
             </View>
-            <Text style={styles.modalTitle}>Ready to Redeem?</Text>
+            <Text style={styles.modalTitle}>Use This Deal?</Text>
             <Text style={styles.modalMessage}>
-              Are you sure you want to redeem the{' '}
+              Your discount code for{' '}
               <Text style={styles.modalHighlight}>
                 {selectedDiscount?.title}
               </Text>{' '}
-              discount?
-            </Text>
-            <Text style={styles.modalSubtitle}>
-              This will generate your discount code
+              is about to be generated.
             </Text>
             
             <View style={styles.modalButtons}>
@@ -693,7 +650,7 @@ export default function VendorDetails() {
                   setSelectedDiscount(null);
                 }}
               >
-                <Text style={styles.modalCancelText}>No</Text>
+                <Text style={styles.modalCancelText}>Not Yet</Text>
               </TouchableOpacity>
               
               {(() => {
@@ -748,8 +705,7 @@ export default function VendorDetails() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
-    position: 'relative',
+    backgroundColor: '#21555b',
   },
   loadingContainer: {
     flex: 1,
@@ -762,66 +718,78 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#6B7280',
   },
-  compactHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  backButton: {
-    padding: 8,
-    marginRight: 12,
-    backgroundColor: '#F8F9FA',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  vendorInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  compactLogo: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-    resizeMode: 'cover',
-    marginRight: 12,
-    backgroundColor: '#F3F4F6',
-  },
-  vendorTextContainer: {
-    flex: 1,
-    justifyContent: 'center',
-  },
   scroll: {
     flex: 1,
   },
-  card: {
+
+  // Gradient Header
+  gradientHeader: {
+    paddingTop: 54,
+    paddingBottom: 36,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 54,
+    left: 20,
+    padding: 10,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 12,
+  },
+  headerLogoWrap: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     backgroundColor: '#fff',
-    padding: 20,
-    paddingBottom: 20,
-    paddingTop: 20,
-    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  vendorName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#324E58',
-    marginBottom: 2,
+  headerLogo: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    resizeMode: 'contain',
   },
-  categoryText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#6B7280',
-  },
-  sectionTitle: {
+  headerVendorName: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#324E58',
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  headerCategoryText: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.72)',
+    fontWeight: '500',
+  },
+
+  // White body
+  bodyContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    marginTop: -20,
+    padding: 20,
+    paddingTop: 28,
+  },
+
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#21555b',
     marginBottom: 12,
-    marginTop: 0,
+  },
+
+  // Discounts section
+  discountsSection: {
+    marginBottom: 32,
   },
   discountsHeader: {
     flexDirection: 'row',
@@ -830,7 +798,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   discountCountBadge: {
-    backgroundColor: '#F0F7FF',
+    backgroundColor: '#E8F4F5',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
@@ -838,113 +806,125 @@ const styles = StyleSheet.create({
   discountCountText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#DB8633',
+    color: '#21555b',
   },
-  // Discounts Section - Prominent at Top
-  discountsSection: {
-    marginBottom: 32,
-  },
+
+  // Coupon-style discount card
   discountCard: {
-    backgroundColor: '#F8F9FA',
-    padding: 20,
+    backgroundColor: '#fff',
     borderRadius: 16,
-    marginTop: 12,
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
+    marginBottom: 16,
+    overflow: 'hidden',
     shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   discountCardDisabled: {
-    backgroundColor: '#F3F4F6',
-    opacity: 0.6,
-    borderColor: '#D1D5DB',
+    opacity: 0.65,
   },
-  discountTextDisabled: {
-    opacity: 0.5,
-    color: '#9CA3AF',
+  discountBand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 18,
   },
-  discountInfo: {
-    marginBottom: 16,
-  },
-  // H1: Title
-  discountTitle: {
+  bandAmount: {
     fontSize: 22,
+    fontWeight: '900',
+    color: '#fff',
+    letterSpacing: 0.5,
+  },
+  bandTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#fff',
+    flex: 1,
+  },
+  limitBadge: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  limitBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  discountBody: {
+    padding: 16,
+  },
+  discountTitle: {
+    fontSize: 16,
     fontWeight: '700',
     color: '#324E58',
-    marginBottom: 12,
+    marginBottom: 6,
   },
-  // H2: Discount Amount
-  discountAmount: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#DB8633',
-    marginBottom: 12,
-  },
-  // H3: Applies to (Description)
   discountAppliesTo: {
-    fontSize: 14,
-    color: '#4B5563',
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  // H4: Frequency
-  discountFrequency: {
     fontSize: 13,
     color: '#6B7280',
+    lineHeight: 19,
     marginBottom: 12,
-    fontWeight: '500',
   },
-  discountFrequencyReached: {
-    fontSize: 13,
-    color: '#DC2626',
-    marginBottom: 12,
+  discountTextDisabled: {
+    color: '#9CA3AF',
+  },
+  discountFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  usagePill: {
+    backgroundColor: '#E8F4F5',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    flex: 1,
+    marginRight: 12,
+  },
+  usagePillReached: {
+    backgroundColor: '#FEE2E2',
+  },
+  usagePillText: {
+    fontSize: 12,
     fontWeight: '600',
+    color: '#21555b',
   },
-  discountCodeBadge: {
-    backgroundColor: '#FFF7ED',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#FED7AA',
+  usagePillTextReached: {
+    color: '#DC2626',
   },
-  discountCodeText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#DB8633',
-  },
-  // H5: Terms
   discountTerms: {
     fontSize: 11,
     color: '#9CA3AF',
     fontStyle: 'italic',
-    marginTop: 4,
+    marginTop: 10,
     lineHeight: 16,
   },
   redeemBtn: {
     backgroundColor: '#DB8633',
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
     alignItems: 'center',
     shadowColor: '#DB8633',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
   },
   redeemBtnDisabled: {
     backgroundColor: '#D1D5DB',
     shadowOpacity: 0,
-    opacity: 0.6,
   },
   redeemText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
   },
   noDiscountsCard: {
@@ -961,20 +941,20 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     textAlign: 'center',
   },
+
+  // About Section
+  aboutSection: {
+    marginBottom: 32,
+  },
   description: {
     fontSize: 14,
     color: '#4B5563',
     lineHeight: 22,
     marginTop: 4,
   },
-  // About Section
-  aboutSection: {
-    marginTop: 32,
-    marginBottom: 32,
-  },
+
   // Contact Section
   contactSection: {
-    marginTop: 32,
     marginBottom: 32,
   },
   contactRow: {
@@ -990,9 +970,9 @@ const styles = StyleSheet.create({
     color: '#4B5563',
     marginLeft: 12,
   },
+
   // Social Section
   socialSection: {
-    marginTop: 32,
     marginBottom: 32,
   },
   socialLinks: {
@@ -1008,9 +988,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+
   // Hours Section
   hoursSection: {
-    marginTop: 32,
     marginBottom: 32,
   },
   hoursRow: {
@@ -1059,7 +1039,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#324E58',
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 28,
     lineHeight: 24,
   },
   modalHighlight: {

@@ -432,7 +432,12 @@ export default function BeneficiaryDetailScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]); // Only depend on id, not params object (which changes on every render)
 
-  const handleBeneficiarySelect = () => {
+  const handleBeneficiarySelect = async () => {
+    try {
+      await API.saveProfile({ beneficiary: beneficiary.id });
+    } catch (e) {
+      console.warn('⚠️ Could not persist beneficiary to server:', e.message);
+    }
     setSelectedBeneficiary(beneficiary);
     setSuccessMessage("Awesome! You've selected your cause!");
     setShowSuccessModal(true);
