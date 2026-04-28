@@ -433,15 +433,23 @@ const API = {
    */
   verifyEmail: async (token, email) => {
     try {
-      // Use the correct backend endpoint: /api/auth/verify-email?token=...
       const response = await api.get(`/api/auth/verify-email?token=${encodeURIComponent(token)}`);
+      // Guard: backend returned HTML instead of JSON (e.g. server error page)
+      if (typeof response.data === 'string' && response.data.trim().startsWith('<')) {
+        console.error("Email verification: server returned HTML instead of JSON");
+        throw new Error("Email verification failed. Please try the link in your email again.");
+      }
       return response.data;
     } catch (error) {
-      console.error("Email verification failed:", error);
+      // Re-throw our own errors as-is
+      if (error.message && !error.response) throw error;
+      const data = error.response?.data;
+      const isHtml = typeof data === 'string' && data.trim().startsWith('<');
+      console.error("Email verification failed:", isHtml ? '(HTML response)' : error);
       throw new Error(
-        error.response?.data?.error ||
-          error.response?.data?.message ||
-          "Email verification failed.",
+        isHtml
+          ? "Email verification failed. Please try the link in your email again."
+          : data?.error || data?.message || "Email verification failed.",
       );
     }
   },
@@ -1988,37 +1996,49 @@ const API = {
         company_name: name,
         website,
       });
-      return response.data;
+      const data = response.data;
+      if (typeof data === 'string' && data.trim().startsWith('<')) {
+        throw new Error('Submission failed. Please try again later.');
+      }
+      return data;
     } catch (error) {
+      if (error.message && !error.response) throw error;
+      const data = error.response?.data;
+      const isHtml = typeof data === 'string' && data.trim().startsWith('<');
+      console.error("❌ Vendor request failed:", isHtml ? `HTTP ${error.response?.status} (HTML response)` : data);
       throw new Error(
-        error.response?.data?.message || 'Failed to submit request. Please try again.',
+        isHtml
+          ? 'Submission failed. Please try again later.'
+          : data?.message || data?.error || 'Failed to submit request. Please try again.',
       );
     }
   },
 
   submitBeneficiaryRequest: async (requestData) => {
     try {
-      console.log("📝 Submitting beneficiary request:", {
-        company_name: requestData.company_name,
-        email: requestData.email,
-      });
-
       const response = await api.post("/api/invitations/beneficiary", {
-        contact_name: requestData.contact_name,
+        contact_name: requestData.contact_name || null,
         company_name: requestData.company_name,
-        email: requestData.email,
+        email: requestData.email || null,
         phone: requestData.phone || null,
         website: requestData.website || null,
         message: requestData.message || null,
       });
-
+      const data = response.data;
+      if (typeof data === 'string' && data.trim().startsWith('<')) {
+        throw new Error('Submission failed. Please try again later.');
+      }
       console.log("✅ Beneficiary request submitted successfully");
-      return response.data;
+      return data;
     } catch (error) {
-      console.error("❌ Submit beneficiary request failed:", error);
+      if (error.message && !error.response) throw error;
+      const data = error.response?.data;
+      const isHtml = typeof data === 'string' && data.trim().startsWith('<');
+      console.error("❌ Beneficiary request failed:", isHtml ? `HTTP ${error.response?.status} (HTML response)` : data);
       throw new Error(
-        error.response?.data?.message ||
-          "Failed to submit request. Please try again.",
+        isHtml
+          ? 'Submission failed. Please try again later.'
+          : data?.message || data?.error || 'Failed to submit request. Please try again.',
       );
     }
   },
