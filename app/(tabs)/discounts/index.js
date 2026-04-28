@@ -826,14 +826,13 @@ const styles = StyleSheet.create({
     borderColor: '#e1e1e5',
     paddingHorizontal: 15,
     marginBottom: 16,
-    height: 40,
+    height: 48,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
     color: '#324E58',
-    paddingVertical: 10,
-    minHeight: 40,
+    height: 48,
   },
   locationRow: {
     flexDirection: 'row',
@@ -844,7 +843,7 @@ const styles = StyleSheet.create({
     borderColor: '#e1e1e5',
     paddingHorizontal: 15,
     marginBottom: 16,
-    height: 40,
+    height: 48,
   },
   locationInput: {
     flex: 1,
