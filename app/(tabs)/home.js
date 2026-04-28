@@ -1,7 +1,7 @@
 // file: app/(tabs)/home.js
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useFonts, Figtree_400Regular, Figtree_700Bold } from '@expo-google-fonts/figtree';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, Image, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, Image, TouchableOpacity, Animated } from 'react-native';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useFocusEffect, useNavigation } from 'expo-router';
@@ -27,6 +27,28 @@ export default function MainHome() {
   const navigation = useNavigation();
   const { selectedBeneficiary, reloadBeneficiary } = useBeneficiary();
   const { user, loadUserData } = useUser();
+
+  // Profile image smooth fade-in — resets whenever the URL changes (e.g. backend sync arrives)
+  const imageUri = user.profileImage || user.profileImageUrl || null;
+  const prevImageUri = useRef(null);
+  const imageOpacity = useRef(new Animated.Value(0)).current;
+  const getInitials = useCallback(() => {
+    if (user.firstName && user.lastName) return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
+    if (user.firstName) return user.firstName[0].toUpperCase();
+    if (user.lastName) return user.lastName[0].toUpperCase();
+    if (user.email) return user.email[0].toUpperCase();
+    return 'U';
+  }, [user.firstName, user.lastName, user.email]);
+  useEffect(() => {
+    if (imageUri && imageUri !== prevImageUri.current) {
+      prevImageUri.current = imageUri;
+      imageOpacity.setValue(0);
+    }
+  }, [imageUri]);
+  const handleImageLoad = useCallback(() => {
+    Animated.timing(imageOpacity, { toValue: 1, duration: 350, useNativeDriver: true }).start();
+  }, []);
+
   const { location: userLocation, locationAddress, locationPermission, checkLocationPermission } = useLocation();
   const { vendors, discounts, loadDiscounts } = useDiscount();
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -288,41 +310,31 @@ export default function MainHome() {
 
             <View style={styles.profileRow}>
               <View style={styles.profileLeft}>
-                {(user.profileImage || user.profileImageUrl) ? (
-                  <Image source={{ uri: user.profileImage || user.profileImageUrl }} style={styles.profilePic} />
-                ) : (
-                  <View style={[styles.profilePic, { backgroundColor: '#DB8633', justifyContent: 'center', alignItems: 'center' }]}>
-                    <Text style={{ color: 'white', fontSize: 18, fontWeight: 'bold' }}>
-                      {(() => {
-                        if (user.firstName && user.lastName) {
-                          return `${user.firstName[0].toUpperCase()}${user.lastName[0].toUpperCase()}`;
-                        } else if (user.firstName) {
-                          return user.firstName[0].toUpperCase();
-                        } else if (user.lastName) {
-                          return user.lastName[0].toUpperCase();
-                        } else if (user.email) {
-                          return user.email[0].toUpperCase();
-                        } else {
-                          return 'U';
-                        }
-                      })()}
-                    </Text>
-                  </View>
+                {/* Avatar: initials always rendered underneath; image fades in on top when ready */}
+                <View style={[styles.profilePic, { backgroundColor: '#DB8633', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }]}>
+                  <Text style={{ color: 'white', fontSize: 18, fontWeight: 'bold' }}>
+                    {getInitials()}
+                  </Text>
+                  {imageUri && (
+                    <Animated.Image
+                      source={{ uri: imageUri }}
+                      style={[StyleSheet.absoluteFill, { borderRadius: 25, opacity: imageOpacity }]}
+                      onLoad={handleImageLoad}
+                    />
+                  )}
+                </View>
+                {!user.isLoading && (
+                  <Text style={styles.greetingText}>
+                    {(() => {
+                      let name = user.firstName
+                        || (user.name && user.name.split(' ')[0])
+                        || (user.email && user.email.split('@')[0])
+                        || '';
+                      if (name) name = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+                      return name ? `Hey ${name}!` : '';
+                    })()}
+                  </Text>
                 )}
-                <Text style={styles.greetingText}>
-                  {(() => {
-                    // Try multiple ways to get the name
-                    let name = user.firstName 
-                      || (user.name && user.name.split(' ')[0])
-                      || (user.email && user.email.split('@')[0])
-                      || 'there';
-                    // Capitalize first letter
-                    if (name && name !== 'there') {
-                      name = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
-                    }
-                    return `Hey ${name}!`;
-                  })()}
-                </Text>
               </View>
             </View>
 
