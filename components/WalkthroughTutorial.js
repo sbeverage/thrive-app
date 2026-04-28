@@ -28,14 +28,19 @@ export default function WalkthroughTutorial({ visible, currentStepIndex, totalSt
     }
   }, [visible]);
 
-  // Animate card change between steps
+  // Fade + slide on step change
+  const stepOpacity = useRef(new Animated.Value(1)).current;
   const stepAnim = useRef(new Animated.Value(0)).current;
   const prevIndexRef = useRef(currentStepIndex);
   useEffect(() => {
     if (prevIndexRef.current !== currentStepIndex) {
       prevIndexRef.current = currentStepIndex;
-      stepAnim.setValue(20);
-      Animated.spring(stepAnim, { toValue: 0, tension: 80, friction: 10, useNativeDriver: true }).start();
+      stepOpacity.setValue(0);
+      stepAnim.setValue(12);
+      Animated.parallel([
+        Animated.timing(stepOpacity, { toValue: 1, duration: 220, useNativeDriver: true }),
+        Animated.spring(stepAnim, { toValue: 0, tension: 120, friction: 14, useNativeDriver: true }),
+      ]).start();
     }
   }, [currentStepIndex]);
 
@@ -56,10 +61,7 @@ export default function WalkthroughTutorial({ visible, currentStepIndex, totalSt
           styles.card,
           {
             opacity: fadeAnim,
-            transform: [
-              { translateY: slideAnim },
-              { translateY: stepAnim },
-            ],
+            transform: [{ translateY: slideAnim }],
           },
         ]}
       >
@@ -70,12 +72,15 @@ export default function WalkthroughTutorial({ visible, currentStepIndex, totalSt
           ))}
         </View>
 
-        {/* Icon */}
-        <Text style={styles.icon}>{step.icon}</Text>
+        {/* Animated content fades/slides on step change */}
+        <Animated.View style={{ alignItems: 'center', opacity: stepOpacity, transform: [{ translateY: stepAnim }] }}>
+          {/* Icon */}
+          <Text style={styles.icon}>{step.icon}</Text>
 
-        {/* Content */}
-        <Text style={styles.title}>{step.title}</Text>
-        <Text style={styles.description}>{step.description}</Text>
+          {/* Content */}
+          <Text style={styles.title}>{step.title}</Text>
+          <Text style={styles.description}>{step.description}</Text>
+        </Animated.View>
 
         {/* Actions */}
         <View style={styles.actions}>

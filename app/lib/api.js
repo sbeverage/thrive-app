@@ -1992,9 +1992,15 @@ const API = {
    */
   submitVendorRequest: async ({ name, website }) => {
     try {
+      const rawUser = await AsyncStorage.getItem('userData');
+      const user = rawUser ? JSON.parse(rawUser) : null;
+      const contact_name = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email : null;
+      const email = user?.email || null;
       const response = await api.post('/api/invitations/vendor', {
         company_name: name,
         website,
+        contact_name,
+        email,
       });
       const data = response.data;
       if (typeof data === 'string' && data.trim().startsWith('<')) {
@@ -2016,10 +2022,20 @@ const API = {
 
   submitBeneficiaryRequest: async (requestData) => {
     try {
+      let contact_name = requestData.contact_name || null;
+      let email = requestData.email || null;
+      if (!contact_name || !email) {
+        const rawUser = await AsyncStorage.getItem('userData');
+        const user = rawUser ? JSON.parse(rawUser) : null;
+        if (user) {
+          contact_name = contact_name || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email;
+          email = email || user.email || null;
+        }
+      }
       const response = await api.post("/api/invitations/beneficiary", {
-        contact_name: requestData.contact_name || null,
+        contact_name,
         company_name: requestData.company_name,
-        email: requestData.email || null,
+        email,
         phone: requestData.phone || null,
         website: requestData.website || null,
         message: requestData.message || null,

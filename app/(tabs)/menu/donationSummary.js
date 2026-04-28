@@ -18,6 +18,7 @@ import {
   Alert,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 import { AntDesign, Feather } from "@expo/vector-icons";
 import { useUser } from "../../context/UserContext";
 import { useBeneficiary } from "../../context/BeneficiaryContext";
@@ -532,14 +533,14 @@ export default function DonationSummary() {
   return (
     <View style={styles.container}>
       {/* Standardized Header */}
-      <View style={styles.headerRow}>
+      <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.headerRow}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.replace("/(tabs)/menu")}
         >
           <Image
             source={require("../../../assets/icons/arrow-left.png")}
-            style={{ width: 24, height: 24, tintColor: "#324E58" }}
+            style={{ width: 24, height: 24, tintColor: "#fff" }}
           />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Donation Summary</Text>
@@ -552,12 +553,12 @@ export default function DonationSummary() {
           disabled={isLoading}
         >
           {isLoading ? (
-            <ActivityIndicator size="small" color="#DB8633" />
+            <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <Feather name="refresh-cw" size={20} color="#DB8633" />
+            <Feather name="refresh-cw" size={20} color="#fff" />
           )}
         </TouchableOpacity>
-      </View>
+      </LinearGradient>
 
       {/* Scrollable Content */}
       <ScrollView
@@ -565,7 +566,7 @@ export default function DonationSummary() {
         showsVerticalScrollIndicator={false}
       >
         {/* Current Charity Card */}
-        <View style={styles.charityCard}>
+        <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.charityCard}>
           <View style={styles.charityHeader}>
             <Image
               source={
@@ -629,7 +630,7 @@ export default function DonationSummary() {
               )}
             </TouchableOpacity>
           )}
-        </View>
+        </LinearGradient>
 
         {/* Monthly Breakdown */}
         <View style={styles.breakdownSection}>
@@ -767,12 +768,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 20,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 14,
+    borderRadius: 12,
+    marginHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 20,
   },
   backButton: {
     // Standard back button with no custom styling
@@ -780,7 +782,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#6d6e72",
+    color: "#fff",
     textAlign: "center",
     flex: 1,
   },
@@ -788,10 +790,9 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   charityCard: {
-    backgroundColor: "#F5F5FA",
     borderRadius: 12,
     marginHorizontal: 20,
-    marginTop: 20,
+    marginTop: 0,
     padding: 20,
     alignItems: "center",
   },
@@ -805,19 +806,21 @@ const styles = StyleSheet.create({
     height: 50,
     borderRadius: 25,
     marginRight: 15,
+    borderWidth: 2,
+    borderColor: "#fff",
   },
   charityInfo: {
     flex: 1,
   },
   charityTitle: {
     fontSize: 14,
-    color: "#324E58",
+    color: "rgba(255,255,255,0.8)",
     marginBottom: 2,
   },
   charityName: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#DB8633",
+    color: "#fff",
   },
   charityStats: {
     flexDirection: "row",
@@ -830,29 +833,29 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 24,
     fontWeight: "700",
-    color: "#DB8633",
+    color: "#fff",
   },
   statLabel: {
     fontSize: 12,
-    color: "#324E58",
+    color: "rgba(255,255,255,0.8)",
     marginTop: 5,
   },
   editAmountButton: {
     marginTop: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
     backgroundColor: "#DB8633",
-    borderRadius: 6,
+    borderRadius: 8,
   },
   editAmountText: {
-    fontSize: 10,
+    fontSize: 12,
     color: "#fff",
-    fontWeight: "600",
+    fontWeight: "700",
   },
   statDivider: {
     width: 1,
     height: "80%",
-    backgroundColor: "#eee",
+    backgroundColor: "rgba(255,255,255,0.3)",
   },
   breakdownSection: {
     marginHorizontal: 20,
@@ -863,9 +866,12 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: "600",
-    color: "#324E58",
+    fontWeight: "700",
+    color: "#21555b",
     marginBottom: 15,
+    borderLeftWidth: 3,
+    borderLeftColor: "#21555b",
+    paddingLeft: 10,
   },
   donationsList: {
     // No specific styles needed for ScrollView, content is handled by donationRow

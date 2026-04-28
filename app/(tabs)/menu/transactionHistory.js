@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { AntDesign, Feather } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useUser } from "../../context/UserContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -472,37 +473,37 @@ export default function TransactionHistory() {
   return (
     <View style={styles.container} key={refreshTrigger}>
       {/* Standardized Header */}
-      <View style={styles.header}>
+      <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.push("/(tabs)/menu")}
         >
           <Image
             source={require("../../../assets/icons/arrow-left.png")}
-            style={{ width: 24, height: 24, tintColor: "#324E58" }}
+            style={{ width: 24, height: 24, tintColor: "#fff" }}
           />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Transaction History</Text>
         <View style={styles.headerSpacer} />
-      </View>
+      </LinearGradient>
 
       {/* Summary Cards */}
       <View style={styles.summarySection}>
-        <View style={styles.summaryCard}>
+        <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.summaryCard}>
           <View style={styles.summaryIcon}>
-            <Feather name="dollar-sign" size={20} color="#DB8633" />
+            <Feather name="dollar-sign" size={20} color="#fff" />
           </View>
           <Text style={styles.summaryValue}>${totalSpent.toFixed(2)}</Text>
           <Text style={styles.summaryLabel}>Total Spent</Text>
-        </View>
+        </LinearGradient>
 
-        <View style={styles.summaryCard}>
+        <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.summaryCard}>
           <View style={styles.summaryIcon}>
-            <Feather name="trending-up" size={20} color="#10B981" />
+            <Feather name="trending-up" size={20} color="#fff" />
           </View>
           <Text style={styles.summaryValue}>${totalSavings.toFixed(2)}</Text>
           <Text style={styles.summaryLabel}>Total Saved</Text>
-        </View>
+        </LinearGradient>
       </View>
 
       {/* Transactions List */}
@@ -709,7 +710,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 20,
-    paddingTop: 5,
+    paddingTop: 14,
+    paddingBottom: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
   },
   backButton: {
     // Standard back button with no custom styling
@@ -717,7 +721,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#6d6e72",
+    color: "#fff",
     flex: 1,
     textAlign: "center",
   },
@@ -733,7 +737,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   summaryCard: {
-    backgroundColor: "#F9FAFB",
     borderRadius: 12,
     padding: 15,
     alignItems: "center",
@@ -746,12 +749,12 @@ const styles = StyleSheet.create({
   summaryValue: {
     fontSize: 24,
     fontWeight: "700",
-    color: "#324E58",
+    color: "#fff",
     marginBottom: 5,
   },
   summaryLabel: {
     fontSize: 12,
-    color: "#888",
+    color: "rgba(255,255,255,0.85)",
   },
   transactionsSection: {
     marginTop: 20,
@@ -760,8 +763,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#324E58",
+    color: "#21555b",
     marginBottom: 15,
+    borderLeftWidth: 3,
+    borderLeftColor: "#21555b",
+    paddingLeft: 10,
   },
   transactionsList: {
     flex: 1,

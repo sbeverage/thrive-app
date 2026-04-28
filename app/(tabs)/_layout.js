@@ -10,8 +10,8 @@ export default function AppLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const bottomInset = insets.bottom; // full safe area (34px on Face ID, 0 on SE)
-  const NAV_HEIGHT = 76 + bottomInset; // matches footerNavWrapper height + safe area
+  const effectiveInset = Math.min(insets.bottom, 4);
+  const NAV_HEIGHT = 46 + effectiveInset;
 
   // Sync active tab with current pathname
   const getActiveTab = () => {
@@ -63,7 +63,7 @@ export default function AppLayout() {
               </View>
 
               {/* Tab items — overflow visible so active circle pops above bar */}
-              <View style={[styles.footerNavWrapper, { bottom: bottomInset }]}>
+              <View style={[styles.footerNavWrapper, { bottom: effectiveInset }]}>
                 {tabs.map((tab) => {
                   const focused = activeTab === tab.name;
                   return (

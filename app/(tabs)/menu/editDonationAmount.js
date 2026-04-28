@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 import { AntDesign } from "@expo/vector-icons";
 import { useUser } from "../../context/UserContext";
 import { useBeneficiary } from "../../context/BeneficiaryContext";
@@ -234,29 +235,29 @@ export default function EditDonationAmount() {
     >
       <ScrollView contentContainerStyle={styles.scroll}>
         {/* Standardized Header */}
-        <View style={styles.headerRow}>
+        <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.headerRow}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => router.replace("/(tabs)/menu")}
           >
             <Image
               source={require("../../../assets/icons/arrow-left.png")}
-              style={{ width: 24, height: 24, tintColor: "#324E58" }}
+              style={{ width: 24, height: 24, tintColor: "#fff" }}
             />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Edit Donation Amount</Text>
           <View style={styles.headerSpacer} />
-        </View>
+        </LinearGradient>
 
         {/* Current Amount Display */}
-        <View style={styles.currentAmountSection}>
-          <Text style={styles.sectionTitle}>Current Monthly Donation</Text>
+        <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.currentAmountSection}>
+          <Text style={[styles.sectionTitle, { color: '#fff', borderLeftWidth: 0, paddingLeft: 0, textAlign: 'center' }]}>Current Monthly Donation</Text>
           <View style={styles.amountDisplay}>
             <Text style={styles.currencySymbol}>$</Text>
             <Text style={styles.currentAmountText}>{currentAmount}</Text>
             <Text style={styles.perMonthText}>/month</Text>
           </View>
-        </View>
+        </LinearGradient>
 
         {/* Edit Section */}
         <View style={styles.editSection}>
@@ -379,7 +380,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 20,
-    paddingTop: 5,
+    paddingTop: 14,
+    paddingBottom: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
   },
   backButton: {
     // Standard back button with no custom styling
@@ -387,7 +391,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#6d6e72",
+    color: "#fff",
     textAlign: "center",
     flex: 1,
   },
@@ -395,7 +399,6 @@ const styles = StyleSheet.create({
     width: 32,
   },
   currentAmountSection: {
-    backgroundColor: "#F5F5FA",
     borderRadius: 12,
     padding: 24,
     marginBottom: 24,
@@ -404,8 +407,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#324E58",
+    color: "#21555b",
     marginBottom: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: "#21555b",
+    paddingLeft: 10,
   },
   amountDisplay: {
     flexDirection: "row",
@@ -414,17 +420,17 @@ const styles = StyleSheet.create({
   currencySymbol: {
     fontSize: 48,
     fontWeight: "700",
-    color: "#DB8633",
+    color: "#fff",
     marginRight: 4,
   },
   currentAmountText: {
     fontSize: 48,
     fontWeight: "700",
-    color: "#DB8633",
+    color: "#fff",
   },
   perMonthText: {
     fontSize: 18,
-    color: "#666",
+    color: "rgba(255,255,255,0.75)",
     marginLeft: 8,
   },
   editSection: {

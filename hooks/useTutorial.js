@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { InteractionManager } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const TUTORIAL_STORAGE_KEY = '@thrive_walkthrough_completed';
@@ -29,9 +30,14 @@ export function useTutorial() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
 
   useEffect(() => {
-    AsyncStorage.getItem(TUTORIAL_STORAGE_KEY).then(completed => {
-      if (!completed) setShowTutorial(true);
-    }).catch(() => {});
+    const task = InteractionManager.runAfterInteractions(() => {
+      setTimeout(() => {
+        AsyncStorage.getItem(TUTORIAL_STORAGE_KEY).then(completed => {
+          if (!completed) setShowTutorial(true);
+        }).catch(() => {});
+      }, 800);
+    });
+    return () => task.cancel();
   }, []);
 
   const handleNext = () => {
