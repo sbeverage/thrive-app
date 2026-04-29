@@ -140,6 +140,13 @@
           "scheme": "fb1693324062023615",
           "iosUserTrackingPermission": false
         }
+      ],
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.thrive-initiative",
+          "enableApplePay": true
+        }
       ]
     ],
     "experiments": {

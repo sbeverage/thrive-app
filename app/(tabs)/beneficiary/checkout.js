@@ -112,6 +112,11 @@ export default function CheckoutScreen() {
       setIsProcessing(true);
       setError(null);
 
+      // Stripe Payment Sheet automatically includes Apple Pay if:
+      // 1. Platform is iOS
+      // 2. merchantIdentifier is configured in StripeProvider
+      // 3. Apple Pay is enabled in the initPaymentSheet config
+      // (This configuration happens inside presentMonthlySubscriptionPaymentSheet)
       const payResult = await presentMonthlySubscriptionPaymentSheet(
         { initPaymentSheet, presentPaymentSheet },
         paymentSheetData,
@@ -249,6 +254,13 @@ export default function CheckoutScreen() {
           <View style={styles.paymentMethodsCard}>
             <Text style={styles.sectionTitle}>Payment Method</Text>
 
+            {/* 
+              Apple Pay is natively integrated into the Stripe Payment Sheet.
+              When 'handleCardPayment' is triggered, the Payment Sheet will display
+              Apple Pay as an option alongside standard credit cards, provided that:
+              - The user is on an iOS device.
+              - The Xcode project has Apple Pay entitlements configured correctly.
+            */}
             {/* Card Payment Button */}
             <TouchableOpacity
               style={[

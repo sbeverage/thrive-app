@@ -10,5 +10,9 @@
     <array>
       <string>applinks:thrive-web-jet.vercel.app</string>
     </array>
+    <key>com.apple.developer.in-app-payments</key>
+    <array>
+      <string>merchant.com.thrive-initiative</string>
+    </array>
   </dict>
 </plist>
