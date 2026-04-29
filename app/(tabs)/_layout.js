@@ -10,8 +10,9 @@ export default function AppLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const effectiveInset = Math.min(insets.bottom, 4);
-  const NAV_HEIGHT = 46 + effectiveInset;
+  const bottomInset = insets.bottom ?? 0;
+  // Bar background covers visual height + full safe area
+  const NAV_HEIGHT = 56 + bottomInset;
 
   // Sync active tab with current pathname
   const getActiveTab = () => {
@@ -62,8 +63,8 @@ export default function AppLayout() {
                 <BlurView intensity={90} tint="light" style={StyleSheet.absoluteFill} />
               </View>
 
-              {/* Tab items — overflow visible so active circle pops above bar */}
-              <View style={[styles.footerNavWrapper, { bottom: effectiveInset }]}>
+              {/* Tab items sit above the safe area */}
+              <View style={[styles.footerNavWrapper, { bottom: bottomInset }]}>
                 {tabs.map((tab) => {
                   const focused = activeTab === tab.name;
                   return (
