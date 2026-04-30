@@ -10,7 +10,7 @@ import { BeneficiaryFilterProvider } from './context/BeneficiaryFilterContext';
 import { LocationProvider } from './context/LocationContext';
 import { DiscountProvider } from './context/DiscountContext';
 import { DiscountFilterProvider } from './context/DiscountFilterContext';
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StripeProvider } from '@stripe/stripe-react-native';

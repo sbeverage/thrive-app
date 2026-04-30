@@ -9,11 +9,11 @@ import {
   Image,
   StyleSheet,
   FlatList,
-  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
   Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 
 import { Feather, AntDesign } from '@expo/vector-icons';

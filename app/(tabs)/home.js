@@ -1,7 +1,8 @@
 // file: app/(tabs)/home.js
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useFonts, Figtree_400Regular, Figtree_700Bold } from '@expo-google-fonts/figtree';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, Image, TouchableOpacity, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, Animated } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useFocusEffect, useNavigation } from 'expo-router';
