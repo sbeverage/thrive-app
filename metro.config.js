@@ -4,13 +4,15 @@ const path = require('path');
 
 const config = getDefaultConfig(__dirname);
 
-// Redirect stripe-react-native to a no-op stub on web builds
+// Redirect native-only modules to no-op stubs on web builds
+const WEB_NATIVE_STUBS = {
+  '@stripe/stripe-react-native': path.resolve(__dirname, 'app/lib/stripe-web-mock.js'),
+  'react-native-maps': path.resolve(__dirname, 'app/lib/maps-web-mock.js'),
+};
+
 config.resolver.resolveRequest = (context, moduleName, platform) => {
-  if (platform === 'web' && moduleName === '@stripe/stripe-react-native') {
-    return {
-      filePath: path.resolve(__dirname, 'app/lib/stripe-web-mock.js'),
-      type: 'sourceFile',
-    };
+  if (platform === 'web' && WEB_NATIVE_STUBS[moduleName]) {
+    return { filePath: WEB_NATIVE_STUBS[moduleName], type: 'sourceFile' };
   }
   return context.resolveRequest(context, moduleName, platform);
 };
