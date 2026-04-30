@@ -10,9 +10,19 @@ const WEB_NATIVE_STUBS = {
   'react-native-maps': path.resolve(__dirname, 'app/lib/maps-web-mock.js'),
 };
 
+// Modules with broken ESM/module field — redirect to their CJS dist
+const WEB_CJS_ALIASES = {
+  'react-async-hook': path.resolve(__dirname, 'node_modules/react-async-hook/dist/index.js'),
+};
+
 config.resolver.resolveRequest = (context, moduleName, platform) => {
-  if (platform === 'web' && WEB_NATIVE_STUBS[moduleName]) {
-    return { filePath: WEB_NATIVE_STUBS[moduleName], type: 'sourceFile' };
+  if (platform === 'web') {
+    if (WEB_NATIVE_STUBS[moduleName]) {
+      return { filePath: WEB_NATIVE_STUBS[moduleName], type: 'sourceFile' };
+    }
+    if (WEB_CJS_ALIASES[moduleName]) {
+      return { filePath: WEB_CJS_ALIASES[moduleName], type: 'sourceFile' };
+    }
   }
   return context.resolveRequest(context, moduleName, platform);
 };
