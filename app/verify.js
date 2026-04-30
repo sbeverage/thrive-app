@@ -33,16 +33,22 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function UniversalVerifyHandler() {
   const router = useRouter();
-  const { token, email } = useLocalSearchParams();
+  const { token, email, verified } = useLocalSearchParams();
   const { markAsVerified } = useUser();
   const [verificationStatus, setVerificationStatus] = useState('pending'); // 'pending', 'verifying', 'success', 'error'
 
-  // Auto-verify if token is provided
+  // Auto-verify if token is provided, or trust verified=true from web handoff
   useEffect(() => {
-    if (token && verificationStatus === 'pending') {
+    if (verified === 'true' && verificationStatus === 'pending') {
+      // Already verified by the web app — just mark and navigate
+      markAsVerified().then(() => {
+        setVerificationStatus('success');
+        setTimeout(() => router.replace('/signupFlow/explainerDonate'), 1500);
+      });
+    } else if (token && verificationStatus === 'pending') {
       handleVerification();
     }
-  }, [token]);
+  }, [token, verified]);
 
   const handleVerification = async () => {
     if (!token) {
@@ -67,14 +73,16 @@ export default function UniversalVerifyHandler() {
           if (Platform.OS !== 'web') {
             router.replace('/signupFlow/explainerDonate');
           } else {
+            // Open the native app via custom scheme; passes verified=true so the app
+            // skips re-verification (token was already consumed here on web).
             setTimeout(() => {
               try {
-                const universalLink = `https://thrive-web-jet.vercel.app/verify?token=${token || ''}&email=${encodeURIComponent(email || '')}&verified=true`;
+                const deepLink = `thriveapp://verify?verified=true&email=${encodeURIComponent(email || '')}`;
                 if (typeof window !== 'undefined') {
-                  window.location.href = universalLink;
+                  window.location.href = deepLink;
                 }
               } catch (error) {
-                console.error('❌ Redirect failed:', error);
+                console.error('❌ Deep link redirect failed:', error);
               }
             }, 1500);
           }
