@@ -10,9 +10,8 @@ export default function AppLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const bottomInset = insets.bottom ?? 0;
-  // Bar background covers visual height + full safe area
-  const NAV_HEIGHT = 56 + bottomInset;
+  const effectiveInset = Math.min(insets.bottom ?? 0, 4);
+  const NAV_HEIGHT = 56 + effectiveInset;
 
   // Sync active tab with current pathname
   const getActiveTab = () => {
@@ -51,7 +50,6 @@ export default function AppLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <BeneficiaryProvider>
         <View style={{ flex: 1, backgroundColor: '#fff' }}>
-          {/* Only apply paddingBottom if footer is visible */}
           <View style={{ flex: 1, paddingBottom: hideFooter ? 0 : NAV_HEIGHT }}>
             <Slot />
           </View>
@@ -64,7 +62,7 @@ export default function AppLayout() {
               </View>
 
               {/* Tab items sit above the safe area */}
-              <View style={[styles.footerNavWrapper, { bottom: bottomInset }]}>
+              <View style={[styles.footerNavWrapper, { bottom: effectiveInset }]}>
                 {tabs.map((tab) => {
                   const focused = activeTab === tab.name;
                   return (

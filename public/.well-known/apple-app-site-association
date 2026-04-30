@@ -10,7 +10,9 @@
           "/donorInvitationVerify",
           "/donorInvitationVerify/*",
           "/signup",
-          "/signup/*"
+          "/signup/*",
+          "/reset-password",
+          "/reset-password/*"
         ]
       }
     ]

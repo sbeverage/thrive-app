@@ -499,11 +499,12 @@ const API = {
   /**
    * Reset password
    */
-  resetPassword: async (token, password) => {
+  resetPassword: async (token, email, newPassword) => {
     try {
       const response = await api.post("/api/auth/reset-password", {
         token,
-        password,
+        email,
+        newPassword,
       });
       return response.data;
     } catch (error) {

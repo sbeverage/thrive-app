@@ -81,6 +81,13 @@ function Layout() {
         const searchParams = parsedUrl.searchParams || new URLSearchParams(parsedUrl.search || '');
         const token = searchParams.get('token');
 
+        // Password reset: /reset-password?token=...&email=...
+        if (pathname.includes('reset-password') && token) {
+          const emailParam = searchParams.get('email') || '';
+          router.replace(`/reset-password?token=${encodeURIComponent(token)}&email=${encodeURIComponent(emailParam)}`);
+          return;
+        }
+
         // Email verification: /verify?token=...&email=...
         // Also handles thriveapp://verify?token=...&verified=true (custom scheme fallback)
         if (pathname.includes('verify') && !pathname.includes('verify-email') && !pathname.includes('donorInvitationVerify') && token) {
