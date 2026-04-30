@@ -170,6 +170,9 @@ export default function DonationSummary() {
   const [activeSubscription, setActiveSubscription] = useState(null);
   const [billingPreview, setBillingPreview] = useState(null);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [oneTimeYearTotal, setOneTimeYearTotal] = useState(0);
+  const [oneTimeAllTimeTotal, setOneTimeAllTimeTotal] = useState(0);
+  const [oneTimeGifts, setOneTimeGifts] = useState([]);
   const isFetchingRef = useRef(false);
   const lastFetchTsRef = useRef(0);
   /** Last good Stripe billing-preview API payload — survives transient failures / re-fetches that would clear state */
@@ -376,20 +379,21 @@ export default function DonationSummary() {
           charity_name: charityLabel,
         };
       });
-      const paidTotal = subscriptions.reduce((sum, sub) => {
-        const status = String(sub?.status || "").toLowerCase();
-        if (
-          status === "paid" ||
-          status === "completed" ||
-          status === "succeeded"
-        ) {
-          return sum + Number(sub?.amount || 0);
-        }
-        return sum;
+      const currentYear = new Date().getFullYear();
+      const subscriptionAllTimeTotal = subscriptions.reduce(
+        (sum, sub) => sum + Number(sub?.amount || 0),
+        0,
+      );
+      const subscriptionYearTotal = subscriptions.reduce((sum, sub) => {
+        const date = new Date(sub?.created_at || sub?.last_payment_date || 0);
+        return date.getFullYear() === currentYear
+          ? sum + Number(sub?.amount || 0)
+          : sum;
       }, 0);
       setDonationSummary({
         total_monthly_amount: activeSubscription?.amount || 0,
-        total_donated: paidTotal,
+        total_donated: subscriptionAllTimeTotal,
+        total_donated_this_year: subscriptionYearTotal,
         active_subscriptions: subscriptions.filter((sub) => {
           const status = String(sub?.status || "").toLowerCase();
           return !["canceled", "cancelled"].includes(status);
@@ -431,6 +435,21 @@ export default function DonationSummary() {
         // On network / 502 errors: keep prior billing + cache so Next Amount does not jump to DB invoice total
       } catch {
         /* keep billingPreview + stripeBillingCacheRef */
+      }
+
+      try {
+        const oneTimeRes = await API.getOneTimeGiftHistory(1, 100);
+        const yearTotal = oneTimeRes?.summary?.this_year_total;
+        setOneTimeYearTotal(Number.isFinite(Number(yearTotal)) ? Number(yearTotal) : 0);
+        const gifts = (oneTimeRes?.gifts || []).filter((g) => {
+          const s = String(g?.status || '').toLowerCase();
+          return s === 'succeeded' || s === 'completed' || s === 'paid';
+        });
+        setOneTimeGifts(gifts);
+        const allTimeTotal = gifts.reduce((sum, g) => sum + Number(g.amount || 0), 0);
+        setOneTimeAllTimeTotal(allTimeTotal);
+      } catch {
+        /* keep existing oneTimeYearTotal / oneTimeGifts */
       }
     } catch (error) {
       console.error("❌ Error loading donation summary:", error);
@@ -523,7 +542,8 @@ export default function DonationSummary() {
     resolvedBeneficiary?.name ||
     donationSummary?.beneficiary_name ||
     "No charity selected";
-  const totalDonated = donationSummary?.total_donated || 0;
+  const totalDonated = (donationSummary?.total_donated || 0) + oneTimeAllTimeTotal;
+  const totalDonatedThisYear = (donationSummary?.total_donated_this_year || 0) + (oneTimeYearTotal || 0);
   const monthlyBreakdown = donationSummary?.monthly_breakdown || [];
   const hasCompletedDonations = totalDonated > 0 || monthlyBreakdown.length > 0;
   const nextPaymentLabel = formatNextPaymentLabel(
@@ -583,7 +603,7 @@ export default function DonationSummary() {
           <View style={styles.charityStats}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
-                ${Math.round(totalDonated || 0)}
+                ${Math.round(totalDonated)}
               </Text>
               <Text style={styles.statLabel}>Total Donated</Text>
             </View>
@@ -632,9 +652,9 @@ export default function DonationSummary() {
           )}
         </LinearGradient>
 
-        {/* Monthly Breakdown */}
+        {/* Donation Breakdown */}
         <View style={styles.breakdownSection}>
-          <Text style={styles.sectionTitle}>Monthly Breakdown</Text>
+          <Text style={styles.sectionTitle}>Donation Breakdown</Text>
           {isLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color="#DB8633" />
@@ -642,24 +662,40 @@ export default function DonationSummary() {
                 Loading donation history...
               </Text>
             </View>
-          ) : monthlyBreakdown.length > 0 ? (
-            monthlyBreakdown.map((donation, index) => (
+          ) : (monthlyBreakdown.length > 0 || oneTimeGifts.length > 0) ? (
+            [
+              ...monthlyBreakdown.map((d) => ({ ...d, _kind: 'subscription' })),
+              ...oneTimeGifts.map((g) => ({ ...g, _kind: 'one_time' })),
+            ]
+              .sort((a, b) => {
+                const dateA = new Date(a.created_at || a.date || 0);
+                const dateB = new Date(b.created_at || b.date || 0);
+                return dateB - dateA;
+              })
+              .map((donation, index) => (
               <View
                 key={
-                  donation.stripe_subscription_id
-                    ? `stripe-${donation.stripe_subscription_id}`
-                    : donation.id != null
-                      ? `sub-${donation.id}`
-                      : donation.created_at
-                        ? `${donation.created_at}-${index}`
+                  donation._kind === 'one_time'
+                    ? `gift-${donation.id ?? index}`
+                    : donation.stripe_subscription_id
+                      ? `stripe-${donation.stripe_subscription_id}`
+                      : donation.id != null
+                        ? `sub-${donation.id}`
                         : `row-${index}`
                 }
                 style={styles.donationRow}
               >
                 <View style={styles.donationInfo}>
-                  <Text style={styles.donationMonth}>
-                    {formatDonationBreakdownDate(donation)}
-                  </Text>
+                  <View style={styles.donationMonthRow}>
+                    <Text style={styles.donationMonth}>
+                      {formatDonationBreakdownDate(donation)}
+                    </Text>
+                    {donation._kind === 'one_time' && (
+                      <View style={styles.oneTimePill}>
+                        <Text style={styles.oneTimePillText}>One-time</Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={styles.donationCharity}>
                     {donation.charity_name ||
                       donation.beneficiary_name ||
@@ -701,7 +737,7 @@ export default function DonationSummary() {
             <View style={styles.taxRow}>
               <Text style={styles.taxLabel}>Total Donations ({new Date().getFullYear()})</Text>
               <Text style={styles.taxValue}>
-                ${Math.round(totalDonated || 0)}
+                ${Math.round(totalDonatedThisYear)}
               </Text>
             </View>
             <View style={styles.taxRow}>
@@ -744,7 +780,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginHorizontal: 20,
     marginTop: 20,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   backButton: {
     // Standard back button with no custom styling
@@ -857,10 +893,26 @@ const styles = StyleSheet.create({
   donationInfo: {
     flex: 1,
   },
+  donationMonthRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 2,
+  },
   donationMonth: {
     fontSize: 16,
     color: "#324E58",
-    marginBottom: 2,
+  },
+  oneTimePill: {
+    backgroundColor: "#FFF3E0",
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  oneTimePillText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#DB8633",
   },
   donationCharity: {
     fontSize: 14,

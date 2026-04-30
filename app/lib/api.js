@@ -1942,8 +1942,26 @@ const API = {
     }
   },
 
-  submitFeedback: async ({ rating, feedbackType, message }) => {
+  submitFeedback: async ({ rating, feedbackType, message, attachments = [] }) => {
     try {
+      if (attachments.length > 0) {
+        const form = new FormData();
+        if (rating) form.append("rating", String(rating));
+        form.append("feedbackType", feedbackType);
+        form.append("message", message);
+        attachments.forEach((uri, i) => {
+          const ext = uri.split(".").pop() || "jpg";
+          form.append("attachments", {
+            uri,
+            name: `attachment_${i}.${ext}`,
+            type: `image/${ext === "png" ? "png" : "jpeg"}`,
+          });
+        });
+        const response = await api.post("/api/feedback", form, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+        return response.data;
+      }
       const response = await api.post("/api/feedback", { rating, feedbackType, message });
       return response.data;
     } catch (error) {

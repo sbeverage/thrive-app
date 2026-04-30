@@ -26,8 +26,8 @@ export default function MenuScreen() {
     { section: 'Donations & Savings', data: [
       { title: 'Edit Donation Amount', icon: 'dollar-sign', page: 'menu/editDonationAmount' },
       { title: 'Savings Tracker', icon: 'trending-up', page: 'menu/transactionHistory' },
-      { title: 'Manage Billing', icon: 'credit-card', page: 'menu/manageCards' },
       { title: 'Donation Summary', icon: 'bar-chart-2', page: 'menu/donationSummary' },
+      { title: 'Manage Billing', icon: 'credit-card', page: 'menu/manageCards' },
     ]},
     { section: 'App', data: [
       { title: 'Send Feedback', icon: 'message-square', page: 'menu/feedback' },

@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ScrollView, Modal, Dimensions, Platform, Keyboard, KeyboardAvoidingView, Alert } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { AntDesign, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from '../../context/UserContext';
@@ -59,6 +59,7 @@ export default function DiscountApproved() {
           : 'Unlimited';
   
   const confettiRef = useRef(null);
+  const transactionCreatedRef = useRef(false);
   const [totalBill, setTotalBill] = useState('');
   const [totalDiscount, setTotalDiscount] = useState('');
 
@@ -67,13 +68,45 @@ export default function DiscountApproved() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Only allow numbers and one decimal point
+  // If the user leaves without pressing Save or Skip (e.g. switches tabs),
+  // auto-create a $0 transaction so the redemption still appears in Savings Tracker.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        if (!transactionCreatedRef.current) {
+          transactionCreatedRef.current = true;
+          addTransactionToHistory({
+            brand: vendorName,
+            date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+            discount: discountTitle,
+            spending: '$0',
+            savings: '$0',
+            logo: vendorLogo,
+          }).catch(() => {});
+        }
+      };
+    }, [vendorName, discountTitle, vendorLogo]),
+  );
+
+  // Allow only valid dollar amounts: digits + at most one decimal point + at most 2 decimal places
   const filterNumericInput = (text) => {
     const filtered = text.replace(/[^0-9.]/g, '');
-    const parts = filtered.split('.');
-    if (parts.length > 2) return parts[0] + '.' + parts.slice(1).join('');
-    if (parts[1] && parts[1].length > 2) return parts[0] + '.' + parts[1].slice(0, 2);
-    return filtered;
+    const dotIndex = filtered.indexOf('.');
+    if (dotIndex === -1) return filtered;
+    const intPart = filtered.slice(0, dotIndex);
+    const decPart = filtered.slice(dotIndex + 1).replace(/\./g, '').slice(0, 2);
+    return `${intPart}.${decPart}`;
+  };
+
+  const handleSavingsChange = (text) => {
+    const filtered = filterNumericInput(text);
+    const savingsVal = parseFloat(filtered) || 0;
+    const billVal = parseFloat(totalBill) || 0;
+    if (billVal > 0 && savingsVal > billVal) {
+      setTotalDiscount(totalBill);
+      return;
+    }
+    setTotalDiscount(filtered);
   };
   const [showModal, setShowModal] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -115,6 +148,7 @@ export default function DiscountApproved() {
     }
     if (totalBill && totalDiscount) {
       try {
+        transactionCreatedRef.current = true;
         // Add the savings amount to total savings
         const savingsAmount = parseFloat(totalDiscount) || 0;
         await addSavings(savingsAmount);
@@ -144,6 +178,7 @@ export default function DiscountApproved() {
   };
 
   const handleSkip = async () => {
+    transactionCreatedRef.current = true;
     try {
       // Add transaction to transaction history with $0 values
       await addTransactionToHistory({
@@ -174,9 +209,11 @@ export default function DiscountApproved() {
     const savingsNum = parseFloat(String(transactionData.savings).replace(/[$,]/g, '')) || 0;
 
     try {
+      let backendId = null;
+
       // Try to save to backend first
       try {
-        await API.createTransaction({
+        const result = await API.createTransaction({
           type: 'redemption',
           description: transactionData.discount,
           discount_code: discountCode,
@@ -189,19 +226,32 @@ export default function DiscountApproved() {
             vendor_logo_url: params.vendorLogo || null,
           },
         });
-        console.log('✅ Transaction saved to backend');
+        backendId = result?.transaction?.id ?? null;
+        console.log('✅ Transaction saved to backend', backendId);
       } catch (apiError) {
-        // Fallback to local storage when API fails (offline, endpoint missing, etc.)
         console.warn('⚠️ Backend save failed, using local storage:', apiError.message);
-        const newTransaction = {
-          id: Date.now().toString(),
-          ...transactionData,
-          status: 'completed',
-        };
-        const existingTransactions = await AsyncStorage.getItem('userTransactions');
-        let transactions = existingTransactions ? JSON.parse(existingTransactions) : [];
-        transactions.unshift(newTransaction);
-        await AsyncStorage.setItem('userTransactions', JSON.stringify(transactions));
+      }
+
+      // Always write to local storage so Savings Tracker shows it immediately,
+      // even if the backend saved it (avoids needing a fresh fetch to see it).
+      const localEntry = {
+        id: backendId ? String(backendId) : Date.now().toString(),
+        type: 'redemption',
+        brand: transactionData.brand,
+        date: transactionData.date,
+        discount: transactionData.discount,
+        spending: transactionData.spending,
+        savings: transactionData.savings,
+        logo: params.vendorLogo ? { uri: params.vendorLogo } : null,
+        status: 'completed',
+      };
+      const existingRaw = await AsyncStorage.getItem('userTransactions');
+      const existing = existingRaw ? JSON.parse(existingRaw) : [];
+      // Don't duplicate if backend ID already in cache
+      const alreadyExists = backendId && existing.some((t) => String(t.id) === String(backendId));
+      if (!alreadyExists) {
+        existing.unshift(localEntry);
+        await AsyncStorage.setItem('userTransactions', JSON.stringify(existing));
       }
     } catch (error) {
       console.error('❌ Error saving transaction to history:', error);
@@ -333,7 +383,7 @@ export default function DiscountApproved() {
                     placeholderTextColor="#A0B4C8"
                     keyboardType="decimal-pad"
                     value={totalDiscount}
-                    onChangeText={(t) => setTotalDiscount(filterNumericInput(t))}
+                    onChangeText={handleSavingsChange}
                   />
                 </View>
                 {savingsExceedsBill && (

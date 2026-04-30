@@ -116,7 +116,10 @@ export default function TransactionHistory() {
       // Try to load from backend API — only fetch discount redemptions
       try {
         const response = await API.getTransactions(pageNum, 20, { type: 'redemption' });
-        const backendTransactions = response.transactions || [];
+        // Enforce redemption-only client-side in case the server ignores the filter
+        const backendTransactions = (response.transactions || []).filter(
+          (t) => !t.type || t.type === 'redemption',
+        );
 
         // Transform backend transactions to match frontend format
         const transformedBackend = backendTransactions.map((t) => {
@@ -400,51 +403,62 @@ export default function TransactionHistory() {
   const renderItem = ({ item }) => {
     const logoSource = item.logo?.uri ? item.logo : null;
     const initials = (item.brand || "V").slice(0, 2).toUpperCase();
+    const hasSavings = item.savings && item.savings !== "$0.00" && item.savings !== "$0";
 
     return (
       <View style={styles.transactionCard}>
-        <View style={styles.cardHeader}>
-          <View style={styles.brandSection}>
-            {logoSource ? (
-              <Image
-                source={logoSource}
-                style={styles.brandLogo}
-                defaultSource={require("../../../assets/images/piggy-coin.png")}
-              />
-            ) : (
-              <View style={[styles.brandLogo, styles.initialsLogo]}>
-                <Text style={styles.initialsText}>{initials}</Text>
+        {/* Orange left accent */}
+        <View style={styles.cardAccent} />
+
+        <View style={styles.cardInner}>
+          {/* Top row: logo + info + edit */}
+          <View style={styles.cardHeader}>
+            <View style={styles.brandSection}>
+              {logoSource ? (
+                <Image
+                  source={logoSource}
+                  style={styles.brandLogo}
+                  defaultSource={require("../../../assets/images/piggy-coin.png")}
+                />
+              ) : (
+                <View style={[styles.brandLogo, styles.initialsLogo]}>
+                  <Text style={styles.initialsText}>{initials}</Text>
+                </View>
+              )}
+              <View style={styles.brandInfo}>
+                <Text style={styles.brandName}>{item.brand}</Text>
+                <Text style={styles.transactionDate}>{item.date}</Text>
               </View>
-            )}
-            <View style={styles.brandInfo}>
-              <Text style={styles.brandName}>{item.brand}</Text>
-              <Text style={styles.transactionDate}>{item.date}</Text>
             </View>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => setEditingTransaction(item)}
+            >
+              <Feather name="edit-2" size={15} color="#DB8633" />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => setEditingTransaction(item)}
-          >
-            <Feather name="edit-2" size={16} color="#DB8633" />
-          </TouchableOpacity>
-        </View>
 
-        {!!item.discount && (
-          <View style={styles.discountSection}>
-            <Text style={styles.discountLabel}>Discount Used</Text>
-            <Text style={styles.discountValue}>{item.discount}</Text>
-          </View>
-        )}
+          {/* Discount chip */}
+          {!!item.discount && (
+            <View style={styles.discountChip}>
+              <Feather name="tag" size={11} color="#21555b" style={{ marginRight: 5 }} />
+              <Text style={styles.discountChipText} numberOfLines={1}>{item.discount}</Text>
+            </View>
+          )}
 
-        <View style={styles.financialSection}>
-          <View style={styles.financialItem}>
-            <Text style={styles.financialLabel}>Spent</Text>
-            <Text style={styles.spentAmount}>{item.spending || "—"}</Text>
-          </View>
-          <View style={styles.financialDivider} />
-          <View style={styles.financialItem}>
-            <Text style={styles.financialLabel}>Saved</Text>
-            <Text style={styles.savedAmount}>{item.savings || "—"}</Text>
+          {/* Financials */}
+          <View style={styles.financialSection}>
+            <View style={styles.financialItem}>
+              <Text style={styles.financialLabel}>Spent</Text>
+              <Text style={styles.spentAmount}>{item.spending || "—"}</Text>
+            </View>
+            <View style={styles.financialDivider} />
+            <View style={styles.financialItem}>
+              <Text style={styles.financialLabel}>Saved</Text>
+              <Text style={[styles.savedAmount, hasSavings && styles.savedAmountHighlight]}>
+                {item.savings || "—"}
+              </Text>
+            </View>
           </View>
         </View>
       </View>
@@ -453,88 +467,76 @@ export default function TransactionHistory() {
 
   return (
     <View style={styles.container} key={refreshTrigger}>
-      {/* Standardized Header */}
-      <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.push("/(tabs)/menu")}
-        >
-          <Image
-            source={require("../../../assets/icons/arrow-left.png")}
-            style={{ width: 24, height: 24, tintColor: "#fff" }}
-          />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Savings Tracker</Text>
-        <View style={styles.headerSpacer} />
-      </LinearGradient>
+      <FlatList
+        data={transactions}
+        keyExtractor={(item, index) => {
+          const id = item.id != null && item.id !== "" ? String(item.id) : null;
+          return id ? `tx-${id}-${index}` : `tx-local-${index}`;
+        }}
+        renderItem={renderItem}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.listContainer}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        onEndReached={() => { if (hasMore && !isLoading) loadTransactions(page + 1, true); }}
+        onEndReachedThreshold={0.5}
+        ListHeaderComponent={
+          <>
+            {/* Header */}
+            <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.header}>
+              <TouchableOpacity style={styles.backButton} onPress={() => router.push("/(tabs)/menu")}>
+                <Image source={require("../../../assets/icons/arrow-left.png")} style={{ width: 24, height: 24, tintColor: "#fff" }} />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Savings Tracker</Text>
+              <View style={styles.headerSpacer} />
+            </LinearGradient>
 
-      {/* Summary Cards */}
-      <View style={styles.summarySection}>
-        <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.summaryCard}>
-          <View style={styles.summaryIcon}>
-            <Feather name="dollar-sign" size={20} color="#fff" />
-          </View>
-          <Text style={styles.summaryValue}>${totalSpent.toFixed(2)}</Text>
-          <Text style={styles.summaryLabel}>Total Spent</Text>
-        </LinearGradient>
+            {/* Hero savings card */}
+            <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroCard}>
+              <View style={styles.heroLeft}>
+                <Text style={styles.heroLabel}>TOTAL SAVED</Text>
+                <Text style={styles.heroAmount}>${totalSavings.toFixed(2)}</Text>
+                <View style={styles.heroAccentLine} />
+              </View>
+              <View style={styles.heroRight}>
+                <Feather name="trending-up" size={22} color="rgba(255,255,255,0.5)" style={{ marginBottom: 6 }} />
+                <Text style={styles.heroStatNumber}>{transactions.length}</Text>
+                <Text style={styles.heroStatLabel}>Redemptions</Text>
+              </View>
+            </LinearGradient>
 
-        <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.summaryCard}>
-          <View style={styles.summaryIcon}>
-            <Feather name="trending-up" size={20} color="#fff" />
-          </View>
-          <Text style={styles.summaryValue}>${totalSavings.toFixed(2)}</Text>
-          <Text style={styles.summaryLabel}>Total Saved</Text>
-        </LinearGradient>
-      </View>
+            {/* Section label */}
+            {(transactions.length > 0 || isLoading) && (
+              <Text style={styles.sectionTitle}>Recent Transactions</Text>
+            )}
 
-      {/* Transactions List */}
-      <View style={styles.transactionsSection}>
-        <Text style={styles.sectionTitle}>Recent Transactions</Text>
-        {isLoading && transactions.length === 0 ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#DB8633" />
-            <Text style={styles.loadingText}>Loading transactions...</Text>
-          </View>
-        ) : transactions.length > 0 ? (
-          <FlatList
-            data={transactions}
-            keyExtractor={(item, index) => {
-              const id =
-                item.id != null && item.id !== "" ? String(item.id) : null;
-              return id ? `tx-${id}-${index}` : `tx-local-${index}`;
-            }}
-            renderItem={renderItem}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.listContainer}
-            style={styles.transactionsList}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-            }
-            onEndReached={() => {
-              if (hasMore && !isLoading) {
-                loadTransactions(page + 1, true);
-              }
-            }}
-            onEndReachedThreshold={0.5}
-            ListFooterComponent={
-              isLoading && transactions.length > 0 ? (
-                <View style={styles.footerLoader}>
-                  <ActivityIndicator size="small" color="#DB8633" />
-                </View>
-              ) : null
-            }
-          />
-        ) : (
-          <View style={styles.noTransactionsMessage}>
-            <Feather name="shopping-bag" size={48} color="#D1D5DB" />
-            <Text style={styles.noTransactionsTitle}>No Transactions Yet</Text>
-            <Text style={styles.noTransactionsText}>
-              Discounts you redeem will appear here. You can also edit your
-              spend and savings amounts after the fact.
-            </Text>
-          </View>
-        )}
-      </View>
+            {/* Loading state */}
+            {isLoading && transactions.length === 0 && (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#DB8633" />
+                <Text style={styles.loadingText}>Loading transactions...</Text>
+              </View>
+            )}
+          </>
+        }
+        ListEmptyComponent={
+          !isLoading ? (
+            <View style={styles.noTransactionsMessage}>
+              <Image source={require("../../../assets/images/piggy-coin.png")} style={styles.emptyIcon} />
+              <Text style={styles.noTransactionsTitle}>No Savings Yet</Text>
+              <Text style={styles.noTransactionsText}>
+                Discounts you redeem will appear here. Start saving by redeeming a discount!
+              </Text>
+            </View>
+          ) : null
+        }
+        ListFooterComponent={
+          isLoading && transactions.length > 0 ? (
+            <View style={styles.footerLoader}>
+              <ActivityIndicator size="small" color="#DB8633" />
+            </View>
+          ) : <View style={{ height: 40 }} />
+        }
+      />
 
       {/* Edit Savings Modal */}
       <EditSavingsModal
@@ -543,11 +545,7 @@ export default function TransactionHistory() {
         onClose={() => setEditingTransaction(null)}
         onSave={(newSpendingAmount, newSavingsAmount) => {
           if (editingTransaction) {
-            updateTransactionAmounts(
-              editingTransaction.id,
-              newSpendingAmount,
-              newSavingsAmount,
-            );
+            updateTransactionAmounts(editingTransaction.id, newSpendingAmount, newSavingsAmount);
           }
         }}
       />
@@ -556,6 +554,13 @@ export default function TransactionHistory() {
 }
 
 // Edit Transaction Modal Component
+function filterMoney(text) {
+  const cleaned = text.replace(/[^0-9.]/g, '');
+  const dot = cleaned.indexOf('.');
+  if (dot === -1) return cleaned;
+  return cleaned.slice(0, dot + 1) + cleaned.slice(dot + 1).replace(/\./g, '').slice(0, 2);
+}
+
 function EditSavingsModal({ visible, transaction, onClose, onSave }) {
   const [spendingAmount, setSpendingAmount] = useState("");
   const [savingsAmount, setSavingsAmount] = useState("");
@@ -646,9 +651,10 @@ function EditSavingsModal({ visible, transaction, onClose, onSave }) {
               <TextInput
                 style={styles.currencyTextInput}
                 value={spendingAmount}
-                onChangeText={setSpendingAmount}
+                onChangeText={(t) => setSpendingAmount(filterMoney(t))}
                 placeholder="0.00"
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
+                selectTextOnFocus
                 autoFocus
               />
             </View>
@@ -665,9 +671,15 @@ function EditSavingsModal({ visible, transaction, onClose, onSave }) {
               <TextInput
                 style={styles.currencyTextInput}
                 value={savingsAmount}
-                onChangeText={setSavingsAmount}
+                onChangeText={(t) => {
+                  const filtered = filterMoney(t);
+                  const bill = parseFloat(spendingAmount) || 0;
+                  const savings = parseFloat(filtered) || 0;
+                  setSavingsAmount(bill > 0 && savings > bill ? spendingAmount : filtered);
+                }}
                 placeholder="0.00"
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
+                selectTextOnFocus
               />
             </View>
             <Text style={styles.inputHelperText}>
@@ -683,22 +695,22 @@ function EditSavingsModal({ visible, transaction, onClose, onSave }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
-    padding: 20,
+    backgroundColor: "#F9FAFB",
   },
+
+  // ── Header ──────────────────────────────────────────────────────────────
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
-    paddingTop: 14,
-    paddingBottom: 14,
+    paddingVertical: 14,
     paddingHorizontal: 16,
     borderRadius: 12,
+    marginHorizontal: 20,
+    marginTop: 20,
+    marginBottom: 16,
   },
-  backButton: {
-    // Standard back button with no custom styling
-  },
+  backButton: {},
   headerTitle: {
     fontSize: 18,
     fontWeight: "700",
@@ -706,75 +718,116 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: "center",
   },
-  headerSpacer: {
-    width: 32,
-  },
-  refreshButton: {
-    padding: 8,
-  },
-  summarySection: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 20,
-  },
-  summaryCard: {
-    borderRadius: 12,
-    padding: 15,
-    alignItems: "center",
-    flex: 1,
-    marginHorizontal: 5,
-  },
-  summaryIcon: {
-    marginBottom: 10,
-  },
-  summaryValue: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#fff",
-    marginBottom: 5,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.85)",
-  },
-  transactionsSection: {
-    marginTop: 20,
-    flex: 1,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#21555b",
-    marginBottom: 15,
-    borderLeftWidth: 3,
-    borderLeftColor: "#21555b",
-    paddingLeft: 10,
-  },
-  transactionsList: {
-    flex: 1,
-  },
+  headerSpacer: { width: 32 },
+
+  // ── List container ───────────────────────────────────────────────────────
   listContainer: {
     paddingBottom: 40,
   },
+
+  // ── Hero savings card ────────────────────────────────────────────────────
+  heroCard: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 8,
+    borderRadius: 20,
+    paddingVertical: 28,
+    paddingHorizontal: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    shadowColor: "#21555b",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  heroLeft: {
+    flex: 1,
+  },
+  heroLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "rgba(255,255,255,0.65)",
+    letterSpacing: 1.2,
+    marginBottom: 6,
+  },
+  heroAmount: {
+    fontSize: 40,
+    fontWeight: "800",
+    color: "#fff",
+    letterSpacing: -1.5,
+    marginBottom: 12,
+  },
+  heroAccentLine: {
+    width: 40,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: "#DB8633",
+  },
+  heroRight: {
+    alignItems: "center",
+    paddingLeft: 20,
+    borderLeftWidth: 1,
+    borderLeftColor: "rgba(255,255,255,0.2)",
+  },
+  heroStatNumber: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#fff",
+  },
+  heroStatLabel: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.65)",
+    marginTop: 2,
+    letterSpacing: 0.5,
+  },
+
+  // ── Section label ────────────────────────────────────────────────────────
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#324E58",
+    marginTop: 20,
+    marginBottom: 10,
+    marginHorizontal: 16,
+  },
+
+  // ── Transaction card ─────────────────────────────────────────────────────
   transactionCard: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 15,
+    flexDirection: "row",
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  cardAccent: {
+    width: 4,
+    backgroundColor: "#DB8633",
+  },
+  cardInner: {
+    flex: 1,
+    padding: 14,
   },
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   cardActions: {
     flexDirection: "row",
     alignItems: "center",
   },
   actionButton: {
-    padding: 8,
-    marginLeft: 8,
+    padding: 6,
+    marginLeft: 4,
   },
   brandSection: {
     flexDirection: "row",
@@ -788,83 +841,91 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginRight: 10,
   },
-  brandInfo: {
-    flex: 1,
-  },
+  brandInfo: { flex: 1 },
   brandName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     color: "#324E58",
   },
   transactionDate: {
-    fontSize: 12,
-    color: "#888",
+    fontSize: 11,
+    color: "#9CA3AF",
+    marginTop: 2,
   },
-  statusBadge: {
+
+  // ── Discount chip ────────────────────────────────────────────────────────
+  discountChip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#E0F2F7",
-    borderRadius: 10,
+    alignSelf: "flex-start",
+    backgroundColor: "#E8F4F5",
+    borderRadius: 20,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    paddingHorizontal: 8,
-  },
-  statusText: {
-    fontSize: 12,
-    color: "#10B981",
-    marginLeft: 5,
-  },
-  discountSection: {
     marginBottom: 10,
   },
-  discountLabel: {
+  discountChipText: {
     fontSize: 12,
-    color: "#999",
-    marginBottom: 5,
+    color: "#21555b",
+    fontWeight: "500",
+    flexShrink: 1,
   },
-  discountValue: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#324E58",
-  },
+
+  // ── Financials ───────────────────────────────────────────────────────────
   financialSection: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "space-around",
     alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
   },
-  financialItem: {
-    alignItems: "center",
-  },
+  financialItem: { alignItems: "center" },
   financialLabel: {
-    fontSize: 12,
-    color: "#999",
+    fontSize: 11,
+    color: "#9CA3AF",
+    marginBottom: 3,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   spentAmount: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     color: "#324E58",
   },
   financialDivider: {
     width: 1,
-    height: "80%",
-    backgroundColor: "#eee",
+    height: 30,
+    backgroundColor: "#E5E7EB",
   },
   savedAmount: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
-    color: "#324E58",
+    color: "#9CA3AF",
   },
+  savedAmountHighlight: {
+    color: "#16A34A",
+  },
+
+  // ── Empty & loading states ───────────────────────────────────────────────
   noTransactionsMessage: {
-    flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingVertical: 60,
     paddingHorizontal: 40,
   },
+  emptyIcon: {
+    width: 80,
+    height: 80,
+    resizeMode: "contain",
+    opacity: 0.5,
+    marginBottom: 16,
+  },
   noTransactionsTitle: {
     fontSize: 18,
     fontWeight: "700",
     color: "#324E58",
-    marginTop: 16,
     marginBottom: 8,
   },
   noTransactionsText: {
@@ -872,10 +933,8 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     textAlign: "center",
     lineHeight: 20,
-    marginBottom: 24,
   },
   loadingContainer: {
-    flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingVertical: 60,
