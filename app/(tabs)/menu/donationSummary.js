@@ -583,14 +583,14 @@ export default function DonationSummary() {
           <View style={styles.charityStats}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
-                ${parseFloat(totalDonated || 0).toFixed(2)}
+                ${Math.round(totalDonated || 0)}
               </Text>
               <Text style={styles.statLabel}>Total Donated</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
-                ${parseFloat(monthlyDonationAmount || 0).toFixed(2)}
+                ${Math.round(monthlyDonationAmount || 0)}
               </Text>
               <Text style={styles.statLabel}>Monthly Amount</Text>
               <TouchableOpacity
@@ -699,9 +699,9 @@ export default function DonationSummary() {
           <Text style={styles.sectionTitle}>Tax Summary</Text>
           <View style={styles.taxCard}>
             <View style={styles.taxRow}>
-              <Text style={styles.taxLabel}>Total Donations (2024)</Text>
+              <Text style={styles.taxLabel}>Total Donations ({new Date().getFullYear()})</Text>
               <Text style={styles.taxValue}>
-                ${parseFloat(totalDonated || 0).toFixed(2)}
+                ${Math.round(totalDonated || 0)}
               </Text>
             </View>
             <View style={styles.taxRow}>
@@ -721,36 +721,6 @@ export default function DonationSummary() {
                 </Text>
               </View>
             )}
-          </View>
-        </View>
-
-        <View style={styles.taxSection}>
-          <Text style={styles.sectionTitle}>Billing Schedule</Text>
-          <View style={styles.taxCard}>
-            <View style={styles.taxRow}>
-              <Text style={styles.taxLabel}>Current Amount</Text>
-              <Text style={styles.taxValue}>
-                ${currentBillingAmount.toFixed(2)}
-              </Text>
-            </View>
-            <View style={styles.taxRow}>
-              <Text style={styles.taxLabel}>Next Amount</Text>
-              <Text style={styles.taxValue}>
-                ${nextBillingAmount.toFixed(2)}
-              </Text>
-            </View>
-            <View style={styles.taxRow}>
-              <Text style={styles.taxLabel}>Current Period Start</Text>
-              <Text style={styles.taxValue}>{currentPeriodStart}</Text>
-            </View>
-            <View style={styles.taxRow}>
-              <Text style={styles.taxLabel}>Current Period End</Text>
-              <Text style={styles.taxValue}>{currentPeriodEnd}</Text>
-            </View>
-            <View style={styles.taxRow}>
-              <Text style={styles.taxLabel}>Effective From</Text>
-              <Text style={styles.taxValue}>{effectiveFrom}</Text>
-            </View>
           </View>
         </View>
 
