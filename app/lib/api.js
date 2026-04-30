@@ -457,10 +457,11 @@ const API = {
   /**
    * Resend verification email
    */
-  resendVerification: async (email) => {
+  resendVerification: async (email, firstName) => {
     try {
       const response = await api.post("/api/auth/resend-verification", {
         email,
+        ...(firstName && { firstName }),
       });
       return response.data;
     } catch (error) {

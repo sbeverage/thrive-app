@@ -146,11 +146,10 @@ export default function SignupProfile() {
       // Save profile data (this will save both locally and to backend)
       const savedUserData = await saveUserData({ ...profileData }, true);
 
-      // Now that the name is saved, send the verification email.
-      // The backend /auth/resend-verification fetches first_name/last_name from the DB,
-      // so the greeting will say "Welcome, Stephanie!" instead of the email prefix.
+      // Send verification email — pass firstName directly so the greeting uses the
+      // name the user just entered, not a DB lookup that may not have saved yet.
       try {
-        await API.resendVerification(emailToSave);
+        await API.resendVerification(emailToSave, firstName.trim());
         console.log('📧 Verification email sent with user name');
       } catch (emailError) {
         // Non-blocking — user can request a resend from the verify screen

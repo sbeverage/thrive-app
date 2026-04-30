@@ -12030,7 +12030,7 @@ async function handleAuthRoute(
   if (method === "POST" && route === "/auth/resend-verification") {
     try {
       const body = await req.json();
-      const {email} = body;
+      const {email, firstName: bodyFirstName} = body;
 
       // Validate email
       if (!email) {
@@ -12127,22 +12127,25 @@ async function handleAuthRoute(
 
       console.log("✅ Verification token updated for user:", email);
 
-      // Build user's name for email greeting
-      // Use first_name and last_name from database if available, otherwise use email prefix
-      // Build user's name with proper capitalization
-      // Use capitalizeName function to ensure proper formatting
-      const firstName = capitalizeName(user.first_name);
-      const lastName = capitalizeName(user.last_name);
+      // Build user's name for email greeting.
+      // Priority: 1) firstName passed directly in request body (most reliable during signup,
+      // before the profile save roundtrip completes), 2) DB fields, 3) email prefix fallback.
       let userName: string;
-      if (firstName && lastName) {
-        userName = `${firstName} ${lastName}`;
-      } else if (firstName) {
-        userName = firstName;
-      } else if (lastName) {
-        userName = lastName;
+      if (bodyFirstName && bodyFirstName.trim()) {
+        userName = capitalizeName(bodyFirstName.trim()) || bodyFirstName.trim();
       } else {
-        // Fallback to email prefix if no name in database (capitalize it)
-        userName = capitalizeName(email.split("@")[0]) || email.split("@")[0];
+        const firstName = capitalizeName(user.first_name);
+        const lastName = capitalizeName(user.last_name);
+        if (firstName && lastName) {
+          userName = `${firstName} ${lastName}`;
+        } else if (firstName) {
+          userName = firstName;
+        } else if (lastName) {
+          userName = lastName;
+        } else {
+          // Fallback to email prefix if no name anywhere
+          userName = capitalizeName(email.split("@")[0]) || email.split("@")[0];
+        }
       }
 
       // Send verification email (async - don't wait for it)
