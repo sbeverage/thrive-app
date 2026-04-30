@@ -1,12 +1,17 @@
-import { useApplePay as _useApplePay } from "@stripe/stripe-react-native";
+import { usePlatformPay as _usePlatformPay } from "@stripe/stripe-react-native";
 
 const unavailable = {
-  isApplePaySupported: false,
-  presentApplePay: async () => ({ error: { code: "Unavailable", message: "Apple Pay not available" } }),
-  confirmApplePayPayment: async () => ({ error: { code: "Unavailable", message: "Apple Pay not available" } }),
+  loading: false,
+  isPlatformPaySupported: async () => false,
+  confirmPlatformPaySetupIntent: async () => ({
+    error: { code: "Unavailable", message: "Apple Pay not available" },
+  }),
+  confirmPlatformPayPayment: async () => ({
+    error: { code: "Unavailable", message: "Apple Pay not available" },
+  }),
 };
 
-// useApplePay is undefined in Expo Go (native module not compiled in).
-// Resolve once at module load so the exported symbol is always a valid hook.
+// usePlatformPay replaces the deprecated useApplePay in stripe-react-native ≥0.40.
+// Guard against Expo Go where the native module may not be compiled in.
 export const useSafeApplePay =
-  typeof _useApplePay === "function" ? _useApplePay : () => unavailable;
+  typeof _usePlatformPay === "function" ? _usePlatformPay : () => unavailable;

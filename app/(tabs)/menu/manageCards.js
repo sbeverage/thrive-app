@@ -44,16 +44,20 @@ function getCardLogo(brand) {
 export default function CardManagement() {
   const router = useRouter();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
-  const { isApplePaySupported, presentApplePay, confirmApplePayPayment } = useSafeApplePay();
+  const { isPlatformPaySupported, confirmPlatformPaySetupIntent } = useSafeApplePay();
 
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [addingCard, setAddingCard] = useState(false);
   const [addingApplePay, setAddingApplePay] = useState(false);
+  const [isApplePaySupported, setIsApplePaySupported] = useState(false);
 
   useEffect(() => {
     loadPaymentMethods();
+    if (Platform.OS === "ios") {
+      isPlatformPaySupported().then(setIsApplePaySupported).catch(() => {});
+    }
   }, []);
 
   const loadPaymentMethods = useCallback(async () => {
@@ -131,22 +135,19 @@ export default function CardManagement() {
         return;
       }
 
-      const { error: presentError } = await presentApplePay({
-        cartItems: [{ label: "Thrive Initiative", amount: "0.00", type: "pending" }],
-        country: "US",
-        currency: "USD",
+      // confirmPlatformPaySetupIntent presents the Apple Pay sheet and confirms in one call
+      const { error } = await confirmPlatformPaySetupIntent(response.client_secret, {
+        applePay: {
+          cartItems: [{ label: "Thrive Initiative", amount: "0.00", paymentType: "Immediate", isPending: true }],
+          merchantCountryCode: "US",
+          currencyCode: "USD",
+        },
       });
 
-      if (presentError) {
-        if (presentError.code !== "Canceled") {
-          Alert.alert("Apple Pay", presentError.message || "Apple Pay setup failed.");
+      if (error) {
+        if (error.code !== "Canceled") {
+          Alert.alert("Apple Pay", error.message || "Apple Pay setup failed.");
         }
-        return;
-      }
-
-      const { error: confirmError } = await confirmApplePayPayment(response.client_secret);
-      if (confirmError) {
-        Alert.alert("Apple Pay", confirmError.message || "Could not save Apple Pay.");
         return;
       }
 
