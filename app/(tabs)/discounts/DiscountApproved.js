@@ -184,7 +184,10 @@ export default function DiscountApproved() {
           spending: spendingNum,
           discount_id: discountId || undefined,
           vendor_id: vendorId || undefined,
-          metadata: { vendor_name: transactionData.brand },
+          metadata: {
+            vendor_name: transactionData.brand,
+            vendor_logo_url: params.vendorLogo || null,
+          },
         });
         console.log('✅ Transaction saved to backend');
       } catch (apiError) {

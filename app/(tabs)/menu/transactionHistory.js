@@ -106,13 +106,16 @@ export default function TransactionHistory() {
     try {
       setIsLoading(true);
 
-      // Load local transactions to merge with backend (local-only items have numeric string ids)
+      // Load local transactions — filter to discount redemptions only
       const localRaw = await AsyncStorage.getItem("userTransactions");
-      const localTransactions = localRaw ? JSON.parse(localRaw) : [];
+      const allLocal = localRaw ? JSON.parse(localRaw) : [];
+      const localTransactions = allLocal.filter(
+        (t) => !t.type || t.type === 'redemption'
+      );
 
-      // Try to load from backend API
+      // Try to load from backend API — only fetch discount redemptions
       try {
-        const response = await API.getTransactions(pageNum, 20);
+        const response = await API.getTransactions(pageNum, 20, { type: 'redemption' });
         const backendTransactions = response.transactions || [];
 
         // Transform backend transactions to match frontend format
@@ -160,15 +163,23 @@ export default function TransactionHistory() {
               "Charity";
           }
 
+          // For discount redemptions: prefer vendor data, never fall back to charity name
           const brandName =
-            t.vendor_name || t.vendors?.name || meta.vendor_name || (isDonationLike ? beneficiaryName : null) || beneficiaryName || "Unknown";
+            t.vendors?.name ||
+            t.vendor_name ||
+            meta.vendor_name ||
+            (isDonationLike ? beneficiaryName : null) ||
+            (isDonationLike ? "Charity" : "Vendor");
 
-          // Use vendor logo from join if available
-          const vendorLogo = t.vendors?.logo_url
-            ? {uri: t.vendors.logo_url}
-            : t.vendor_logo
-              ? {uri: t.vendor_logo}
-              : require("../../../assets/images/piggy-coin.png");
+          // Use vendor logo from join, metadata, or a placeholder (never the piggy coin for discounts)
+          const logoUri =
+            t.vendors?.logo_url ||
+            t.vendor_logo ||
+            meta.vendor_logo_url ||
+            null;
+          const vendorLogo = logoUri
+            ? {uri: logoUri}
+            : require("../../../assets/images/piggy-coin.png");
 
           // Clean up description: strip raw redemption code prefix
           const rawDescription = t.description || "";
@@ -387,83 +398,53 @@ export default function TransactionHistory() {
   );
 
   const renderItem = ({ item }) => {
-    const isDonationLike =
-      item.type === "donation" ||
-      item.type === "monthly_donation" ||
-      item.isOneTimeGift;
+    const logoSource = item.logo?.uri ? item.logo : null;
+    const initials = (item.brand || "V").slice(0, 2).toUpperCase();
 
-    if (isDonationLike) {
-      const isMonthly =
-        item.type === "monthly_donation" || item.isMonthlyDonation;
-      return (
-        <View style={styles.transactionCard}>
-          <View style={styles.cardHeader}>
-            <View style={styles.brandSection}>
-              <View style={[styles.brandLogo, styles.donationLogo]}>
-                <Feather name="heart" size={24} color="#DB8633" />
-              </View>
-              <View style={styles.brandInfo}>
-                <Text style={styles.brandName}>
-                  {item.beneficiaryName || "Charity"}
-                </Text>
-                <Text style={styles.transactionDate}>{item.date}</Text>
-              </View>
-            </View>
-            <View style={styles.donationBadge}>
-              <Feather
-                name={isMonthly ? "repeat" : "gift"}
-                size={14}
-                color="#10B981"
-              />
-              <Text style={styles.donationBadgeText}>
-                {isMonthly ? "Monthly Donation" : "One-Time Gift"}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.donationSection}>
-            <Text style={styles.donationLabel}>Donation Amount</Text>
-            <Text style={styles.donationAmount}>{item.amount}</Text>
-          </View>
-        </View>
-      );
-    }
-
-    // Regular discount transaction
     return (
       <View style={styles.transactionCard}>
         <View style={styles.cardHeader}>
           <View style={styles.brandSection}>
-            <Image source={item.logo} style={styles.brandLogo} />
+            {logoSource ? (
+              <Image
+                source={logoSource}
+                style={styles.brandLogo}
+                defaultSource={require("../../../assets/images/piggy-coin.png")}
+              />
+            ) : (
+              <View style={[styles.brandLogo, styles.initialsLogo]}>
+                <Text style={styles.initialsText}>{initials}</Text>
+              </View>
+            )}
             <View style={styles.brandInfo}>
               <Text style={styles.brandName}>{item.brand}</Text>
               <Text style={styles.transactionDate}>{item.date}</Text>
             </View>
           </View>
-          <View style={styles.cardActions}>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => setEditingTransaction(item)}
-            >
-              <Feather name="edit-2" size={16} color="#DB8633" />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setEditingTransaction(item)}
+          >
+            <Feather name="edit-2" size={16} color="#DB8633" />
+          </TouchableOpacity>
         </View>
 
-        <View style={styles.discountSection}>
-          <Text style={styles.discountLabel}>Discount Used</Text>
-          <Text style={styles.discountValue}>{item.discount}</Text>
-        </View>
+        {!!item.discount && (
+          <View style={styles.discountSection}>
+            <Text style={styles.discountLabel}>Discount Used</Text>
+            <Text style={styles.discountValue}>{item.discount}</Text>
+          </View>
+        )}
 
         <View style={styles.financialSection}>
           <View style={styles.financialItem}>
             <Text style={styles.financialLabel}>Spent</Text>
-            <Text style={styles.spentAmount}>{item.spending}</Text>
+            <Text style={styles.spentAmount}>{item.spending || "—"}</Text>
           </View>
           <View style={styles.financialDivider} />
           <View style={styles.financialItem}>
             <Text style={styles.financialLabel}>Saved</Text>
-            <Text style={styles.savedAmount}>{item.savings}</Text>
+            <Text style={styles.savedAmount}>{item.savings || "—"}</Text>
           </View>
         </View>
       </View>
@@ -483,7 +464,7 @@ export default function TransactionHistory() {
             style={{ width: 24, height: 24, tintColor: "#fff" }}
           />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Transaction History</Text>
+        <Text style={styles.headerTitle}>Savings Tracker</Text>
         <View style={styles.headerSpacer} />
       </LinearGradient>
 
@@ -548,8 +529,8 @@ export default function TransactionHistory() {
             <Feather name="shopping-bag" size={48} color="#D1D5DB" />
             <Text style={styles.noTransactionsTitle}>No Transactions Yet</Text>
             <Text style={styles.noTransactionsText}>
-              Your discount redemptions will appear here once you start using
-              discounts through the app.
+              Discounts you redeem will appear here. You can also edit your
+              spend and savings amounts after the fact.
             </Text>
           </View>
         )}
@@ -1031,38 +1012,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
     lineHeight: 16,
   },
-  // Donation-specific styles
-  donationLogo: {
-    backgroundColor: "#FFF5EB",
+  initialsLogo: {
+    backgroundColor: "#E8F4F5",
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 8,
   },
-  donationBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#ECFDF5",
-    borderRadius: 12,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    gap: 4,
-  },
-  donationBadgeText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#10B981",
-  },
-  donationSection: {
-    marginTop: 12,
-  },
-  donationLabel: {
-    fontSize: 12,
-    color: "#999",
-    marginBottom: 4,
-  },
-  donationAmount: {
-    fontSize: 20,
+  initialsText: {
+    fontSize: 14,
     fontWeight: "700",
-    color: "#10B981",
+    color: "#21555b",
   },
 });
