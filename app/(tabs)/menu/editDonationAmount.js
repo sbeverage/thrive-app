@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -11,51 +11,46 @@ import {
   Platform,
   Image,
   ActivityIndicator,
+  Modal,
+  Animated,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { AntDesign } from "@expo/vector-icons";
 import { useUser } from "../../context/UserContext";
 import { useBeneficiary } from "../../context/BeneficiaryContext";
 import API from "../../lib/api";
 
+const SERVICE_FEE = 3.0;
+const CREDIT_CARD_FEE_RATE = 0.035;
+
 export default function EditDonationAmount() {
   const router = useRouter();
   const { user, saveUserData } = useUser();
-  const MIN_DONATION_AMOUNT = user?.coworking ? 1 : 15;
+  const MIN_DONATION = user?.coworking ? 1 : 15;
   const { selectedBeneficiary, reloadBeneficiary } = useBeneficiary();
-  const [currentAmount, setCurrentAmount] = useState(
-    user.monthlyDonation?.toString() || "15",
+
+  const [amount, setAmount] = useState(
+    user.monthlyDonation?.toString() || "15"
   );
-  const [newAmount, setNewAmount] = useState(
-    user.monthlyDonation?.toString() || "15",
-  );
-  const [isEditing, setIsEditing] = useState(false);
+  const [coverFees, setCoverFees] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [subscription, setSubscription] = useState(null);
   const [savedBeneficiaryId, setSavedBeneficiaryId] = useState(null);
+  const [showFeeInfo, setShowFeeInfo] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const toggleAnim = useRef(new Animated.Value(1)).current;
 
-  // Load existing subscription and beneficiary on mount
   useEffect(() => {
     loadSubscription();
     loadSavedBeneficiary();
   }, []);
 
-  // Reload beneficiary when returning from Beneficiary tab (e.g. after selecting one)
   useFocusEffect(
     React.useCallback(() => {
       reloadBeneficiary?.();
       loadSavedBeneficiary();
-    }, [reloadBeneficiary]),
+    }, [reloadBeneficiary])
   );
-
-  // Resolve beneficiary ID: from context, user prefs, or backend
-  const getBeneficiaryId = () => {
-    const fromContext = selectedBeneficiary?.id;
-    const fromUser = user.preferredCharity || user.beneficiary;
-    const fromState = savedBeneficiaryId;
-    return fromContext ?? fromUser ?? fromState ?? null;
-  };
 
   const loadSavedBeneficiary = async () => {
     try {
@@ -63,304 +58,339 @@ export default function EditDonationAmount() {
       if (profile?.preferredCharity || profile?.beneficiary) {
         setSavedBeneficiaryId(profile.preferredCharity || profile.beneficiary);
       }
-    } catch (e) {
-      // Profile may 404 - ignore
-    }
+    } catch (_) {}
   };
 
   const loadSubscription = async () => {
     try {
       const response = await API.getMonthlyDonations();
-      if (response.subscriptions && response.subscriptions.length > 0) {
-        setSubscription(response.subscriptions[0]);
-        const currentAmount =
-          response.subscriptions[0].amount || user.monthlyDonation || 15;
-        setCurrentAmount(currentAmount.toString());
-        setNewAmount(currentAmount.toString());
+      if (response.subscriptions?.length > 0) {
+        const sub = response.subscriptions[0];
+        setSubscription(sub);
+        const amt = sub.amount || user.monthlyDonation || 15;
+        setAmount(amt.toString());
       }
-    } catch (error) {
-      console.log(
-        "⚠️ No existing subscription found or error loading:",
-        error.message,
-      );
-      // Continue with local data
-    }
+    } catch (_) {}
+  };
+
+  const getBeneficiaryId = () => {
+    return (
+      selectedBeneficiary?.id ||
+      user.preferredCharity ||
+      user.beneficiary ||
+      savedBeneficiaryId ||
+      null
+    );
+  };
+
+  // Live fee calculation
+  const parsedAmount = parseFloat(amount) || 0;
+  const isValidAmount = parsedAmount >= MIN_DONATION && parsedAmount <= 1000;
+  const subtotal = parsedAmount + SERVICE_FEE;
+  const processingFee = coverFees ? subtotal * CREDIT_CARD_FEE_RATE : 0;
+  const totalCharged = subtotal + processingFee;
+
+  const handleToggleFees = () => {
+    Animated.spring(toggleAnim, {
+      toValue: coverFees ? 0 : 1,
+      useNativeDriver: true,
+      tension: 80,
+      friction: 10,
+    }).start();
+    setCoverFees((v) => !v);
   };
 
   const handleSave = async () => {
-    const amount = parseFloat(newAmount);
-    if (isNaN(amount)) {
-      Alert.alert("Invalid Amount", "Please enter a valid number.");
-      return;
-    }
-    if (amount < MIN_DONATION_AMOUNT) {
+    const donation = parseFloat(amount);
+    if (isNaN(donation) || !isValidAmount) {
       Alert.alert(
-        "Minimum Amount",
-        `Please enter the minimum amount: $${MIN_DONATION_AMOUNT} or more per month.`,
-      );
-      return;
-    }
-
-    if (amount > 1000) {
-      Alert.alert(
-        "Amount Too High",
-        "Please enter an amount of $1,000 or less.",
+        "Invalid Amount",
+        `Please enter an amount between $${MIN_DONATION} and $1,000.`
       );
       return;
     }
 
     setIsLoading(true);
     try {
-      // Resolve beneficiary: from context (saved at signup), user prefs, or backend profile
       const beneficiaryId = getBeneficiaryId();
-
-      let response = null;
       let apiSucceeded = false;
+      let response = null;
 
       if (subscription) {
-        // Update existing subscription - no beneficiary needed
         try {
-          console.log("💳 Updating existing subscription...");
-          const subscriptionIdForUpdate =
+          const id =
             subscription.stripe_subscription_id ||
             subscription.subscription_id ||
             subscription.id;
-          response = await API.upgradeOrDowngradeMonthlyAmount(
-            subscriptionIdForUpdate,
-            amount,
-          );
+          response = await API.upgradeOrDowngradeMonthlyAmount(id, donation);
           apiSucceeded = true;
-        } catch (apiError) {
-          if (apiError?.status === 409) {
+        } catch (err) {
+          if (err?.status === 409) {
             Alert.alert(
               "Payment setup required",
-              "Complete first payment setup before changing amount.",
+              "Complete first payment setup before changing amount."
             );
             return;
           }
-          console.warn(
-            "⚠️ Update subscription failed, saving locally:",
-            apiError.message,
-          );
         }
       } else if (beneficiaryId) {
-        // Create new subscription with saved beneficiary
         try {
-          console.log("💳 Creating new subscription...");
           response = await API.createMonthlySubscription({
             beneficiary_id: beneficiaryId,
-            amount: amount,
+            amount: donation,
             currency: "USD",
           });
           apiSucceeded = true;
-        } catch (apiError) {
-          console.warn(
-            "⚠️ Create subscription failed, saving locally:",
-            apiError.message,
-          );
-        }
+        } catch (_) {}
       }
-      // If no beneficiary and no subscription: skip API, save locally only
 
-      // Always save amount locally (works for: update success, create success, or API fallback)
-      await saveUserData({ monthlyDonation: amount });
-      setCurrentAmount(newAmount);
-      setIsEditing(false);
+      await saveUserData({ monthlyDonation: donation });
 
       if (apiSucceeded) {
-        const changeTiming =
+        const nextInvoice =
           response?.change?.timing === "next_invoice" || !!subscription;
         Alert.alert(
-          "✅ Amount Updated!",
-          changeTiming
-            ? `Your monthly donation amount has been updated to $${parseFloat(newAmount || 0).toFixed(2)} and will apply on your next invoice.`
-            : `Your monthly donation amount has been ${subscription ? "updated" : "set"} to $${parseFloat(newAmount || 0).toFixed(2)}.`,
-          [{ text: "OK" }],
+          "Donation Updated",
+          nextInvoice
+            ? `Your monthly donation has been updated to $${donation.toFixed(2)} and will apply on your next invoice.`
+            : `Your monthly donation has been set to $${donation.toFixed(2)}.`,
+          [{ text: "OK", onPress: () => router.replace("/(tabs)/menu") }]
         );
       } else if (!beneficiaryId) {
         Alert.alert(
-          "✅ Amount Saved",
-          `Your monthly donation amount of $${parseFloat(newAmount || 0).toFixed(2)} has been saved. To enable automatic billing, select a beneficiary from the Beneficiary tab and add a payment method.`,
+          "Amount Saved",
+          `$${donation.toFixed(2)}/month saved. To enable billing, select a beneficiary and add a payment method.`,
           [
-            { text: "OK" },
+            { text: "OK", onPress: () => router.replace("/(tabs)/menu") },
             {
               text: "Select Beneficiary",
               onPress: () => router.replace("/(tabs)/beneficiary"),
             },
-          ],
+          ]
         );
       } else {
         Alert.alert(
-          "✅ Amount Saved",
-          `Your monthly donation amount of $${parseFloat(newAmount || 0).toFixed(2)} has been saved locally. The subscription could not be created at this time—you can try again later.`,
-          [{ text: "OK" }],
+          "Amount Saved",
+          `$${donation.toFixed(2)}/month saved locally. Subscription could not be updated right now.`,
+          [{ text: "OK", onPress: () => router.replace("/(tabs)/menu") }]
         );
       }
     } catch (error) {
-      console.error("❌ Error saving donation amount:", error);
-      // Fallback: save locally so user isn't blocked
-      try {
-        await saveUserData({ monthlyDonation: amount });
-        setCurrentAmount(newAmount);
-        setIsEditing(false);
-        Alert.alert(
-          "Amount Saved Locally",
-          `Your amount of $${parseFloat(newAmount || 0).toFixed(2)} has been saved. The subscription service could not be reached—please try again later.`,
-          [{ text: "OK" }],
-        );
-      } catch (fallbackError) {
-        Alert.alert(
-          "Error",
-          error.message || " to save donation amount. Please try again.",
-        );
-      }
+      Alert.alert("Error", error.message || "Failed to save. Please try again.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleCancel = () => {
-    setNewAmount(currentAmount);
-    setIsEditing(false);
-  };
-
-  const quickAmounts = user?.coworking
-    ? [1, 5, 10, 15, 25, 50]
-    : [15, 25, 50, 75, 100, 150];
+  const thumbTranslate = toggleAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [2, 22],
+  });
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={styles.container}
     >
-      <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Standardized Header */}
-        <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.headerRow}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.replace("/(tabs)/menu")}
-          >
-            <Image
-              source={require("../../../assets/icons/arrow-left.png")}
-              style={{ width: 24, height: 24, tintColor: "#fff" }}
-            />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Edit Donation Amount</Text>
-          <View style={styles.headerSpacer} />
-        </LinearGradient>
+      {/* Header */}
+      <LinearGradient
+        colors={["#21555b", "#2d7a82"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.replace("/(tabs)/menu")}
+        >
+          <Image
+            source={require("../../../assets/icons/arrow-left.png")}
+            style={styles.backIcon}
+          />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Edit Donation</Text>
+        <View style={styles.headerSpacer} />
+      </LinearGradient>
 
-        {/* Current Amount Display */}
-        <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.currentAmountSection}>
-          <Text style={[styles.sectionTitle, { color: '#fff', borderLeftWidth: 0, paddingLeft: 0, textAlign: 'center' }]}>Current Monthly Donation</Text>
-          <View style={styles.amountDisplay}>
-            <Text style={styles.currencySymbol}>$</Text>
-            <Text style={styles.currentAmountText}>{currentAmount}</Text>
-            <Text style={styles.perMonthText}>/month</Text>
-          </View>
-        </LinearGradient>
-
-        {/* Edit Section */}
-        <View style={styles.editSection}>
-          <Text style={styles.sectionTitle}>New Monthly Amount</Text>
-
-          {isEditing ? (
-            <View style={styles.editMode}>
-              <View style={styles.amountInputContainer}>
-                <Text style={styles.currencyLabel}>$</Text>
-                <TextInput
-                  style={styles.amountInput}
-                  value={newAmount}
-                  onChangeText={setNewAmount}
-                  keyboardType="numeric"
-                  placeholder="0.00"
-                  placeholderTextColor="#999"
-                  autoFocus
-                />
-              </View>
-
-              <View style={styles.buttonRow}>
-                <TouchableOpacity
-                  style={styles.cancelButton}
-                  onPress={handleCancel}
-                  disabled={isLoading}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.saveButton,
-                    isLoading && styles.saveButtonDisabled,
-                  ]}
-                  onPress={handleSave}
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.saveButtonText}>Save</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={styles.editButton}
-              onPress={() => setIsEditing(true)}
-            >
-              <AntDesign name="edit" size={20} color="#DB8633" />
-              <Text style={styles.editButtonText}>Change Amount</Text>
-            </TouchableOpacity>
-          )}
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Amount Input Section */}
+        <Text style={styles.sectionLabel}>Monthly donation amount</Text>
+        <View style={[styles.amountCard, isFocused && styles.amountCardFocused]}>
+          <Text style={styles.currencySign}>$</Text>
+          <TextInput
+            style={styles.amountInput}
+            value={amount}
+            onChangeText={(val) => setAmount(val.replace(/[^0-9.]/g, ""))}
+            keyboardType="decimal-pad"
+            placeholder="0"
+            placeholderTextColor="#B0BEC5"
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            returnKeyType="done"
+            selectTextOnFocus
+          />
+          <Text style={styles.perMonth}>/mo</Text>
         </View>
+        {parsedAmount > 0 && parsedAmount < MIN_DONATION && (
+          <Text style={styles.minWarning}>
+            Minimum is ${MIN_DONATION}/month
+          </Text>
+        )}
+        {parsedAmount > 1000 && (
+          <Text style={styles.minWarning}>Maximum is $1,000/month</Text>
+        )}
 
-        {/* Quick Amount Selection */}
-        <View style={styles.quickAmountsSection}>
-          <Text style={styles.sectionTitle}>Quick Amounts</Text>
-          <View style={styles.quickAmountsGrid}>
-            {quickAmounts.map((amount) => (
+        {/* Order Summary */}
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryTitle}>Order Summary</Text>
+
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Monthly donation</Text>
+            <Text style={styles.summaryValue}>
+              ${parsedAmount > 0 ? parsedAmount.toFixed(2) : "0.00"}
+            </Text>
+          </View>
+
+          <View style={styles.summaryRow}>
+            <View style={styles.labelWithInfo}>
+              <Text style={styles.summaryLabel}>Platform fee</Text>
               <TouchableOpacity
-                key={amount}
-                style={[
-                  styles.quickAmountButton,
-                  parseFloat(newAmount) === amount &&
-                    styles.selectedQuickAmount,
-                ]}
-                onPress={() => {
-                  setNewAmount(amount.toString());
-                  if (!isEditing) setIsEditing(true);
-                }}
+                onPress={() => setShowFeeInfo(true)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Text
+                <Text style={styles.infoIcon}>ⓘ</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.summaryValue}>${SERVICE_FEE.toFixed(2)}</Text>
+          </View>
+
+          {/* Processing fee toggle row */}
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleLeft}>
+              <Text style={styles.summaryLabel}>Cover processing fees</Text>
+              <Text style={styles.feeNote}>3.5% — goes directly to card network</Text>
+            </View>
+            <View style={styles.toggleRight}>
+              <Text
+                style={[
+                  styles.processingAmount,
+                  !coverFees && styles.processingAmountOff,
+                ]}
+              >
+                +${coverFees ? processingFee.toFixed(2) : "0.00"}
+              </Text>
+              <TouchableOpacity
+                onPress={handleToggleFees}
+                activeOpacity={0.8}
+                style={styles.toggleHit}
+              >
+                <View
                   style={[
-                    styles.quickAmountText,
-                    parseFloat(newAmount) === amount &&
-                      styles.selectedQuickAmountText,
+                    styles.toggleTrack,
+                    coverFees && styles.toggleTrackOn,
                   ]}
                 >
-                  ${amount}
-                </Text>
+                  <Animated.View
+                    style={[
+                      styles.toggleThumb,
+                      { transform: [{ translateX: thumbTranslate }] },
+                    ]}
+                  />
+                </View>
               </TouchableOpacity>
-            ))}
+            </View>
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* Total */}
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Total charged monthly</Text>
+            <Text style={styles.totalAmount}>
+              ${parsedAmount > 0 ? totalCharged.toFixed(2) : "0.00"}
+            </Text>
           </View>
         </View>
 
-        {/* Information Section */}
-        <View style={styles.infoSection}>
-          <Text style={styles.infoTitle}>About Monthly Donations</Text>
-          <Text style={styles.infoText}>
-            • Your donation amount will be charged monthly on the same date
-          </Text>
-          <Text style={styles.infoText}>
-            • You can change this amount at any time
-          </Text>
-          <Text style={styles.infoText}>
-            • Changes take effect immediately for the next billing cycle
-          </Text>
-          <Text style={styles.infoText}>
-            • Minimum donation: ${MIN_DONATION_AMOUNT} per month
-          </Text>
+        {/* About section */}
+        <View style={styles.aboutCard}>
+          <Text style={styles.aboutTitle}>About Monthly Donations</Text>
+          <View style={styles.aboutRow}>
+            <Text style={styles.bullet}>•</Text>
+            <Text style={styles.aboutText}>
+              Charged on the same date each month
+            </Text>
+          </View>
+          <View style={styles.aboutRow}>
+            <Text style={styles.bullet}>•</Text>
+            <Text style={styles.aboutText}>
+              You can update or cancel at any time
+            </Text>
+          </View>
+          <View style={styles.aboutRow}>
+            <Text style={styles.bullet}>•</Text>
+            <Text style={styles.aboutText}>
+              The $3 platform fee keeps THRIVE running and helps us serve more causes
+            </Text>
+          </View>
+          <View style={styles.aboutRow}>
+            <Text style={styles.bullet}>•</Text>
+            <Text style={styles.aboutText}>
+              Minimum donation: ${MIN_DONATION}/month
+            </Text>
+          </View>
         </View>
+
+        {/* Save button */}
+        <TouchableOpacity
+          style={[
+            styles.saveButton,
+            (!isValidAmount || isLoading) && styles.saveButtonDisabled,
+          ]}
+          onPress={handleSave}
+          disabled={!isValidAmount || isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.saveButtonText}>Update Donation</Text>
+          )}
+        </TouchableOpacity>
       </ScrollView>
+
+      {/* Service fee info modal */}
+      <Modal
+        visible={showFeeInfo}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowFeeInfo(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowFeeInfo(false)}
+        >
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Platform Fee</Text>
+            <Text style={styles.modalBody}>
+              The $3.00 monthly platform fee helps THRIVE Initiative cover
+              operating costs — keeping the platform running, supporting our
+              team, and expanding access to more causes and communities.{"\n\n"}
+              Your donation to the cause is separate and goes directly to the
+              beneficiary you selected.
+            </Text>
+            <TouchableOpacity
+              style={styles.modalClose}
+              onPress={() => setShowFeeInfo(false)}
+            >
+              <Text style={styles.modalCloseText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -368,202 +398,306 @@ export default function EditDonationAmount() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
+    backgroundColor: "#F0F4F8",
   },
-  scroll: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 100,
-  },
-  headerRow: {
+  header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 20,
-    paddingTop: 14,
-    paddingBottom: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+    paddingTop: 56,
+    paddingBottom: 18,
+    paddingHorizontal: 20,
   },
   backButton: {
-    // Standard back button with no custom styling
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  backIcon: {
+    width: 20,
+    height: 20,
+    tintColor: "#fff",
   },
   headerTitle: {
+    flex: 1,
+    textAlign: "center",
     fontSize: 18,
     fontWeight: "700",
     color: "#fff",
-    textAlign: "center",
-    flex: 1,
+    letterSpacing: 0.3,
   },
   headerSpacer: {
-    width: 32,
+    width: 36,
   },
-  currentAmountSection: {
-    borderRadius: 12,
-    padding: 24,
-    marginBottom: 24,
-    alignItems: "center",
+  scroll: {
+    padding: 20,
+    paddingBottom: 48,
   },
-  sectionTitle: {
-    fontSize: 16,
+  sectionLabel: {
+    fontSize: 13,
     fontWeight: "600",
-    color: "#21555b",
-    marginBottom: 16,
-    borderLeftWidth: 3,
-    borderLeftColor: "#21555b",
-    paddingLeft: 10,
+    color: "#607D8B",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 10,
+    marginTop: 4,
   },
-  amountDisplay: {
+  amountCard: {
     flexDirection: "row",
-    alignItems: "baseline",
-  },
-  currencySymbol: {
-    fontSize: 48,
-    fontWeight: "700",
-    color: "#fff",
-    marginRight: 4,
-  },
-  currentAmountText: {
-    fontSize: 48,
-    fontWeight: "700",
-    color: "#fff",
-  },
-  perMonthText: {
-    fontSize: 18,
-    color: "rgba(255,255,255,0.75)",
-    marginLeft: 8,
-  },
-  editSection: {
+    alignItems: "center",
     backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 24,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    marginBottom: 6,
+    borderWidth: 2,
+    borderColor: "transparent",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  editMode: {
-    gap: 20,
+  amountCardFocused: {
+    borderColor: "#21555b",
   },
-  amountInputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F5F5FA",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  currencyLabel: {
-    fontSize: 24,
-    fontWeight: "600",
-    color: "#324E58",
-    marginRight: 8,
+  currencySign: {
+    fontSize: 40,
+    fontWeight: "300",
+    color: "#21555b",
+    marginRight: 4,
+    lineHeight: 52,
   },
   amountInput: {
     flex: 1,
-    fontSize: 24,
-    fontWeight: "600",
-    color: "#324E58",
-    paddingVertical: 12,
+    fontSize: 56,
+    fontWeight: "700",
+    color: "#1A2E35",
+    padding: 0,
+    lineHeight: 68,
   },
-  buttonRow: {
-    flexDirection: "row",
-    gap: 12,
+  perMonth: {
+    fontSize: 18,
+    color: "#90A4AE",
+    fontWeight: "500",
+    alignSelf: "flex-end",
+    marginBottom: 6,
   },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+  minWarning: {
+    fontSize: 13,
+    color: "#E53935",
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  summaryCard: {
     backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 20,
+    marginTop: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  cancelButtonText: {
-    textAlign: "center",
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#666",
-  },
-  saveButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 10,
-    backgroundColor: "#DB8633",
-  },
-  saveButtonText: {
-    textAlign: "center",
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  saveButtonDisabled: {
-    opacity: 0.6,
-  },
-  editButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 16,
-    borderRadius: 10,
-    backgroundColor: "#F5F5FA",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  editButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#324E58",
-  },
-  quickAmountsSection: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 24,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  quickAmountsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-  },
-  quickAmountButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    backgroundColor: "#F5F5FA",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    minWidth: 80,
-    alignItems: "center",
-  },
-  selectedQuickAmount: {
-    backgroundColor: "#DB8633",
-    borderColor: "#DB8633",
-  },
-  quickAmountText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#324E58",
-  },
-  selectedQuickAmountText: {
-    color: "#fff",
-  },
-  infoSection: {
-    backgroundColor: "#F5F5FA",
-    borderRadius: 12,
-    padding: 24,
-  },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#324E58",
+  summaryTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1A2E35",
     marginBottom: 16,
   },
-  infoText: {
+  summaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  labelWithInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  summaryLabel: {
+    fontSize: 15,
+    color: "#455A64",
+  },
+  summaryValue: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1A2E35",
+  },
+  infoIcon: {
+    fontSize: 15,
+    color: "#90A4AE",
+  },
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    padding: 12,
+  },
+  toggleLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
+  feeNote: {
+    fontSize: 12,
+    color: "#90A4AE",
+    marginTop: 2,
+  },
+  toggleRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  processingAmount: {
     fontSize: 14,
-    color: "#666",
+    fontWeight: "600",
+    color: "#21555b",
+  },
+  processingAmountOff: {
+    color: "#B0BEC5",
+  },
+  toggleHit: {
+    padding: 4,
+  },
+  toggleTrack: {
+    width: 44,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#CFD8DC",
+    justifyContent: "center",
+  },
+  toggleTrackOn: {
+    backgroundColor: "#21555b",
+  },
+  toggleThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#fff",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#ECEFF1",
+    marginBottom: 14,
+  },
+  totalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  totalLabel: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1A2E35",
+  },
+  totalAmount: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#21555b",
+  },
+  aboutCard: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 20,
+    marginTop: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  aboutTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1A2E35",
+    marginBottom: 14,
+  },
+  aboutRow: {
+    flexDirection: "row",
     marginBottom: 8,
+    gap: 8,
+  },
+  bullet: {
+    fontSize: 14,
+    color: "#21555b",
+    fontWeight: "700",
+    marginTop: 1,
+  },
+  aboutText: {
+    flex: 1,
+    fontSize: 14,
+    color: "#607D8B",
     lineHeight: 20,
+  },
+  saveButton: {
+    backgroundColor: "#DB8633",
+    borderRadius: 16,
+    paddingVertical: 16,
+    alignItems: "center",
+    marginTop: 24,
+    shadowColor: "#DB8633",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  saveButtonDisabled: {
+    opacity: 0.45,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  saveButtonText: {
+    color: "#fff",
+    fontSize: 17,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 32,
+  },
+  modalCard: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 24,
+    width: "100%",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1A2E35",
+    marginBottom: 12,
+  },
+  modalBody: {
+    fontSize: 15,
+    color: "#607D8B",
+    lineHeight: 22,
+    marginBottom: 20,
+  },
+  modalClose: {
+    backgroundColor: "#21555b",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  modalCloseText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
   },
 });
