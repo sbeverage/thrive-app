@@ -199,11 +199,17 @@ api.interceptors.response.use(
         // Don't log full error details for expected public endpoint 401s
         return Promise.reject(error);
       } else {
-        // Protected endpoint - token expired or invalid
-        console.log("🔐 Token expired or invalid, clearing auth data");
-        await AsyncStorage.removeItem("authToken");
-        await AsyncStorage.removeItem("userData");
-        // Don't log full error details for expected token expiration
+        // Only clear session if we actually had a token that was rejected.
+        // If there was no token at all (missing authorization header), don't
+        // wipe userData — the user just isn't authenticated for this endpoint.
+        const existingToken = await AsyncStorage.getItem("authToken");
+        if (existingToken) {
+          console.log("🔐 Token expired or invalid, clearing auth data");
+          await AsyncStorage.removeItem("authToken");
+          await AsyncStorage.removeItem("userData");
+        } else {
+          console.warn("🔐 No auth token for protected endpoint:", url);
+        }
         return Promise.reject(error);
       }
     }
