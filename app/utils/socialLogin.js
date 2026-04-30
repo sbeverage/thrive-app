@@ -7,7 +7,7 @@
  * (e.g. Expo Go) does not crash the entire app at startup.
  */
 
-import { Platform, Alert } from 'react-native';
+import { Platform, Alert, TurboModuleRegistry } from 'react-native';
 
 let googleConfigured = false;
 let googleSignInInProgress = false;
@@ -15,9 +15,18 @@ let facebookSignInInProgress = false;
 
 // Lazy getters — throw only when actually called, not at module load time
 const getGoogleSignin = () => {
+  // TurboModuleRegistry.get (non-enforcing) returns null if the native module
+  // isn't registered — this avoids the uncatchable Invariant Violation thrown
+  // by getEnforcing inside @react-native-google-signin/google-signin v16+.
+  const nativeModule = TurboModuleRegistry?.get?.('RNGoogleSignin');
+  if (!nativeModule) {
+    console.warn('⚠️ RNGoogleSignin native module not found — Google Sign-In unavailable');
+    return null;
+  }
   try {
     return require('@react-native-google-signin/google-signin').GoogleSignin;
-  } catch {
+  } catch (e) {
+    console.warn('⚠️ Failed to load Google Sign-In library:', e?.message);
     return null;
   }
 };
