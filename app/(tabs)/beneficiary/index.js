@@ -13,7 +13,6 @@ import {
   Modal,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AntDesign, Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -386,7 +385,7 @@ export default function BeneficiaryScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f5fa' }}>
+    <View style={{ flex: 1, backgroundColor: '#fff' }}>
       {/* Header with Search and Toggle */}
       <View style={styles.header}>
 
@@ -398,7 +397,7 @@ export default function BeneficiaryScreen() {
             style={{ width: 18, height: 18, tintColor: '#6d6e72', marginRight: 8 }}
           />
           <TextInput
-            placeholder="Search Beneficiaries"
+            placeholder="Search beneficiaries"
             placeholderTextColor="#6d6e72"
             value={searchText}
             onChangeText={setSearchText}
@@ -914,7 +913,7 @@ export default function BeneficiaryScreen() {
         </TouchableOpacity>
       </Modal>
       
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -941,9 +940,12 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    height: 48,
     fontSize: 16,
     color: '#324E58',
+    height: 46,
+    lineHeight: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 0,
   },
   locationRow: {
     flexDirection: 'row',

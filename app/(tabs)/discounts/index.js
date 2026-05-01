@@ -13,7 +13,6 @@ import {
   Platform,
   Linking,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 
 import { Feather, AntDesign } from '@expo/vector-icons';
@@ -446,7 +445,7 @@ export default function DiscountsScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f5fa' }}>
+    <View style={{ flex: 1, backgroundColor: '#fff' }}>
       {/* Header with Search and Toggle */}
       <View style={styles.header}>
         <View style={styles.searchRow}>
@@ -455,7 +454,7 @@ export default function DiscountsScreen() {
             style={{ width: 18, height: 18, tintColor: '#6d6e72', marginRight: 8 }} 
           />
           <TextInput
-            placeholder="Search Business"
+            placeholder="Search business"
             placeholderTextColor="#6d6e72"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -801,7 +800,7 @@ export default function DiscountsScreen() {
         )}
       </View>
 
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -832,7 +831,10 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: '#324E58',
-    height: 48,
+    height: 46,
+    lineHeight: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 0,
   },
   locationRow: {
     flexDirection: 'row',

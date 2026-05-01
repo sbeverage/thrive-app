@@ -553,14 +553,14 @@ export default function DonationSummary() {
   return (
     <View style={styles.container}>
       {/* Standardized Header */}
-      <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.headerRow}>
+      <View style={styles.headerRow}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.replace("/(tabs)/menu")}
         >
           <Image
             source={require("../../../assets/icons/arrow-left.png")}
-            style={{ width: 24, height: 24, tintColor: "#fff" }}
+            style={{ width: 24, height: 24, tintColor: "#324E58" }}
           />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Donation Summary</Text>
@@ -573,12 +573,12 @@ export default function DonationSummary() {
           disabled={isLoading}
         >
           {isLoading ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color="#324E58" />
           ) : (
-            <Feather name="refresh-cw" size={20} color="#fff" />
+            <Feather name="refresh-cw" size={20} color="#324E58" />
           )}
         </TouchableOpacity>
-      </LinearGradient>
+      </View>
 
       {/* Scrollable Content */}
       <ScrollView
@@ -774,13 +774,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 14,
-    borderRadius: 12,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 8,
     marginHorizontal: 20,
     marginTop: 20,
-    marginBottom: 16,
+    marginBottom: 8,
   },
   backButton: {
     // Standard back button with no custom styling
@@ -788,7 +787,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#fff",
+    color: "#324E58",
     textAlign: "center",
     flex: 1,
   },

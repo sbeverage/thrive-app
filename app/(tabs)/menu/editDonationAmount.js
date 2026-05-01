@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import { Feather } from "@expo/vector-icons";
 import { useUser } from "../../context/UserContext";
 import { useBeneficiary } from "../../context/BeneficiaryContext";
 import API from "../../lib/api";
@@ -37,7 +38,9 @@ export default function EditDonationAmount() {
   const [subscription, setSubscription] = useState(null);
   const [savedBeneficiaryId, setSavedBeneficiaryId] = useState(null);
   const [showFeeInfo, setShowFeeInfo] = useState(false);
+  const [showDonationInfo, setShowDonationInfo] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const amountInputRef = useRef(null);
   const toggleAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -119,9 +122,9 @@ export default function EditDonationAmount() {
       if (subscription) {
         try {
           const id =
-            subscription.stripe_subscription_id ||
+            subscription.id ||
             subscription.subscription_id ||
-            subscription.id;
+            subscription.stripe_subscription_id;
           response = await API.upgradeOrDowngradeMonthlyAmount(id, donation);
           apiSucceeded = true;
         } catch (err) {
@@ -194,9 +197,9 @@ export default function EditDonationAmount() {
     >
       {/* Header */}
       <LinearGradient
-        colors={["#21555b", "#2d7a82"]}
+        colors={["#2C3E50", "#4CA1AF"]}
         start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
+        end={{ x: 1, y: 1 }}
         style={styles.header}
       >
         <TouchableOpacity
@@ -213,6 +216,7 @@ export default function EditDonationAmount() {
       </LinearGradient>
 
       <ScrollView
+        style={styles.scrollView}
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
       >
@@ -221,6 +225,7 @@ export default function EditDonationAmount() {
         <View style={[styles.amountCard, isFocused && styles.amountCardFocused]}>
           <Text style={styles.currencySign}>$</Text>
           <TextInput
+            ref={amountInputRef}
             style={styles.amountInput}
             value={amount}
             onChangeText={(val) => setAmount(val.replace(/[^0-9.]/g, ""))}
@@ -233,6 +238,13 @@ export default function EditDonationAmount() {
             selectTextOnFocus
           />
           <Text style={styles.perMonth}>/mo</Text>
+          <TouchableOpacity
+            style={styles.editIconButton}
+            onPress={() => amountInputRef.current?.focus()}
+            activeOpacity={0.8}
+          >
+            <Feather name="edit-2" size={16} color="#F57C00" />
+          </TouchableOpacity>
         </View>
         {parsedAmount > 0 && parsedAmount < MIN_DONATION && (
           <Text style={styles.minWarning}>
@@ -248,7 +260,15 @@ export default function EditDonationAmount() {
           <Text style={styles.summaryTitle}>Order Summary</Text>
 
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Monthly donation</Text>
+            <View style={styles.labelWithInfo}>
+              <Text style={styles.summaryLabel}>Monthly donation</Text>
+              <TouchableOpacity
+                onPress={() => setShowDonationInfo(true)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.infoIcon}>ⓘ</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={styles.summaryValue}>
               ${parsedAmount > 0 ? parsedAmount.toFixed(2) : "0.00"}
             </Text>
@@ -315,35 +335,6 @@ export default function EditDonationAmount() {
           </View>
         </View>
 
-        {/* About section */}
-        <View style={styles.aboutCard}>
-          <Text style={styles.aboutTitle}>About Monthly Donations</Text>
-          <View style={styles.aboutRow}>
-            <Text style={styles.bullet}>•</Text>
-            <Text style={styles.aboutText}>
-              Charged on the same date each month
-            </Text>
-          </View>
-          <View style={styles.aboutRow}>
-            <Text style={styles.bullet}>•</Text>
-            <Text style={styles.aboutText}>
-              You can update or cancel at any time
-            </Text>
-          </View>
-          <View style={styles.aboutRow}>
-            <Text style={styles.bullet}>•</Text>
-            <Text style={styles.aboutText}>
-              The $3 platform fee keeps THRIVE running and helps us serve more causes
-            </Text>
-          </View>
-          <View style={styles.aboutRow}>
-            <Text style={styles.bullet}>•</Text>
-            <Text style={styles.aboutText}>
-              Minimum donation: ${MIN_DONATION}/month
-            </Text>
-          </View>
-        </View>
-
         {/* Save button */}
         <TouchableOpacity
           style={[
@@ -361,6 +352,33 @@ export default function EditDonationAmount() {
         </TouchableOpacity>
       </ScrollView>
 
+      {/* Monthly donation info modal */}
+      <Modal
+        visible={showDonationInfo}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDonationInfo(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowDonationInfo(false)}
+        >
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Monthly Donation</Text>
+            <Text style={styles.modalBody}>
+              This is the direct amount that goes to your beneficiary — the cause you've chosen to support each month.
+            </Text>
+            <TouchableOpacity
+              style={styles.modalClose}
+              onPress={() => setShowDonationInfo(false)}
+            >
+              <Text style={styles.modalCloseText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Service fee info modal */}
       <Modal
         visible={showFeeInfo}
@@ -376,11 +394,9 @@ export default function EditDonationAmount() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Platform Fee</Text>
             <Text style={styles.modalBody}>
-              The $3.00 monthly platform fee helps THRIVE Initiative cover
-              operating costs — keeping the platform running, supporting our
-              team, and expanding access to more causes and communities.{"\n\n"}
-              Your donation to the cause is separate and goes directly to the
-              beneficiary you selected.
+              The $3.00 monthly platform fee helps our nonprofit, THRIVE, cover
+              the tech costs, operating costs, building awareness and expanding
+              access to more causes and communities.
             </Text>
             <TouchableOpacity
               style={styles.modalClose}
@@ -399,17 +415,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F0F4F8",
-    paddingTop: 20,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginHorizontal: 20,
-    marginTop: 20,
+    paddingTop: 54,
+    paddingBottom: 140,
+    paddingHorizontal: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
     marginBottom: 16,
   },
   backButton: {},
@@ -430,19 +445,25 @@ const styles = StyleSheet.create({
     width: 36,
   },
   scroll: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 8,
     paddingBottom: 48,
+  },
+  scrollView: {
+    marginTop: -120,
+    backgroundColor: "transparent",
   },
   sectionLabel: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#607D8B",
+    color: "rgba(255,255,255,0.85)",
     textTransform: "uppercase",
     letterSpacing: 0.8,
     marginBottom: 10,
     marginTop: 4,
   },
   amountCard: {
+    position: "relative",
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fff",
@@ -482,6 +503,17 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     alignSelf: "flex-end",
     marginBottom: 6,
+  },
+  editIconButton: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFF3E0",
   },
   minWarning: {
     fontSize: 13,
@@ -528,7 +560,7 @@ const styles = StyleSheet.create({
   },
   infoIcon: {
     fontSize: 15,
-    color: "#90A4AE",
+    color: "#DB8633",
   },
   toggleRow: {
     flexDirection: "row",

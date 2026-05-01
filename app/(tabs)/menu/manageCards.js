@@ -199,19 +199,14 @@ export default function CardManagement() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <LinearGradient
-        colors={["#21555b", "#2d7a82"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.header}
-      >
+      <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.replace("/(tabs)/menu")}
         >
           <Image
             source={require("../../../assets/icons/arrow-left.png")}
-            style={{ width: 24, height: 24, tintColor: "#fff" }}
+            style={{ width: 24, height: 24, tintColor: "#324E58" }}
           />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Manage Billing</Text>
@@ -220,9 +215,9 @@ export default function CardManagement() {
           onPress={() => { setRefreshing(true); loadPaymentMethods(); }}
           disabled={loading}
         >
-          <Feather name="refresh-cw" size={20} color="#fff" />
+          <Feather name="refresh-cw" size={20} color="#324E58" />
         </TouchableOpacity>
-      </LinearGradient>
+      </View>
 
       <ScrollView
         style={styles.scroll}
@@ -351,19 +346,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
     marginHorizontal: 20,
     marginTop: 20,
-    marginBottom: 16,
+    marginBottom: 8,
   },
   backButton: { padding: 4 },
   refreshButton: { padding: 4 },
   headerTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#fff",
+    color: "#324E58",
     flex: 1,
     textAlign: "center",
   },

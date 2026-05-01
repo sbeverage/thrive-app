@@ -25,7 +25,6 @@ export default function MenuScreen() {
       { title: 'Friends', icon: 'users', page: 'menu/friends' },
     ]},
     { section: 'Donations & Savings', data: [
-      { title: 'Edit Donation Amount', icon: 'dollar-sign', page: 'menu/editDonationAmount' },
       { title: 'Savings Tracker', icon: 'trending-up', page: 'menu/transactionHistory' },
       { title: 'Donation Summary', icon: 'bar-chart-2', page: 'menu/donationSummary' },
       { title: 'Manage Billing', icon: 'credit-card', page: 'menu/manageCards' },
