@@ -19,6 +19,7 @@ import { Feather, AntDesign } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import VoucherCard from '../../../components/VoucherCard';
 import SuggestCard from '../../../components/SuggestCard';
 import API from '../../lib/api';
@@ -27,6 +28,7 @@ import { getCurrentLocation, getDefaultRegion, calculateDistance } from '../../u
 import { useLocation } from '../../context/LocationContext';
 import { useDiscount } from '../../context/DiscountContext';
 import { useDiscountFilter } from '../../context/DiscountFilterContext';
+import { IMAGE_ASSETS } from '../../utils/assetConstants';
 
 
 // Note: Vendors should have logoUrl from the admin panel
@@ -446,6 +448,19 @@ export default function DiscountsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      <LinearGradient
+        colors={['#2C3E50', '#4CA1AF']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.miniBrandHeader}
+      >
+        <Image
+          source={{ uri: IMAGE_ASSETS.INITIATIVE_LOGO_NO_WEB_WHITE }}
+          style={styles.miniBrandLogo}
+          resizeMode="contain"
+        />
+      </LinearGradient>
+
       {/* Header with Search and Toggle */}
       <View style={styles.header}>
         <View style={styles.searchRow}>
@@ -805,16 +820,34 @@ export default function DiscountsScreen() {
 }
 
 const styles = StyleSheet.create({
+  miniBrandHeader: {
+    height: 96,
+    paddingTop: 8,
+    marginBottom: -22,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniBrandLogo: {
+    width: 190,
+    height: 60,
+    opacity: 0.98,
+    marginTop: -20,
+  },
   header: {
     backgroundColor: '#fff',
-    paddingHorizontal: 20,
-    paddingTop: 10,
+    marginHorizontal: 16,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingTop: 14,
     paddingBottom: 15,
+    zIndex: 10,
     shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
   },
   searchRow: {
     flexDirection: 'row',
@@ -955,7 +988,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   toggleActive: {
-    backgroundColor: '#21555b',
+    backgroundColor: '#DB8633',
   },
   filterIconBtn: {
     marginLeft: 10,

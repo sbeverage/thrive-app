@@ -21,7 +21,8 @@ export default function DiscountApproved() {
   const discountCode = params.discountCode || 'DEALFREE';
   const vendorName = params.vendorName || 'Starbucks Coffee';
   const discountTitle = params.discountTitle || 'Free Appetizer';
-  const vendorLogo = params.vendorLogo ? { uri: params.vendorLogo } : require('../../../assets/images/logos/starbucks.png');
+  const vendorLogoUri = params.vendorLogo ? String(params.vendorLogo) : '';
+  const vendorLogo = vendorLogoUri ? { uri: vendorLogoUri } : require('../../../assets/images/logos/starbucks.png');
   const discountType = params.discountType || '';
   const discountValue = params.discountValue ? parseFloat(params.discountValue) : null;
   const maxDiscount = params.maxDiscount ? parseFloat(params.maxDiscount) : null;
@@ -68,26 +69,6 @@ export default function DiscountApproved() {
     return () => clearTimeout(timer);
   }, []);
 
-  // If the user leaves without pressing Save or Skip (e.g. switches tabs),
-  // auto-create a $0 transaction so the redemption still appears in Savings Tracker.
-  useFocusEffect(
-    useCallback(() => {
-      return () => {
-        if (!transactionCreatedRef.current) {
-          transactionCreatedRef.current = true;
-          addTransactionToHistory({
-            brand: vendorName,
-            date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-            discount: discountTitle,
-            spending: '$0',
-            savings: '$0',
-            logo: vendorLogo,
-          }).catch(() => {});
-        }
-      };
-    }, [vendorName, discountTitle, vendorLogo]),
-  );
-
   // Allow only valid dollar amounts: digits + at most one decimal point + at most 2 decimal places
   const filterNumericInput = (text) => {
     const filtered = text.replace(/[^0-9.]/g, '');
@@ -127,6 +108,83 @@ export default function DiscountApproved() {
       hideSub.remove();
     };
   }, []);
+
+  // Add transaction to transaction history - try backend first, fallback to local
+  const addTransactionToHistory = useCallback(async (transactionData) => {
+    const spendingNum = parseFloat(String(transactionData.spending).replace(/[$,]/g, '')) || 0;
+    const savingsNum = parseFloat(String(transactionData.savings).replace(/[$,]/g, '')) || 0;
+
+    try {
+      let backendId = null;
+
+      // Try to save to backend first
+      try {
+        const result = await API.createTransaction({
+          type: 'redemption',
+          description: transactionData.discount,
+          discount_code: discountCode,
+          savings: savingsNum,
+          spending: spendingNum,
+          discount_id: discountId || undefined,
+          vendor_id: vendorId || undefined,
+          metadata: {
+            vendor_name: transactionData.brand,
+            vendor_logo_url: vendorLogoUri || null,
+          },
+        });
+        backendId = result?.transaction?.id ?? null;
+        console.log('✅ Transaction saved to backend', backendId);
+      } catch (apiError) {
+        console.warn('⚠️ Backend save failed, using local storage:', apiError.message);
+      }
+
+      // Always write to local storage so Savings Tracker shows it immediately,
+      // even if the backend saved it (avoids needing a fresh fetch to see it).
+      const localEntry = {
+        id: backendId ? String(backendId) : Date.now().toString(),
+        type: 'redemption',
+        brand: transactionData.brand,
+        date: transactionData.date,
+        discount: transactionData.discount,
+        spending: transactionData.spending,
+        savings: transactionData.savings,
+        logo: vendorLogoUri ? { uri: vendorLogoUri } : null,
+        status: 'completed',
+      };
+      const existingRaw = await AsyncStorage.getItem('userTransactions');
+      const existing = existingRaw ? JSON.parse(existingRaw) : [];
+      // Don't duplicate if backend ID already in cache
+      const alreadyExists = backendId && existing.some((t) => String(t.id) === String(backendId));
+      if (!alreadyExists) {
+        existing.unshift(localEntry);
+        await AsyncStorage.setItem('userTransactions', JSON.stringify(existing));
+      }
+    } catch (error) {
+      console.error('❌ Error saving transaction to history:', error);
+    }
+  }, [discountCode, discountId, vendorId, vendorLogoUri]);
+
+  // If the user leaves without pressing Save or Skip, auto-create a $0 transaction.
+  // useFocusEffect cleanup also runs when callback deps change — `vendorLogo` was a new
+  // `{ uri }` object every render, which re-fired cleanup and duplicated the $0 POST
+  // before Save. Depend only on stable primitives + memoized addTransactionToHistory.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        if (!transactionCreatedRef.current) {
+          transactionCreatedRef.current = true;
+          addTransactionToHistory({
+            brand: vendorName,
+            date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+            discount: discountTitle,
+            spending: '$0',
+            savings: '$0',
+            logo: vendorLogoUri ? { uri: vendorLogoUri } : require('../../../assets/images/logos/starbucks.png'),
+          }).catch(() => {});
+        }
+      };
+    }, [vendorName, discountTitle, vendorLogoUri, addTransactionToHistory]),
+  );
 
   const contentPaddingBottom = keyboardHeight > 0 ? keyboardHeight + 24 : 24;
 
@@ -200,61 +258,6 @@ export default function DiscountApproved() {
       console.error('❌ Error creating transaction:', error);
       // Still navigate even if there's an error
       router.push('/(tabs)');
-    }
-  };
-
-  // Add transaction to transaction history - try backend first, fallback to local
-  const addTransactionToHistory = async (transactionData) => {
-    const spendingNum = parseFloat(String(transactionData.spending).replace(/[$,]/g, '')) || 0;
-    const savingsNum = parseFloat(String(transactionData.savings).replace(/[$,]/g, '')) || 0;
-
-    try {
-      let backendId = null;
-
-      // Try to save to backend first
-      try {
-        const result = await API.createTransaction({
-          type: 'redemption',
-          description: transactionData.discount,
-          discount_code: discountCode,
-          savings: savingsNum,
-          spending: spendingNum,
-          discount_id: discountId || undefined,
-          vendor_id: vendorId || undefined,
-          metadata: {
-            vendor_name: transactionData.brand,
-            vendor_logo_url: params.vendorLogo || null,
-          },
-        });
-        backendId = result?.transaction?.id ?? null;
-        console.log('✅ Transaction saved to backend', backendId);
-      } catch (apiError) {
-        console.warn('⚠️ Backend save failed, using local storage:', apiError.message);
-      }
-
-      // Always write to local storage so Savings Tracker shows it immediately,
-      // even if the backend saved it (avoids needing a fresh fetch to see it).
-      const localEntry = {
-        id: backendId ? String(backendId) : Date.now().toString(),
-        type: 'redemption',
-        brand: transactionData.brand,
-        date: transactionData.date,
-        discount: transactionData.discount,
-        spending: transactionData.spending,
-        savings: transactionData.savings,
-        logo: params.vendorLogo ? { uri: params.vendorLogo } : null,
-        status: 'completed',
-      };
-      const existingRaw = await AsyncStorage.getItem('userTransactions');
-      const existing = existingRaw ? JSON.parse(existingRaw) : [];
-      // Don't duplicate if backend ID already in cache
-      const alreadyExists = backendId && existing.some((t) => String(t.id) === String(backendId));
-      if (!alreadyExists) {
-        existing.unshift(localEntry);
-        await AsyncStorage.setItem('userTransactions', JSON.stringify(existing));
-      }
-    } catch (error) {
-      console.error('❌ Error saving transaction to history:', error);
     }
   };
 

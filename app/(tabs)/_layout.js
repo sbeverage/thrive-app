@@ -1,19 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { Tabs, Slot, useRouter, usePathname } from 'expo-router';
-import { View, TouchableOpacity, Image, StyleSheet, Text, Platform } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { Slot, useRouter, usePathname } from 'expo-router';
+import { View, TouchableOpacity, Image, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BeneficiaryProvider } from '../context/BeneficiaryContext';
+
+/**
+ * Custom tab bar (Slot + footer) — not expo-router `<Tabs>`.
+ * Keep inactive icons/labels on these hex values so they never pick up iOS template/system blue.
+ * Tab screens must not add SafeArea bottom inset (use edges={['top','left','right']}) or a gray band appears above the footer.
+ */
+const TAB_NAV = {
+  pill: '#FFFFFF',
+  activeFill: '#DB8633',
+  activeIcon: '#FFFFFF',
+  inactiveIcon: '#9AABB8',
+  inactiveLabel: '#8E9BAE',
+  activeLabel: '#DB8633',
+};
+
+const ACTIVE_SIZE = 50;
+/** Negative margin pulls FAB up; lower = sits closer to bar (nudge down vs half-diameter). */
+const ACTIVE_FLOAT_UP = 5;
 
 export default function AppLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const effectiveInset = Math.min(insets.bottom ?? 0, 4);
-  const NAV_HEIGHT = 56 + effectiveInset;
+  const bottomInset = insets.bottom ?? 0;
+  /** Solid pill behind labels + home-indicator zone (matches reference: flat top, no faux gray band). */
+  const WHITE_BAR_HEIGHT = 52 + bottomInset;
 
-  // Sync active tab with current pathname
   const getActiveTab = () => {
     if (pathname?.includes('/home') || pathname === '/' || pathname === '/(tabs)/home') {
       return 'home';
@@ -22,22 +39,20 @@ export default function AppLayout() {
     } else if (pathname?.includes('/beneficiary') || pathname === '/(tabs)/beneficiary') {
       return 'beneficiary';
     }
-    return 'home'; // default
+    return 'home';
   };
 
   const [activeTab, setActiveTab] = useState(getActiveTab());
 
-  // Update active tab when pathname changes
   useEffect(() => {
-    const newActiveTab = getActiveTab();
-    if (newActiveTab !== activeTab) {
-      console.log('📱 Tab switching from', activeTab, 'to', newActiveTab, 'pathname:', pathname);
-      setActiveTab(newActiveTab);
+    const next = getActiveTab();
+    if (next !== activeTab) {
+      console.log('📱 Tab switching from', activeTab, 'to', next, 'pathname:', pathname);
+      setActiveTab(next);
     }
   }, [pathname, activeTab]);
 
-  // Hide footer on detail and fullscreen pages
-  const isDetailPage = /^\/discounts\/[^\/]+$/.test(pathname);
+  const isDetailPage = /^\/discounts\/[^/]+$/.test(pathname || '');
   const hideFooter = isDetailPage;
 
   const tabs = [
@@ -47,42 +62,43 @@ export default function AppLayout() {
   ];
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={styles.flexVisible}>
       <BeneficiaryProvider>
-        <View style={{ flex: 1, backgroundColor: '#fff' }}>
-          <View style={{ flex: 1, paddingBottom: hideFooter ? 0 : NAV_HEIGHT }}>
+        <View style={styles.sheet}>
+          <View style={[styles.slotClip, { paddingBottom: hideFooter ? 0 : WHITE_BAR_HEIGHT }]}>
             <Slot />
           </View>
 
           {!hideFooter && (
             <>
-              {/* Glass bar background — clipped so blur stays in bounds */}
-              <View style={[styles.footerBarBg, { height: NAV_HEIGHT }]}>
-                <BlurView intensity={90} tint="light" style={StyleSheet.absoluteFill} />
-              </View>
+              <View style={[styles.footerBarSolid, { height: WHITE_BAR_HEIGHT }]} />
 
-              {/* Tab items sit above the safe area */}
-              <View style={[styles.footerNavWrapper, { bottom: effectiveInset }]}>
+              <View style={[styles.footerNavWrapper, { bottom: bottomInset, height: 72 }]}>
                 {tabs.map((tab) => {
                   const focused = activeTab === tab.name;
                   return (
                     <TouchableOpacity
                       key={tab.name}
                       style={[styles.footerItem, focused ? styles.footerItemActive : styles.footerItemInactive]}
+                      activeOpacity={0.85}
                       onPress={() => {
                         setActiveTab(tab.name);
                         router.push(`/${tab.name}`);
                       }}
                     >
-                      <View style={[styles.iconContainer, focused ? styles.iconContainerActive : styles.iconContainerInactive]}>
+                      <View
+                        style={[
+                          styles.iconContainer,
+                          focused ? styles.iconContainerActive : styles.iconContainerInactive,
+                        ]}
+                      >
                         <Image
                           source={tab.icon}
                           style={[styles.tabIcon, focused ? styles.tabIconActive : styles.tabIconInactive]}
+                          resizeMode="contain"
                         />
                       </View>
-                      <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
-                        {tab.label}
-                      </Text>
+                      <Text style={[styles.tabLabel, focused ? styles.tabLabelActive : styles.tabLabelInactive]}>{tab.label}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -96,24 +112,36 @@ export default function AppLayout() {
 }
 
 const styles = StyleSheet.create({
-  footerBarBg: {
+  flexVisible: {
+    flex: 1,
+    overflow: 'visible',
+  },
+  sheet: {
+    flex: 1,
+    backgroundColor: '#fff',
+    overflow: 'visible',
+  },
+  slotClip: {
+    flex: 1,
+    overflow: 'visible',
+  },
+  footerBarSolid: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    overflow: 'hidden',
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(0,0,0,0.08)',
+    backgroundColor: TAB_NAV.pill,
+    zIndex: 1,
   },
   footerNavWrapper: {
     position: 'absolute',
     left: 0,
     right: 0,
-    height: 76,
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'flex-start',
     zIndex: 99,
+    overflow: 'visible',
   },
   footerItem: {
     alignItems: 'center',
@@ -121,48 +149,46 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   footerItemActive: {
-    marginTop: 5,
+    marginTop: -ACTIVE_FLOAT_UP,
   },
   footerItemInactive: {
-    paddingTop: 37,
+    paddingTop: 30,
   },
   iconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  iconContainerInactive: {
-    backgroundColor: 'transparent',
-    width: 24,
-    height: 24,
-  },
   iconContainerActive: {
-    backgroundColor: '#DB8633',
-    shadowColor: '#DB8633',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 5,
+    width: ACTIVE_SIZE,
+    height: ACTIVE_SIZE,
+    borderRadius: ACTIVE_SIZE / 2,
+    backgroundColor: TAB_NAV.activeFill,
+  },
+  iconContainerInactive: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'transparent',
   },
   tabIcon: {
     width: 22,
     height: 22,
   },
   tabIconActive: {
-    tintColor: '#FFFFFF',
+    tintColor: TAB_NAV.activeIcon,
   },
   tabIconInactive: {
-    tintColor: '#9AABB8',
+    tintColor: TAB_NAV.inactiveIcon,
   },
   tabLabel: {
-    marginTop: 2,
+    marginTop: 4,
     fontSize: 11,
-    color: '#8E9BAE',
-    fontWeight: 'bold',
+    fontWeight: '700',
+  },
+  tabLabelInactive: {
+    color: TAB_NAV.inactiveLabel,
   },
   tabLabelActive: {
-    color: '#DB8633',
+    color: TAB_NAV.activeLabel,
   },
 });

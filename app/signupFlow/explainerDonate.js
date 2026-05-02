@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Video, ResizeMode, Audio } from 'expo-av';
 import { VIDEO_ASSETS } from '../utils/assetConstants';
+import { persistSignupFlowCheckpointFromParams } from '../utils/signupFlowCheckpoint';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -29,6 +30,13 @@ export default function ExplainerDonate() {
   const params = useLocalSearchParams();
   const [showVideo, setShowVideo] = useState(false);
   const videoRef = useRef(null);
+
+  const paramsSnapshot = JSON.stringify(params ?? {});
+
+  useEffect(() => {
+    persistSignupFlowCheckpointFromParams('/signupFlow/explainerDonate', params);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- checkpoint when serialized route params change
+  }, [paramsSnapshot]);
 
   const handleContinue = () => {
     try {

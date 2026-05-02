@@ -12,8 +12,6 @@ import { useUser } from '../context/UserContext';
 import { useLocation } from '../context/LocationContext';
 import { useDiscount } from '../context/DiscountContext';
 import API from '../lib/api';
-import WalkthroughTutorial from '../../components/WalkthroughTutorial';
-import { useTutorial } from '../../hooks/useTutorial';
 import InviteFriendsModal from '../../components/InviteFriendsModal';
 import {
   REFERRAL_TIERS,
@@ -21,13 +19,20 @@ import {
   nextMilestoneFromPaidCount,
   tiersUnlockedCount,
 } from '../constants/referralRewards';
-import { BADGE_ASSETS } from '../utils/assetConstants';
+import { BADGE_ASSETS, IMAGE_ASSETS } from '../utils/assetConstants';
 
 export default function MainHome() {
   const router = useRouter();
   const navigation = useNavigation();
   const { selectedBeneficiary, reloadBeneficiary } = useBeneficiary();
   const { user, loadUserData } = useUser();
+
+  // Redirect to landing page when session expires (e.g. old Render-issued token expired)
+  useEffect(() => {
+    if (!user.isLoading && !user.isLoggedIn) {
+      router.replace('/');
+    }
+  }, [user.isLoading, user.isLoggedIn]);
 
   // Profile image smooth fade-in — resets whenever the URL changes (e.g. backend sync arrives)
   const imageUri = user.profileImage || user.profileImageUrl || null;
@@ -181,16 +186,7 @@ export default function MainHome() {
       setBadges([]);
     }
   };
-  
-  // Tutorial
-  const {
-    showTutorial,
-    currentStepIndex,
-    totalSteps,
-    handleNext,
-    handleSkip,
-  } = useTutorial();
-  
+
   // Disable swipe-back gesture and prevent back navigation to index/login
   useFocusEffect(
     useCallback(() => {
@@ -277,7 +273,8 @@ export default function MainHome() {
 
   return (
     <>
-      <SafeAreaView style={styles.safeArea}>
+      {/* Bottom inset is handled by (tabs)/_layout tab bar — omit here or a gray strip appears above the footer on Home only. */}
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {/* Email Verification Banner */}
           {user.isLoggedIn && !user.isVerified && (
@@ -301,13 +298,21 @@ export default function MainHome() {
             style={styles.headerWrapper}
           >
             <View style={styles.headerTopRow}>
-              <Image source={require('../../assets/logos/thrive-logo-white.png')} style={styles.logo} resizeMode="contain" />
+              <View style={styles.logoWrap}>
+                <Image
+                  source={{ uri: IMAGE_ASSETS.INITIATIVE_LOGO_NO_WEB_WHITE }}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
+              </View>
               <View style={styles.rightIcons}>
                 <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/menu')}>
                   <Image source={require('../../assets/icons/menu.png')} style={styles.iconWhite} />
                 </TouchableOpacity>
               </View>
             </View>
+
+            <View style={styles.headerDivider} />
 
             <View style={styles.profileRow}>
               <View style={styles.profileLeft}>
@@ -338,8 +343,6 @@ export default function MainHome() {
                 )}
               </View>
             </View>
-
-            <Text style={styles.affirmationText}>"You're someone's reason to smile today!"</Text>
           </LinearGradient>
 
           <View style={styles.monthlyCardWrapper}>
@@ -562,17 +565,7 @@ export default function MainHome() {
         visible={showInviteModal}
         onClose={() => setShowInviteModal(false)}
       />
-      
-      {/* Tutorial */}
-      {showTutorial && (
-        <WalkthroughTutorial
-          visible={showTutorial}
-          currentStepIndex={currentStepIndex}
-          totalSteps={totalSteps}
-          onNext={handleNext}
-          onSkip={handleSkip}
-        />
-      )}
+
     </>
   );
 }
@@ -581,23 +574,71 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F5F5F5' },
   scrollContent: { paddingBottom: 20, backgroundColor: '#F5F5F5' },
   headerWrapper: {
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    paddingHorizontal: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    paddingHorizontal: 24,
     paddingTop: 30,
-    paddingBottom: 40,
+    /** Space below the greeting inside the gradient. Larger = more blue under the name. */
+    paddingBottom: 150,
+    overflow: 'hidden',
   },
-  headerTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  logo: { width: 160, height: 50 },
-  rightIcons: { flexDirection: 'row', alignItems: 'center' },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+  },
+  /** Full-bleed hairline; negative margin matches headerWrapper horizontal padding */
+  headerDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    marginTop: 28,
+    marginBottom: 8,
+    marginHorizontal: -24,
+  },
+  /** Left-aligned; maxWidth keeps wide wordmark from overlapping the menu icon. */
+  logoWrap: {
+    marginRight: 12,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    flexShrink: 1,
+    maxWidth: '78%',
+  },
+  /** ~480×45 initiative strip */
+  logo: { height: 18, aspectRatio: 480 / 45, alignSelf: 'flex-start' },
+  rightIcons: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
   iconButton: { marginLeft: 12 },
   iconWhite: { width: 22, height: 22, resizeMode: 'contain', tintColor: 'white' },
-  profileRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 25 },
+  profileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 24,
+    /** Extra air under “Hey …!” before the teal padding zone */
+    paddingBottom: 8,
+  },
   profileLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   profilePic: { width: 50, height: 50, borderRadius: 25 },
-  greetingText: { fontSize: 20, fontWeight: '700', color: '#FFFFFF', marginLeft: 10 },
-  affirmationText: { fontSize: 16, color: '#E5E8EA', fontStyle: 'italic', marginTop: 12, marginBottom: 96 },
-  monthlyCardWrapper: { marginTop: -90, marginHorizontal: 20, zIndex: 10 },
+  greetingText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginLeft: 14,
+    letterSpacing: 0.2,
+    textShadowColor: 'rgba(0,0,0,0.22)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  /**
+   * Overlap into the gradient. More negative = card sits slightly higher (tighter to the name row).
+   * marginBottom adds space before the “My Beneficiary” header.
+   */
+  monthlyCardWrapper: {
+    marginTop: -130,
+    marginHorizontal: 20,
+    marginBottom: 18,
+    zIndex: 10,
+  },
   sectionHeader: { fontSize: 20, fontWeight: '700', color: '#324E58' },
   sectionHeaderRow: { 
     flexDirection: 'row', 

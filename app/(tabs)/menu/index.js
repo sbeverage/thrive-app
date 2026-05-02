@@ -35,7 +35,7 @@ export default function MenuScreen() {
   ];
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <ScrollView style={styles.container}>
         <View style={styles.card}>
           <LinearGradient

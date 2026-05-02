@@ -33,6 +33,7 @@ import {
   presentMonthlySubscriptionPaymentSheet,
 } from "../utils/monthlySubscriptionPaymentSheet";
 import { resolveCheckoutBeneficiaryId } from "../utils/resolveCheckoutBeneficiaryId";
+import { persistSignupFlowCheckpointFromParams } from "../utils/signupFlowCheckpoint";
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -54,6 +55,16 @@ export default function StripeIntegration() {
   const [paymentLoading, setPaymentLoading] = useState(null);
   const { saveUserData, user } = useUser();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
+
+  const stripeParamsSnapshot = JSON.stringify(params ?? {});
+
+  useEffect(() => {
+    persistSignupFlowCheckpointFromParams(
+      "/signupFlow/stripeIntegration",
+      params,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stripeParamsSnapshot]);
 
   // Load SVG content
   useEffect(() => {
@@ -181,6 +192,19 @@ export default function StripeIntegration() {
   const runSubscriptionCheckout = async ({ useNativeWallet }) => {
     if (paymentLoading) return;
     try {
+      // Verify session token exists before hitting the payment API.
+      // If absent the Edge Function returns "Missing Authorization header" —
+      // catch this early and ask the user to log in again instead.
+      const authToken = await AsyncStorage.getItem("authToken");
+      if (!authToken) {
+        Alert.alert(
+          "Session Expired",
+          "Your session has expired. Please log in again to continue.",
+          [{ text: "OK", onPress: () => router.replace("/") }],
+        );
+        return;
+      }
+
       const beneficiaryIdForPayload = await resolveCheckoutBeneficiaryId({
         params,
         selectedBeneficiary,
@@ -214,6 +238,14 @@ export default function StripeIntegration() {
       });
 
       if (!hasMonthlySubscriptionPaymentSheet(response)) {
+        const keys =
+          response && typeof response === "object"
+            ? Object.keys(response)
+            : [];
+        console.warn(
+          "[subscribe] Missing client secret for Payment Sheet; response keys:",
+          keys,
+        );
         Alert.alert(
           "Payment setup",
           "Could not start the card payment screen. Please try again.",
@@ -250,7 +282,7 @@ export default function StripeIntegration() {
   };
 
   const handleSkip = () => {
-    router.replace("/guestHome");
+    router.replace("/(tabs)/home");
   };
 
   return (

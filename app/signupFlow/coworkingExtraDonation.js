@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Alert, StyleSheet, TouchableOpacity, ScrollView, Image, Dimensions } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from '../context/UserContext';
 import { useBeneficiary } from '../context/BeneficiaryContext';
 import { resolveCheckoutBeneficiaryId } from '../utils/resolveCheckoutBeneficiaryId';
+import { persistSignupFlowCheckpointFromParams } from '../utils/signupFlowCheckpoint';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -19,6 +20,15 @@ export default function CoworkingExtraDonation() {
   const extraAmount = parseInt(extraAmountText, 10) || 0;
 
   const totalMonthlyDonation = sponsorAmount + extraAmount;
+
+  const coworkingExtraParamsKey = JSON.stringify(params ?? {});
+  useEffect(() => {
+    persistSignupFlowCheckpointFromParams(
+      '/signupFlow/coworkingExtraDonation',
+      params,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coworkingExtraParamsKey]);
 
   const handleContinue = async () => {
     if (!extraAmount || extraAmount < 1) {

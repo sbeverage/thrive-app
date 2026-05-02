@@ -16,6 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { AntDesign } from '@expo/vector-icons';
 import API from './lib/api';
 import { useUser } from './context/UserContext';
+import { persistSignupFlowCheckpoint } from './utils/signupFlowCheckpoint';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -46,12 +47,27 @@ export default function VerifyEmailScreen() {
   // a background backend sync, and we don't want to skip the verify step for
   // users who just created an account.
   const wasVerifiedOnMount = React.useRef(user?.isVerified);
+
   useEffect(() => {
     if (wasVerifiedOnMount.current) {
       console.log('✅ User already verified on mount, redirecting to onboarding...');
+      persistSignupFlowCheckpoint('/signupFlow/explainerDonate', {});
       router.replace('/signupFlow/explainerDonate');
     }
   }, []);
+
+  // Keep pending route on verify until user passes it; re-run when email hydrates from context.
+  useEffect(() => {
+    if (wasVerifiedOnMount.current) return;
+    const e = (Array.isArray(paramEmail) ? paramEmail[0] : paramEmail) || user?.email;
+    if (e) {
+      const t = Array.isArray(token) ? token[0] : token;
+      persistSignupFlowCheckpoint('/verifyEmail', {
+        email: String(e),
+        ...(t ? { token: String(t) } : {}),
+      });
+    }
+  }, [paramEmail, token, user?.email]);
 
   const handleVerification = async () => {
     if (!token || !email) return;
@@ -73,7 +89,10 @@ export default function VerifyEmailScreen() {
           [
             {
               text: 'Continue',
-              onPress: () => router.replace('/signupFlow/explainerDonate'),
+              onPress: async () => {
+                await persistSignupFlowCheckpoint('/signupFlow/explainerDonate', {});
+                router.replace('/signupFlow/explainerDonate');
+              },
             },
           ]
         );

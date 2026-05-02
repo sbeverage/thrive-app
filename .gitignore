@@ -45,3 +45,4 @@ ti-admin-panel/
 *.tsbuildinfo
 
 app-example
+.vercel

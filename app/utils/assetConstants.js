@@ -36,6 +36,8 @@ export const BADGE_ASSETS = {
 export const IMAGE_ASSETS = {
   // Logos
   THRIVE_LOGO_WHITE: `${SUPABASE_STORAGE_BASE}/assets/logos/thrive-logo-white.png`,
+  /** Mini brand strip on Discounts + Beneficiary — upload to `app-assets` bucket at this path (public). */
+  INITIATIVE_LOGO_NO_WEB_WHITE: `${SUPABASE_STORAGE_BASE}/assets/logos/initiative-logo-no-web-white.png`,
   PIGGY_WITH_FLOWERS: `${SUPABASE_STORAGE_BASE}/assets/images/piggy-with-flowers.png`,
   
   // Icons

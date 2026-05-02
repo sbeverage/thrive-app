@@ -16,6 +16,7 @@ import {
 
 import { AntDesign, Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import SuccessModal from '../../../components/SuccessModal';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { useBeneficiary } from '../../context/BeneficiaryContext';
@@ -26,6 +27,7 @@ import { getCurrentLocation, getDefaultRegion, calculateDistance, formatDistance
 import API from '../../lib/api';
 import SuggestCard from '../../../components/SuggestCard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { IMAGE_ASSETS } from '../../utils/assetConstants';
 
 export default function BeneficiaryScreen() {
   const router = useRouter();
@@ -386,6 +388,19 @@ export default function BeneficiaryScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      <LinearGradient
+        colors={['#2C3E50', '#4CA1AF']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.miniBrandHeader}
+      >
+        <Image
+          source={{ uri: IMAGE_ASSETS.INITIATIVE_LOGO_NO_WEB_WHITE }}
+          style={styles.miniBrandLogo}
+          resizeMode="contain"
+        />
+      </LinearGradient>
+
       {/* Header with Search and Toggle */}
       <View style={styles.header}>
 
@@ -918,13 +933,34 @@ export default function BeneficiaryScreen() {
 }
 
 const styles = StyleSheet.create({
+  miniBrandHeader: {
+    height: 96,
+    paddingTop: 8,
+    marginBottom: -22,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniBrandLogo: {
+    width: 190,
+    height: 60,
+    opacity: 0.98,
+    marginTop: -20,
+  },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
+    marginHorizontal: 16,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingTop: 14,
     paddingBottom: 15,
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
   },
 
   searchRow: {
@@ -1027,7 +1063,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   toggleActive: {
-    backgroundColor: '#21555b',
+    backgroundColor: '#DB8633',
   },
   toggleText: {
     fontSize: 14,

@@ -933,6 +933,7 @@ async function createStripeSubscriptionSetup(
     "on_subscription",
   );
   formData.append("payment_settings[payment_method_types][]", "card");
+  formData.append("expand[]", "latest_invoice");
   formData.append("expand[]", "latest_invoice.payment_intent");
 
   // Add metadata
@@ -957,10 +958,31 @@ async function createStripeSubscriptionSetup(
   }
 
   const subscription = await response.json();
+  const inv = subscription.latest_invoice as any;
+  const piRaw = inv?.payment_intent;
+  let clientSecret: string | null =
+    typeof piRaw === "object" && piRaw?.client_secret
+      ? piRaw.client_secret
+      : null;
 
-  // Extract client secret from latest invoice payment intent
-  const clientSecret =
-    subscription.latest_invoice?.payment_intent?.client_secret || null;
+  // If expand returned only a PaymentIntent id, fetch the full PI for client_secret
+  if (!clientSecret) {
+    const piId =
+      typeof piRaw === "string"
+        ? piRaw
+        : typeof piRaw === "object" && piRaw?.id
+          ? piRaw.id
+          : null;
+    if (piId) {
+      const piRes = await fetch(`${stripe.baseUrl}/payment_intents/${piId}`, {
+        headers: {Authorization: `Bearer ${stripe.secretKey}`},
+      });
+      if (piRes.ok) {
+        const pi = await piRes.json();
+        clientSecret = pi.client_secret || null;
+      }
+    }
+  }
 
   return {
     subscriptionId: subscription.id,
@@ -968,6 +990,42 @@ async function createStripeSubscriptionSetup(
     status: subscription.status,
     latestInvoice: subscription.latest_invoice,
   };
+}
+
+/** Default From address when EMAIL_FROM is unset (must match a verified domain in Resend). */
+const DEFAULT_TRANSACTIONAL_FROM_EMAIL = "info@jointhriveinitiative.org";
+/** Inbox display name for verification / invitation emails (Resend + SendGrid). */
+const DEFAULT_TRANSACTIONAL_FROM_NAME = "THRIVE Initiative";
+
+/** Resend `from`: "THRIVE Initiative <email>" when EMAIL_FROM is a bare address. */
+function buildResendVerificationFromHeader(): string {
+  const raw = (Deno.env.get("EMAIL_FROM") || DEFAULT_TRANSACTIONAL_FROM_EMAIL)
+    .trim();
+  const displayName =
+    (Deno.env.get("EMAIL_FROM_DISPLAY_NAME") || DEFAULT_TRANSACTIONAL_FROM_NAME)
+      .trim();
+  const m = raw.match(/^(.+?)\s*<([^>]+)>\s*$/);
+  if (m) {
+    const name = m[1].trim().replace(/^["']|["']$/g, "");
+    return `${name} <${m[2].trim()}>`;
+  }
+  return `${displayName} <${raw}>`;
+}
+
+function buildSendGridVerificationFrom(): { email: string; name: string } {
+  const raw = (Deno.env.get("EMAIL_FROM") || DEFAULT_TRANSACTIONAL_FROM_EMAIL)
+    .trim();
+  const displayName =
+    (Deno.env.get("EMAIL_FROM_DISPLAY_NAME") || DEFAULT_TRANSACTIONAL_FROM_NAME)
+      .trim();
+  const m = raw.match(/^(.+?)\s*<([^>]+)>\s*$/);
+  if (m) {
+    return {
+      email: m[2].trim(),
+      name: m[1].trim().replace(/^["']|["']$/g, ""),
+    };
+  }
+  return { email: raw, name: displayName };
 }
 
 // Email sending helper function
@@ -1280,7 +1338,7 @@ Need help? Contact info@jointhriveinitiative.org
         return;
       }
 
-      const fromEmail = Deno.env.get("EMAIL_FROM") || "noreply@yourapp.com";
+      const fromHeader = buildResendVerificationFromHeader();
 
       const response = await fetch("https://api.resend.com/emails", {
         method: "POST",
@@ -1289,7 +1347,7 @@ Need help? Contact info@jointhriveinitiative.org
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          from: fromEmail,
+          from: fromHeader,
           to: [to],
           subject: emailSubject,
           html: emailHtml,
@@ -1329,7 +1387,7 @@ Need help? Contact info@jointhriveinitiative.org
         return;
       }
 
-      const fromEmail = Deno.env.get("EMAIL_FROM") || "noreply@yourapp.com";
+      const sgFrom = buildSendGridVerificationFrom();
 
       const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
         method: "POST",
@@ -1339,7 +1397,7 @@ Need help? Contact info@jointhriveinitiative.org
         },
         body: JSON.stringify({
           personalizations: [{to: [{email: to}]}],
-          from: {email: fromEmail},
+          from: {email: sgFrom.email, name: sgFrom.name},
           subject: emailSubject,
           content: [
             {type: "text/plain", value: emailText},
@@ -1994,9 +2052,13 @@ If you did not request this, you can ignore this email.`;
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-admin-secret",
+    "authorization, x-app-authorization, x-client-info, apikey, content-type, x-admin-secret",
   "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
 };
+
+function getAppAuthHeader(req: Request): string | null {
+  return req.headers.get("X-App-Authorization") || req.headers.get("Authorization");
+}
 
 async function getJwtPayload(authHeader: string | null): Promise<any | null> {
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -2026,10 +2088,22 @@ async function getJwtPayload(authHeader: string | null): Promise<any | null> {
   }
 }
 
+/** Base64 for Resend attachment payloads (binary-safe, avoids stack limits on large images). */
+async function blobToBase64(blob: Blob): Promise<string> {
+  const buf = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  const chunk = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
 async function handleFeedbackRoute(
   req: Request,
   supabase: any,
-  userId: string | null,
+  userId: number | null,
 ): Promise<Response> {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
@@ -2038,11 +2112,74 @@ async function handleFeedbackRoute(
     });
   }
 
-  const body = await req.json();
-  const { rating, feedbackType, message } = body;
+  const contentType = req.headers.get("content-type") || "";
+  let rating: unknown;
+  let feedbackType: unknown;
+  let message: string;
+  /** Client may send JSON `{ attachments: [{ filename, content }] }` with base64 content (RN). */
+  const jsonAttachments: { filename: string; content: string }[] = [];
+  /** RN/axios multipart often yields Blob parts that are not `instanceof File` in Deno. */
+  const attachmentBlobs: { blob: Blob; filename: string }[] = [];
 
-  if (!rating || !message?.trim()) {
-    return new Response(JSON.stringify({ error: "Rating and message are required." }), {
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await req.formData();
+    rating = formData.get("rating") ?? undefined;
+    feedbackType = formData.get("feedbackType") ?? undefined;
+    const msg = formData.get("message");
+    message = typeof msg === "string" ? msg : "";
+    let attachmentIndex = 0;
+    for (const entry of formData.getAll("attachments")) {
+      if (!(entry instanceof Blob) || entry.size === 0) continue;
+      attachmentIndex += 1;
+      const filename = entry instanceof File && entry.name?.trim()
+        ? entry.name
+        : `attachment_${attachmentIndex}.jpg`;
+      attachmentBlobs.push({ blob: entry, filename });
+    }
+    console.log(
+      `📎 Feedback multipart: ${attachmentBlobs.length} file part(s), keys=${[...new Set([...formData.keys()])].join(",")}`,
+    );
+  } else {
+    const body = await req.json();
+    rating = body.rating;
+    feedbackType = body.feedbackType;
+    message = typeof body.message === "string" ? body.message : "";
+    const rawAtt = body.attachments;
+    if (Array.isArray(rawAtt)) {
+      const MAX_FILES = 5;
+      const MAX_B64_CHARS = 16 * 1024 * 1024;
+      for (let i = 0; i < Math.min(rawAtt.length, MAX_FILES); i++) {
+        const item = rawAtt[i];
+        if (!item || typeof item.content !== "string" || typeof item.filename !== "string") {
+          continue;
+        }
+        const fn = String(item.filename).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
+        const c = String(item.content).replace(/\s/g, "");
+        if (!c || c.length > MAX_B64_CHARS) continue;
+        jsonAttachments.push({
+          filename: fn || `attachment_${i + 1}.jpg`,
+          content: c,
+        });
+      }
+      console.log(`📎 Feedback JSON: ${jsonAttachments.length} base64 attachment(s)`);
+    }
+  }
+
+  if (!message?.trim()) {
+    return new Response(JSON.stringify({ error: "Message is required." }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 400,
+    });
+  }
+
+  const type = (feedbackType || "general") as string;
+  const ratingRequired = type === "general";
+  const ratingNum =
+    rating === undefined || rating === null || rating === ""
+      ? 0
+      : Number(rating);
+  if (ratingRequired && (!Number.isFinite(ratingNum) || ratingNum < 1 || ratingNum > 5)) {
+    return new Response(JSON.stringify({ error: "A rating from 1–5 is required for general feedback." }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 400,
     });
@@ -2050,7 +2187,7 @@ async function handleFeedbackRoute(
 
   let userName = "App User";
   let userEmail = "unknown";
-  if (userId) {
+  if (userId != null) {
     const { data: userData } = await supabase
       .from("users")
       .select("first_name, last_name, email")
@@ -2062,8 +2199,22 @@ async function handleFeedbackRoute(
     }
   }
 
-  const ratingLabel = ["", "Poor", "Fair", "Good", "Very Good", "Excellent"][rating] || rating;
-  const typeLabel = feedbackType || "general";
+  const ratingLabel =
+    ratingNum >= 1 && ratingNum <= 5
+      ? (["", "Poor", "Fair", "Good", "Very Good", "Excellent"][ratingNum] || String(ratingNum))
+      : "Not provided";
+  const typeLabel = type;
+
+  const ratingRowHtml =
+    ratingNum >= 1 && ratingNum <= 5
+      ? `<tr><td style="padding:8px;font-weight:600;color:#324E58">Rating</td><td style="padding:8px;color:#555">${ratingNum}/5 — ${ratingLabel}</td></tr>`
+      : `<tr><td style="padding:8px;font-weight:600;color:#324E58">Rating</td><td style="padding:8px;color:#555">${ratingLabel}</td></tr>`;
+
+  const safeMessageHtml = message
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br>");
 
   const emailHtml = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
@@ -2071,10 +2222,10 @@ async function handleFeedbackRoute(
       <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
         <tr><td style="padding:8px;font-weight:600;color:#324E58;width:140px">From</td><td style="padding:8px;color:#555">${userName} (${userEmail})</td></tr>
         <tr style="background:#f9f9f9"><td style="padding:8px;font-weight:600;color:#324E58">Type</td><td style="padding:8px;color:#555">${typeLabel}</td></tr>
-        <tr><td style="padding:8px;font-weight:600;color:#324E58">Rating</td><td style="padding:8px;color:#555">${rating}/5 — ${ratingLabel}</td></tr>
+        ${ratingRowHtml}
       </table>
       <div style="background:#fafafa;border-left:4px solid #DB8633;padding:16px;border-radius:4px">
-        <p style="margin:0;color:#324E58;line-height:1.6">${message.replace(/\n/g, "<br>")}</p>
+        <p style="margin:0;color:#324E58;line-height:1.6">${safeMessageHtml}</p>
       </div>
       <p style="margin-top:24px;font-size:12px;color:#aaa">Sent from THRIVE app</p>
     </div>
@@ -2089,16 +2240,38 @@ async function handleFeedbackRoute(
       if (!resendApiKey) {
         console.warn("⚠️ RESEND_API_KEY not set — feedback not emailed");
       } else {
-        await fetch("https://api.resend.com/emails", {
+        const attachmentsPayload: { filename: string; content: string }[] = [
+          ...jsonAttachments,
+        ];
+        for (const { blob, filename } of attachmentBlobs) {
+          try {
+            const content = await blobToBase64(blob);
+            attachmentsPayload.push({ filename, content });
+          } catch (attErr) {
+            console.error("Feedback attachment encode failed:", attErr);
+          }
+        }
+        console.log(`📎 Resend: attaching ${attachmentsPayload.length} file(s) to feedback email`);
+        const emailPayload: Record<string, unknown> = {
+          from: "THRIVE App <noreply@jointhriveinitiative.org>",
+          to: [toEmail],
+          subject: `[THRIVE Feedback] ${typeLabel} — ${
+            ratingNum >= 1 && ratingNum <= 5 ? `${ratingLabel} (${ratingNum}/5)` : ratingLabel
+          }`,
+          html: emailHtml,
+        };
+        if (attachmentsPayload.length > 0) {
+          emailPayload.attachments = attachmentsPayload;
+        }
+        const resendRes = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: { Authorization: `Bearer ${resendApiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            from: "THRIVE App <noreply@jointhriveinitiative.org>",
-            to: [toEmail],
-            subject: `[THRIVE Feedback] ${typeLabel} — ${ratingLabel} (${rating}/5)`,
-            html: emailHtml,
-          }),
+          body: JSON.stringify(emailPayload),
         });
+        if (!resendRes.ok) {
+          const errText = await resendRes.text();
+          console.error("Resend API error:", resendRes.status, errText);
+        }
       }
     }
   } catch (e) {
@@ -2213,7 +2386,9 @@ serve(async (req) => {
 
     // Verify apikey header is present (required for all Supabase Edge Function requests)
     const apikey = req.headers.get("apikey") || req.headers.get("x-api-key");
-    const authHeader = req.headers.get("Authorization");
+    const authHeader = getAppAuthHeader(req);
+    /** Set from JWT on protected routes; passed to handlers like /feedback */
+    let userId: number | null = null;
 
     // For public routes, allow requests with or without Authorization header
     // For protected routes, require Authorization header with valid JWT
@@ -2254,6 +2429,11 @@ serve(async (req) => {
             headers: {...corsHeaders, "Content-Type": "application/json"},
           },
         );
+      }
+      const rawUserId = payload.id ?? payload.userId;
+      if (rawUserId != null && rawUserId !== "") {
+        const n = Number(rawUserId);
+        userId = Number.isFinite(n) ? n : null;
       }
     } else if (isAdminRoute) {
       // Admin route - allow through (handleAdminRoute will check admin secret)
@@ -11689,7 +11869,7 @@ async function handleAuthRoute(
           .update({
             is_verified: true,
             email_verified_at: new Date().toISOString(),
-            account_status: "email_verified",
+            account_status: "active",
             updated_at: new Date().toISOString(),
           })
           .eq("id", user.id);
@@ -12393,7 +12573,7 @@ async function handleAuthRoute(
       console.log("🔍 Profile picture upload route matched");
 
       // Check for authentication
-      const authHeader = req.headers.get("Authorization");
+      const authHeader = getAppAuthHeader(req);
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
         console.log("❌ Missing or invalid Authorization header");
         return new Response(JSON.stringify({error: "Unauthorized"}), {
@@ -12547,7 +12727,7 @@ async function handleAuthRoute(
       console.log("🔍 Get profile route matched");
 
       // Check for authentication
-      const authHeader = req.headers.get("Authorization");
+      const authHeader = getAppAuthHeader(req);
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
         console.log("❌ Missing or invalid Authorization header");
         return new Response(JSON.stringify({error: "Unauthorized"}), {
@@ -12710,7 +12890,7 @@ async function handleAuthRoute(
       console.log("🔍 Save profile route matched");
 
       // Check for authentication
-      const authHeader = req.headers.get("Authorization");
+      const authHeader = getAppAuthHeader(req);
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
         console.log("❌ Missing or invalid Authorization header");
         return new Response(JSON.stringify({error: "Unauthorized"}), {
@@ -13820,7 +14000,7 @@ async function handleDiscountRoute(
 
       // Try to get user ID from JWT token (optional - discounts are public)
       let userId: number | null = null;
-      const authHeader = req.headers.get("Authorization");
+      const authHeader = getAppAuthHeader(req);
       if (authHeader && authHeader.startsWith("Bearer ")) {
         try {
           const token = authHeader.substring(7);
@@ -14013,7 +14193,7 @@ async function handleDiscountRoute(
       let availableCount: number | string | null = null;
 
       // Try to get user ID from JWT token (optional - discount is public)
-      const authHeader = req.headers.get("Authorization");
+      const authHeader = getAppAuthHeader(req);
       if (authHeader && authHeader.startsWith("Bearer ")) {
         try {
           const token = authHeader.substring(7);
@@ -14182,7 +14362,7 @@ async function handleDiscountRoute(
       }
 
       // 1. Verify JWT token (required for this endpoint)
-      const authHeader = req.headers.get("Authorization");
+      const authHeader = getAppAuthHeader(req);
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
         console.log("❌ Missing or invalid Authorization header");
         return new Response(
@@ -14503,7 +14683,7 @@ async function handleReferralRoute(
   method: string,
 ) {
   // Get user ID from JWT token
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = getAppAuthHeader(req);
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return new Response(JSON.stringify({error: "Unauthorized"}), {
       headers: {"Content-Type": "application/json"},
@@ -14725,7 +14905,7 @@ async function handleStripePaymentSheetRoute(
   method: string,
 ) {
   // JWT auth — required for all stripe payment sheet endpoints
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = getAppAuthHeader(req);
   let userId: number | null = null;
 
   if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -14865,7 +15045,7 @@ async function handleOneTimeGiftRoute(
   method: string,
 ) {
   // Get user ID from JWT token (for user endpoints)
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = getAppAuthHeader(req);
   let userId: number | null = null;
 
   if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -16402,7 +16582,7 @@ async function handleDonationRoute(
         );
       }
 
-      const authHeader = req.headers.get("Authorization");
+      const authHeader = getAppAuthHeader(req);
       const payload = await getJwtPayload(authHeader);
       if (!payload?.id) {
         return new Response(
@@ -16524,7 +16704,7 @@ async function handleDonationRoute(
   // GET /donations/my-donations (requires auth)
   if (method === "GET" && route === "/donations/my-donations") {
     try {
-      const authHeader = req.headers.get("Authorization");
+      const authHeader = getAppAuthHeader(req);
       const payload = await getJwtPayload(authHeader);
       if (!payload?.id) {
         return new Response(
@@ -16598,7 +16778,7 @@ async function handleDonationRoute(
   // ============================================
 
   // Get user ID from JWT token
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = getAppAuthHeader(req);
   let userId: number | null = null;
 
   if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -16616,7 +16796,7 @@ async function handleDonationRoute(
         );
 
         const payload = await verifyJWT(token, secretKey);
-        userId = payload.id as number;
+        userId = ((payload as any).id ?? (payload as any).userId) as number;
       } catch (error) {
         // Invalid token - will be handled per endpoint
       }
@@ -16659,7 +16839,7 @@ async function handleDonationRoute(
       // Get user email
       const {data: user, error: userError} = await supabase
         .from("users")
-        .select("email, stripe_customer_id")
+        .select("email, stripe_customer_id, preferences")
         .eq("id", userId)
         .single();
 
@@ -16731,13 +16911,69 @@ async function handleDonationRoute(
         );
       }
 
+      // Persist the chosen beneficiary on the user record so the admin and
+      // profile endpoint always reflect the current preferred charity.
+      try {
+        const updatedPreferences = {
+          ...(user.preferences || {}),
+          preferredCharity: beneficiary_id,
+        };
+        await supabase
+          .from("users")
+          .update({preferences: updatedPreferences})
+          .eq("id", userId);
+      } catch (e) {
+        console.warn("Could not update preferred charity on user:", e);
+      }
+
+      // Ephemeral key helps Stripe Payment Sheet (especially Apple Pay) attach to customer
+      let customerEphemeralKeySecret: string | null = null;
+      try {
+        const stripe = getStripeClient();
+        const ephemeralFormData = new URLSearchParams();
+        ephemeralFormData.append("customer", customerId);
+        const ephemeralRes = await fetch(`${stripe.baseUrl}/ephemeral_keys`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${stripe.secretKey}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Stripe-Version": "2024-06-20",
+          },
+          body: ephemeralFormData.toString(),
+        });
+        if (ephemeralRes.ok) {
+          const ek = await ephemeralRes.json();
+          customerEphemeralKeySecret = ek.secret || null;
+        } else {
+          const errText = await ephemeralRes.text();
+          console.warn("Ephemeral key (subscribe) non-OK:", ephemeralRes.status, errText);
+        }
+      } catch (e) {
+        console.warn("Ephemeral key (subscribe) failed:", e);
+      }
+
+      const clientSecret = subscription.clientSecret || null;
+      if (!clientSecret) {
+        console.error("Monthly subscribe: missing PaymentIntent client_secret after Stripe create");
+        return new Response(
+          JSON.stringify({
+            error:
+              "Subscription created but payment could not be initialized. Try again or use a card.",
+          }),
+          {headers: {"Content-Type": "application/json"}, status: 500},
+        );
+      }
+
       return new Response(
         JSON.stringify({
           success: true,
+          paymentIntentClientSecret: clientSecret,
+          customerId,
+          customerEphemeralKeySecret,
           subscription: {
             id: monthlyDonation.id,
             subscriptionId: subscription.subscriptionId,
-            clientSecret: subscription.clientSecret,
+            clientSecret,
             status: monthlyDonation.status,
             amount: monthlyDonation.amount,
             beneficiary_id: monthlyDonation.beneficiary_id,
@@ -17363,7 +17599,7 @@ async function handleTransactionRoute(
   method: string,
 ) {
   // Get user ID from JWT token
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = getAppAuthHeader(req);
   let userId: number | null = null;
 
   if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -17599,7 +17835,7 @@ async function handlePaymentMethodRoute(
   method: string,
 ) {
   // Get user ID from JWT token
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = getAppAuthHeader(req);
   let userId: number | null = null;
 
   if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -17842,7 +18078,7 @@ async function handleUserPointsRoute(
   method: string,
 ) {
   // Get user ID from JWT token
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = getAppAuthHeader(req);
   let userId: number | null = null;
 
   if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -18052,7 +18288,7 @@ async function handleInvitationRoute(
   method: string,
 ) {
   // Get user ID from JWT token (optional - allows unauthenticated requests for beneficiary requests)
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = getAppAuthHeader(req);
   let userId: number | null = null;
 
   if (authHeader && authHeader.startsWith("Bearer ")) {

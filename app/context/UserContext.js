@@ -166,8 +166,12 @@ export const UserProvider = ({ children }) => {
               }
             }
           } catch (backendError) {
+            const is401 = backendError.response?.status === 401;
+            if (is401) {
+              // Token expired or signed by the old Render backend — force re-login
+              loadedUser = { ...loadedUser, isLoggedIn: false };
+            }
             console.warn('⚠️ Could not fetch from backend:', backendError.message);
-            // Continue with local data - don't overwrite anything
           }
         }
         
@@ -290,6 +294,22 @@ export const UserProvider = ({ children }) => {
         try {
           const isAuth = await API.isAuthenticated();
           if (isAuth) {
+            let savedBeneficiaryId = null;
+            try {
+              const rawBeneficiary = await AsyncStorage.getItem('selectedBeneficiary');
+              const savedBeneficiary = rawBeneficiary ? JSON.parse(rawBeneficiary) : null;
+              savedBeneficiaryId =
+                savedBeneficiary?.id ||
+                updatedUser.selectedBeneficiary?.id ||
+                updatedUser.referredCharity?.id ||
+                null;
+            } catch {
+              savedBeneficiaryId =
+                updatedUser.selectedBeneficiary?.id ||
+                updatedUser.referredCharity?.id ||
+                null;
+            }
+
             await API.saveProfile({
               firstName: updatedUser.firstName,
               lastName: updatedUser.lastName,
@@ -297,6 +317,13 @@ export const UserProvider = ({ children }) => {
               phone: updatedUser.phone,
               profileImage: updatedUser.profileImage || updatedUser.profileImageUrl,
               profileImageUrl: updatedUser.profileImageUrl || updatedUser.profileImage,
+              ...(savedBeneficiaryId
+                ? {
+                    beneficiary: savedBeneficiaryId,
+                    preferredCharity: savedBeneficiaryId,
+                    charityId: savedBeneficiaryId,
+                  }
+                : {}),
             });
           }
         } catch (backendError) {
@@ -556,6 +583,7 @@ export const UserProvider = ({ children }) => {
         'selectedBeneficiary',
         'beneficiaryFavorites',
         'userTransactions',
+        'signupFlowPending',
       ]);
       
       setUser({
@@ -591,6 +619,7 @@ export const UserProvider = ({ children }) => {
         'selectedBeneficiary',
         'beneficiaryFavorites',
         'userTransactions',
+        'signupFlowPending',
       ]);
       
       setUser({

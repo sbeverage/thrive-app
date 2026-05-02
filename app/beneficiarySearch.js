@@ -130,7 +130,7 @@ export default function BeneficiarySearch() {
   };
 
   const handleSkip = () => {
-    router.replace('/guestHome');
+    router.replace("/(tabs)/home");
   };
 
   const handleRequestBeneficiary = () => {

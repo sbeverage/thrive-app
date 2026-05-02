@@ -22,6 +22,8 @@ import { useLocation } from './context/LocationContext';
 import { signInWithApple, signInWithGoogle } from './utils/socialLogin';
 import { useUser } from './context/UserContext';
 import { useBeneficiary } from './context/BeneficiaryContext';
+import { persistSignupFlowCheckpoint } from './utils/signupFlowCheckpoint';
+import { IMAGE_ASSETS } from './utils/assetConstants';
 
 const LAST_LOGIN_KEY = 'lastLoginMethod';
 
@@ -229,6 +231,9 @@ export default function SignupScreen() {
       // page doesn't immediately auto-redirect past itself
       updateUserProfile({ email: userEmail, isVerified: false });
 
+      // Mark signup as in-progress so the app resumes here if closed mid-flow
+      await persistSignupFlowCheckpoint('/signupProfile', { email: userEmail });
+
       // Navigate to profile setup
       router.push({
         pathname: '/signupProfile',
@@ -259,7 +264,15 @@ export default function SignupScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
       >
-        <ScrollView contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'flex-start' }} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={{
+            flexGrow: 1,
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            paddingBottom: 28,
+          }}
+          keyboardShouldPersistTaps="handled"
+        >
           <TouchableOpacity style={styles.backArrow} onPress={() => router.replace('/')}> 
             <Image 
               source={require('../assets/icons/arrow-left.png')} 
@@ -268,7 +281,11 @@ export default function SignupScreen() {
           </TouchableOpacity>
           <View style={styles.piggyLogoColumn}>
             <Image source={require('../assets/images/piggy-with-flowers.png')} style={styles.logo} />
-            <Image source={require('../assets/logos/thrive-logo-white.png')} style={styles.brand} />
+            <Image
+              source={{ uri: IMAGE_ASSETS.INITIATIVE_LOGO_NO_WEB_WHITE }}
+              style={styles.brand}
+              resizeMode="contain"
+            />
           </View>
           <View style={styles.infoCard}>
             <Text style={styles.label}>Email Address</Text>
@@ -360,18 +377,23 @@ export default function SignupScreen() {
 const styles = StyleSheet.create({
   gradientAbsoluteBg: { position: 'absolute', top: 0, left: 0, right: 0, height: SCREEN_HEIGHT * 0.45, zIndex: 0, overflow: 'hidden' },
   gradientBg: { width: SCREEN_WIDTH, height: '100%', borderBottomLeftRadius: 40, borderBottomRightRadius: 40 },
-  piggyLogoColumn: { alignItems: 'center', justifyContent: 'center', marginTop: 80, marginBottom: 10, zIndex: 1 },
+  piggyLogoColumn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 28,
+    marginBottom: 4,
+    zIndex: 1,
+  },
   logo: {
-    width: 140,
-    height: 160,
+    width: 110,
+    height: 128,
     resizeMode: 'contain',
-    marginBottom: 10,
+    marginBottom: -10,
   },
   brand: {
-    width: 163,
-    height: 29,
-    resizeMode: 'contain',
-    marginBottom: 10,
+    width: 188,
+    height: 59,
+    marginBottom: 6,
   },
   infoCard: {
     backgroundColor: '#fff',

@@ -171,7 +171,8 @@ function Layout() {
               <LocationProvider>
                 <DiscountProvider>
                   <DiscountFilterProvider>
-                    <SafeAreaView style={styles.safeArea}>
+                    {/* Omit bottom inset: custom tab bar in (tabs)/_layout owns home-indicator spacing. */}
+                    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
                       <View style={styles.container}>
                         <Stack
                           screenOptions={{

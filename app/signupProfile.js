@@ -22,6 +22,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from './context/UserContext';
 import { useLocalSearchParams } from 'expo-router';
 import API from './lib/api';
+import { persistSignupFlowCheckpoint } from './utils/signupFlowCheckpoint';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -43,9 +44,15 @@ export default function SignupProfile() {
   useEffect(() => {
     if (user?.isLoggedIn && user?.firstName && user?.lastName) {
       console.log('👤 [PROFILE_FLOW] User profile already complete, redirecting to home');
-      router.replace('/home');
+      router.replace('/(tabs)/home');
     }
   }, [user?.isLoggedIn, user?.firstName, user?.lastName]);
+
+  useEffect(() => {
+    if (email) {
+      persistSignupFlowCheckpoint('/signupProfile', { email });
+    }
+  }, [email]);
 
   // Log email extraction for debugging
   useEffect(() => {
@@ -146,8 +153,8 @@ export default function SignupProfile() {
       // Save profile data (this will save both locally and to backend)
       const savedUserData = await saveUserData({ ...profileData }, true);
 
-      // Send verification email — pass firstName directly so the greeting uses the
-      // name the user just entered, not a DB lookup that may not have saved yet.
+      // Send verification email again after profile save so greeting uses the
+      // real first/last name instead of falling back to email local-part.
       try {
         await API.resendVerification(emailToSave, firstName.trim());
         console.log('📧 Verification email sent with user name');
@@ -155,6 +162,9 @@ export default function SignupProfile() {
         // Non-blocking — user can request a resend from the verify screen
         console.warn('⚠️ Verification email send failed (user can resend):', emailError.message);
       }
+
+      // Advance pending route so a mid-flow close resumes at verification
+      await persistSignupFlowCheckpoint('/verifyEmail', { email: emailToSave });
 
       // Navigate directly to email verification page with email
       router.push({

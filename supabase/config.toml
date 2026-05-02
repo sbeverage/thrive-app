@@ -1,0 +1,7 @@
+# Supabase CLI / Edge Functions — https://supabase.com/docs/guides/cli/config
+#
+# The mobile app sends a custom HS256 user JWT in Authorization (verified inside
+# the function with JWT_SECRET). If verify_jwt is true, the Supabase gateway validates
+# Bearer as a Supabase JWT first and returns "Invalid JWT" before index.ts runs.
+[functions.api]
+verify_jwt = false

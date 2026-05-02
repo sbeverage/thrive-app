@@ -39,6 +39,19 @@ const isPublicEndpoint = (url) => {
   return PUBLIC_ENDPOINTS.some((endpoint) => url.includes(endpoint));
 };
 
+/** After cold start, authToken can lag a few ticks behind navigation; avoid sending anon JWT to protected routes. */
+const AUTH_TOKEN_HYDRATION_ATTEMPTS = 6;
+const AUTH_TOKEN_HYDRATION_DELAY_MS = 80;
+
+async function getAuthTokenWithHydrationWait() {
+  let token = await AsyncStorage.getItem("authToken");
+  for (let i = 0; i < AUTH_TOKEN_HYDRATION_ATTEMPTS && !token; i += 1) {
+    await new Promise((r) => setTimeout(r, AUTH_TOKEN_HYDRATION_DELAY_MS));
+    token = await AsyncStorage.getItem("authToken");
+  }
+  return token;
+}
+
 /** Normalize API error body (Supabase Edge returns message, error, or string body) */
 const getApiErrorMessage = (error, fallback) => {
   const data = error.response?.data;
@@ -56,32 +69,51 @@ const extractHtmlErrorText = (value) => {
   return null;
 };
 
+/** Binary-safe base64 for feedback images (RN fetch → ArrayBuffer). */
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunk = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
 // Request interceptor - Add auth token to requests
 api.interceptors.request.use(
   async (config) => {
     try {
-      // Get user auth token if available
-      const token = await AsyncStorage.getItem("authToken");
       const requestUrl = config.url || "";
       const isPublic = isPublicEndpoint(requestUrl);
+      // For protected routes, retry briefly so we don't attach anon JWT before authToken hydrates from storage
+      const token = isPublic ? null : await getAuthTokenWithHydrationWait();
 
       // config.user = "286";
-      if (token) {
-        // Use user token for authenticated requests
-        config.headers.Authorization = `Bearer ${token}`;
-      } else if (isPublic) {
+      if (isPublic) {
         // IMPORTANT: Supabase Edge Functions often require an Authorization header even for
         // public routes to pass through the gateway (if "Verify JWT" is enabled).
-        // Fallback to ANON_KEY as the bearer token for "public" invocations.
+        // Always use ANON_KEY for public routes so backend doesn't reject app-issued user JWTs.
         config.headers.Authorization = `Bearer ${SUPABASE_ANON_KEY}`;
-      } else if (config.headers?.Authorization || config.headers?.authorization) {
-        // Ensure protected requests never re-use stale/anonymous bearer values.
-        delete config.headers.Authorization;
-        delete config.headers.authorization;
+        delete config.headers["X-App-Authorization"];
+      } else if (token) {
+        // User JWT goes directly in Authorization. The gateway (--no-verify-jwt) forwards
+        // it unchanged; the Edge Function verifies it with JWT_SECRET. The apikey default
+        // header already identifies the project to the gateway, so no X-App-Authorization needed.
+        config.headers.Authorization = `Bearer ${token}`;
+        delete config.headers["X-App-Authorization"];
+        config._sentToken = token; // Track sent token so 401 handler doesn't clear a newer one
+      } else {
+        // Protected endpoint with no user token — use anon key so gateway accepts the request.
+        config.headers.Authorization = `Bearer ${SUPABASE_ANON_KEY}`;
+        delete config.headers["X-App-Authorization"];
+        console.warn(`🔐 No auth token for protected endpoint: ${requestUrl}`);
       }
 
       const authHeader =
-        config.headers?.Authorization || config.headers?.authorization || "";
+        config.headers?.Authorization ||
+        config.headers?.authorization ||
+        "";
       const hasBearer =
         typeof authHeader === "string" && authHeader.startsWith("Bearer ");
       const authPreview = hasBearer
@@ -107,19 +139,6 @@ api.interceptors.request.use(
     return Promise.reject(error);
   },
 );
-
-api.interceptors.response.use((config) => {
-  console.log(
-    `:rocket: [Chat API response] ${config.method?.toUpperCase()} ${config.url}`,
-    {
-      data: config.data,
-      params: config.params,
-      headers: config.headers,
-      status: config.status,
-    },
-  );
-  return config;
-});
 
 // Response interceptor - Handle common errors
 api.interceptors.response.use(
@@ -149,6 +168,7 @@ api.interceptors.response.use(
       const expectedMissingEndpoints = [
         "/api/auth/save-profile",
         "/api/auth/profile-picture",
+        "/api/auth/check-email",
         "/api/referrals/info",
         "/api/referrals/friends",
       ];
@@ -199,16 +219,40 @@ api.interceptors.response.use(
         // Don't log full error details for expected public endpoint 401s
         return Promise.reject(error);
       } else {
-        // Only clear session if we actually had a token that was rejected.
-        // If there was no token at all (missing authorization header), don't
-        // wipe userData — the user just isn't authenticated for this endpoint.
+        // Only clear session if the token that was SENT is still the current one.
+        // If a newer token was stored (e.g. signup completed while an old profile
+        // call was in-flight), keep the new token and don't wipe the session.
         const existingToken = await AsyncStorage.getItem("authToken");
-        if (existingToken) {
+        const sentToken = error.config?._sentToken;
+        // Only clear session when this request actually sent the user JWT (not anon fallback).
+        // If _sentToken is missing, Authorization was anon — a 401 must not wipe a stored user token.
+        const sentUserJwt = Boolean(sentToken);
+        const jwtMatchesStorage =
+          sentUserJwt &&
+          Boolean(existingToken) &&
+          sentToken === existingToken;
+        // These endpoints can 401 for reasons other than token expiry — don't clear session for them
+        const isTokenPreservedEndpoint =
+          url.includes("/api/auth/save-profile") ||
+          url.includes("/api/auth/profile") ||
+          url.includes("/api/user/points");
+
+        if (jwtMatchesStorage && !isTokenPreservedEndpoint) {
           console.log("🔐 Token expired or invalid, clearing auth data");
           await AsyncStorage.removeItem("authToken");
           await AsyncStorage.removeItem("userData");
+        } else if (jwtMatchesStorage && isTokenPreservedEndpoint) {
+          console.warn("🔐 401 from preserved endpoint; keeping session token:", url);
+        } else if (sentUserJwt && existingToken && sentToken !== existingToken) {
+          // A newer token exists — the 401 was for a stale in-flight request. Keep the new token.
+          console.warn("🔐 401 for stale request; newer token is active, not clearing session");
+        } else if (!sentUserJwt) {
+          console.warn(
+            "🔐 401 on protected route without user JWT on request (anon or missing _sentToken); not clearing session:",
+            url,
+          );
         } else {
-          console.warn("🔐 No auth token for protected endpoint:", url);
+          console.warn("🔐 No auth token in storage for protected endpoint:", url);
         }
         return Promise.reject(error);
       }
@@ -1215,6 +1259,7 @@ const API = {
     try {
       await AsyncStorage.removeItem("authToken");
       await AsyncStorage.removeItem("userData");
+      await AsyncStorage.removeItem("signupFlowPending");
       console.log("✅ User logged out successfully");
     } catch (error) {
       console.error("Logout error:", error);
@@ -1951,29 +1996,46 @@ const API = {
 
   submitFeedback: async ({ rating, feedbackType, message, attachments = [] }) => {
     try {
+      const payload = {
+        rating: rating ?? undefined,
+        feedbackType,
+        message,
+      };
+      // RN + axios multipart often drops file parts before Deno sees them. Read files locally
+      // and send base64 in JSON — Edge forwards to Resend as attachments.
       if (attachments.length > 0) {
-        const form = new FormData();
-        if (rating) form.append("rating", String(rating));
-        form.append("feedbackType", feedbackType);
-        form.append("message", message);
-        attachments.forEach((uri, i) => {
-          const ext = uri.split(".").pop() || "jpg";
-          form.append("attachments", {
-            uri,
-            name: `attachment_${i}.${ext}`,
-            type: `image/${ext === "png" ? "png" : "jpeg"}`,
+        const MAX_FILES = 5;
+        const maxBytesPerImage = 10 * 1024 * 1024;
+        const uris = attachments.slice(0, MAX_FILES);
+        payload.attachments = [];
+        for (let i = 0; i < uris.length; i++) {
+          const uri = uris[i];
+          const res = await fetch(uri);
+          if (!res.ok) {
+            throw new Error(`Could not read photo ${i + 1}. Try choosing the image again.`);
+          }
+          const buf = await res.arrayBuffer();
+          if (buf.byteLength > maxBytesPerImage) {
+            throw new Error("Each photo must be under 10MB. Try a smaller image.");
+          }
+          const pathPart = uri.split("?")[0];
+          const ext = (pathPart.split(".").pop() || "jpg").toLowerCase();
+          const safeExt = ["png", "jpg", "jpeg", "webp", "gif", "heic", "heif"].includes(ext)
+            ? ext
+            : "jpg";
+          payload.attachments.push({
+            filename: `attachment_${i + 1}.${safeExt}`,
+            content: arrayBufferToBase64(buf),
           });
-        });
-        const response = await api.post("/api/feedback", form, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-        return response.data;
+        }
       }
-      const response = await api.post("/api/feedback", { rating, feedbackType, message });
+      const response = await api.post("/api/feedback", payload);
       return response.data;
     } catch (error) {
       console.error("Submit feedback failed:", error);
-      throw new Error(error.response?.data?.message || "Failed to submit feedback.");
+      throw new Error(
+        getApiErrorMessage(error, "Failed to submit feedback."),
+      );
     }
   },
 

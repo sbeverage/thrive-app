@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUser } from '../context/UserContext';
 import { useBeneficiary } from '../context/BeneficiaryContext';
 import API from '../lib/api';
+import { persistSignupFlowCheckpointFromParams } from '../utils/signupFlowCheckpoint';
 
 export default function CoworkingDonationPrompt() {
   const router = useRouter();
@@ -17,6 +18,15 @@ export default function CoworkingDonationPrompt() {
 
   const sponsorAmount = parseFloat(params.sponsorAmount || '15');
   const charityName = selectedBeneficiary?.name || 'your charity';
+
+  const coworkingPromptParamsKey = JSON.stringify(params ?? {});
+  useEffect(() => {
+    persistSignupFlowCheckpointFromParams(
+      '/signupFlow/coworkingDonationPrompt',
+      params,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coworkingPromptParamsKey]);
 
   const completeWithoutExtra = async () => {
     await saveUserData({

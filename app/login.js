@@ -26,6 +26,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from './context/UserContext';
 import { useBeneficiary } from './context/BeneficiaryContext';
 import { signInWithApple, signInWithGoogle } from './utils/socialLogin';
+import { IMAGE_ASSETS } from './utils/assetConstants';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -326,6 +327,7 @@ export default function LoginScreen() {
             flexGrow: 1,
             alignItems: "center",
             justifyContent: "flex-start",
+            paddingBottom: 28,
           }}
           keyboardShouldPersistTaps="handled"
         >
@@ -350,10 +352,11 @@ export default function LoginScreen() {
               style={styles.logo}
             />
             <Image
-              source={require("../assets/logos/thrive-logo-white.png")}
+              source={{ uri: IMAGE_ASSETS.INITIATIVE_LOGO_NO_WEB_WHITE }}
               style={styles.brand}
+              resizeMode="contain"
             />
-            <Text style={styles.welcomeMessage}>Welcome Back! 🎉</Text>
+            <Text style={styles.welcomeMessage}>Welcome Back!</Text>
           </View>
           <View style={styles.infoCard}>
             <View style={styles.fieldGroup}>
@@ -530,33 +533,39 @@ const styles = StyleSheet.create({
   piggyLogoColumn: {
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 50,
-    marginBottom: 10,
+    marginTop: 28,
+    marginBottom: 4,
     zIndex: 1,
   },
   logo: {
-    width: 120,
-    height: 140,
+    width: 110,
+    height: 128,
     resizeMode: "contain",
-    marginBottom: 10,
+    marginBottom: -10,
   },
   brand: {
-    width: 163,
-    height: 29,
-    resizeMode: "contain",
-    marginBottom: 10,
+    width: 188,
+    height: 59,
+    marginBottom: 6,
   },
   welcomeMessage: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#fff",
-    marginTop: 20,
+    fontSize: 22,
+    fontWeight: "700",
+    color: "rgba(255, 255, 255, 0.96)",
+    marginTop: 8,
     textAlign: "center",
+    letterSpacing: 0.6,
+    textShadowColor: "rgba(44, 62, 80, 0.35)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+    }),
   },
   infoCard: {
     backgroundColor: "#fff",
     borderRadius: 24,
-    padding: 28,
+    padding: 22,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -565,14 +574,14 @@ const styles = StyleSheet.create({
     width: "90%",
     maxWidth: 340,
     alignSelf: "center",
-    marginTop: 20,
-    marginBottom: 10,
+    marginTop: 10,
+    marginBottom: 8,
     alignItems: "center",
     zIndex: 2,
   },
   fieldGroup: {
     width: "100%",
-    marginBottom: 16,
+    marginBottom: 12,
   },
   labelRow: {
     flexDirection: "row",
@@ -599,8 +608,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     width: "100%",
-    marginBottom: 16,
-    paddingVertical: 4,
+    marginBottom: 10,
+    paddingVertical: 2,
   },
   rememberLabel: {
     fontSize: 15,
@@ -668,7 +677,7 @@ const styles = StyleSheet.create({
   },
   forgotPassword: {
     alignSelf: "flex-end",
-    marginBottom: 20,
+    marginBottom: 12,
   },
   forgotText: {
     color: "#6d6e72",
@@ -682,7 +691,7 @@ const styles = StyleSheet.create({
     height: 48,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 12,
   },
   loginButtonText: {
     color: "#fff",
@@ -693,14 +702,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "500",
     color: "#6d6e72",
-    marginBottom: 20,
+    marginBottom: 10,
   },
   socialIconsContainer: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "flex-start",
-    marginTop: 10,
-    marginBottom: 25,
+    marginTop: 2,
+    marginBottom: 12,
   },
   socialIconWrapper: {
     alignItems: "center",
@@ -729,7 +738,7 @@ const styles = StyleSheet.create({
   signupLink: {
     textDecorationLine: "underline",
     color: "#324e58",
-    marginBottom: 20,
+    marginBottom: 4,
     fontSize: 16,
     fontWeight: "500",
   },

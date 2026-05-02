@@ -96,6 +96,10 @@ export default function Index() {
   React.useEffect(() => {
     const checkUserStatus = async () => {
       try {
+        // TEMP: remove to force signup flow — delete these 3 lines before shipping
+        await AsyncStorage.removeItem('authToken');
+        await AsyncStorage.removeItem('userData');
+        await AsyncStorage.removeItem('signupFlowPending');
         const token = await AsyncStorage.getItem('authToken');
         if (token) {
           // Check if the user closed the app mid signup-flow and needs to resume

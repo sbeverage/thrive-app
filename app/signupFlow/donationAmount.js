@@ -18,6 +18,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useBeneficiary } from "../context/BeneficiaryContext";
 import { useUser } from "../context/UserContext";
 import { resolveCheckoutBeneficiaryId } from "../utils/resolveCheckoutBeneficiaryId";
+import { persistSignupFlowCheckpointFromParams } from "../utils/signupFlowCheckpoint";
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -34,6 +35,16 @@ export default function DonationAmount() {
   const MIN_AMOUNT = isCoworkingUser ? 1 : 15;
   const [amount, setAmount] = useState(MIN_AMOUNT);
   const MAX_AMOUNT = 250;
+
+  const routeParamsSnapshot = JSON.stringify(routeParams ?? {});
+
+  useEffect(() => {
+    persistSignupFlowCheckpointFromParams(
+      "/signupFlow/donationAmount",
+      routeParams,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeParamsSnapshot]);
 
   useEffect(() => {
     // Keep slider value valid when coworking flag resolves after initial render.

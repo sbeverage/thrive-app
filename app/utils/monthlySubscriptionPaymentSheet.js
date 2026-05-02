@@ -126,11 +126,21 @@ export async function presentMonthlySubscriptionPaymentSheet(
 
   const { error: initError } = await initPaymentSheet(config);
   if (initError) {
+    console.warn("[PaymentSheet] initPaymentSheet failed:", {
+      code: initError.code,
+      message: initError.message,
+      type: initError.type,
+    });
     return { ok: false, canceled: false, error: initError };
   }
 
   const { error: presentError } = await presentPaymentSheet();
   if (presentError) {
+    console.warn("[PaymentSheet] presentPaymentSheet failed:", {
+      code: presentError.code,
+      message: presentError.message,
+      type: presentError.type,
+    });
     const canceled = presentError.code === "Canceled";
     return { ok: false, canceled, error: presentError };
   }

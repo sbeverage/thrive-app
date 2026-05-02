@@ -35,6 +35,7 @@ import { useLocation } from "../context/LocationContext";
 import API from "../lib/api";
 import { calculateDistance, formatDistance } from "../utils/locationService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { persistSignupFlowCheckpointFromParams } from "../utils/signupFlowCheckpoint";
 
 const categories = [
   "All",
@@ -118,6 +119,14 @@ export default function BeneficiaryPreferences() {
     setSelectedBeneficiary(null);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const signupFlowParamsKey = JSON.stringify(params ?? {});
+  useEffect(() => {
+    persistSignupFlowCheckpointFromParams(
+      "/signupFlow/beneficiarySignupCause",
+      params,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signupFlowParamsKey]);
 
   // Load favorites from AsyncStorage on mount
   // IMPORTANT: Favorites should ONLY be set when the user explicitly selects them.

@@ -11,6 +11,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useBeneficiary } from '../context/BeneficiaryContext';
 import { useUser } from '../context/UserContext';
 import API from '../lib/api';
+import { persistSignupFlowCheckpointFromParams } from '../utils/signupFlowCheckpoint';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -32,6 +33,15 @@ export default function BeneficiarySignupDetails() {
 
   // Use brand blue gradient colors
   const gradientColors = ["#2C3E50", "#4CA1AF"];
+
+  const signupFlowParamsKey = JSON.stringify(params ?? {});
+  useEffect(() => {
+    persistSignupFlowCheckpointFromParams(
+      "/signupFlow/beneficiarySignupDetails",
+      params,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signupFlowParamsKey]);
 
   // Load beneficiary data from API
   useEffect(() => {
