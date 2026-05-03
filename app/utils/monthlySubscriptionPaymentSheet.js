@@ -78,6 +78,10 @@ export async function presentMonthlySubscriptionPaymentSheet(
   const {
     merchantDisplayName = "Thrive Initiative",
     cardOnly = false,
+    // When true, customer credentials are not passed to the Payment Sheet so
+    // Stripe does not pre-populate saved cards (prevents Stripe Link / saved
+    // subscription cards from appearing on one-time gift flows).
+    skipSavedPaymentMethods = false,
   } = options;
 
   const {
@@ -119,7 +123,7 @@ export async function presentMonthlySubscriptionPaymentSheet(
       : {}),
   };
 
-  if (customerId && customerEphemeralKeySecret) {
+  if (!skipSavedPaymentMethods && customerId && customerEphemeralKeySecret) {
     config.customerId = customerId;
     config.customerEphemeralKeySecret = customerEphemeralKeySecret;
   }

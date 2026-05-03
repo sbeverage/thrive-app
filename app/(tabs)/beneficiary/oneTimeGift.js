@@ -114,6 +114,7 @@ export default function OneTimeGiftScreen() {
       const payResult = await presentMonthlySubscriptionPaymentSheet(
         { initPaymentSheet, presentPaymentSheet },
         response,
+        { skipSavedPaymentMethods: true },
       );
       if (!payResult.ok) {
         if (!payResult.canceled && payResult.error) {
@@ -380,24 +381,30 @@ const styles = StyleSheet.create({
   customAmountInputWrapper: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     backgroundColor: "#F9FAFB",
     borderWidth: 2,
     borderColor: "#E5E7EB",
     borderRadius: 12,
+    height: 60,
     paddingHorizontal: 16,
   },
   currencySymbol: {
     fontSize: 20,
     fontWeight: "600",
     color: "#324E58",
-    marginRight: 8,
+    marginRight: 4,
+    lineHeight: 26,
   },
   customAmountInput: {
     flex: 1,
     fontSize: 20,
     fontWeight: "600",
     color: "#324E58",
-    paddingVertical: 14,
+    height: 60,
+    padding: 0,
+    textAlign: "center",
+    textAlignVertical: "center",
   },
   selectedAmountCard: {
     backgroundColor: "#FFF5EB",

@@ -16,6 +16,7 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  Modal,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -23,6 +24,77 @@ import { AntDesign, Feather } from "@expo/vector-icons";
 import { useUser } from "../../context/UserContext";
 import { useBeneficiary } from "../../context/BeneficiaryContext";
 import API from "../../lib/api";
+
+const SERVICE_FEE = 3.0;
+const CC_RATE = 0.035;
+
+/**
+ * Given a subscription's stored amount, returns the display total and fee breakdown.
+ *
+ * The DB stores inconsistently:
+ *   - editDonationAmount path → stores the base (round integer, e.g. 5)
+ *   - stripeIntegration signup path → stores fee-inclusive total (has cents, e.g. 8.28)
+ *
+ * Detection: round integer = base; has cents = fee-inclusive total.
+ */
+function getSubscriptionBilling(rawAmount) {
+  const n = Math.round(parseFloat(rawAmount || 0) * 100) / 100;
+  if (n <= 0) return { total: 0, donationAmount: 0, serviceFee: 0, ccFee: 0 };
+
+  const isBase = n === Math.round(n); // whole dollar = base amount
+
+  if (isBase) {
+    // Compute fee-inclusive total (CC fees assumed covered — default in the app)
+    const subtotal = n + SERVICE_FEE;
+    const ccFee = Math.round(subtotal * CC_RATE * 100) / 100;
+    const total = Math.round((subtotal + ccFee) * 100) / 100;
+    return { total, donationAmount: n, serviceFee: SERVICE_FEE, ccFee };
+  }
+
+  // Fee-inclusive total stored — back-calculate base.
+  // Check if total ≈ (roundedBase + 3) * 1.035 (CC covered path).
+  const baseIfCovered = n / (1 + CC_RATE) - SERVICE_FEE;
+  const roundedBase = Math.round(baseIfCovered);
+  const expectedTotal = Math.round((roundedBase + SERVICE_FEE) * (1 + CC_RATE) * 100) / 100;
+  if (Math.abs(n - expectedTotal) < 0.05 && roundedBase > 0) {
+    return {
+      total: n,
+      donationAmount: roundedBase,
+      serviceFee: SERVICE_FEE,
+      ccFee: Math.round((n - roundedBase - SERVICE_FEE) * 100) / 100,
+    };
+  }
+
+  // No CC coverage — total = base + $3
+  return {
+    total: n,
+    donationAmount: Math.max(0, Math.round((n - SERVICE_FEE) * 100) / 100),
+    serviceFee: SERVICE_FEE,
+    ccFee: 0,
+  };
+}
+
+/**
+ * One-time gifts have no platform fee — only donation + CC processing fees.
+ * Same base-vs-total detection: round integer = base, has cents = total.
+ */
+function getOneTimeBilling(rawAmount) {
+  const n = Math.round(parseFloat(rawAmount || 0) * 100) / 100;
+  if (n <= 0) return { total: 0, donationAmount: 0, serviceFee: 0, ccFee: 0 };
+
+  const isBase = n === Math.round(n);
+
+  if (isBase) {
+    const ccFee = Math.round(n * CC_RATE * 100) / 100;
+    const total = Math.round((n + ccFee) * 100) / 100;
+    return { total, donationAmount: n, serviceFee: 0, ccFee };
+  }
+
+  // Fee-inclusive total — back-calculate base
+  const base = Math.round((n / (1 + CC_RATE)) * 100) / 100;
+  const ccFee = Math.round((n - base) * 100) / 100;
+  return { total: n, donationAmount: base, serviceFee: 0, ccFee };
+}
 
 function formatDonationBreakdownDate(donation) {
   if (donation.created_at) {
@@ -173,6 +245,7 @@ export default function DonationSummary() {
   const [oneTimeYearTotal, setOneTimeYearTotal] = useState(0);
   const [oneTimeAllTimeTotal, setOneTimeAllTimeTotal] = useState(0);
   const [oneTimeGifts, setOneTimeGifts] = useState([]);
+  const [billingDetailRow, setBillingDetailRow] = useState(null);
   const isFetchingRef = useRef(false);
   const lastFetchTsRef = useRef(0);
   /** Last good Stripe billing-preview API payload — survives transient failures / re-fetches that would clear state */
@@ -350,6 +423,43 @@ export default function DonationSummary() {
   }, [nextBillingAmount]);
 
   const loadActiveSubscriptionId = async () => {
+    const loadOneTimeGiftRows = async () => {
+      try {
+        const oneTimeRes = await API.getOneTimeGiftHistory(1, 100);
+        const yearRaw =
+          oneTimeRes?.summary?.this_year_total ??
+          oneTimeRes?.summary?.this_year;
+        setOneTimeYearTotal(
+          Number.isFinite(Number(yearRaw)) ? Number(yearRaw) : 0,
+        );
+        const rawList = Array.isArray(oneTimeRes?.gifts)
+          ? oneTimeRes.gifts
+          : [];
+        /** Hide only clearly failed / voided rows; keep pending/processing so paid gifts never disappear due to status string drift */
+        const blocked = new Set([
+          "failed",
+          "canceled",
+          "cancelled",
+          "expired",
+          "refunded",
+          "reversed",
+        ]);
+        const gifts = rawList.filter((g) => {
+          const s = String(g?.status ?? "").toLowerCase().trim();
+          if (!s) return true;
+          return !blocked.has(s);
+        });
+        setOneTimeGifts(gifts);
+        const allTimeTotal = gifts.reduce(
+          (sum, g) => sum + Number(g.amount || 0),
+          0,
+        );
+        setOneTimeAllTimeTotal(allTimeTotal);
+      } catch (e) {
+        console.warn("[DonationSummary] one-time gift history failed:", e?.message || e);
+      }
+    };
+
     try {
       setIsLoading(true);
       const response = await API.getMonthlyDonations();
@@ -437,26 +547,14 @@ export default function DonationSummary() {
         /* keep billingPreview + stripeBillingCacheRef */
       }
 
-      try {
-        const oneTimeRes = await API.getOneTimeGiftHistory(1, 100);
-        const yearTotal = oneTimeRes?.summary?.this_year_total;
-        setOneTimeYearTotal(Number.isFinite(Number(yearTotal)) ? Number(yearTotal) : 0);
-        const gifts = (oneTimeRes?.gifts || []).filter((g) => {
-          const s = String(g?.status || '').toLowerCase();
-          return s === 'succeeded' || s === 'completed' || s === 'paid';
-        });
-        setOneTimeGifts(gifts);
-        const allTimeTotal = gifts.reduce((sum, g) => sum + Number(g.amount || 0), 0);
-        setOneTimeAllTimeTotal(allTimeTotal);
-      } catch {
-        /* keep existing oneTimeYearTotal / oneTimeGifts */
-      }
+      await loadOneTimeGiftRows();
     } catch (error) {
       console.error("❌ Error loading donation summary:", error);
       setDonationSummary(null);
       setActiveSubscription(null);
       setActiveSubscriptionId(null);
       setBillingPreview(null);
+      await loadOneTimeGiftRows();
     } finally {
       setIsLoading(false);
     }
@@ -534,7 +632,7 @@ export default function DonationSummary() {
 
   // Use API data if available, otherwise fallback to local data
   const monthlyDonationAmount =
-    donationSummary?.total_monthly_amount || user.monthlyDonation || 15;
+    user.monthlyDonation || donationSummary?.total_monthly_amount || 15;
   const beneficiaryFromUser =
     user?.selectedBeneficiary || user?.referredCharity || null;
   const resolvedBeneficiary = selectedBeneficiary || beneficiaryFromUser;
@@ -652,14 +750,14 @@ export default function DonationSummary() {
           )}
         </LinearGradient>
 
-        {/* Donation Breakdown */}
+        {/* Billing Summary */}
         <View style={styles.breakdownSection}>
-          <Text style={styles.sectionTitle}>Donation Breakdown</Text>
+          <Text style={styles.sectionTitle}>Billing Summary</Text>
           {isLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color="#DB8633" />
               <Text style={styles.loadingText}>
-                Loading donation history...
+                Loading billing history...
               </Text>
             </View>
           ) : (monthlyBreakdown.length > 0 || oneTimeGifts.length > 0) ? (
@@ -672,53 +770,59 @@ export default function DonationSummary() {
                 const dateB = new Date(b.created_at || b.date || 0);
                 return dateB - dateA;
               })
-              .map((donation, index) => (
-              <View
-                key={
-                  donation._kind === 'one_time'
-                    ? `gift-${donation.id ?? index}`
-                    : donation.stripe_subscription_id
-                      ? `stripe-${donation.stripe_subscription_id}`
-                      : donation.id != null
-                        ? `sub-${donation.id}`
-                        : `row-${index}`
-                }
-                style={styles.donationRow}
-              >
-                <View style={styles.donationInfo}>
-                  <View style={styles.donationMonthRow}>
-                    <Text style={styles.donationMonth}>
-                      {formatDonationBreakdownDate(donation)}
-                    </Text>
-                    {donation._kind === 'one_time' && (
-                      <View style={styles.oneTimePill}>
-                        <Text style={styles.oneTimePillText}>One-time</Text>
+              .map((donation, index) => {
+                const rawAmount = parseFloat(donation.amount || donation.donation_amount || 0);
+                const billing = donation._kind === 'subscription'
+                  ? getSubscriptionBilling(rawAmount)
+                  : getOneTimeBilling(rawAmount);
+                return (
+                  <TouchableOpacity
+                    key={
+                      donation._kind === 'one_time'
+                        ? `gift-${donation.id ?? index}`
+                        : donation.stripe_subscription_id
+                          ? `stripe-${donation.stripe_subscription_id}`
+                          : donation.id != null
+                            ? `sub-${donation.id}`
+                            : `row-${index}`
+                    }
+                    style={styles.donationRow}
+                    onPress={() => setBillingDetailRow({ donation, billing })}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.donationInfo}>
+                      <View style={styles.donationMonthRow}>
+                        <Text style={styles.donationMonth}>
+                          {formatDonationBreakdownDate(donation)}
+                        </Text>
+                        {donation._kind === 'one_time' ? (
+                          <View style={styles.oneTimePill}>
+                            <Text style={styles.oneTimePillText}>One-time</Text>
+                          </View>
+                        ) : (
+                          <View style={styles.monthlyPill}>
+                            <Text style={styles.monthlyPillText}>Monthly</Text>
+                          </View>
+                        )}
                       </View>
-                    )}
-                  </View>
-                  <Text style={styles.donationCharity}>
-                    {donation.charity_name ||
-                      donation.beneficiary_name ||
-                      resolvedBeneficiary?.name ||
-                      currentCharity}
-                  </Text>
-                </View>
-                <View style={styles.donationRight}>
-                  <Text style={styles.donationAmount}>
-                    $
-                    {parseFloat(
-                      donation.amount || donation.donation_amount || 0,
-                    ).toFixed(2)}
-                  </Text>
-                  <View
-                    style={[
-                      styles.statusDot,
-                      { backgroundColor: statusDotColor(donation.status) },
-                    ]}
-                  />
-                </View>
-              </View>
-            ))
+                      <Text style={styles.donationCharity}>
+                        {donation.charity_name ||
+                          donation.beneficiary_name ||
+                          resolvedBeneficiary?.name ||
+                          currentCharity}
+                      </Text>
+                    </View>
+                    <View style={styles.donationRight}>
+                      <Text style={styles.donationAmount}>
+                        ${billing.total.toFixed(2)}
+                      </Text>
+                      <View style={styles.donationRowChevron}>
+                        <Text style={styles.donationRowChevronText}>›</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
           ) : (
             <View style={styles.noDonationsMessage}>
               <Text style={styles.noDonationsText}>
@@ -763,6 +867,78 @@ export default function DonationSummary() {
         {/* Bottom Spacer */}
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Billing Detail Modal */}
+      <Modal
+        visible={!!billingDetailRow}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setBillingDetailRow(null)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setBillingDetailRow(null)}
+        >
+          <TouchableOpacity
+            style={styles.billingModalContent}
+            activeOpacity={1}
+            onPress={() => {}}
+          >
+            <View style={styles.modalHandle} />
+            <Text style={styles.billingModalTitle}>Billing Details</Text>
+            {billingDetailRow && (() => {
+              const { donation, billing } = billingDetailRow;
+              const charityName =
+                donation.charity_name ||
+                donation.beneficiary_name ||
+                resolvedBeneficiary?.name ||
+                currentCharity;
+              const isOneTime = donation._kind === 'one_time';
+              return (
+                <>
+                  <Text style={styles.billingModalDate}>
+                    {formatDonationBreakdownDate(donation)} · {charityName}
+                  </Text>
+
+                  <View style={styles.billingModalDivider} />
+
+                  <View style={styles.billingModalRow}>
+                    <Text style={styles.billingModalLabel}>Donation to {charityName}</Text>
+                    <Text style={styles.billingModalValue}>${billing.donationAmount.toFixed(2)}</Text>
+                  </View>
+
+                  {!isOneTime && (
+                    <View style={styles.billingModalRow}>
+                      <Text style={styles.billingModalLabel}>Platform Fee</Text>
+                      <Text style={styles.billingModalValue}>${billing.serviceFee.toFixed(2)}</Text>
+                    </View>
+                  )}
+
+                  <View style={styles.billingModalRow}>
+                    <Text style={styles.billingModalLabel}>Processing Fees</Text>
+                    <Text style={styles.billingModalValue}>${billing.ccFee.toFixed(2)}</Text>
+                  </View>
+
+                  <View style={styles.billingModalDivider} />
+
+                  <View style={styles.billingModalRow}>
+                    <Text style={styles.billingModalTotalLabel}>Total Charged</Text>
+                    <Text style={styles.billingModalTotalValue}>${billing.total.toFixed(2)}</Text>
+                  </View>
+                </>
+              );
+            })()}
+
+            <TouchableOpacity
+              style={styles.billingModalCloseButton}
+              onPress={() => setBillingDetailRow(null)}
+            >
+              <Text style={styles.billingModalCloseText}>Done</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -913,6 +1089,17 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#DB8633",
   },
+  monthlyPill: {
+    backgroundColor: "#E8F4F8",
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  monthlyPillText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#21555b",
+  },
   donationCharity: {
     fontSize: 14,
     color: "#666",
@@ -920,17 +1107,101 @@ const styles = StyleSheet.create({
   donationRight: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 6,
   },
   donationAmount: {
     fontSize: 16,
     fontWeight: "500",
     color: "#324E58",
-    marginRight: 10,
+  },
+  donationRowChevron: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  donationRowChevronText: {
+    fontSize: 20,
+    color: "#9CA3AF",
+    lineHeight: 22,
   },
   statusDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
+  },
+  billingModalContent: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: "#E1E1E5",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  billingModalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#21555b",
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  billingModalDate: {
+    fontSize: 13,
+    color: "#9CA3AF",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  billingModalDivider: {
+    height: 1,
+    backgroundColor: "#F0F0F0",
+    marginVertical: 12,
+  },
+  billingModalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 6,
+  },
+  billingModalLabel: {
+    fontSize: 15,
+    color: "#6d6e72",
+  },
+  billingModalValue: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#324E58",
+  },
+  billingModalTotalLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#21555b",
+  },
+  billingModalTotalValue: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#21555b",
+  },
+  billingModalCloseButton: {
+    marginTop: 24,
+    backgroundColor: "#DB8633",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  billingModalCloseText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
   taxSection: {
     marginHorizontal: 20,

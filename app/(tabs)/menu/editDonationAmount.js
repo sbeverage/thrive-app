@@ -70,7 +70,10 @@ export default function EditDonationAmount() {
       if (response.subscriptions?.length > 0) {
         const sub = response.subscriptions[0];
         setSubscription(sub);
-        const amt = sub.amount || user.monthlyDonation || 15;
+        // user.monthlyDonation is the base donation (e.g. $15); sub.amount is the
+        // fee-inclusive total charged. Always display the base so the fee summary
+        // below doesn't double-count the service and processing fees.
+        const amt = user.monthlyDonation || sub.amount || 15;
         setAmount(amt.toString());
       }
     } catch (_) {}
@@ -113,6 +116,9 @@ export default function EditDonationAmount() {
       return;
     }
 
+    // Round to cents — this is what Stripe actually charges
+    const chargeTotal = Math.round(totalCharged * 100) / 100;
+
     setIsLoading(true);
     try {
       const beneficiaryId = getBeneficiaryId();
@@ -125,7 +131,7 @@ export default function EditDonationAmount() {
             subscription.id ||
             subscription.subscription_id ||
             subscription.stripe_subscription_id;
-          response = await API.upgradeOrDowngradeMonthlyAmount(id, donation);
+          response = await API.upgradeOrDowngradeMonthlyAmount(id, chargeTotal);
           apiSucceeded = true;
         } catch (err) {
           if (err?.status === 409) {
@@ -140,13 +146,14 @@ export default function EditDonationAmount() {
         try {
           response = await API.createMonthlySubscription({
             beneficiary_id: beneficiaryId,
-            amount: donation,
+            amount: chargeTotal,
             currency: "USD",
           });
           apiSucceeded = true;
         } catch (_) {}
       }
 
+      // Save the base donation (what goes to the beneficiary) — not the charge total
       await saveUserData({ monthlyDonation: donation });
 
       if (apiSucceeded) {

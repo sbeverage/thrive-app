@@ -76,14 +76,12 @@ export default function CheckoutScreen() {
       setIsProcessing(true);
       setError(null);
 
-      // Stripe endpoint should receive the final charge amount when fees are covered
-      const processingFeeAmount = userCoveredFees ? amount * 0.029 + 0.30 : 0;
-      const chargeAmount = Number((amount + processingFeeAmount).toFixed(2));
-
+      /** Server applies fees via calculateProcessingFee — send base donation + flag (matches /one-time-gifts/create-payment-intent). */
       const paymentData = {
         beneficiary_id: beneficiaryId,
-        amount: chargeAmount,
+        amount,
         currency: 'USD',
+        user_covered_fees: userCoveredFees,
       };
 
       const response = await API.createOneTimePaymentSheet(paymentData);
@@ -120,6 +118,7 @@ export default function CheckoutScreen() {
       const payResult = await presentMonthlySubscriptionPaymentSheet(
         { initPaymentSheet, presentPaymentSheet },
         paymentSheetData,
+        { skipSavedPaymentMethods: true },
       );
 
       if (!payResult.ok) {

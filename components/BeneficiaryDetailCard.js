@@ -18,7 +18,13 @@ import ConfettiCannon from 'react-native-confetti-cannon';
 
 const screenWidth = Dimensions.get('window').width;
 
-export default function BeneficiaryDetailCard({ data, onSelect, showBackArrow = true }) {
+export default function BeneficiaryDetailCard({
+  data,
+  onSelect,
+  showBackArrow = true,
+  /** When true (e.g. viewing your chosen charity from Home), primary CTA shows selected state instead of “Select”. */
+  isUsersMainCause = false,
+}) {
   const router = useRouter();
   const segments = useSegments();
   
@@ -207,36 +213,45 @@ export default function BeneficiaryDetailCard({ data, onSelect, showBackArrow = 
 
       <View style={styles.infoBox}>
         <Text style={styles.title}>{data.name}</Text>
-        <Text style={styles.likes}>
-          {(() => {
-            // Calculate total supporters: likes + mutual (people who are giving back)
-            const likes = data.likes ?? 0;
-            const mutual = data.mutual ?? 0;
-            const totalSupporters = likes + mutual;
-            return totalSupporters > 0 ? `${totalSupporters}+ supporters` : 'Join as first supporter';
-          })()}
-        </Text>
-        <Text style={styles.mutual}>Join our community of changemakers</Text>
+        {(() => {
+          const likes = data.likes ?? 0;
+          const mutual = data.mutual ?? 0;
+          const totalSupporters = likes + mutual;
+          if (totalSupporters <= 0) return null;
+          return <Text style={styles.likes}>{`${totalSupporters}+ supporters`}</Text>;
+        })()}
 
-        {/* Buttons */}
+        {/* Buttons — same two-column width when already selected (neutral left + Favorite). */}
         <View style={styles.buttonRow}>
-          <TouchableOpacity
-            style={styles.primaryBtn}
-            onPress={() => onSelect?.()}
-          >
-            <Image
-              source={require('../assets/icons/donation-box.png')}
-              style={[styles.iconLeft, { tintColor: '#fff' }]}
-            />
-            <Text style={styles.btnText}>
-              Select This Cause
-            </Text>
-          </TouchableOpacity>
+          {isUsersMainCause ? (
+            <View
+              style={styles.selectedCauseSlot}
+              pointerEvents="none"
+              accessible
+              accessibilityRole="text"
+              accessibilityLabel="This is the cause you currently support"
+            >
+              <Image
+                source={require('../assets/icons/donation-box.png')}
+                style={[styles.iconLeft, styles.selectedCauseIcon]}
+                resizeMode="contain"
+              />
+              <Text style={styles.selectedCauseText}>Your cause</Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={() => onSelect?.()}
+            >
+              <Image
+                source={require('../assets/icons/donation-box.png')}
+                style={[styles.iconLeft, { tintColor: '#fff' }]}
+              />
+              <Text style={styles.btnText}>Select This Cause</Text>
+            </TouchableOpacity>
+          )}
 
-          <TouchableOpacity
-            style={styles.secondaryBtn}
-            onPress={handleToggleFavorite}
-          >
+          <TouchableOpacity style={styles.secondaryBtn} onPress={handleToggleFavorite}>
             <Image
               source={require('../assets/icons/heart.png')}
               style={[
@@ -654,18 +669,33 @@ const styles = StyleSheet.create({
     marginTop: 4,
     paddingLeft: 24,
   },
-  mutual: { 
-    fontSize: 12, 
-    color: '#888', 
-    marginVertical: 8,
-    paddingLeft: 24,
-  },
   buttonRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 12,
+    marginTop: 12,
     marginBottom: 16,
     paddingHorizontal: 24,
+  },
+  /** Same flex + padding as secondaryBtn so the row stays visually balanced vs Select + Favorite. */
+  selectedCauseSlot: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F2F2F5',
+    borderRadius: 10,
+    padding: 18,
+  },
+  selectedCauseIcon: {
+    width: 18,
+    height: 18,
+    tintColor: '#4CA1AF',
+  },
+  selectedCauseText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#324E58',
   },
   primaryBtn: {
     flex: 1,
@@ -965,6 +995,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#E5E7EB',
     borderRadius: 14,
+    paddingVertical: 18,
     paddingHorizontal: 18,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -976,14 +1007,14 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '600',
     color: '#324E58',
-    marginRight: 10,
+    marginRight: 4,
   },
   giftCustomInput: {
     flex: 1,
     fontSize: 22,
     fontWeight: '600',
     color: '#324E58',
-    paddingVertical: 16,
+    textAlign: 'left',
   },
   giftSelectedCard: {
     backgroundColor: '#FFF5EB',

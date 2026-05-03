@@ -42,7 +42,7 @@ export default function MonthlyImpactCard({
         {/* Monthly Donation */}
         <View style={styles.impactBox}>
           <Image source={flowerSeed} style={styles.icon} resizeMode="contain" />
-          <Text style={styles.amount}>${parseFloat(monthlyDonation || 0).toFixed(2)}</Text>
+          <Text style={styles.amount}>${Math.round(parseFloat(monthlyDonation || 0))}</Text>
           <Text style={styles.caption}>Monthly Donation</Text>
           {coworking && (sponsorAmount > 0 || extraDonationAmount > 0) && (
             <Text style={styles.subcaption}>

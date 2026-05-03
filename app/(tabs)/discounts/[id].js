@@ -705,7 +705,7 @@ export default function VendorDetails() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#21555b',
+    backgroundColor: '#fff',
   },
   loadingContainer: {
     flex: 1,

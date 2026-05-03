@@ -237,6 +237,13 @@ export default function StripeIntegration() {
         currency: "USD",
       });
 
+      // Backend returned 409: subscription already exists (e.g. user re-entered signup flow).
+      // Treat as a completed payment and proceed to home.
+      if (response?.alreadySubscribed) {
+        await finishSubscriptionAfterSuccessfulPayment(donationAmountForProfile);
+        return;
+      }
+
       if (!hasMonthlySubscriptionPaymentSheet(response)) {
         const keys =
           response && typeof response === "object"

@@ -852,7 +852,13 @@ async function createOrGetStripeCustomer(
   if (searchResponse.ok) {
     const searchResult = await searchResponse.json();
     if (searchResult.data && searchResult.data.length > 0) {
-      return {id: searchResult.data[0].id};
+      // Only reuse the customer if it was created for this exact user.
+      // Without this check, two users with the same email (e.g. test accounts)
+      // would share one Stripe customer and see each other's saved cards.
+      const match = searchResult.data.find(
+        (c: any) => c.metadata?.user_id === userId.toString(),
+      );
+      if (match) return {id: match.id};
     }
   }
 
@@ -2557,7 +2563,13 @@ serve(async (req) => {
     }
     // One-time gifts routes
     else if (route.startsWith("/one-time-gifts")) {
-      response = await handleOneTimeGiftRoute(req, supabase, route, method);
+      response = await handleOneTimeGiftRoute(
+        req,
+        supabase,
+        route,
+        method,
+        userId,
+      );
     }
     // Webhooks routes
     else if (route.startsWith("/webhooks")) {
@@ -14937,7 +14949,12 @@ async function handleStripePaymentSheetRoute(
 
     try {
       const body = await req.json();
-      const {beneficiary_id, amount, currency = "USD"} = body;
+      const {
+        beneficiary_id,
+        amount,
+        currency = "USD",
+        user_covered_fees: rawCovered,
+      } = body;
 
       if (!beneficiary_id || !amount) {
         return new Response(
@@ -14945,6 +14962,80 @@ async function handleStripePaymentSheetRoute(
           {headers: {"Content-Type": "application/json"}, status: 400},
         );
       }
+
+      const explicitCovered =
+        rawCovered === true || rawCovered === "true" || rawCovered === 1;
+      const explicitNotCovered =
+        rawCovered === false || rawCovered === "false" || rawCovered === 0;
+      const hasFeeFlag = "user_covered_fees" in body;
+      let userCoveredFees = true;
+      let donationAmount = parseFloat(amount);
+      if (!Number.isFinite(donationAmount) || donationAmount < 1) {
+        return new Response(JSON.stringify({error: "Invalid amount"}), {
+          headers: {"Content-Type": "application/json"},
+          status: 400,
+        });
+      }
+      if (explicitNotCovered) {
+        userCoveredFees = false;
+      } else if (explicitCovered) {
+        userCoveredFees = true;
+      } else if (!hasFeeFlag) {
+        /**
+         * Legacy checkout sent total card charge (donation + fee) with no flag.
+         * If reversing fee math lands within a few cents of the total, treat as fee-inclusive; else base donation.
+         */
+        const total = donationAmount;
+        const reversed =
+          Math.round(((total - 0.3) / 1.029) * 100) / 100;
+        const reconstructed = reversed * 1.029 + 0.3;
+        if (
+          Number.isFinite(reversed) &&
+          reversed >= 1 &&
+          Math.abs(reconstructed - total) < 0.06
+        ) {
+          donationAmount = reversed;
+          userCoveredFees = true;
+        } else {
+          donationAmount = total;
+          userCoveredFees = false;
+        }
+      }
+
+      let beneficiary: any = null;
+      const beneficiariesResult = await supabase
+        .from("beneficiaries")
+        .select("id, name")
+        .eq("id", beneficiary_id)
+        .single();
+      if (!beneficiariesResult.error && beneficiariesResult.data) {
+        beneficiary = beneficiariesResult.data;
+      } else {
+        const charitiesResult = await supabase
+          .from("charities")
+          .select("id, name")
+          .eq("id", beneficiary_id)
+          .single();
+        beneficiary = charitiesResult.data;
+        if (charitiesResult.error || !beneficiary) {
+          return new Response(JSON.stringify({error: "Invalid beneficiary_id"}), {
+            headers: {"Content-Type": "application/json"},
+            status: 400,
+          });
+        }
+      }
+
+      if (donationAmount < 1 || donationAmount > 10000) {
+        return new Response(
+          JSON.stringify({error: "Amount must be between $1 and $10,000"}),
+          {headers: {"Content-Type": "application/json"}, status: 400},
+        );
+      }
+
+      const feeCalculation = calculateProcessingFee(
+        donationAmount,
+        userCoveredFees,
+      );
 
       // Look up user
       const {data: user, error: userError} = await supabase
@@ -14989,9 +15080,12 @@ async function handleStripePaymentSheetRoute(
       }
       const ephemeralKey = await ephemeralRes.json();
 
-      // Create PaymentIntent attached to the customer
+      // Create PaymentIntent for total charged (same as create-payment-intent)
       const piFormData = new URLSearchParams();
-      piFormData.append("amount", Math.round(parseFloat(amount) * 100).toString());
+      piFormData.append(
+        "amount",
+        Math.round(feeCalculation.totalAmount * 100).toString(),
+      );
       piFormData.append("currency", currency.toLowerCase());
       piFormData.append("customer", customerId);
       piFormData.append("automatic_payment_methods[enabled]", "true");
@@ -15013,6 +15107,40 @@ async function handleStripePaymentSheetRoute(
         throw new Error(`Stripe payment intent error: ${err.error?.message || "unknown"}`);
       }
       const paymentIntent = await piRes.json();
+
+      /** Must exist before webhook runs — checkout used to skip this, so history was always empty */
+      const {error: giftInsertError} = await supabase.from("one_time_gifts").insert([
+        {
+          user_id: userId,
+          beneficiary_id,
+          amount: feeCalculation.originalAmount,
+          currency,
+          stripe_payment_intent_id: paymentIntent.id,
+          status: "pending",
+          processing_fee: feeCalculation.fee,
+          net_amount: feeCalculation.netAmount,
+          user_covered_fees: userCoveredFees,
+          donor_message: null,
+          is_anonymous: false,
+        },
+      ]);
+
+      if (giftInsertError) {
+        console.error("❌ one_time_gifts insert (payment-sheet):", giftInsertError);
+        try {
+          await fetch(`${stripe.baseUrl}/payment_intents/${paymentIntent.id}/cancel`, {
+            method: "POST",
+            headers: {Authorization: `Bearer ${stripe.secretKey}`},
+          });
+        } catch (_) {}
+        return new Response(
+          JSON.stringify({
+            error: "Failed to create gift record",
+            details: giftInsertError.message,
+          }),
+          {headers: {"Content-Type": "application/json"}, status: 500},
+        );
+      }
 
       return new Response(
         JSON.stringify({
@@ -15043,12 +15171,16 @@ async function handleOneTimeGiftRoute(
   supabase: any,
   route: string,
   method: string,
+  /** From main serve() after gateway JWT verification — must not rely on a second decode here */
+  gatewayUserId: number | null = null,
 ) {
-  // Get user ID from JWT token (for user endpoints)
   const authHeader = getAppAuthHeader(req);
-  let userId: number | null = null;
+  let userId: number | null =
+    gatewayUserId != null && Number.isFinite(Number(gatewayUserId))
+      ? Number(gatewayUserId)
+      : null;
 
-  if (authHeader && authHeader.startsWith("Bearer ")) {
+  if (userId == null && authHeader && authHeader.startsWith("Bearer ")) {
     const token = authHeader.substring(7);
     const jwtSecret = Deno.env.get("JWT_SECRET");
 
@@ -15059,13 +15191,14 @@ async function handleOneTimeGiftRoute(
           new TextEncoder().encode(jwtSecret),
           {name: "HMAC", hash: "SHA-256"},
           false,
-          ["sign", "verify"],
+          ["verify"],
         );
 
         const payload = await verifyJWT(token, secretKey);
-        userId = (payload.id || payload.userId) as number;
+        const raw = payload?.id ?? payload?.userId;
+        const n = Number(raw);
+        userId = Number.isFinite(n) ? n : null;
       } catch (error) {
-        // Invalid token - will be handled per endpoint
         console.warn(
           "⚠️ JWT verification failed in handleOneTimeGiftRoute:",
           error,
@@ -15522,10 +15655,14 @@ async function handleOneTimeGiftRoute(
 
       const offset = (page - 1) * limit;
 
-      // Build query (try beneficiaries first, fallback to charities)
+      /**
+       * Do NOT use beneficiaries!inner / charities!inner: beneficiary_id may point at
+       * either table. Inner join returns zero rows with no error, so the charities fallback
+       * never ran and the app showed no one-time gifts in Donation Breakdown.
+       */
       let query = supabase
         .from("one_time_gifts")
-        .select("*, beneficiaries!inner(id, name, logo_url)", {count: "exact"})
+        .select("*", {count: "exact"})
         .eq("user_id", userId)
         .order("created_at", {ascending: false})
         .range(offset, offset + limit - 1);
@@ -15534,34 +15671,9 @@ async function handleOneTimeGiftRoute(
         query = query.eq("beneficiary_id", beneficiaryId);
       }
 
-      // Try beneficiaries query first
-      let {data: gifts, error: giftsError, count} = await query;
-      let finalGifts = gifts;
-      let finalCount = count;
-
-      // If beneficiaries query fails, try charities table
-      if (
-        giftsError &&
-        (giftsError.message?.includes("beneficiaries") ||
-          giftsError.message?.includes("relation") ||
-          giftsError.code === "PGRST116")
-      ) {
-        const charitiesQuery = supabase
-          .from("one_time_gifts")
-          .select("*, charities!inner(id, name, logo_url)", {count: "exact"})
-          .eq("user_id", userId)
-          .order("created_at", {ascending: false})
-          .range(offset, offset + limit - 1);
-
-        if (beneficiaryId) {
-          charitiesQuery.eq("beneficiary_id", beneficiaryId);
-        }
-
-        const charitiesResult = await charitiesQuery;
-        finalGifts = charitiesResult.data;
-        finalCount = charitiesResult.count;
-        giftsError = charitiesResult.error;
-      }
+      const {data: gifts, error: giftsError, count} = await query;
+      const finalGifts = gifts;
+      const finalCount = count;
 
       if (giftsError) {
         console.error("❌ Error fetching gift history:", giftsError);
@@ -15600,25 +15712,65 @@ async function handleOneTimeGiftRoute(
         0,
       );
 
+      const beneficiaryIds = [
+        ...new Set(
+          (finalGifts || [])
+            .map((g: any) => g.beneficiary_id)
+            .filter((id: any) => id != null && id !== ""),
+        ),
+      ] as (string | number)[];
+      const nameByBeneficiaryId = new Map<
+        string,
+        {name: string; logo_url: string | null}
+      >();
+      if (beneficiaryIds.length > 0) {
+        const {data: benRows} = await supabase
+          .from("beneficiaries")
+          .select("id, name, logo_url")
+          .in("id", beneficiaryIds as any);
+        for (const row of benRows || []) {
+          nameByBeneficiaryId.set(String(row.id), {
+            name: row.name,
+            logo_url: row.logo_url ?? null,
+          });
+        }
+        const {data: chRows} = await supabase
+          .from("charities")
+          .select("id, name, logo_url")
+          .in("id", beneficiaryIds as any);
+        for (const row of chRows || []) {
+          const key = String(row.id);
+          if (!nameByBeneficiaryId.has(key)) {
+            nameByBeneficiaryId.set(key, {
+              name: row.name,
+              logo_url: row.logo_url ?? null,
+            });
+          }
+        }
+      }
+
       // Format gifts
-      const formattedGifts = (finalGifts || []).map((gift: any) => ({
-        id: gift.id,
-        beneficiary_id: gift.beneficiary_id,
-        beneficiary_name:
-          gift.beneficiaries?.name || gift.charities?.name || "Unknown",
-        beneficiary_image_url:
-          gift.beneficiaries?.logo_url || gift.charities?.logo_url || null,
-        amount: parseFloat(gift.amount),
-        net_amount: parseFloat(gift.net_amount),
-        status: gift.status,
-        date: new Date(gift.created_at).toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-        }),
-        donor_message: gift.donor_message,
-        is_anonymous: gift.is_anonymous,
-      }));
+      const formattedGifts = (finalGifts || []).map((gift: any) => {
+        const meta = nameByBeneficiaryId.get(String(gift.beneficiary_id));
+        return {
+          id: gift.id,
+          beneficiary_id: gift.beneficiary_id,
+          beneficiary_name: meta?.name || "Unknown",
+          charity_name: meta?.name || "Unknown",
+          beneficiary_image_url: meta?.logo_url || null,
+          amount: parseFloat(gift.amount || 0) || 0,
+          net_amount: parseFloat(gift.net_amount || 0) || 0,
+          status: gift.status,
+          created_at: gift.created_at,
+          date: new Date(gift.created_at).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          }),
+          donor_message: gift.donor_message,
+          is_anonymous: gift.is_anonymous,
+        };
+      });
 
       return new Response(
         JSON.stringify({
@@ -15635,6 +15787,8 @@ async function handleOneTimeGiftRoute(
             total_count: allGifts?.length || 0,
             this_month: thisMonthTotal.toFixed(2),
             this_year: thisYearTotal.toFixed(2),
+            /** Alias for older clients expecting this_year_total */
+            this_year_total: thisYearTotal.toFixed(2),
           },
         }),
         {
@@ -15700,32 +15854,17 @@ async function handleWebhookRoute(
         case "payment_intent.succeeded": {
           const paymentIntent = event.data.object;
 
-          // Find gift by payment intent ID (try beneficiaries first, fallback to charities)
-          let gift: any = null;
-          let giftError: any = null;
-
-          const beneficiariesGift = await supabase
+          const {data: gift, error: giftLookupError} = await supabase
             .from("one_time_gifts")
-            .select("*, beneficiaries!inner(id, name)")
+            .select("*")
             .eq("stripe_payment_intent_id", paymentIntent.id)
-            .single();
+            .maybeSingle();
 
-          if (!beneficiariesGift.error && beneficiariesGift.data) {
-            gift = beneficiariesGift.data;
-          } else {
-            const charitiesGift = await supabase
-              .from("one_time_gifts")
-              .select("*, charities!inner(id, name)")
-              .eq("stripe_payment_intent_id", paymentIntent.id)
-              .single();
-            gift = charitiesGift.data;
-            giftError = charitiesGift.error;
-          }
-
-          if (giftError || !gift) {
+          if (giftLookupError || !gift) {
             console.error(
               "❌ Gift not found for payment intent:",
               paymentIntent.id,
+              giftLookupError,
             );
             break;
           }
@@ -15763,10 +15902,12 @@ async function handleWebhookRoute(
               })
               .eq("id", gift.id);
 
-            // Update beneficiary totals (try beneficiaries first, fallback to charities)
-            const beneficiaryTable = gift.beneficiaries
-              ? "beneficiaries"
-              : "charities";
+            const {data: benForGift} = await supabase
+              .from("beneficiaries")
+              .select("id")
+              .eq("id", gift.beneficiary_id)
+              .maybeSingle();
+            const beneficiaryTable = benForGift ? "beneficiaries" : "charities";
             const {data: charity} = await supabase
               .from(beneficiaryTable)
               .select("total_one_time_gifts, one_time_gifts_count")
@@ -15881,10 +16022,12 @@ async function handleWebhookRoute(
               })
               .eq("id", gift.id);
 
-            // Update beneficiary totals (subtract refunded amount) - try beneficiaries first
-            const beneficiaryTable = gift.beneficiaries
-              ? "beneficiaries"
-              : "charities";
+            const {data: benRow} = await supabase
+              .from("beneficiaries")
+              .select("id")
+              .eq("id", gift.beneficiary_id)
+              .maybeSingle();
+            const beneficiaryTable = benRow ? "beneficiaries" : "charities";
             const {data: charity} = await supabase
               .from(beneficiaryTable)
               .select("total_one_time_gifts")
@@ -16848,6 +16991,33 @@ async function handleDonationRoute(
           headers: {"Content-Type": "application/json"},
           status: 404,
         });
+      }
+
+      // Idempotency guard: one active subscription per user at a time.
+      // Prevents duplicate charges when the user goes through the signup flow more than once.
+      const {data: activeSubs} = await supabase
+        .from("monthly_donations")
+        .select("id, status, amount, beneficiary_id, next_payment_date")
+        .eq("user_id", userId)
+        .in("status", ["active", "pending", "trialing", "incomplete"])
+        .limit(1);
+
+      if (activeSubs && activeSubs.length > 0) {
+        const existing = activeSubs[0];
+        return new Response(
+          JSON.stringify({
+            error: "You already have an active subscription",
+            code: "SUBSCRIPTION_EXISTS",
+            existing: {
+              id: existing.id,
+              status: existing.status,
+              amount: existing.amount,
+              beneficiary_id: existing.beneficiary_id,
+              next_payment_date: existing.next_payment_date,
+            },
+          }),
+          {headers: {"Content-Type": "application/json"}, status: 409},
+        );
       }
 
       // Get or create Stripe customer

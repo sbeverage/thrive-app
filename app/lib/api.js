@@ -1383,7 +1383,11 @@ const API = {
       const params = { page, limit };
       if (beneficiaryId) params.beneficiary_id = beneficiaryId;
       const response = await api.get("/api/one-time-gifts/history", { params });
-      return response.data;
+      const raw = response.data || {};
+      const gifts = raw.gifts ?? raw.data?.gifts ?? [];
+      const pagination = raw.pagination ?? raw.data?.pagination ?? {};
+      const summary = raw.summary ?? raw.data?.summary ?? {};
+      return { ...raw, gifts, pagination, summary };
     } catch (error) {
       console.error("Get gift history failed:", error);
       throw new Error(
@@ -1428,6 +1432,12 @@ const API = {
       );
       return response.data;
     } catch (error) {
+      // 409 means the user already has an active subscription.
+      // Return a sentinel value so the caller can navigate to home without
+      // showing an error — this is expected when resuming a completed signup.
+      if (error.response?.status === 409 && error.response?.data?.code === "SUBSCRIPTION_EXISTS") {
+        return { alreadySubscribed: true, ...error.response.data };
+      }
       console.error("Create monthly subscription failed:", error);
       console.error("Create monthly subscription response:", {
         status: error.response?.status,
