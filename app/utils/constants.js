@@ -24,6 +24,10 @@ export const STRIPE_MERCHANT_IDENTIFIER =
   process.env.EXPO_PUBLIC_STRIPE_MERCHANT_IDENTIFIER ||
   "merchant.com.thrive-initiative";
 
+/** Must match `expo.scheme` in app.json — StripeProvider `urlScheme` + Payment Sheet `returnURL` */
+export const APP_URL_SCHEME = "thriveapp";
+export const STRIPE_PAYMENT_RETURN_URL = `${APP_URL_SCHEME}://stripe-redirect`;
+
 // Fee structure
 // Flat service fee charged on every transaction
 export const SERVICE_FEE = 3.00;

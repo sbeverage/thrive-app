@@ -24,7 +24,7 @@ export default function BeneficiaryDetailScreen() {
   const id = Array.isArray(params?.id) ? params.id[0] : params?.id;
   const router = useRouter();
   const segments = useSegments();
-  const { setSelectedBeneficiary } = useBeneficiary();
+  const { setSelectedBeneficiary, selectedBeneficiary } = useBeneficiary();
   
   // Removed debug alert - component loads normally
 
@@ -489,6 +489,11 @@ export default function BeneficiaryDetailScreen() {
     );
   }
 
+  const isUsersMainCause =
+    !!beneficiary &&
+    !!selectedBeneficiary &&
+    String(selectedBeneficiary.id) === String(beneficiary.id);
+
   return (
     <View style={styles.container}>
       {/* Static gradient background */}
@@ -513,7 +518,12 @@ export default function BeneficiaryDetailScreen() {
 
       <View style={styles.cardContainer}>
         {beneficiary && (
-          <BeneficiaryDetailCard data={beneficiary} onSelect={handleBeneficiarySelect} showBackArrow={false} />
+          <BeneficiaryDetailCard
+            data={beneficiary}
+            onSelect={handleBeneficiarySelect}
+            showBackArrow={false}
+            isUsersMainCause={isUsersMainCause}
+          />
         )}
         {!beneficiary && !loading && (
           <View style={styles.errorContainer}>

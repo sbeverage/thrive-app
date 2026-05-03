@@ -12,8 +12,8 @@ import {
   Animated,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useUser } from './context/UserContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { resumeSignupFlowPendingIfAny } from './utils/signupFlowResume';
 import { StatusBar } from 'expo-status-bar';
 import { Video, ResizeMode } from 'expo-av';
 import { VIDEO_ASSETS } from './utils/assetConstants';
@@ -27,21 +27,21 @@ const slides = [
   {
     key: '1',
     title: 'GIVE',
-    description: 'Support causes that matter to you through everyday purchases.',
+    description: 'Give monthly to any charity you love.',
     image: { uri: `${SUPABASE_STORAGE_BASE}/assets/images/slider-image-3.png` },
     video: { uri: VIDEO_ASSETS.GIVE_LOOP }, // Using Supabase URL
   },
   {
     key: '2',
     title: 'SHOP',
-    description: 'Discover great deals from local merchants and online retailers.',
+    description: 'Unlock exclusive deals from local and online partners.',
     image: { uri: `${SUPABASE_STORAGE_BASE}/assets/images/slider-image-1.png` },
     video: { uri: VIDEO_ASSETS.SHOP_LOOP }, // Using Supabase URL
   },
   {
     key: '3',
     title: 'SAVE',
-    description: 'Earn rewards and savings every time you shop.',
+    description: 'Redeem discounts that can save you more than you give.',
     image: { uri: `${SUPABASE_STORAGE_BASE}/assets/images/slider-image-2.png` },
     video: { uri: VIDEO_ASSETS.SAVE_LOOP }, // Using Supabase URL
   },
@@ -96,25 +96,13 @@ export default function Index() {
   React.useEffect(() => {
     const checkUserStatus = async () => {
       try {
-        // TEMP: remove to force signup flow — delete these 3 lines before shipping
-        await AsyncStorage.removeItem('authToken');
-        await AsyncStorage.removeItem('userData');
-        await AsyncStorage.removeItem('signupFlowPending');
         const token = await AsyncStorage.getItem('authToken');
         if (token) {
-          // Check if the user closed the app mid signup-flow and needs to resume
-          const pendingRaw = await AsyncStorage.getItem('signupFlowPending');
-          if (pendingRaw) {
-            try {
-              const pending = JSON.parse(pendingRaw);
-              console.log('📱 Resuming pending signup flow:', pending.route);
-              router.replace({ pathname: pending.route, params: pending.params });
-              return;
-            } catch (_) {
-              // Malformed entry — clear it and fall through to home
-              await AsyncStorage.removeItem('signupFlowPending');
-            }
-          }
+          const resumed = await resumeSignupFlowPendingIfAny(router, {
+            gatePendingEmailAgainstStoredUserData: true,
+          });
+          if (resumed) return;
+
           console.log('📱 Auth token found, redirecting from index to home...');
           router.replace('/(tabs)/home');
         }

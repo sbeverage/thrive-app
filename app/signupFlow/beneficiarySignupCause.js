@@ -1,5 +1,4 @@
-// Updated to use the exact same design pattern as the beneficiary tab
-import React, { useRef, useMemo, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,117 +7,47 @@ import {
   ScrollView,
   Image,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   Modal,
-  Dimensions,
+  Alert,
 } from "react-native";
-import {
-  AntDesign,
-  Feather,
-  Ionicons,
-  MaterialIcons,
-} from "@expo/vector-icons";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { AntDesign, Feather, Ionicons } from "@expo/vector-icons";
+import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-// Conditional import: react-native-maps crashes on web when imported at load time
-let MapView, Marker, Circle;
-if (Platform.OS !== "web") {
-  const maps = require("react-native-maps");
-  MapView = maps.default;
-  Marker = maps.Marker;
-  Circle = maps.Circle;
-}
+import SuccessModal from "../../components/SuccessModal";
+import ConfettiCannon from "react-native-confetti-cannon";
 import { useBeneficiary } from "../context/BeneficiaryContext";
+import { useBeneficiaryFilter } from "../context/BeneficiaryFilterContext";
 import { useLocation } from "../context/LocationContext";
+import MapView, { Marker, Circle } from "react-native-maps";
+import {
+  getCurrentLocation,
+  getDefaultRegion,
+  calculateDistance,
+  formatDistance,
+} from "../utils/locationService";
 import API from "../lib/api";
-import { calculateDistance, formatDistance } from "../utils/locationService";
+import SuggestCard from "../../components/SuggestCard";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { persistSignupFlowCheckpointFromParams } from "../utils/signupFlowCheckpoint";
-
-const categories = [
-  "All",
-  "Favorites",
-  "Animal Welfare",
-  "Arts & Culture",
-  "Childhood Illness",
-  "Disabilities",
-  "Disaster Relief",
-  "Education",
-  "Elderly Care",
-  "Environment",
-  "Healthcare",
-  "Homelessness",
-  "Hunger Relief",
-  "International Aid",
-  "Low Income Families",
-  "Veterans",
-  "Youth Development",
-];
-
-// Sample location data for autocomplete
-const locations = [
-  "Atlanta, GA",
-  "Alpharetta, GA",
-  "Roswell, GA",
-  "Marietta, GA",
-  "Sandy Springs, GA",
-  "Johns Creek, GA",
-  "Dunwoody, GA",
-  "Smyrna, GA",
-  "Brookhaven, GA",
-  "Chamblee, GA",
-  "Decatur, GA",
-  "Tucker, GA",
-  "Norcross, GA",
-  "Duluth, GA",
-  "Lawrenceville, GA",
-  "Suwanee, GA",
-  "Buford, GA",
-  "Cumming, GA",
-  "Gainesville, GA",
-  "Athens, GA",
-  "Augusta, GA",
-  "Columbus, GA",
-  "Macon, GA",
-  "Savannah, GA",
-  "Valdosta, GA",
-  "Albany, GA",
-  "Rome, GA",
-  "Dalton, GA",
-  "Warner Robins, GA",
-  "Hinesville, GA",
-];
-
-const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
+import { IMAGE_ASSETS } from "../utils/assetConstants";
 
 export default function BeneficiaryPreferences() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { setSelectedBeneficiary } = useBeneficiary();
+  const { selectedBeneficiary, setSelectedBeneficiary } = useBeneficiary();
+  const { filters, updateFilters, clearFilters, hasActiveFilters } =
+    useBeneficiaryFilter();
   const {
-    checkLocationPermission,
-    showLocationPermissionAlert,
     location: userLocation,
+    locationAddress,
+    locationPermission,
+    checkLocationPermission,
+    refreshLocation,
+    isLoadingLocation,
   } = useLocation();
-  const [searchText, setSearchText] = useState("");
-  const [businessName, setBusinessName] = useState("");
-  const [businessUrl, setBusinessUrl] = useState("");
-  const [contactName, setContactName] = useState("");
-  const [contactEmail, setContactEmail] = useState("");
-  const [submitted, setSubmitted] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState("");
-  const [favorites, setFavorites] = useState([]);
 
-  // Clear any previously saved beneficiary when starting signup flow (run once on mount only)
-  // Empty deps array is intentional — setSelectedBeneficiary is not memoized and would
-  // cause this to re-run after selection, clearing the user's choice.
-  useEffect(() => {
-    setSelectedBeneficiary(null);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
+  // ── Signup-specific: persist checkpoint ──────────────────────────────────
   const signupFlowParamsKey = JSON.stringify(params ?? {});
   useEffect(() => {
     persistSignupFlowCheckpointFromParams(
@@ -128,34 +57,38 @@ export default function BeneficiaryPreferences() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signupFlowParamsKey]);
 
-  // Load favorites from AsyncStorage on mount
-  // IMPORTANT: Favorites should ONLY be set when the user explicitly selects them.
-  // No automatic favoriting should occur - favorites start empty unless user selects them.
+  // ── State ─────────────────────────────────────────────────────────────────
+  const [searchText, setSearchText] = useState("");
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [confettiTrigger, setConfettiTrigger] = useState(false);
+  const [businessName, setBusinessName] = useState("");
+  const [businessUrl, setBusinessUrl] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [confirmModalVisible, setConfirmModalVisible] = useState(false);
+  const [pendingBeneficiary, setPendingBeneficiary] = useState(null);
+  const [favorites, setFavorites] = useState([]);
+  const beneficiarySectionRef = useRef(null);
+
   useEffect(() => {
     const loadFavorites = async () => {
       try {
-        const savedFavorites = await AsyncStorage.getItem(
-          "beneficiaryFavorites",
-        );
-        if (savedFavorites) {
-          const parsed = JSON.parse(savedFavorites);
-          // Ensure we're loading an array, and don't add any default favorites
+        const saved = await AsyncStorage.getItem("beneficiaryFavorites");
+        if (saved) {
+          const parsed = JSON.parse(saved);
           setFavorites(Array.isArray(parsed) ? parsed : []);
-          console.log("✅ Loaded favorites from storage:", parsed);
         } else {
-          // If no favorites exist, explicitly set to empty array (don't add any defaults)
           setFavorites([]);
         }
-      } catch (error) {
-        console.error("❌ Error loading favorites:", error);
-        // On error, set to empty array (don't add any defaults)
+      } catch {
         setFavorites([]);
       }
     };
     loadFavorites();
   }, []);
 
-  // Save favorites to AsyncStorage whenever they change
   useEffect(() => {
     const saveFavorites = async () => {
       try {
@@ -163,75 +96,85 @@ export default function BeneficiaryPreferences() {
           "beneficiaryFavorites",
           JSON.stringify(favorites),
         );
-        console.log("💾 Saved favorites to storage:", favorites);
-      } catch (error) {
-        console.error("❌ Error saving favorites:", error);
-      }
+      } catch {}
     };
-    if (favorites.length >= 0) {
-      // Save even if empty array
-      saveFavorites();
-    }
+    saveFavorites();
   }, [favorites]);
+
   const [activeCategory, setActiveCategory] = useState("All");
   const [showMap, setShowMap] = useState(false);
-  const [mapRegion, setMapRegion] = useState({
-    latitude: 33.749,
-    longitude: -84.388,
-    latitudeDelta: 0.05,
-    longitudeDelta: 0.05,
-  });
-  const [location, setLocation] = useState("Detecting location...");
+  const [mapRegion, setMapRegion] = useState(getDefaultRegion());
+  const [locationDisplay, setLocationDisplay] = useState(
+    "Detecting location...",
+  );
+  const [locationSearch, setLocationSearch] = useState("");
   const [isEditingLocation, setIsEditingLocation] = useState(false);
-  const [locationSuggestions, setLocationSuggestions] = useState([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-
-  // Add state for the mini popup
   const [miniPopupVisible, setMiniPopupVisible] = useState(false);
   const [selectedBeneficiaryForPopup, setSelectedBeneficiaryForPopup] =
     useState(null);
+  const [selectedMarker, setSelectedMarker] = useState(null);
 
-  // State for beneficiaries loaded from API
+  const categories = [
+    "All",
+    "Favorites",
+    "Animal Welfare",
+    "Arts & Culture",
+    "Childhood Illness",
+    "Disabilities",
+    "Disaster Relief",
+    "Education",
+    "Elderly Care",
+    "Environment",
+    "Healthcare",
+    "Homelessness",
+    "Hunger Relief",
+    "International Aid",
+    "Low Income Families",
+    "Veterans",
+    "Youth Development",
+  ];
+
+  // ── Beneficiaries ─────────────────────────────────────────────────────────
   const [beneficiaries, setBeneficiaries] = useState([]);
   const [loadingBeneficiaries, setLoadingBeneficiaries] = useState(true);
 
-  // Load beneficiaries from API
   const loadBeneficiaries = async () => {
     try {
       setLoadingBeneficiaries(true);
-      console.log("📡 Loading beneficiaries from API in signup flow...");
-
       const data = await API.getCharities();
-      console.log("✅ Beneficiaries loaded in signup flow:", data);
 
-      if (data && data.charities && Array.isArray(data.charities)) {
-        // Transform backend data to frontend format
-        const transformed = data.charities.map((charity) => {
-          // Calculate distance from user location
+      let charitiesArray = null;
+      if (data?.charities && Array.isArray(data.charities)) {
+        charitiesArray = data.charities;
+      } else if (Array.isArray(data)) {
+        charitiesArray = data;
+      } else if (data?.data && Array.isArray(data.data)) {
+        charitiesArray = data.data;
+      }
+
+      if (charitiesArray?.length > 0) {
+        const transformed = charitiesArray.map((charity) => {
           let distanceStr = null;
           if (userLocation && charity.latitude && charity.longitude) {
-            const distanceInMiles = calculateDistance(
-              userLocation.latitude,
-              userLocation.longitude,
-              charity.latitude,
-              charity.longitude,
+            distanceStr = formatDistance(
+              calculateDistance(
+                userLocation.latitude,
+                userLocation.longitude,
+                charity.latitude,
+                charity.longitude,
+              ),
             );
-            distanceStr = formatDistance(distanceInMiles);
           }
 
-          // Handle image - use URL if available, otherwise fallback to local asset
           let imageSource;
           if (charity.imageUrl) {
             imageSource = { uri: charity.imageUrl };
+          } else if (charity.category === "Childhood Illness") {
+            imageSource = require("../../assets/images/child-cancer.jpg");
+          } else if (charity.category === "Animal Welfare") {
+            imageSource = require("../../assets/images/humane-society.jpg");
           } else {
-            // Fallback to default image based on category
-            if (charity.category === "Childhood Illness") {
-              imageSource = require("../../assets/images/child-cancer.jpg");
-            } else if (charity.category === "Animal Welfare") {
-              imageSource = require("../../assets/images/humane-society.jpg");
-            } else {
-              imageSource = require("../../assets/images/charity-water.jpg");
-            }
+            imageSource = require("../../assets/images/charity-water.jpg");
           }
 
           return {
@@ -253,99 +196,127 @@ export default function BeneficiaryPreferences() {
             social: charity.social || "",
           };
         });
-
         setBeneficiaries(transformed);
-        console.log(
-          "✅ Beneficiaries transformed and set in signup flow:",
-          transformed.length,
-        );
       } else {
-        console.warn("⚠️ Invalid data format from API in signup flow");
-        console.warn("⚠️ No beneficiaries available - showing empty state");
         setBeneficiaries([]);
       }
     } catch (error) {
-      console.error(
-        "❌ Failed to load beneficiaries from API in signup flow:",
-        error,
+      console.error("❌ Failed to load beneficiaries:", error.message);
+      Alert.alert(
+        "Could Not Load Charities",
+        "There was a problem loading charities. Please check your connection and try again.",
+        [{ text: "OK" }],
       );
-      console.log("🔄 No beneficiaries available - showing empty state");
       setBeneficiaries([]);
     } finally {
       setLoadingBeneficiaries(false);
     }
   };
 
-  // Load beneficiaries when component mounts
   useEffect(() => {
     loadBeneficiaries();
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadBeneficiaries();
+    }, []),
+  );
+
+  useEffect(() => {
+    if (userLocation && beneficiaries.length > 0) {
+      setBeneficiaries((prev) =>
+        prev.map((b) => {
+          if (b.latitude && b.longitude) {
+            return {
+              ...b,
+              distance: formatDistance(
+                calculateDistance(
+                  userLocation.latitude,
+                  userLocation.longitude,
+                  b.latitude,
+                  b.longitude,
+                ),
+              ),
+            };
+          }
+          return b;
+        }),
+      );
+    }
   }, [userLocation]);
 
+  // ── Filtering ─────────────────────────────────────────────────────────────
   const filteredBeneficiaries = beneficiaries.filter((b) => {
-    const matchesSearch = b.name
-      .toLowerCase()
-      .includes(searchText.toLowerCase());
-    let matchesCategory = true;
+    const matchesSearch =
+      b.name.toLowerCase().includes(searchText.toLowerCase()) ||
+      b.location.toLowerCase().includes(searchText.toLowerCase());
 
-    if (activeCategory === "All") {
-      matchesCategory = true;
-    } else if (activeCategory === "Favorites") {
+    let matchesCategory = true;
+    if (activeCategory === "Favorites") {
       matchesCategory = favorites.includes(b.id);
-    } else {
+    } else if (activeCategory !== "All") {
       matchesCategory = b.category === activeCategory;
     }
 
-    return matchesSearch && matchesCategory;
+    const locFilter = (filters.location && filters.location.trim()) || "";
+    const matchesLocation =
+      !locFilter ||
+      (b.location && b.location.toLowerCase().includes(locFilter.toLowerCase()));
+
+    const matchesCause = !filters.cause || b.category === filters.cause;
+    const matchesType = !filters.type || b.type === filters.type;
+    const matchesFavorites =
+      !filters.showFavorites || favorites.includes(b.id);
+    const matchesEmergency = !filters.emergency;
+
+    return (
+      matchesSearch &&
+      matchesCategory &&
+      matchesLocation &&
+      matchesCause &&
+      matchesType &&
+      matchesFavorites &&
+      matchesEmergency
+    );
   });
 
-  // Location autocomplete function
-  const handleLocationChange = (text) => {
-    setLocation(text);
-    if (text.length > 0) {
-      const filtered = locations.filter((loc) =>
-        loc.toLowerCase().includes(text.toLowerCase()),
-      );
-      setLocationSuggestions(filtered);
-      setShowSuggestions(true);
-    } else {
-      setLocationSuggestions([]);
-      setShowSuggestions(false);
-    }
-  };
+  const highlightedBeneficiaries = filteredBeneficiaries.slice(0, 2);
+  const remainingBeneficiaries = filteredBeneficiaries.slice(2);
 
-  const selectLocation = (selectedLocation) => {
-    setLocation(selectedLocation);
-    setLocationSuggestions([]);
-    setShowSuggestions(false);
-    setIsEditingLocation(false);
-  };
-
-  // Handle selecting a beneficiary
-  const handleSelectBeneficiary = async (beneficiary) => {
+  /** Same as tab: confirm in modal, then persist, set context, and continue signup. */
+  const handleConfirmBeneficiary = async () => {
+    if (!pendingBeneficiary) return;
+    setConfirmModalVisible(false);
+    const chosen = pendingBeneficiary;
+    setPendingBeneficiary(null);
     try {
-      console.log("🎯 Selecting beneficiary:", beneficiary.name);
-      console.log("🎯 Beneficiary:", beneficiary.id);
-
-      // Save the selected beneficiary to context
-      await setSelectedBeneficiary(beneficiary);
-
-      // Navigate to coworking flow if applicable
+      await API.saveProfile({ beneficiary: chosen.id });
+    } catch (e) {
+      console.warn("⚠️ Could not persist beneficiary to server:", e.message);
+    }
+    try {
+      await setSelectedBeneficiary(chosen);
       if (params?.flow === "coworking") {
         router.push({
           pathname: "/signupFlow/coworkingDonationPrompt",
           params: { sponsorAmount: params?.sponsorAmount || "15" },
         });
       } else {
-        // Navigate directly to donation amount page
         router.push({
           pathname: "/signupFlow/donationAmount",
-          params: { beneficiaryId: beneficiary.id?.toString?.() ?? "" },
+          params: { beneficiaryId: chosen.id?.toString?.() ?? "" },
         });
       }
     } catch (error) {
       console.error("❌ Error selecting beneficiary:", error);
-      alert("There was an error selecting this charity. Please try again.");
+      Alert.alert("Error", "There was an error selecting this charity. Please try again.");
     }
+  };
+
+  const openBeneficiaryConfirm = (beneficiary) => {
+    setPendingBeneficiary(beneficiary);
+    setConfirmModalVisible(true);
   };
 
   const toggleFavorite = (id) => {
@@ -354,175 +325,159 @@ export default function BeneficiaryPreferences() {
     );
   };
 
+  // ── Location helpers ──────────────────────────────────────────────────────
   const updateMapRegion = async () => {
-    // Simulate getting user location
-    setMapRegion({
-      latitude: 33.749,
-      longitude: -84.388,
-      latitudeDelta: 0.05,
-      longitudeDelta: 0.05,
-    });
+    const loc = await getCurrentLocation();
+    if (loc) {
+      setMapRegion({
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      });
+    }
   };
 
   const updateUserLocation = async () => {
-    try {
-      // Simulate location detection
-      setLocation("Atlanta, GA");
-    } catch (error) {
-      console.error("Error getting user location:", error);
-      setLocation("Location not available");
+    if (locationPermission === "granted") {
+      setLocationSearch("");
+      updateFilters({ location: "" });
+      await refreshLocation();
+    } else {
+      checkLocationPermission();
     }
   };
 
+  const getFriendlyLocationName = (latitude, longitude) => {
+    if (latitude >= 34.05 && latitude <= 34.10 && longitude >= -84.35 && longitude <= -84.25) return "Alpharetta, GA";
+    if (latitude >= 34.09 && latitude <= 34.12 && longitude >= -84.52 && longitude <= -84.50) return "Woodstock, GA";
+    if (latitude >= 33.70 && latitude <= 33.80 && longitude >= -84.40 && longitude <= -84.35) return "Atlanta, GA";
+    if (latitude >= 33.50 && latitude <= 34.50 && longitude >= -84.80 && longitude <= -84.00) return "Atlanta Metro, GA";
+    return "Current Location";
+  };
+
   useEffect(() => {
-    if (showMap) {
-      updateMapRegion();
-    }
+    if (showMap) updateMapRegion();
   }, [showMap]);
 
-  // Request location permission when component mounts
   useEffect(() => {
-    // Show location permission request during signup
-    setTimeout(() => {
-      showLocationPermissionAlert("signup");
-    }, 1000); // Small delay to let the page load first
+    checkLocationPermission();
   }, []);
 
+  useEffect(() => {
+    const updateLocationDisplay = async () => {
+      if (userLocation && locationPermission === "granted") {
+        let display = "Current Location";
+        if (locationAddress?.city && locationAddress?.state) {
+          display = `${locationAddress.city}, ${locationAddress.state}`;
+        } else if (userLocation.latitude && userLocation.longitude) {
+          try {
+            display = await getFriendlyLocationName(userLocation.latitude, userLocation.longitude);
+          } catch {}
+        }
+        setLocationDisplay(display);
+        setLocationSearch((prev) => (prev ? prev : display));
+        setMapRegion({
+          latitude: userLocation.latitude,
+          longitude: userLocation.longitude,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        });
+      } else if (locationPermission === "denied") {
+        setLocationDisplay("Location not available");
+      } else if (isLoadingLocation) {
+        setLocationDisplay("Detecting location...");
+      } else if (locationPermission === null) {
+        setLocationDisplay("Tap to set location");
+      }
+    };
+    updateLocationDisplay();
+  }, [userLocation, locationAddress, locationPermission, isLoadingLocation]);
+
+  const closeModal = () => {
+    setShowSuccessModal(false);
+    setSearchText("");
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#f5f5fa" }}>
-      {/* Header with Search and Toggle */}
+    <View style={{ flex: 1, backgroundColor: "#fff" }}>
+      <SafeAreaTopSpacer />
+      <LinearGradient
+        colors={["#2C3E50", "#4CA1AF"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.miniBrandHeader}
+      >
+        <Image
+          source={{ uri: IMAGE_ASSETS.INITIATIVE_LOGO_NO_WEB_WHITE }}
+          style={styles.miniBrandLogo}
+          resizeMode="contain"
+        />
+      </LinearGradient>
+
+      {/* Header */}
       <View style={styles.header}>
-        {/* Search Row */}
         <View style={styles.searchRow}>
           <Image
             source={require("../../assets/icons/search-icon.png")}
-            style={{
-              width: 18,
-              height: 18,
-              tintColor: "#6d6e72",
-              marginRight: 8,
-            }}
+            style={{ width: 18, height: 18, tintColor: "#6d6e72", marginRight: 8 }}
           />
           <TextInput
-            placeholder="Search Beneficiaries"
+            placeholder="Search beneficiaries"
             placeholderTextColor="#6d6e72"
             value={searchText}
             onChangeText={setSearchText}
             style={styles.searchInput}
           />
-          <TouchableOpacity
-            onPress={() => router.push("/(tabs)/beneficiary/beneficiaryFilter")}
-            style={{ marginLeft: 10 }}
-          >
-            {Platform.OS === "web" ? (
-              <Text style={{ fontSize: 22 }}>🔽</Text>
-            ) : (
-              <Feather name="filter" size={22} color="#DB8633" />
-            )}
-          </TouchableOpacity>
         </View>
 
-        {/* Location Input */}
         <View style={styles.locationRow}>
-          {Platform.OS === "web" ? (
-            <Text style={{ fontSize: 16, color: "#6d6e72", marginRight: 8 }}>
-              📍
-            </Text>
-          ) : (
-            <Feather
-              name="map-pin"
-              size={16}
-              color="#6d6e72"
-              style={{ marginRight: 8 }}
-            />
-          )}
+          <Feather name="map-pin" size={16} color="#6d6e72" style={{ marginRight: 8 }} />
           {isEditingLocation ? (
-            <View style={{ flex: 1, position: "relative" }}>
-              <TextInput
-                placeholder="Enter your location"
-                placeholderTextColor="#6d6e72"
-                value={location}
-                onChangeText={handleLocationChange}
-                style={styles.locationInput}
-                autoFocus
-                onBlur={() => setIsEditingLocation(false)}
-                onSubmitEditing={() => setIsEditingLocation(false)}
-              />
-              {showSuggestions && locationSuggestions.length > 0 && (
-                <View style={styles.suggestionsContainer}>
-                  <ScrollView
-                    style={styles.suggestionsList}
-                    keyboardShouldPersistTaps="handled"
-                  >
-                    {locationSuggestions.map((suggestion, index) => (
-                      <TouchableOpacity
-                        key={index}
-                        style={styles.suggestionItem}
-                        onPress={() => selectLocation(suggestion)}
-                      >
-                        {Platform.OS === "web" ? (
-                          <Text
-                            style={{
-                              fontSize: 16,
-                              color: "#666",
-                              marginRight: 8,
-                            }}
-                          >
-                            📍
-                          </Text>
-                        ) : (
-                          <Feather
-                            name="map-pin"
-                            size={16}
-                            color="#666"
-                            style={{ marginRight: 8 }}
-                          />
-                        )}
-                        <Text style={styles.suggestionText}>{suggestion}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
-            </View>
+            <TextInput
+              placeholder="Enter city or area (e.g. Atlanta)"
+              placeholderTextColor="#6d6e72"
+              value={locationSearch}
+              onChangeText={(t) => {
+                setLocationSearch(t);
+                updateFilters({ location: t.trim() });
+              }}
+              style={styles.locationInput}
+              autoFocus
+              onBlur={() => setIsEditingLocation(false)}
+              onSubmitEditing={() => setIsEditingLocation(false)}
+            />
           ) : (
             <TouchableOpacity
               style={styles.locationDisplay}
-              onPress={() => setIsEditingLocation(true)}
+              onPress={() => {
+                setIsEditingLocation(true);
+                if (!locationSearch) {
+                  setLocationSearch(locationDisplay);
+                  updateFilters({ location: locationDisplay.trim() });
+                }
+              }}
             >
-              <Text style={styles.locationText}>{location}</Text>
-              {Platform.OS === "web" ? (
-                <Text style={{ fontSize: 14, color: "#DB8633", marginLeft: 8 }}>
-                  ✏️
-                </Text>
-              ) : (
-                <Feather
-                  name="edit-2"
-                  size={14}
-                  color="#DB8633"
-                  style={{ marginLeft: 8 }}
-                />
-              )}
+              <Text style={styles.locationText}>{locationSearch || locationDisplay}</Text>
+              <Feather name="edit-2" size={14} color="#DB8633" style={{ marginLeft: 8 }} />
             </TouchableOpacity>
           )}
           <TouchableOpacity
             style={styles.refreshLocationButton}
             onPress={updateUserLocation}
+            disabled={isLoadingLocation}
           >
-            {Platform.OS === "web" ? (
-              <Text style={{ fontSize: 16, color: "#DB8633" }}>🔄</Text>
-            ) : (
-              <Feather name="refresh-cw" size={16} color="#DB8633" />
-            )}
+            <Feather
+              name="refresh-cw"
+              size={16}
+              color={isLoadingLocation ? "#ccc" : "#DB8633"}
+              style={isLoadingLocation ? { transform: [{ rotate: "180deg" }] } : {}}
+            />
           </TouchableOpacity>
         </View>
 
-        {/* Category Tags */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tagsRow}
-        >
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagsRow}>
           {categories.map((tag) => (
             <TouchableOpacity
               key={tag}
@@ -531,361 +486,339 @@ export default function BeneficiaryPreferences() {
             >
               <View style={styles.tagContent}>
                 {tag === "Favorites" && (
-                  <MaterialIcons
-                    name="favorite-border"
-                    size={14}
-                    color={activeCategory === tag ? "#fff" : "#666"}
-                    style={styles.tagIcon}
+                  <Image
+                    source={require("../../assets/icons/heart.png")}
+                    style={[styles.tagIcon, { width: 14, height: 14, tintColor: activeCategory === tag ? "#D0861F" : "#666" }]}
                   />
                 )}
-                <Text
-                  style={[
-                    styles.tagText,
-                    activeCategory === tag && styles.tagTextActive,
-                  ]}
-                >
-                  {tag}
-                </Text>
+                <Text style={[styles.tagText, activeCategory === tag && styles.tagTextActive]}>{tag}</Text>
               </View>
             </TouchableOpacity>
           ))}
         </ScrollView>
 
-        {/* List/Map Toggle */}
+        {hasActiveFilters() && (
+          <View style={styles.clearFiltersContainer}>
+            <TouchableOpacity style={styles.clearFiltersButton} onPress={clearFilters}>
+              <Feather name="x" size={16} color="#D0861F" />
+              <Text style={styles.clearFiltersText}>Clear Filters</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={styles.toggleRow}>
           <TouchableOpacity
             style={[styles.toggleBtn, !showMap && styles.toggleActive]}
             onPress={() => setShowMap(false)}
           >
-            {Platform.OS === "web" ? (
-              <Text style={{ fontSize: 16, color: !showMap ? "#fff" : "#666" }}>
-                📋
-              </Text>
-            ) : (
-              <Feather
-                name="list"
-                size={16}
-                color={!showMap ? "#fff" : "#666"}
-              />
-            )}
-            <Text
-              style={[styles.toggleText, !showMap && styles.toggleTextActive]}
-            >
-              List
-            </Text>
+            <Feather name="list" size={16} color={!showMap ? "#fff" : "#666"} />
+            <Text style={[styles.toggleText, !showMap && styles.toggleTextActive]}>List</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.toggleBtn, showMap && styles.toggleActive]}
             onPress={() => setShowMap(true)}
           >
-            {Platform.OS === "web" ? (
-              <Text style={{ fontSize: 16, color: showMap ? "#fff" : "#666" }}>
-                🗺️
-              </Text>
-            ) : (
-              <Feather name="map" size="16" color={showMap ? "#fff" : "#666"} />
-            )}
-            <Text
-              style={[styles.toggleText, showMap && styles.toggleTextActive]}
-            >
-              Map
-            </Text>
+            <Feather name="map" size={16} color={showMap ? "#fff" : "#666"} />
+            <Text style={[styles.toggleText, showMap && styles.toggleTextActive]}>Map</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Content Area */}
+      {/* Content */}
       <View style={styles.content}>
         {showMap ? (
-          Platform.OS === "web" ? (
-            <View style={[StyleSheet.absoluteFill, styles.webMapFallback]}>
-              <Text style={styles.webMapText}>
-                Map view is not available on web
-              </Text>
-              <Text style={styles.webMapSubtext}>
-                Please use the mobile app for full map functionality
-              </Text>
-              <TouchableOpacity
-                style={styles.switchToListButton}
-                onPress={() => setShowMap(false)}
+          <View style={styles.mapContainer}>
+            {Platform.OS === "web" ? (
+              <View style={[StyleSheet.absoluteFill, styles.webMapFallback]}>
+                <Text style={styles.webMapText}>Map view is not available on web</Text>
+                <Text style={styles.webMapSubtext}>Please use the mobile app for full map functionality</Text>
+                <TouchableOpacity style={styles.switchToListButton} onPress={() => setShowMap(false)}>
+                  <Text style={styles.switchToListButtonText}>Switch to List View</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <MapView
+                style={StyleSheet.absoluteFill}
+                initialRegion={mapRegion}
+                region={mapRegion}
+                showsUserLocation={true}
+                showsMyLocationButton={true}
+                onMapReady={updateMapRegion}
               >
-                <Text style={styles.switchToListButtonText}>
-                  Switch to List View
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <MapView
-              style={StyleSheet.absoluteFill}
-              initialRegion={mapRegion}
-              region={mapRegion}
-              showsUserLocation={true}
-              showsMyLocationButton={true}
-              onMapReady={updateMapRegion}
-            >
-              <Circle
-                center={{
-                  latitude: mapRegion.latitude,
-                  longitude: mapRegion.longitude,
-                }}
-                radius={15000}
-                strokeColor="#DB8633"
-                fillColor="rgba(219, 134, 51, 0.1)"
-              />
-              {filteredBeneficiaries.filter(b => b.latitude != null && b.longitude != null).map(b => (
-                <Marker
-                  key={b.id}
-                  coordinate={{ latitude: parseFloat(b.latitude), longitude: parseFloat(b.longitude) }}
-                  title={b.name}
-                  description={b.category}
-                  onPress={() => {
-                    setSelectedBeneficiaryForPopup(b);
-                    setMiniPopupVisible(true);
-                  }}
-                  pinColor="#DB8633"
+                <Circle
+                  center={{ latitude: mapRegion.latitude, longitude: mapRegion.longitude }}
+                  radius={15000}
+                  strokeColor="#DB8633"
+                  fillColor="rgba(219, 134, 51, 0.1)"
                 />
-              ))}
-            </MapView>
-          )
+                {!loadingBeneficiaries &&
+                  filteredBeneficiaries
+                    .filter((b) => b.latitude != null && b.longitude != null)
+                    .map((b) => (
+                      <Marker
+                        key={b.id}
+                        coordinate={{ latitude: parseFloat(b.latitude), longitude: parseFloat(b.longitude) }}
+                        onPress={() => setSelectedMarker(b)}
+                        tracksViewChanges={false}
+                      >
+                        <View style={styles.customMarkerContainer}>
+                          <View style={styles.customMarkerBubble}>
+                            {b.image && typeof b.image === "object" && b.image.uri ? (
+                              <Image source={{ uri: b.image.uri }} style={styles.customMarkerLogo} resizeMode="cover" />
+                            ) : (
+                              <Feather name="heart" size={12} color="#fff" />
+                            )}
+                            <Text style={styles.customMarkerText} numberOfLines={1}>{b.name}</Text>
+                          </View>
+                          <View style={styles.customMarkerTail} />
+                        </View>
+                      </Marker>
+                    ))}
+              </MapView>
+            )}
+
+            <TouchableOpacity
+              style={[styles.mapFilterBtn, styles.mapFilterBtnActive]}
+              onPress={() => router.push("/(tabs)/beneficiary/beneficiaryFilter")}
+            >
+              <Feather name="filter" size={15} color="#fff" />
+              <Text style={[styles.mapFilterBtnText, styles.mapFilterBtnTextActive]}>Filter</Text>
+            </TouchableOpacity>
+
+            {selectedMarker && (
+              <View style={styles.infoWindow}>
+                <View style={styles.infoWindowHeader}>
+                  {selectedMarker.image && typeof selectedMarker.image === "object" && selectedMarker.image.uri ? (
+                    <Image source={{ uri: selectedMarker.image.uri }} style={styles.infoWindowLogo} resizeMode="cover" />
+                  ) : (
+                    <View style={[styles.infoWindowLogo, styles.infoWindowLogoFallback]}>
+                      <Feather name="heart" size={22} color="#21555b" />
+                    </View>
+                  )}
+                  <View style={styles.infoWindowText}>
+                    <Text style={styles.infoWindowTitle}>{selectedMarker.name}</Text>
+                    <Text style={styles.infoWindowCategory}>{selectedMarker.category}</Text>
+                    <Text style={styles.infoWindowLocation}>{selectedMarker.location}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.closeButton} onPress={() => setSelectedMarker(null)}>
+                    <AntDesign name="close" size={20} color="#666" />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.infoWindowActions}>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => {
+                      setSelectedMarker(null);
+                      router.push({
+                        pathname: "/(tabs)/beneficiary/beneficiaryDetail",
+                        params: { id: selectedMarker.id.toString() },
+                      });
+                    }}
+                  >
+                    <Feather name="info" size={16} color="#fff" />
+                    <Text style={styles.actionButtonText}>View Details</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionButtonSecondary}
+                    onPress={() => {
+                      setSelectedMarker(null);
+                      openBeneficiaryConfirm(selectedMarker);
+                    }}
+                  >
+                    <Feather name="heart" size={16} color="#DB8633" />
+                    <Text style={styles.actionButtonTextSecondary}>Select</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
         ) : (
           <ScrollView
             style={styles.listContainer}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
+            automaticallyAdjustKeyboardInsets={true}
+            keyboardShouldPersistTaps="handled"
           >
-            {filteredBeneficiaries.length > 0 ? (
+            {loadingBeneficiaries ? (
+              <View style={{ padding: 40, alignItems: "center" }}>
+                <Text style={{ color: "#666", fontSize: 16 }}>Loading beneficiaries...</Text>
+              </View>
+            ) : filteredBeneficiaries.length > 0 ? (
               <>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Nearby Causes</Text>
-                  <Text style={styles.sectionSubtitle}>
-                    {filteredBeneficiaries.length} organizations found
-                  </Text>
+                <View ref={beneficiarySectionRef}>
+                  <View style={[styles.sectionHeader, { flexDirection: "row", alignItems: "center", justifyContent: "flex-end" }]}>
+                    <TouchableOpacity
+                      onPress={() => router.push("/(tabs)/beneficiary/beneficiaryFilter")}
+                      style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
+                    >
+                      <Feather name="filter" size={15} color={hasActiveFilters() ? "#fff" : "#DB8633"} />
+                      <Text style={[styles.filterBtnText, hasActiveFilters() && styles.filterBtnTextActive]}>Filter</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {highlightedBeneficiaries.map((b) => (
+                    <TouchableOpacity
+                      key={b.id}
+                      style={[
+                        styles.beneficiaryCard,
+                        selectedBeneficiary?.id === b.id && styles.selectedBeneficiaryCard,
+                      ]}
+                      onPress={() => {
+                        setSelectedBeneficiaryForPopup(b);
+                        setMiniPopupVisible(true);
+                      }}
+                    >
+                      <Image source={b.image} style={styles.beneficiaryImage} />
+                      <TouchableOpacity onPress={() => toggleFavorite(b.id)} style={styles.favoriteButton}>
+                        {favorites.includes(b.id) ? (
+                          <AntDesign name="heart" size={20} color="#DB8633" />
+                        ) : (
+                          <Image source={require("../../assets/icons/heart.png")} style={{ width: 20, height: 20, tintColor: "#DB8633" }} />
+                        )}
+                      </TouchableOpacity>
+                      <View style={styles.beneficiaryCardContent}>
+                        <Text style={styles.beneficiaryName}>{b.name}</Text>
+                        <Text style={styles.beneficiaryCategory}>{b.category}</Text>
+                        <View style={styles.beneficiaryLocation}>
+                          <Ionicons name="location" size={14} color="#8E9BAE" />
+                          <Text style={styles.beneficiaryLocationText}>{b.location} • {b.distance}</Text>
+                        </View>
+                        <View style={styles.buttonsRow}>
+                          <TouchableOpacity
+                            style={styles.viewDetailsButton}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              router.push({ pathname: "/(tabs)/beneficiary/beneficiaryDetail", params: { id: b.id.toString() } });
+                            }}
+                          >
+                            <Text style={styles.viewDetailsButtonText}>Details</Text>
+                          </TouchableOpacity>
+                          {selectedBeneficiary?.id !== b.id && (
+                            <TouchableOpacity
+                              style={styles.changeToThisButton}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                openBeneficiaryConfirm(b);
+                              }}
+                            >
+                              <Text style={styles.changeToThisButtonText}>Select</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
                 </View>
 
-                {filteredBeneficiaries.map((b) => (
+                {remainingBeneficiaries.map((b) => (
                   <TouchableOpacity
                     key={b.id}
-                    style={styles.beneficiaryCard}
+                    style={[
+                      styles.beneficiaryCard,
+                      selectedBeneficiary?.id === b.id && styles.selectedBeneficiaryCard,
+                    ]}
                     onPress={() => {
                       setSelectedBeneficiaryForPopup(b);
                       setMiniPopupVisible(true);
                     }}
                   >
                     <Image source={b.image} style={styles.beneficiaryImage} />
-                    <TouchableOpacity
-                      onPress={() => toggleFavorite(b.id)}
-                      style={styles.favoriteButton}
-                    >
+                    <TouchableOpacity onPress={() => toggleFavorite(b.id)} style={styles.favoriteButton}>
                       {favorites.includes(b.id) ? (
                         <AntDesign name="heart" size={20} color="#DB8633" />
                       ) : (
-                        <Image
-                          source={require("../../assets/icons/heart.png")}
-                          style={{
-                            width: 20,
-                            height: 20,
-                            tintColor: "#DB8633",
-                          }}
-                        />
+                        <Image source={require("../../assets/icons/heart.png")} style={{ width: 20, height: 20, tintColor: "#DB8633" }} />
                       )}
                     </TouchableOpacity>
                     <View style={styles.beneficiaryCardContent}>
                       <Text style={styles.beneficiaryName}>{b.name}</Text>
-                      <Text style={styles.beneficiaryCategory}>
-                        {b.category}
-                      </Text>
+                      <Text style={styles.beneficiaryCategory}>{b.category}</Text>
                       <View style={styles.beneficiaryLocation}>
-                        {Platform.OS === "web" ? (
-                          <Text
-                            style={{
-                              fontSize: 14,
-                              color: "#8E9BAE",
-                              marginRight: 4,
-                            }}
-                          >
-                            📍
-                          </Text>
-                        ) : (
-                          <Ionicons name="location" size={14} color="#8E9BAE" />
-                        )}
-                        <Text style={styles.beneficiaryLocationText}>
-                          {b.location} • {b.distance}
-                        </Text>
+                        <Ionicons name="location" size={14} color="#8E9BAE" />
+                        <Text style={styles.beneficiaryLocationText}>{b.location} • {b.distance}</Text>
                       </View>
-
-                      {/* Buttons Row */}
                       <View style={styles.buttonsRow}>
-                        {/* View Details Button */}
                         <TouchableOpacity
                           style={styles.viewDetailsButton}
                           onPress={(e) => {
                             e.stopPropagation();
-                            router.push({
-                              pathname: "/signupFlow/beneficiarySignupDetails",
-                              params: { id: b.id.toString() },
-                            });
+                            router.push({ pathname: "/(tabs)/beneficiary/beneficiaryDetail", params: { id: b.id.toString() } });
                           }}
                         >
-                          <Text style={styles.viewDetailsButtonText}>
-                            Details
-                          </Text>
+                          <Text style={styles.viewDetailsButtonText}>Details</Text>
                         </TouchableOpacity>
-
-                        {/* Select Button */}
-                        <TouchableOpacity
-                          style={styles.changeToThisButton}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            handleSelectBeneficiary(b);
-                          }}
-                        >
-                          <Text style={styles.changeToThisButtonText}>
-                            Select
-                          </Text>
-                        </TouchableOpacity>
+                        {selectedBeneficiary?.id !== b.id && (
+                          <TouchableOpacity
+                            style={styles.changeToThisButton}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              openBeneficiaryConfirm(b);
+                            }}
+                          >
+                            <Text style={styles.changeToThisButtonText}>Select</Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
                     </View>
                   </TouchableOpacity>
                 ))}
               </>
             ) : (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyTitle}>No results found</Text>
-                <Text style={styles.emptySubtitle}>
-                  {searchText
-                    ? `No beneficiaries found for "${searchText}"`
-                    : "Try adjusting your search or filters"}
-                </Text>
-
-                {searchText && (
-                  <View style={styles.requestSection}>
-                    <Text style={styles.requestTitle}>
-                      Want to see "{searchText}" here?
-                    </Text>
-                    <Text style={styles.requestSubtitle}>
-                      Drop their info below and we'll add them soon!
-                    </Text>
-
-                    {submitted ? (
-                      <View style={styles.successMessage}>
-                        <Text style={styles.successText}>
-                          Request submitted! Thank you — we'll review and add
-                          them soon.
-                        </Text>
-                      </View>
-                    ) : (
-                      <View style={styles.requestForm}>
-                        <TextInput
-                          value={businessName}
-                          onChangeText={setBusinessName}
-                          placeholder="Full Organization Name *"
-                          placeholderTextColor="#999"
-                          style={styles.input}
-                        />
-                        <TextInput
-                          value={businessUrl}
-                          onChangeText={setBusinessUrl}
-                          placeholder="Website URL *"
-                          placeholderTextColor="#999"
-                          autoCapitalize="none"
-                          style={styles.input}
-                        />
-                        <TextInput
-                          value={contactName}
-                          onChangeText={setContactName}
-                          placeholder="Your Name (Optional)"
-                          placeholderTextColor="#999"
-                          style={styles.input}
-                        />
-                        <TextInput
-                          value={contactEmail}
-                          onChangeText={setContactEmail}
-                          placeholder="Your Email (Optional)"
-                          placeholderTextColor="#999"
-                          autoCapitalize="none"
-                          keyboardType="email-address"
-                          style={styles.input}
-                        />
-                        {submitError ? (
-                          <Text style={styles.errorText}>{submitError}</Text>
-                        ) : null}
-                        <TouchableOpacity
-                          style={[
-                            styles.requestButton,
-                            isSubmitting && styles.requestButtonDisabled,
-                          ]}
-                          onPress={async () => {
-                            if (!businessName.trim()) {
-                              setSubmitError(
-                                "Please enter the organization name.",
-                              );
-                              return;
-                            }
-                            if (!businessUrl.trim()) {
-                              setSubmitError("Please enter the website URL.");
-                              return;
-                            }
-
-                            // Validate email format if provided
-                            if (contactEmail.trim()) {
-                              const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                              if (!emailRegex.test(contactEmail.trim())) {
-                                setSubmitError(
-                                  "Please enter a valid email address.",
-                                );
-                                return;
-                              }
-                            }
-
-                            setIsSubmitting(true);
-                            setSubmitError("");
-
-                            try {
-                              await API.submitBeneficiaryRequest({
-                                contact_name: contactName.trim() || null,
-                                company_name: businessName.trim(),
-                                email: contactEmail.trim()
-                                  ? contactEmail.trim().toLowerCase()
-                                  : null,
-                                website: businessUrl.trim(),
-                              });
-
-                              setSubmitted(true);
-                              // Clear form after successful submission
-                              setBusinessName("");
-                              setBusinessUrl("");
-                              setContactName("");
-                              setContactEmail("");
-                            } catch (error) {
-                              console.error(
-                                "Failed to submit beneficiary request:",
-                                error,
-                              );
-                              setSubmitError(
-                                error.message ||
-                                  "Failed to submit request. Please try again.",
-                              );
-                            } finally {
-                              setIsSubmitting(false);
-                            }
-                          }}
-                          disabled={isSubmitting}
-                        >
-                          <Text style={styles.requestButtonText}>
-                            {isSubmitting ? "Submitting..." : "Submit Request"}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
-                )}
+              <View>
+                <View style={[styles.sectionHeader, { flexDirection: "row", alignItems: "center", justifyContent: "flex-end" }]}>
+                  <TouchableOpacity
+                    onPress={() => router.push("/(tabs)/beneficiary/beneficiaryFilter")}
+                    style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
+                  >
+                    <Feather name="filter" size={15} color={hasActiveFilters() ? "#fff" : "#DB8633"} />
+                    <Text style={[styles.filterBtnText, hasActiveFilters() && styles.filterBtnTextActive]}>Filter</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyTitle}>No results found</Text>
+                  <Text style={styles.emptySubtitle}>
+                    {searchText ? `No beneficiaries found for "${searchText}"` : "Try adjusting your search or filters"}
+                  </Text>
+                  <SuggestCard
+                    type="charity"
+                    searchQuery={searchText}
+                    onSubmit={({ name, website }) =>
+                      API.submitBeneficiaryRequest({ company_name: name, website })
+                    }
+                  />
+                </View>
               </View>
             )}
           </ScrollView>
         )}
       </View>
 
-      {/* Mini Popup Modal */}
+      <Modal visible={confirmModalVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModalBox}>
+            <Text style={styles.modalText}>
+              Are you sure you want &quot;{pendingBeneficiary?.name}&quot; to be your new beneficiary?
+            </Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity onPress={handleConfirmBeneficiary} style={styles.confirmBtn}>
+                <Text style={styles.confirmBtnText}>Yes</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setConfirmModalVisible(false);
+                  setPendingBeneficiary(null);
+                }}
+                style={styles.cancelBtn}
+              >
+                <Text style={styles.cancelBtnText}>No</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Mini Popup */}
       <Modal
         visible={miniPopupVisible}
         transparent={true}
@@ -897,53 +830,32 @@ export default function BeneficiaryPreferences() {
           activeOpacity={1}
           onPress={() => setMiniPopupVisible(false)}
         >
-          <TouchableOpacity
-            style={styles.miniPopupContent}
-            activeOpacity={1}
-            onPress={() => {}} // Prevent closing when tapping content
-          >
+          <TouchableOpacity style={styles.miniPopupContent} activeOpacity={1} onPress={() => {}}>
             <View style={styles.miniPopupHeader}>
-              <Text style={styles.miniPopupTitle}>
-                {selectedBeneficiaryForPopup?.name}
-              </Text>
-              <TouchableOpacity
-                style={styles.miniPopupCloseButton}
-                onPress={() => setMiniPopupVisible(false)}
-              >
-                {Platform.OS === "web" ? (
-                  <Text style={{ fontSize: 20, color: "#8E9BAE" }}>✕</Text>
-                ) : (
-                  <AntDesign name="close" size={20} color="#8E9BAE" />
-                )}
+              <Text style={styles.miniPopupTitle}>{selectedBeneficiaryForPopup?.name}</Text>
+              <TouchableOpacity style={styles.miniPopupCloseButton} onPress={() => setMiniPopupVisible(false)}>
+                <AntDesign name="close" size={20} color="#8E9BAE" />
               </TouchableOpacity>
             </View>
-
             <Text style={styles.miniPopupAbout}>
-              {selectedBeneficiaryForPopup?.about ||
-                "Learn more about this amazing cause and the impact you can make in your local community."}
+              {selectedBeneficiaryForPopup?.about || "Learn more about this amazing cause and the impact you can make in your local community."}
             </Text>
-
             <View style={styles.miniPopupButtons}>
               <TouchableOpacity
                 style={styles.miniPopupChangeButton}
                 onPress={() => {
                   setMiniPopupVisible(false);
-                  if (selectedBeneficiaryForPopup) {
-                    handleSelectBeneficiary(selectedBeneficiaryForPopup);
-                  }
+                  openBeneficiaryConfirm(selectedBeneficiaryForPopup);
                 }}
               >
-                <Text style={styles.miniPopupChangeButtonText}>
-                  Select this cause
-                </Text>
+                <Text style={styles.miniPopupChangeButtonText}>Select this cause</Text>
               </TouchableOpacity>
-
               <TouchableOpacity
                 style={styles.miniPopupLearnButton}
                 onPress={() => {
                   setMiniPopupVisible(false);
                   router.push({
-                    pathname: "/signupFlow/beneficiarySignupDetails",
+                    pathname: "/(tabs)/beneficiary/beneficiaryDetail",
                     params: { id: selectedBeneficiaryForPopup?.id.toString() },
                   });
                 }}
@@ -954,44 +866,87 @@ export default function BeneficiaryPreferences() {
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
-    </SafeAreaView>
+
+      <SuccessModal visible={showSuccessModal} onClose={closeModal} message={successMessage} />
+      {confettiTrigger && (
+        <ConfettiCannon
+          count={100}
+          origin={{ x: 200, y: 0 }}
+          fadeOut
+          explosionSpeed={350}
+          fallSpeed={3000}
+          onAnimationEnd={() => setConfettiTrigger(false)}
+        />
+      )}
+    </View>
   );
 }
 
+// Fills the iOS status bar area with the gradient's dark start color
+function SafeAreaTopSpacer() {
+  const { SafeAreaView } = require("react-native");
+  return <SafeAreaView style={{ backgroundColor: "#2C3E50" }} />;
+}
+
 const styles = StyleSheet.create({
+  miniBrandHeader: {
+    height: 96,
+    paddingTop: 8,
+    marginBottom: -22,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  miniBrandLogo: {
+    width: 190,
+    height: 60,
+    opacity: 0.98,
+    marginTop: -20,
+  },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
+    marginHorizontal: 16,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingTop: 14,
     paddingBottom: 15,
     backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    zIndex: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
   },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#f5f5fa",
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#e1e1e5",
-    paddingHorizontal: 10,
-    marginBottom: 10,
+    paddingHorizontal: 15,
+    marginBottom: 16,
+    height: 48,
   },
   searchInput: {
     flex: 1,
-    height: 48,
     fontSize: 16,
     color: "#324E58",
+    height: 46,
+    lineHeight: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 0,
   },
   locationRow: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#f5f5fa",
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#e1e1e5",
-    paddingHorizontal: 10,
-    marginBottom: 10,
+    paddingHorizontal: 15,
+    marginBottom: 16,
     height: 48,
   },
   locationInput: {
@@ -1013,56 +968,22 @@ const styles = StyleSheet.create({
     padding: 8,
     marginLeft: 8,
   },
-  suggestionsContainer: {
-    position: "absolute",
-    top: 50,
-    left: 0,
-    right: 0,
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e1e1e5",
-    maxHeight: 200,
-    zIndex: 1000,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  suggestionsList: {
-    maxHeight: 200,
-  },
-  suggestionItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
-  },
-  suggestionText: {
-    fontSize: 16,
-    color: "#333",
-    flex: 1,
-  },
   tagsRow: {
     flexDirection: "row",
     paddingVertical: 5,
     paddingHorizontal: 20,
   },
   tag: {
-    backgroundColor: "#f0f0f5",
+    backgroundColor: "#f2f2f2",
     borderRadius: 20,
     paddingVertical: 8,
     paddingHorizontal: 15,
     marginRight: 10,
-    borderWidth: 1,
-    borderColor: "#e1e1e5",
   },
   tagActive: {
-    backgroundColor: "#DB8633",
-    borderColor: "#DB8633",
+    backgroundColor: "#FFF5EB",
+    borderWidth: 1,
+    borderColor: "#D0861F",
   },
   tagContent: {
     flexDirection: "row",
@@ -1076,7 +997,8 @@ const styles = StyleSheet.create({
     color: "#6d6e72",
   },
   tagTextActive: {
-    color: "#fff",
+    color: "#D0861F",
+    fontWeight: "600",
   },
   toggleRow: {
     flexDirection: "row",
@@ -1107,6 +1029,27 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
   },
+  clearFiltersContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+  clearFiltersButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF5EB",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#D0861F",
+    alignSelf: "flex-start",
+  },
+  clearFiltersText: {
+    color: "#D0861F",
+    fontSize: 14,
+    fontWeight: "500",
+    marginLeft: 4,
+  },
   content: {
     flex: 1,
     backgroundColor: "#f5f5fa",
@@ -1116,21 +1059,15 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 20,
-    paddingTop: 30,
+    paddingTop: 12,
     paddingBottom: 15,
   },
   sectionHeader: {
-    marginBottom: 15,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#324E58",
-    marginBottom: 5,
-  },
-  sectionSubtitle: {
-    fontSize: 14,
-    color: "#6d6e72",
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 4,
+    marginBottom: 4,
+    marginHorizontal: -20,
   },
   beneficiaryCard: {
     flexDirection: "row",
@@ -1146,6 +1083,9 @@ const styles = StyleSheet.create({
     minHeight: 100,
     borderWidth: 2,
     borderColor: "transparent",
+  },
+  selectedBeneficiaryCard: {
+    borderColor: "#DB8633",
   },
   beneficiaryImage: {
     width: 120,
@@ -1179,7 +1119,6 @@ const styles = StyleSheet.create({
   beneficiaryLocation: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 0,
   },
   beneficiaryLocationText: {
     fontSize: 12,
@@ -1187,7 +1126,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   viewDetailsButton: {
-    backgroundColor: "#f5f5fa",
+    backgroundColor: "#FFF5EB",
     borderWidth: 1,
     borderColor: "#DB8633",
     borderRadius: 8,
@@ -1203,118 +1142,315 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   changeToThisButton: {
-    backgroundColor: "#DB8633",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    backgroundColor: "transparent",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
     flex: 1,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
     alignItems: "center",
     marginLeft: 8,
-    shadowColor: "#DB8633",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
   },
   changeToThisButtonText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 14,
+    color: "#6B7280",
+    fontWeight: "600",
+    fontSize: 13,
   },
   buttonsRow: {
     flexDirection: "row",
     justifyContent: "flex-start",
     alignItems: "center",
     marginTop: 8,
+    gap: 8,
   },
   emptyState: {
+    flex: 1,
+    paddingTop: 20,
     alignItems: "center",
-    paddingVertical: 40,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    marginHorizontal: 20,
-    marginBottom: 15,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   emptyTitle: {
     fontSize: 20,
-    fontWeight: "bold",
-    color: "#324E58",
-    marginTop: 10,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: "#6d6e72",
-    marginTop: 5,
-  },
-  requestSection: {
-    marginTop: 20,
-    alignItems: "center",
-  },
-  requestTitle: {
-    fontSize: 16,
     fontWeight: "700",
     color: "#324E58",
-    marginBottom: 5,
-  },
-  requestSubtitle: {
-    fontSize: 14,
-    color: "#6d6e72",
-    textAlign: "center",
-  },
-  requestForm: {
-    width: "100%",
-    marginTop: 15,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    fontSize: 14,
-    color: "#324E58",
-    width: "100%",
-  },
-  requestButton: {
-    backgroundColor: "#DB8633",
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    alignItems: "center",
-    marginTop: 10,
-  },
-  requestButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-  successMessage: {
-    backgroundColor: "#FFF5EB",
-    borderWidth: 1,
-    borderColor: "#DB8633",
-    padding: 15,
-    borderRadius: 8,
-    marginTop: 10,
-  },
-  successText: {
-    color: "#92400e",
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  errorText: {
-    color: "#d32f2f",
-    fontSize: 12,
     marginBottom: 8,
     textAlign: "center",
   },
-  requestButtonDisabled: {
-    opacity: 0.6,
+  emptySubtitle: {
+    fontSize: 16,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 40,
   },
-  // Mini Popup Styles
+  // Map
+  mapContainer: {
+    flex: 1,
+    position: "relative",
+  },
+  mapFilterBtn: {
+    position: "absolute",
+    top: 16,
+    right: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: "#DB8633",
+    backgroundColor: "#fff",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
+    zIndex: 100,
+  },
+  mapFilterBtnActive: {
+    backgroundColor: "#DB8633",
+    borderColor: "#DB8633",
+  },
+  mapFilterBtnText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#DB8633",
+  },
+  mapFilterBtnTextActive: {
+    color: "#fff",
+  },
+  customMarkerContainer: {
+    alignItems: "center",
+  },
+  customMarkerBubble: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#21555b",
+    borderRadius: 20,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+    maxWidth: 160,
+    gap: 5,
+  },
+  customMarkerLogo: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#fff",
+  },
+  customMarkerText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
+    flexShrink: 1,
+  },
+  customMarkerTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 7,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderTopColor: "#21555b",
+  },
+  infoWindow: {
+    position: "absolute",
+    bottom: 120,
+    left: 20,
+    right: 20,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 9999,
+  },
+  infoWindowHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  infoWindowLogo: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  infoWindowLogoFallback: {
+    backgroundColor: "#e8f0f1",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  infoWindowText: {
+    flex: 1,
+  },
+  infoWindowTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#324E58",
+    marginBottom: 4,
+  },
+  infoWindowCategory: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 2,
+  },
+  infoWindowLocation: {
+    fontSize: 12,
+    color: "#8E9BAE",
+  },
+  closeButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: "#f5f5fa",
+  },
+  infoWindowActions: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#DB8633",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    gap: 8,
+  },
+  actionButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  actionButtonSecondary: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#DB8633",
+    gap: 8,
+  },
+  actionButtonTextSecondary: {
+    color: "#DB8633",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  webMapFallback: {
+    backgroundColor: "#f5f5fa",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  webMapText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#324E58",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  webMapSubtext: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  switchToListButton: {
+    backgroundColor: "#DB8633",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+  },
+  switchToListButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  filterBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: "#DB8633",
+    backgroundColor: "#FFF5EB",
+  },
+  filterBtnActive: {
+    backgroundColor: "#DB8633",
+  },
+  filterBtnText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#DB8633",
+  },
+  filterBtnTextActive: {
+    color: "#fff",
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  confirmModalBox: {
+    backgroundColor: "white",
+    padding: 24,
+    borderRadius: 12,
+    width: "85%",
+    alignItems: "center",
+  },
+  modalText: {
+    fontSize: 16,
+    color: "#324E58",
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+  },
+  confirmBtn: {
+    flex: 1,
+    backgroundColor: "#DB8633",
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: "center",
+    marginRight: 10,
+  },
+  confirmBtnText: {
+    color: "white",
+    fontWeight: "700",
+  },
+  cancelBtn: {
+    flex: 1,
+    backgroundColor: "#f0f0f0",
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  cancelBtnText: {
+    color: "#324E58",
+    fontWeight: "700",
+  },
+  // Mini popup
   miniPopupOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
@@ -1384,36 +1520,5 @@ const styles = StyleSheet.create({
     color: "#4A5568",
     fontSize: 16,
     fontWeight: "500",
-  },
-  // Web fallback styles
-  webMapFallback: {
-    backgroundColor: "#f5f5fa",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  webMapText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#324E58",
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  webMapSubtext: {
-    fontSize: 14,
-    color: "#666",
-    textAlign: "center",
-    marginBottom: 20,
-  },
-  switchToListButton: {
-    backgroundColor: "#DB8633",
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 10,
-  },
-  switchToListButtonText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
   },
 });

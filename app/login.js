@@ -27,6 +27,7 @@ import { useUser } from './context/UserContext';
 import { useBeneficiary } from './context/BeneficiaryContext';
 import { signInWithApple, signInWithGoogle } from './utils/socialLogin';
 import { IMAGE_ASSETS } from './utils/assetConstants';
+import { resumeSignupFlowPendingIfAny } from './utils/signupFlowResume';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -148,7 +149,24 @@ export default function LoginScreen() {
           pathname: "/signupProfile",
           params: { email: response.user.email || emailTrim },
         });
-      } else if (response.user?.needsOnboarding && !onboardingDoneLocally) {
+        return;
+      }
+
+      const loginEmail = (
+        response.user?.email ||
+        emailTrim ||
+        ""
+      ).trim();
+      if (
+        loginEmail &&
+        (await resumeSignupFlowPendingIfAny(router, {
+          loggedInEmail: loginEmail,
+        }))
+      ) {
+        return;
+      }
+
+      if (response.user?.needsOnboarding && !onboardingDoneLocally) {
         // Resume signup flow at the right step based on how far they got
         if (hasLocalBeneficiary) {
           // Already picked a cause — resume at donation amount
@@ -246,6 +264,20 @@ export default function LoginScreen() {
       );
 
       saveLastLogin(socialData.provider);
+
+      const socialEmail = (
+        response.user?.email ||
+        socialData?.email ||
+        ""
+      ).trim();
+      if (
+        socialEmail &&
+        (await resumeSignupFlowPendingIfAny(router, {
+          loggedInEmail: socialEmail,
+        }))
+      ) {
+        return;
+      }
 
       // Check if user needs to complete onboarding
       if (response.user?.needsOnboarding && !onboardingDoneLocally) {

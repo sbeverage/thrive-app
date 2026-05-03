@@ -17,6 +17,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import PhoneInput from 'react-native-phone-number-input';
+import { getCallingCode } from 'react-native-country-picker-modal';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from './context/UserContext';
@@ -25,6 +26,49 @@ import API from './lib/api';
 import { persistSignupFlowCheckpoint } from './utils/signupFlowCheckpoint';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+
+/** Regional-indicator pair — always visible (react-native-country-picker Flag can render empty briefly). */
+function countryCodeToFlagEmoji(code) {
+  if (!code || typeof code !== 'string' || code.length < 2) return '\u{1F3F3}\u{FE0F}';
+  const cc = code.toUpperCase().slice(0, 2);
+  return String.fromCodePoint(
+    127397 + cc.charCodeAt(0),
+    127397 + cc.charCodeAt(1),
+  );
+}
+
+const phoneFlagChevronStyles = StyleSheet.create({
+  flagAndChevron: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    flexShrink: 0,
+  },
+  flagEmoji: {
+    fontSize: 22,
+    lineHeight: 26,
+    marginRight: 8,
+  },
+  callingPrefix: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#324E58',
+    marginRight: 6,
+    letterSpacing: 0.2,
+  },
+});
+
+function PhoneFlagAndChevron({ countryCode, callingDigits }) {
+  return (
+    <View style={phoneFlagChevronStyles.flagAndChevron}>
+      <Text style={phoneFlagChevronStyles.flagEmoji} allowFontScaling={false}>
+        {countryCodeToFlagEmoji(countryCode)}
+      </Text>
+      <Text style={phoneFlagChevronStyles.callingPrefix}>+{callingDigits}</Text>
+      <Feather name="chevron-down" size={17} color="#324E58" />
+    </View>
+  );
+}
 
 export default function SignupProfile() {
   const router = useRouter();
@@ -38,15 +82,45 @@ export default function SignupProfile() {
   const [phoneNational, setPhoneNational] = useState('');
   const [phoneFormatted, setPhoneFormatted] = useState('');
   const [profileImage, setProfileImage] = useState(null);
+  /** Keeps flag image in sync with PhoneInput’s country (default matches defaultCode). */
+  const [phoneCountryCode, setPhoneCountryCode] = useState('US');
+  /** Shown next to flag immediately; US/CA NANP = 1 before async getCallingCode runs. */
+  const [phoneCallingDigits, setPhoneCallingDigits] = useState('1');
   const phoneInputRef = useRef(null);
 
-  // Guard: if user is already logged in with a completed profile, redirect to home
   useEffect(() => {
-    if (user?.isLoggedIn && user?.firstName && user?.lastName) {
-      console.log('👤 [PROFILE_FLOW] User profile already complete, redirecting to home');
-      router.replace('/(tabs)/home');
-    }
-  }, [user?.isLoggedIn, user?.firstName, user?.lastName]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const digits = await getCallingCode(phoneCountryCode);
+        if (!cancelled && digits) setPhoneCallingDigits(String(digits));
+      } catch {
+        if (!cancelled) setPhoneCallingDigits('1');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [phoneCountryCode]);
+  /** After Continue, `saveUserData` updates context; without this, the "complete profile" guard would send unverified users to home instead of /verifyEmail. */
+  const suppressCompleteProfileRedirectRef = useRef(false);
+
+  // Guard: only if they truly should not be on this screen (verified + saved profile incl. phone).
+  // Do not redirect on name-only OAuth prefetch — this screen still collects phone and submits to /verifyEmail.
+  useEffect(() => {
+    if (suppressCompleteProfileRedirectRef.current) return;
+    if (!user?.isLoggedIn || !user?.isVerified) return;
+    if (!user?.firstName?.trim() || !user?.lastName?.trim() || !user?.phone?.trim()) return;
+    console.log('👤 [PROFILE_FLOW] Profile already complete on server, redirecting to home');
+    router.replace('/(tabs)/home');
+  }, [
+    user?.isLoggedIn,
+    user?.isVerified,
+    user?.firstName,
+    user?.lastName,
+    user?.phone,
+    router,
+  ]);
 
   useEffect(() => {
     if (email) {
@@ -115,7 +189,7 @@ export default function SignupProfile() {
       Alert.alert('Invalid Phone Number', 'Please enter a valid phone number.');
       return;
     }
-    
+
     try {
       // Get email from params, user context, or existing user data
       const emailToSave = email || user?.email || '';
@@ -124,6 +198,10 @@ export default function SignupProfile() {
         Alert.alert('Error', 'No email found for this account. Please try signing up again.');
         return;
       }
+
+      // After this point, `saveUserData` will refresh context; suppress the "complete profile" effect
+      // so unverified users are not sent to home before /verifyEmail.
+      suppressCompleteProfileRedirectRef.current = true;
 
       // Prepare profile data
       const profileData = {
@@ -166,13 +244,14 @@ export default function SignupProfile() {
       // Advance pending route so a mid-flow close resumes at verification
       await persistSignupFlowCheckpoint('/verifyEmail', { email: emailToSave });
 
-      // Navigate directly to email verification page with email
-      router.push({
+      // Replace so a stale "complete profile" guard cannot win a stack race against push → /verifyEmail
+      router.replace({
         pathname: '/verifyEmail',
-        params: { email: email }
+        params: { email: emailToSave },
       });
     } catch (error) {
       console.error('❌ Error saving profile:', error);
+      suppressCompleteProfileRedirectRef.current = false;
       Alert.alert('Error', 'Failed to save profile. Please try again.');
     }
   };
@@ -217,7 +296,11 @@ export default function SignupProfile() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
     >
-        <ScrollView contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'flex-start' }} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.piggyWelcomeColumn}>
             <Image source={require('../assets/images/bolt-piggy.png')} style={styles.piggyLarge} />
             <Text style={styles.headerTextWhite}>WELCOME</Text>
@@ -288,14 +371,28 @@ export default function SignupProfile() {
             placeholder="Phone number"
             onChangeText={setPhoneNational}
             onChangeFormattedText={setPhoneFormatted}
+            onChangeCountry={(country) => setPhoneCountryCode(country.cca2)}
             containerStyle={styles.phoneInputContainer}
             textContainerStyle={styles.phoneTextContainer}
             textInputStyle={styles.phoneTextInput}
-            codeTextStyle={styles.phoneCodeText}
+            codeTextStyle={styles.phoneCodeTextHidden}
             flagButtonStyle={styles.phoneFlagButton}
             countryPickerButtonStyle={styles.phoneFlagButton}
+            countryPickerProps={{
+              withEmoji: true,
+              renderFlagButton: () => null,
+            }}
+            renderDropdownImage={
+              <PhoneFlagAndChevron
+                countryCode={phoneCountryCode}
+                callingDigits={phoneCallingDigits}
+              />
+            }
             textInputProps={{
               placeholderTextColor: '#6d6e72',
+              ...(Platform.OS === 'android'
+                ? { textAlignVertical: 'center', includeFontPadding: false }
+                : {}),
             }}
           />
         </View>
@@ -345,10 +442,18 @@ const styles = StyleSheet.create({
   },
   headerText: { color: '#21555B', fontSize: 28, fontWeight: '800', letterSpacing: 1.5, marginBottom: 2, textAlign: 'center' },
   subheaderText: { color: '#21555B', fontSize: 16, fontWeight: '400', marginBottom: 18, textAlign: 'center' },
+  scrollContent: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingBottom: 24,
+  },
   infoCard: {
     backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: 28,
+    borderRadius: 22,
+    paddingHorizontal: 22,
+    paddingTop: 20,
+    paddingBottom: 18,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -357,17 +462,17 @@ const styles = StyleSheet.create({
     width: '90%',
     maxWidth: 340,
     alignSelf: 'center',
-    marginTop: 40,
-    marginBottom: 10,
+    marginTop: 18,
+    marginBottom: 12,
     alignItems: 'center',
     zIndex: 2,
   },
   profileImageWrapper: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 108,
+    height: 108,
+    borderRadius: 54,
     alignSelf: 'center',
-    marginBottom: 30,
+    marginBottom: 18,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -376,21 +481,21 @@ const styles = StyleSheet.create({
     borderColor: '#324E58',
   },
   profileImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 108,
+    height: 108,
+    borderRadius: 54,
     resizeMode: 'cover',
   },
   profilePlaceholder: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 108,
+    height: 108,
+    borderRadius: 54,
     backgroundColor: '#E5E5E5',
     justifyContent: 'center',
     alignItems: 'center',
   },
   initials: {
-    fontSize: 40,
+    fontSize: 36,
     color: '#324E58',
     fontWeight: '700',
   },
@@ -404,14 +509,14 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 16,
     width: '100%',
   },
   inputLabel: {
     fontSize: 14,
     fontWeight: '600',
     color: '#324E58',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   requiredAsterisk: {
     color: '#DC2626',
@@ -438,40 +543,67 @@ const styles = StyleSheet.create({
     borderColor: '#e1e1e5',
     backgroundColor: '#f5f5fa',
     overflow: 'hidden',
+    minHeight: 48,
   },
+  /** Override library wp(80)/wp(20) so the flag column and number field share space predictably. */
   phoneInputContainer: {
     width: '100%',
+    minHeight: 48,
     height: 48,
     backgroundColor: 'transparent',
+    alignItems: 'stretch',
   },
   phoneTextContainer: {
+    flex: 1,
+    flexGrow: 1,
+    minWidth: 0,
     backgroundColor: 'transparent',
     paddingVertical: 0,
-    paddingRight: 12,
+    paddingLeft: 8,
+    paddingRight: 14,
     borderRadius: 0,
+    justifyContent: 'center',
+    alignItems: 'stretch',
   },
   phoneTextInput: {
+    flex: 1,
+    minWidth: 0,
     fontSize: 16,
+    lineHeight: 22,
     color: '#324E58',
     height: 48,
     paddingVertical: 0,
+    paddingLeft: 0,
+    paddingRight: 0,
+    margin: 0,
   },
-  phoneCodeText: {
-    fontSize: 16,
-    color: '#324E58',
-    fontWeight: '600',
+  /** Library still mounts +code Text in layout="first"; pull it out of flex flow so digits align. */
+  phoneCodeTextHidden: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0,
+    overflow: 'hidden',
+    left: -200,
+    fontSize: 1,
   },
+  /** Fixed width overrides react-native-phone-number-input flagButtonView width: wp(20). */
   phoneFlagButton: {
-    width: 52,
-    paddingHorizontal: 4,
+    width: 128,
+    flexGrow: 0,
+    flexShrink: 0,
+    paddingLeft: 10,
+    paddingRight: 4,
     justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'stretch',
   },
   optionalText: {
     color: '#6d6e72',
-    fontSize: 14,
+    fontSize: 13,
     textAlign: 'center',
-    marginTop: -20,
-    marginBottom: 20,
+    marginTop: -4,
+    marginBottom: 14,
     fontStyle: 'italic',
   },
   continueButton: {
@@ -481,7 +613,8 @@ const styles = StyleSheet.create({
     height: 48,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    marginTop: 8,
+    marginBottom: 12,
   },
   continueButtonText: {
     color: '#fff',
@@ -490,10 +623,30 @@ const styles = StyleSheet.create({
   },
   gradientAbsoluteBg: { position: 'absolute', top: 0, left: 0, right: 0, height: SCREEN_HEIGHT * 0.45, zIndex: 0, overflow: 'hidden' },
   gradientBg: { width: SCREEN_WIDTH, height: '100%', borderBottomLeftRadius: 40, borderBottomRightRadius: 40 },
-  piggyWelcomeColumn: { alignItems: 'center', justifyContent: 'center', marginTop: 60, marginBottom: 10, zIndex: 1 },
-  piggyLarge: { width: 90, height: 90, resizeMode: 'contain', marginRight: 16, marginBottom: 24 },
-  headerTextWhite: { color: '#fff', fontSize: 34, fontWeight: '800', letterSpacing: 1.5, marginBottom: 2, textAlign: 'center' },
-  subheaderTextWhite: { color: '#fff', fontSize: 19, fontWeight: '400', marginBottom: 4, textAlign: 'center' },
+  piggyWelcomeColumn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 52,
+    marginBottom: 8,
+    zIndex: 1,
+  },
+  piggyLarge: { width: 76, height: 76, resizeMode: 'contain', marginBottom: 14 },
+  headerTextWhite: {
+    color: '#fff',
+    fontSize: 30,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  subheaderTextWhite: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '400',
+    marginBottom: 6,
+    textAlign: 'center',
+    paddingHorizontal: 28,
+  },
   speechBubbleContainer: {
     flexDirection: 'row',
     alignItems: 'center',

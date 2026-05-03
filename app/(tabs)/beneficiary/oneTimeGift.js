@@ -1,5 +1,5 @@
-// One-Time Gift Flow: Amount Selection → Checkout → Success
-import React, { useState } from "react";
+// One-Time Gift Flow: Amount selection (payment may complete on this screen or via checkout)
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -24,6 +24,12 @@ import {
   presentMonthlySubscriptionPaymentSheet,
 } from "../../utils/monthlySubscriptionPaymentSheet";
 import { resolveCheckoutBeneficiaryId } from "../../utils/resolveCheckoutBeneficiaryId";
+import { resolveRemoteImageUri } from "../../utils/resolveRemoteImageUri";
+
+function firstParam(value) {
+  if (value == null) return "";
+  return Array.isArray(value) ? value[0] ?? "" : value;
+}
 
 const PRESET_AMOUNTS = [10, 25, 50, 100, 250, 500];
 
@@ -36,12 +42,28 @@ export default function OneTimeGiftScreen() {
   console.log("🔍 OneTimeGiftScreen params:", params);
   console.log("🔍 OneTimeGiftScreen selectedBeneficiary:", selectedBeneficiary);
 
-  // Get beneficiary info from params
-  const beneficiaryId = params.beneficiaryId;
-  const beneficiaryName = params.beneficiaryName || "Charity";
-  const beneficiaryImage = params.beneficiaryImage
-    ? { uri: params.beneficiaryImage }
-    : null;
+  const beneficiaryId = firstParam(params.beneficiaryId);
+  const beneficiaryName = firstParam(params.beneficiaryName) || "Charity";
+  const paramImageUri = resolveRemoteImageUri(firstParam(params.beneficiaryImage));
+
+  const beneficiaryLogoUri = useMemo(() => {
+    if (paramImageUri) return paramImageUri;
+    const bid = beneficiaryId != null && beneficiaryId !== "" ? String(beneficiaryId) : "";
+    const sid =
+      selectedBeneficiary?.id != null && selectedBeneficiary.id !== ""
+        ? String(selectedBeneficiary.id)
+        : "";
+    if (bid && sid === bid) {
+      return (
+        resolveRemoteImageUri(selectedBeneficiary?.image) ||
+        resolveRemoteImageUri(selectedBeneficiary?.logo_url) ||
+        ""
+      );
+    }
+    return "";
+  }, [paramImageUri, beneficiaryId, selectedBeneficiary]);
+
+  const beneficiaryImageSource = beneficiaryLogoUri ? { uri: beneficiaryLogoUri } : null;
 
   const [amount, setAmount] = useState("");
   const [customAmount, setCustomAmount] = useState("");
@@ -114,7 +136,6 @@ export default function OneTimeGiftScreen() {
       const payResult = await presentMonthlySubscriptionPaymentSheet(
         { initPaymentSheet, presentPaymentSheet },
         response,
-        { skipSavedPaymentMethods: true },
       );
       if (!payResult.ok) {
         if (!payResult.canceled && payResult.error) {
@@ -161,7 +182,7 @@ export default function OneTimeGiftScreen() {
         >
           <Image
             source={require("../../../assets/icons/arrow-left.png")}
-            style={{ width: 24, height: 24, tintColor: "#fff" }}
+            style={styles.backIcon}
           />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Give One-Time Gift</Text>
@@ -174,8 +195,12 @@ export default function OneTimeGiftScreen() {
       >
         {/* Beneficiary Info Card */}
         <View style={styles.beneficiaryCard}>
-          {beneficiaryImage ? (
-            <Image source={beneficiaryImage} style={styles.beneficiaryImage} />
+          {beneficiaryImageSource ? (
+            <Image
+              source={beneficiaryImageSource}
+              style={styles.beneficiaryImage}
+              resizeMode="cover"
+            />
           ) : (
             <View
               style={[
@@ -273,8 +298,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   header: {
-    paddingTop: 60,
-    paddingBottom: 20,
+    paddingTop: 8,
+    paddingBottom: 10,
     paddingHorizontal: 20,
     flexDirection: "row",
     alignItems: "center",
@@ -283,37 +308,44 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 8,
   },
+  backIcon: {
+    width: 24,
+    height: 24,
+    tintColor: "#fff",
+  },
   headerTitle: {
     fontSize: 18,
     fontWeight: "700",
     color: "#fff",
     flex: 1,
     textAlign: "center",
+    letterSpacing: 0.3,
   },
   headerSpacer: {
-    width: 40,
+    width: 36,
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 20,
+    paddingHorizontal: 16,
+    paddingTop: 16,
     paddingBottom: 40,
   },
   beneficiaryCard: {
     backgroundColor: "#F9FAFB",
     borderRadius: 16,
-    padding: 20,
+    padding: 16,
     alignItems: "center",
-    marginBottom: 30,
+    marginBottom: 24,
     borderWidth: 1,
     borderColor: "#E5E7EB",
   },
   beneficiaryImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    marginBottom: 12,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    marginBottom: 10,
   },
   beneficiaryImagePlaceholder: {
     backgroundColor: "#E5E7EB",

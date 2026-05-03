@@ -14,7 +14,8 @@ const SUPABASE_STORAGE_BASE = 'https://mdqgndyhzlnwojtubouh.supabase.co/storage/
 // Video Assets (Critical - these need to work when computer is closed)
 // All video assets are stored in Supabase Storage
 export const VIDEO_ASSETS = {
-  GIVE_LOOP: `${SUPABASE_STORAGE_BASE}/assets/videos/give-loop.mp4`,
+  /** Landing “Give” circle video — file: `TI-app-give.mp4` in Supabase `app-assets` */
+  GIVE_LOOP: `${SUPABASE_STORAGE_BASE}/assets/videos/TI-app-give.mp4`,
   SHOP_LOOP: `${SUPABASE_STORAGE_BASE}/assets/videos/shop-loop.mp4`,
   SAVE_LOOP: `${SUPABASE_STORAGE_BASE}/assets/videos/save-loop.mp4`,
   // 2-3 min donation explainer (Watch Video on 3rd onboarding screen)

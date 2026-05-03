@@ -1,8 +1,22 @@
 import { Platform } from "react-native";
+import Constants from "expo-constants";
 import {
   STRIPE_MERCHANT_IDENTIFIER,
   STRIPE_PUBLISHABLE_KEY,
+  STRIPE_PAYMENT_RETURN_URL,
 } from "./constants";
+
+/**
+ * Expo Go is not the real app binary — Stripe Apple Pay / Google Pay bind to the host
+ * client and can glitch the Payment Sheet. Dev / preview builds use a real bundleId.
+ */
+function isExpoGoHost() {
+  try {
+    return Constants.appOwnership === "expo";
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Stripe-recommended mobile flow: Payment Sheet (initPaymentSheet → presentPaymentSheet).
@@ -78,11 +92,11 @@ export async function presentMonthlySubscriptionPaymentSheet(
   const {
     merchantDisplayName = "Thrive Initiative",
     cardOnly = false,
-    // When true, customer credentials are not passed to the Payment Sheet so
-    // Stripe does not pre-populate saved cards (prevents Stripe Link / saved
-    // subscription cards from appearing on one-time gift flows).
+    // When true, omits customerId / ephemeral key (no saved cards or Link on file).
     skipSavedPaymentMethods = false,
   } = options;
+
+  const cardOnlyForRuntime = cardOnly || isExpoGoHost();
 
   const {
     paymentIntentClientSecret,
@@ -106,14 +120,15 @@ export async function presentMonthlySubscriptionPaymentSheet(
     merchantDisplayName,
     paymentIntentClientSecret,
     allowsDelayedPaymentMethods: true,
-    ...(!cardOnly && Platform.OS === "ios" && STRIPE_MERCHANT_IDENTIFIER
+    returnURL: STRIPE_PAYMENT_RETURN_URL,
+    ...(!cardOnlyForRuntime && Platform.OS === "ios" && STRIPE_MERCHANT_IDENTIFIER
       ? {
           applePay: {
             merchantCountryCode: "US",
           },
         }
       : {}),
-    ...(!cardOnly && Platform.OS === "android"
+    ...(!cardOnlyForRuntime && Platform.OS === "android"
       ? {
           googlePay: {
             merchantCountryCode: "US",

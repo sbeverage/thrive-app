@@ -1,11 +1,12 @@
 // file: app/(tabs)/home.js
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useFonts, Figtree_400Regular, Figtree_700Bold } from '@expo-google-fonts/figtree';
-import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, Animated, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useFocusEffect, useNavigation } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import MonthlyImpactCard from '../../components/MonthlyImpactCard';
 import { useBeneficiary } from '../context/BeneficiaryContext';
 import { useUser } from '../context/UserContext';
@@ -27,12 +28,24 @@ export default function MainHome() {
   const { selectedBeneficiary, reloadBeneficiary } = useBeneficiary();
   const { user, loadUserData } = useUser();
 
-  // Redirect to landing page when session expires (e.g. old Render-issued token expired)
+  // Redirect to landing when there is no session. If a JWT still exists, do not bounce to /
+  // while UserContext hydrates — stale userData can have isLoggedIn: false with a valid token.
   useEffect(() => {
-    if (!user.isLoading && !user.isLoggedIn) {
-      router.replace('/');
-    }
-  }, [user.isLoading, user.isLoggedIn]);
+    if (user.isLoading || user.isLoggedIn) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await AsyncStorage.getItem('authToken');
+        if (cancelled) return;
+        if (!token) router.replace('/');
+      } catch (_) {
+        if (!cancelled) router.replace('/');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user.isLoading, user.isLoggedIn, router]);
 
   // Profile image smooth fade-in — resets whenever the URL changes (e.g. backend sync arrives)
   const imageUri = user.profileImage || user.profileImageUrl || null;
@@ -273,48 +286,47 @@ export default function MainHome() {
 
   return (
     <>
-      {/* Bottom inset is handled by (tabs)/_layout tab bar — omit here or a gray strip appears above the footer on Home only. */}
-      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          {/* Email Verification Banner */}
-          {user.isLoggedIn && !user.isVerified && (
-            <View style={styles.verificationBanner}>
-              <Text style={styles.verificationText}>
-                📧 Please verify your email to access all features
-              </Text>
-              <TouchableOpacity 
-                style={styles.verifyButton}
-                onPress={() => router.push('/verifyEmail')}
-              >
-                <Text style={styles.verifyButtonText}>Verify Email</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          
+      {/* Omit top edge here: SafeAreaView top inset + gray bg created a band above the gradient. Top inset is applied inside headerWrapper instead. */}
+      <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          {...(Platform.OS === 'ios' ? { contentInsetAdjustmentBehavior: 'never' } : {})}
+        >
           <LinearGradient
             colors={['#2C3E50', '#4CA1AF']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.headerWrapper}
           >
-            <View style={styles.headerTopRow}>
-              <View style={styles.logoWrap}>
-                <Image
-                  source={{ uri: IMAGE_ASSETS.INITIATIVE_LOGO_NO_WEB_WHITE }}
-                  style={styles.logo}
-                  resizeMode="contain"
-                />
-              </View>
-              <View style={styles.rightIcons}>
-                <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/menu')}>
-                  <Image source={require('../../assets/icons/menu.png')} style={styles.iconWhite} />
-                </TouchableOpacity>
+            {/* Top bar: root SafeAreaView already applies top inset. */}
+            <View style={styles.headerNavChrome}>
+              <View style={styles.headerTopRow}>
+                <View style={styles.logoWrap}>
+                  <Image
+                    source={{ uri: IMAGE_ASSETS.INITIATIVE_LOGO_NO_WEB_WHITE }}
+                    style={styles.logo}
+                    resizeMode="contain"
+                  />
+                </View>
+                <View style={styles.rightIcons}>
+                  <TouchableOpacity
+                    style={styles.iconButton}
+                    onPress={() => router.push('/menu')}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Open menu"
+                  >
+                    <Image source={require('../../assets/icons/menu.png')} style={styles.iconWhite} />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
 
             <View style={styles.headerDivider} />
 
-            <View style={styles.profileRow}>
+            {/* Hero tail (extra blue) lives only under the greeting — keeps logo row at universal top placement. */}
+            <View style={styles.headerProfileSection}>
+              <View style={styles.profileRow}>
               <View style={styles.profileLeft}>
                 {/* Avatar: initials always rendered underneath; image fades in on top when ready */}
                 <View style={[styles.profilePic, { backgroundColor: '#DB8633', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }]}>
@@ -342,6 +354,7 @@ export default function MainHome() {
                   </Text>
                 )}
               </View>
+            </View>
             </View>
           </LinearGradient>
 
@@ -572,29 +585,38 @@ export default function MainHome() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F5F5F5' },
-  scrollContent: { paddingBottom: 20, backgroundColor: '#F5F5F5' },
+  scrollContent: { paddingBottom: 16, backgroundColor: '#F5F5F5' },
   headerWrapper: {
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
     paddingHorizontal: 24,
-    paddingTop: 30,
-    /** Space below the greeting inside the gradient. Larger = more blue under the name. */
-    paddingBottom: 150,
     overflow: 'hidden',
+  },
+  /** Top-aligned row: no fixed height so logo + menu sit high; paddingBottom sets gap to divider. */
+  headerNavChrome: {
+    paddingTop: 4,
+    paddingBottom: 8,
+    justifyContent: 'flex-start',
   },
   headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 8,
+    minHeight: 30,
+    marginTop: 30,
   },
   /** Full-bleed hairline; negative margin matches headerWrapper horizontal padding */
   headerDivider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: 'rgba(255,255,255,0.16)',
-    marginTop: 28,
-    marginBottom: 8,
+    marginTop: 5,
+    marginBottom: 20,
     marginHorizontal: -24,
+  },
+  /** Greeting + large teal area below (does not affect logo vertical position). */
+  headerProfileSection: {
+    paddingTop: 8,
+    paddingBottom: 150,
   },
   /** Left-aligned; maxWidth keeps wide wordmark from overlapping the menu icon. */
   logoWrap: {
@@ -604,8 +626,8 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     maxWidth: '78%',
   },
-  /** ~480×45 initiative strip */
-  logo: { height: 18, aspectRatio: 480 / 45, alignSelf: 'flex-start' },
+  /** ~480×45 initiative strip; slight lift mirrors discounts miniBrandLogo marginTop -20. */
+  logo: { height: 18, aspectRatio: 480 / 45, alignSelf: 'flex-start', marginTop: -8 },
   rightIcons: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
   iconButton: { marginLeft: 12 },
   iconWhite: { width: 22, height: 22, resizeMode: 'contain', tintColor: 'white' },
@@ -613,9 +635,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 24,
-    /** Extra air under “Hey …!” before the teal padding zone */
-    paddingBottom: 8,
   },
   profileLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   profilePic: { width: 50, height: 50, borderRadius: 25 },
@@ -633,10 +652,11 @@ const styles = StyleSheet.create({
    * Overlap into the gradient. More negative = card sits slightly higher (tighter to the name row).
    * marginBottom adds space before the “My Beneficiary” header.
    */
+  /** With paddingBottom 150, more negative = card sits higher on screen. */
   monthlyCardWrapper: {
-    marginTop: -130,
+    marginTop: -120,
     marginHorizontal: 20,
-    marginBottom: 18,
+    marginBottom: 10,
     zIndex: 10,
   },
   sectionHeader: { fontSize: 20, fontWeight: '700', color: '#324E58' },
@@ -644,7 +664,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', 
     justifyContent: 'space-between', 
     alignItems: 'center',
-    marginTop: 30, 
+    marginTop: 16, 
     marginBottom: 10, 
     paddingHorizontal: 20 
   },
@@ -788,8 +808,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     borderRadius: 20,
     overflow: 'hidden',
-    marginTop: 30,
-    marginBottom: 40,
+    marginTop: 18,
+    marginBottom: 28,
     backgroundColor: '#fff',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -799,8 +819,8 @@ const styles = StyleSheet.create({
   },
   inviteGradientHeader: {
     paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 28,
+    paddingTop: 18,
+    paddingBottom: 20,
   },
   inviteSectionTitle: {
     fontSize: 22,
@@ -940,32 +960,5 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: 'white',
     fontWeight: 'bold',
-  },
-  verificationBanner: {
-    backgroundColor: '#FF6B6B',
-    padding: 15,
-    margin: 10,
-    borderRadius: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  verificationText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-    flex: 1,
-  },
-  verifyButton: {
-    backgroundColor: 'white',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 6,
-    marginLeft: 10,
-  },
-  verifyButtonText: {
-    color: '#FF6B6B',
-    fontSize: 12,
-    fontWeight: '700',
   },
 });

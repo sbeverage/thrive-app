@@ -15,7 +15,7 @@ import {
   Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { AntDesign } from "@expo/vector-icons";
+import { AntDesign, MaterialIcons } from "@expo/vector-icons";
 import ProfileCompleteModal from "../../components/ProfileCompleteModal";
 import { LinearGradient } from "expo-linear-gradient";
 import { Animated } from "react-native";
@@ -101,6 +101,8 @@ export default function StripeIntegration() {
   const [confettiTrigger, setConfettiTrigger] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("card"); // 'card' or 'applepay'
   const [showServiceFeeInfo, setShowServiceFeeInfo] = useState(false);
+  const [showMonthlyDonationInfo, setShowMonthlyDonationInfo] = useState(false);
+  const [showProcessingFeesInfo, setShowProcessingFeesInfo] = useState(false);
 
   // For coworking extras, the sponsor amount ($15) is already billed externally —
   // only charge the user's extra donation. For all other flows, charge the full donation.
@@ -111,26 +113,11 @@ export default function StripeIntegration() {
   const totalAmount = totalAmountNumber.toFixed(2);
 
   // Animation values
-  const piggyAnim = useRef(new Animated.Value(0)).current;
-  const bubbleAnim = useRef(new Animated.Value(0)).current;
   const cardAnim = useRef(new Animated.Value(0)).current;
   const buttonAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.sequence([
-      Animated.parallel([
-        Animated.spring(piggyAnim, {
-          toValue: 1,
-          useNativeDriver: true,
-          tension: 40,
-          friction: 8,
-        }),
-        Animated.timing(bubbleAnim, {
-          toValue: 1,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-      ]),
       Animated.spring(cardAnim, {
         toValue: 1,
         useNativeDriver: true,
@@ -314,7 +301,7 @@ export default function StripeIntegration() {
             width: "100%",
             alignItems: "center",
             justifyContent: "flex-start",
-            paddingTop: 60,
+            paddingTop: 100,
             paddingBottom: 40,
           }}
           keyboardShouldPersistTaps="handled"
@@ -329,32 +316,6 @@ export default function StripeIntegration() {
               style={{ width: 24, height: 24, tintColor: "#fff" }}
             />
           </TouchableOpacity>
-
-          {/* Subtle Message Banner */}
-          <Animated.View
-            style={{
-              opacity: piggyAnim,
-              transform: [
-                {
-                  translateY: piggyAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [-20, 0],
-                  }),
-                },
-              ],
-              width: "90%",
-              maxWidth: 340,
-              marginTop: 20,
-              marginBottom: 16,
-            }}
-          >
-            <View style={styles.subtleBanner}>
-              <Text style={styles.subtleBannerText}>
-                Help us cover processing fees so more of your donation goes
-                directly to {selectedBeneficiary?.name || "your cause"}
-              </Text>
-            </View>
-          </Animated.View>
 
           {/* Main Checkout Card */}
           <Animated.View
@@ -400,17 +361,29 @@ export default function StripeIntegration() {
                   </>
                 ) : (
                   <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Monthly Donation</Text>
+                    <View style={styles.labelWithInfo}>
+                      <Text style={styles.summaryLabel}>Monthly Donation</Text>
+                      <TouchableOpacity
+                        onPress={() => setShowMonthlyDonationInfo(true)}
+                        style={styles.infoIconButton}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Image
+                          source={require("../../assets/icons/info.png")}
+                          style={styles.infoIcon}
+                        />
+                      </TouchableOpacity>
+                    </View>
                     <Text style={styles.summaryAmount}>
                       ${baseAmount.toFixed(2)}
                     </Text>
                   </View>
                 )}
 
-                {/* Service Fee */}
+                {/* Platform Fee */}
                 <View style={styles.summaryRow}>
                   <View style={styles.labelWithInfo}>
-                    <Text style={styles.summaryLabel}>Service Fee</Text>
+                    <Text style={styles.summaryLabel}>Platform Fee</Text>
                     <TouchableOpacity
                       onPress={() => setShowServiceFeeInfo(true)}
                       style={styles.infoIconButton}
@@ -432,9 +405,16 @@ export default function StripeIntegration() {
                   <View style={styles.labelWithToggle}>
                     <View style={styles.labelWithInfo}>
                       <Text style={styles.summaryLabel}>Credit Card Fees</Text>
-                      <Text style={styles.feePercentage}>
-                        {CREDIT_CARD_FEE_LABEL}
-                      </Text>
+                      <TouchableOpacity
+                        onPress={() => setShowProcessingFeesInfo(true)}
+                        style={styles.infoIconButton}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Image
+                          source={require("../../assets/icons/info.png")}
+                          style={styles.infoIcon}
+                        />
+                      </TouchableOpacity>
                     </View>
                     <TouchableOpacity
                       onPress={() => {
@@ -458,10 +438,16 @@ export default function StripeIntegration() {
                         />
                       </View>
                     </TouchableOpacity>
-                    <Text style={[styles.summaryAmount, !coverFees && styles.disabledAmount]}>
-                      ${coverFees ? creditCardFee.toFixed(2) : '0.00'}
-                    </Text>
                   </View>
+                  <Text
+                    style={[
+                      styles.summaryAmount,
+                      styles.creditCardFeeAmount,
+                      !coverFees && styles.disabledAmount,
+                    ]}
+                  >
+                    ${coverFees ? creditCardFee.toFixed(2) : "0.00"}
+                  </Text>
                 </View>
 
                 {/* Total - Prominent */}
@@ -471,80 +457,86 @@ export default function StripeIntegration() {
                     <Text style={styles.totalAmount}>${totalAmount}</Text>
                   </View>
                 </View>
+
+                <View style={styles.summarySupportCallout}>
+                  <Text style={styles.summarySupportCalloutText}>
+                    Help us cover processing fees so more of your donation goes
+                    directly to {selectedBeneficiary?.name || "your cause"}.
+                  </Text>
+                </View>
               </View>
 
-              {/* Payment Method Section */}
+              {/* Payment — card + wallet side by side */}
               <View style={styles.paymentSection}>
-                <Text style={styles.sectionTitle}>Payment Method</Text>
+                <Text style={styles.sectionTitle}>Payment</Text>
 
-                {/* Apple Pay / Google Pay — opens native wallet sheet, not Stripe card UI */}
-                <TouchableOpacity
-                  style={styles.applePayButton}
-                  onPress={handleApplePay}
-                  disabled={paymentLoading !== null}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    Platform.OS === "ios"
-                      ? "Pay with Apple Pay"
-                      : "Pay with Google Pay"
-                  }
+                <Animated.View
+                  style={[
+                    styles.paymentMethodsRow,
+                    {
+                      opacity: buttonAnim,
+                      transform: [
+                        {
+                          scale: buttonAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0.97, 1],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
                 >
-                  {paymentLoading === "wallet" ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : applePaySvg ? (
-                    <SvgXml xml={applePaySvg} width={50} height={50} />
-                  ) : (
-                    <View style={{ width: 50, height: 50 }} />
-                  )}
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleContinue}
+                    style={[
+                      styles.continueButton,
+                      styles.paymentMethodHalf,
+                      paymentLoading !== null && styles.continueButtonDisabled,
+                    ]}
+                    disabled={paymentLoading !== null}
+                    accessibilityRole="button"
+                    accessibilityLabel="Pay with card using Stripe"
+                  >
+                    {paymentLoading === "card" ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.continueButtonTextInRow}>
+                        Pay with card
+                      </Text>
+                    )}
+                  </TouchableOpacity>
 
-                {/* Divider */}
-                <View style={styles.dividerContainer}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>or</Text>
-                  <View style={styles.dividerLine} />
-                </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.walletPayButton,
+                      styles.paymentMethodHalf,
+                      paymentLoading !== null && styles.continueButtonDisabled,
+                    ]}
+                    onPress={handleApplePay}
+                    disabled={paymentLoading !== null}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      Platform.OS === "ios"
+                        ? "Pay with Apple Pay"
+                        : "Pay with Google Pay"
+                    }
+                  >
+                    {paymentLoading === "wallet" ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : Platform.OS === "ios" && applePaySvg ? (
+                      <SvgXml xml={applePaySvg} width={56} height={23} />
+                    ) : Platform.OS === "ios" ? (
+                      <View style={styles.walletMarkLoadingSlot} />
+                    ) : (
+                      <MaterialIcons
+                        name="account-balance-wallet"
+                        size={32}
+                        color="#fff"
+                      />
+                    )}
+                  </TouchableOpacity>
+                </Animated.View>
 
-                {/* Card Inputs */}
-                {/* <View style={styles.cardInputsSection}> */}
-                <Text style={styles.cardInputTitle}>Stripe Card Payment</Text>
-                {/* 
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Card number"
-                    placeholderTextColor="#9ca3af"
-                    keyboardType="numeric"
-                    value={cardNumber}
-                    onChangeText={setCardNumber}
-                  />
-
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Cardholder name"
-                    placeholderTextColor="#9ca3af"
-                    value={holderName}
-                    onChangeText={setHolderName}
-                  /> */}
-
-                {/* <View style={styles.cardInputRow}>
-                    <TextInput
-                      style={[styles.input, styles.cardInputHalf]}
-                      placeholder="MM/YY"
-                      placeholderTextColor="#9ca3af"
-                      value={expiryDate}
-                      onChangeText={setExpiryDate}
-                    />
-                    <TextInput
-                      style={[styles.input, styles.cardInputHalf]}
-                      placeholder="CVV"
-                      placeholderTextColor="#9ca3af"
-                      secureTextEntry
-                      value={cvv}
-                      onChangeText={setCvv}
-                    />
-                  </View> */}
-
-                {/* Save Card Option */}
                 <TouchableOpacity
                   onPress={() => setSaveCard(!saveCard)}
                   style={styles.saveCardOption}
@@ -564,7 +556,6 @@ export default function StripeIntegration() {
                     Save card for future donations
                   </Text>
                 </TouchableOpacity>
-                {/* </View> */}
               </View>
 
               {/* Confetti */}
@@ -578,43 +569,6 @@ export default function StripeIntegration() {
                   onAnimationEnd={() => setConfettiTrigger(false)}
                 />
               )}
-
-              {/* Continue Button */}
-              <Animated.View
-                style={{
-                  opacity: buttonAnim,
-                  transform: [
-                    {
-                      scale: buttonAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0.95, 1],
-                      }),
-                    },
-                  ],
-                  marginTop: 24,
-                  width: "100%",
-                }}
-              >
-                {/* Stripe Payment Sheet — manual card entry in Stripe UI */}
-                <TouchableOpacity
-                  onPress={handleContinue}
-                  style={[
-                    styles.continueButton,
-                    paymentLoading !== null && styles.continueButtonDisabled,
-                  ]}
-                  disabled={paymentLoading !== null}
-                  accessibilityRole="button"
-                  accessibilityLabel="Pay with card using Stripe"
-                >
-                  {paymentLoading === "card" ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.continueButtonText}>
-                      Stripe Payment
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              </Animated.View>
             </View>
           </Animated.View>
         </ScrollView>
@@ -645,7 +599,35 @@ export default function StripeIntegration() {
         }}
       />
 
-      {/* Service Fee Info Modal */}
+      {/* Monthly Donation Info Modal */}
+      <Modal
+        visible={showMonthlyDonationInfo}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowMonthlyDonationInfo(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowMonthlyDonationInfo(false)}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Monthly Donation</Text>
+            <Text style={styles.modalText}>
+              This is the base amount you've chosen to donate each month to your selected cause. 100% of this amount goes directly to your beneficiary.
+            </Text>
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={() => setShowMonthlyDonationInfo(false)}
+            >
+              <Text style={styles.modalCloseButtonText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Platform Fee Info Modal */}
       <Modal
         visible={showServiceFeeInfo}
         transparent={true}
@@ -659,14 +641,41 @@ export default function StripeIntegration() {
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Service Fee</Text>
+            <Text style={styles.modalTitle}>Platform Fee</Text>
             <Text style={styles.modalText}>
-              This fee supports the THRIVE Initiative platform and covers
-              various operating costs.
+              A small $3/month platform fee helps keep THRIVE running — covering technology, support, and the tools that connect donors to causes they care about.
             </Text>
             <TouchableOpacity
               style={styles.modalCloseButton}
               onPress={() => setShowServiceFeeInfo(false)}
+            >
+              <Text style={styles.modalCloseButtonText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Processing Fees Info Modal */}
+      <Modal
+        visible={showProcessingFeesInfo}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowProcessingFeesInfo(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowProcessingFeesInfo(false)}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Credit Card Processing Fees</Text>
+            <Text style={styles.modalText}>
+              Payment processors charge a small fee (3.5%) to handle your transaction securely. By toggling this on, you cover that cost so 100% of your intended donation reaches your cause.
+            </Text>
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={() => setShowProcessingFeesInfo(false)}
             >
               <Text style={styles.modalCloseButtonText}>Got it</Text>
             </TouchableOpacity>
@@ -735,42 +744,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 4,
   },
-  applePayButton: {
-    backgroundColor: "#000",
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 20,
-    width: "100%",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  applePayText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  dividerContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 20,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#E5E7EB",
-  },
-  dividerText: {
-    color: "#9ca3af",
-    fontSize: 13,
-    fontWeight: "500",
-    marginHorizontal: 16,
-  },
   infoCard: {
     backgroundColor: "#fff",
     borderRadius: 24,
@@ -802,21 +775,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 3,
-  },
-  subtleBanner: {
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  subtleBannerText: {
-    color: "#fff",
-    fontSize: 13,
-    lineHeight: 18,
-    textAlign: "center",
-    fontWeight: "400",
   },
   mainCard: {
     backgroundColor: "#fff",
@@ -857,6 +815,10 @@ const styles = StyleSheet.create({
     color: "#2C3E50",
     fontWeight: "600",
   },
+  creditCardFeeAmount: {
+    marginLeft: 16,
+    flexShrink: 0,
+  },
   disabledAmount: {
     color: "#9ca3af",
   },
@@ -875,14 +837,13 @@ const styles = StyleSheet.create({
   labelWithInfo: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 2,
   },
   labelWithToggle: {
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
     justifyContent: "space-between",
-    marginRight: 12,
   },
   feePercentage: {
     fontSize: 13,
@@ -890,13 +851,13 @@ const styles = StyleSheet.create({
     fontWeight: "400",
   },
   infoIconButton: {
-    padding: 4,
-    marginLeft: 6,
+    padding: 2,
+    marginLeft: 3,
   },
   infoIcon: {
     width: 16,
     height: 16,
-    tintColor: "#6d6e72",
+    tintColor: "#DB8633",
   },
   toggleButton: {
     padding: 4,
@@ -909,6 +870,7 @@ const styles = StyleSheet.create({
   totalSection: {
     marginTop: 8,
     paddingTop: 16,
+    paddingBottom: 14,
     borderTopWidth: 1,
     borderTopColor: "#E5E7EB",
   },
@@ -927,20 +889,59 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#2C3E50",
   },
+  summarySupportCallout: {
+    marginTop: 14,
+    marginBottom: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: "#F4F7F9",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E6EBEF",
+  },
+  summarySupportCalloutText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: "#5A6B78",
+    textAlign: "center",
+    fontWeight: "400",
+  },
   paymentSection: {
-    marginTop: 24,
+    marginTop: 12,
     paddingTop: 24,
     borderTopWidth: 1,
     borderTopColor: "#E5E7EB",
   },
+  paymentMethodsRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: 10,
+    width: "100%",
+  },
+  paymentMethodHalf: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 56,
+  },
+  walletPayButton: {
+    backgroundColor: "#000",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  walletMarkLoadingSlot: {
+    width: 56,
+    height: 23,
+  },
   cardInputsSection: {
     marginTop: 16,
-  },
-  cardInputTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#324E58",
-    marginBottom: 16,
   },
   cardInputRow: {
     flexDirection: "row",
@@ -953,7 +954,7 @@ const styles = StyleSheet.create({
   saveCardOption: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 16,
+    marginTop: 20,
     paddingVertical: 4,
   },
   checkbox: {
@@ -1058,9 +1059,8 @@ const styles = StyleSheet.create({
   continueButton: {
     backgroundColor: "#DB8633",
     borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    width: "100%",
+    paddingVertical: 12,
+    paddingHorizontal: 10,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
@@ -1072,9 +1072,9 @@ const styles = StyleSheet.create({
   continueButtonDisabled: {
     opacity: 0.7,
   },
-  continueButtonText: {
+  continueButtonTextInRow: {
     color: "#fff",
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: "700",
     textAlign: "center",
   },

@@ -1,5 +1,5 @@
 // One-Time Gift Checkout Screen with Stripe Integration
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -25,10 +25,18 @@ import {
   hasMonthlySubscriptionPaymentSheet,
   presentMonthlySubscriptionPaymentSheet,
 } from '../../utils/monthlySubscriptionPaymentSheet';
+import { useBeneficiary } from '../../context/BeneficiaryContext';
+import { resolveRemoteImageUri } from '../../utils/resolveRemoteImageUri';
+
+function firstParam(value) {
+  if (value == null) return '';
+  return Array.isArray(value) ? value[0] ?? '' : value;
+}
 
 export default function CheckoutScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { selectedBeneficiary } = useBeneficiary();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   
   // Check if Stripe is properly initialized
@@ -42,10 +50,29 @@ export default function CheckoutScreen() {
     }
   }, []);
   
-  // Get data from params
-  const beneficiaryId = params.beneficiaryId;
-  const beneficiaryName = params.beneficiaryName || 'Charity';
-  const beneficiaryImage = params.beneficiaryImage ? { uri: params.beneficiaryImage } : null;
+  // Get data from params (expo-router may pass string[] for a key)
+  const beneficiaryId = firstParam(params.beneficiaryId);
+  const beneficiaryName = firstParam(params.beneficiaryName) || 'Charity';
+  const paramImageUri = resolveRemoteImageUri(firstParam(params.beneficiaryImage));
+
+  const beneficiaryLogoUri = useMemo(() => {
+    if (paramImageUri) return paramImageUri;
+    const bid = beneficiaryId != null && beneficiaryId !== '' ? String(beneficiaryId) : '';
+    const sid =
+      selectedBeneficiary?.id != null && selectedBeneficiary.id !== ''
+        ? String(selectedBeneficiary.id)
+        : '';
+    if (bid && sid === bid) {
+      return (
+        resolveRemoteImageUri(selectedBeneficiary?.image) ||
+        resolveRemoteImageUri(selectedBeneficiary?.logo_url) ||
+        ''
+      );
+    }
+    return '';
+  }, [paramImageUri, beneficiaryId, selectedBeneficiary]);
+
+  const beneficiaryImageSource = beneficiaryLogoUri ? { uri: beneficiaryLogoUri } : null;
   const rawAmount = parseFloat(params.amount || '0');
   const amount = (!isNaN(rawAmount) && rawAmount > 0) ? rawAmount : 0;
   const userCoveredFees = params.userCoveredFees === 'true';
@@ -77,8 +104,9 @@ export default function CheckoutScreen() {
       setError(null);
 
       /** Server applies fees via calculateProcessingFee — send base donation + flag (matches /one-time-gifts/create-payment-intent). */
+      const bidNum = Number(beneficiaryId);
       const paymentData = {
-        beneficiary_id: beneficiaryId,
+        beneficiary_id: Number.isFinite(bidNum) ? bidNum : beneficiaryId,
         amount,
         currency: 'USD',
         user_covered_fees: userCoveredFees,
@@ -110,15 +138,10 @@ export default function CheckoutScreen() {
       setIsProcessing(true);
       setError(null);
 
-      // Stripe Payment Sheet automatically includes Apple Pay if:
-      // 1. Platform is iOS
-      // 2. merchantIdentifier is configured in StripeProvider
-      // 3. Apple Pay is enabled in the initPaymentSheet config
-      // (This configuration happens inside presentMonthlySubscriptionPaymentSheet)
+      // Uses customer + ephemeral key from the API so saved cards and Apple Pay can appear (see monthlySubscriptionPaymentSheet).
       const payResult = await presentMonthlySubscriptionPaymentSheet(
         { initPaymentSheet, presentPaymentSheet },
         paymentSheetData,
-        { skipSavedPaymentMethods: true },
       );
 
       if (!payResult.ok) {
@@ -190,14 +213,14 @@ export default function CheckoutScreen() {
         end={{ x: 1, y: 1 }}
         style={styles.header}
       >
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
           disabled={isProcessing}
         >
-          <Image 
-            source={require('../../../assets/icons/arrow-left.png')} 
-            style={{ width: 24, height: 24, tintColor: '#fff' }} 
+          <Image
+            source={require('../../../assets/icons/arrow-left.png')}
+            style={styles.backIcon}
           />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Checkout</Text>
@@ -207,8 +230,12 @@ export default function CheckoutScreen() {
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {/* Beneficiary Info */}
         <View style={styles.beneficiaryCard}>
-          {beneficiaryImage ? (
-            <Image source={beneficiaryImage} style={styles.beneficiaryImage} />
+          {beneficiaryImageSource ? (
+            <Image
+              source={beneficiaryImageSource}
+              style={styles.beneficiaryImage}
+              resizeMode="cover"
+            />
           ) : (
             <View style={[styles.beneficiaryImage, styles.beneficiaryImagePlaceholder]}>
               <Feather name="heart" size={32} color="#DB8633" />
@@ -274,7 +301,7 @@ export default function CheckoutScreen() {
               ) : (
                 <>
                   <Feather name="credit-card" size={20} color="#fff" />
-                  <Text style={styles.cardPaymentText}>Pay with Card</Text>
+                  <Text style={styles.cardPaymentText}>Complete Payment</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -345,8 +372,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   header: {
-    paddingTop: 60,
-    paddingBottom: 20,
+    // Root layout already applies top safe area — compact bar above scroll content.
+    paddingTop: 8,
+    paddingBottom: 10,
     paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
@@ -355,37 +383,44 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 8,
   },
+  backIcon: {
+    width: 24,
+    height: 24,
+    tintColor: '#fff',
+  },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: '#fff',
     flex: 1,
     textAlign: 'center',
+    letterSpacing: 0.3,
   },
   headerSpacer: {
-    width: 40,
+    width: 36,
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 20,
+    paddingHorizontal: 16,
+    paddingTop: 16,
     paddingBottom: 40,
   },
   beneficiaryCard: {
     backgroundColor: '#F9FAFB',
     borderRadius: 16,
-    padding: 20,
+    padding: 16,
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
   beneficiaryImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    marginBottom: 12,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    marginBottom: 10,
   },
   beneficiaryImagePlaceholder: {
     backgroundColor: '#E5E7EB',

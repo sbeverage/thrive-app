@@ -11,7 +11,7 @@ import {
   ScrollView,
   Platform,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AntDesign } from '@expo/vector-icons';
 import API from './lib/api';
@@ -22,17 +22,46 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function VerifyEmailScreen() {
   const { email: paramEmail, token } = useLocalSearchParams();
-  const { user, markAsVerified } = useUser();
+  const { user, markAsVerified, checkVerificationStatus, loadUserData } =
+    useUser();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  /** Ensures we only auto-navigate once and matches handleVerification / dev skip. */
+  const hasNavigatedPastVerifyRef = React.useRef(false);
 
-  // Get email from params or user context
-  const email = paramEmail || user.email;
+  const goPastEmailVerification = React.useCallback(() => {
+    if (hasNavigatedPastVerifyRef.current) return;
+    hasNavigatedPastVerifyRef.current = true;
+    void persistSignupFlowCheckpoint('/signupFlow/explainerDonate', {});
+    router.replace('/signupFlow/explainerDonate');
+  }, [router]);
+
+  const email =
+    (Array.isArray(paramEmail) ? paramEmail[0] : paramEmail) ||
+    user?.email ||
+    '';
 
   console.log('📧 VerifyEmail - Email parameter:', paramEmail);
   console.log('📧 VerifyEmail - User email:', user.email);
   console.log('📧 VerifyEmail - Final email:', email);
   console.log('📧 VerifyEmail - Token parameter:', token);
+
+  // Refresh profile from server on entry (verification is under profile.isVerified).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await loadUserData();
+        if (!cancelled) await checkVerificationStatus();
+      } catch (_) {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot hydrate on mount
+  }, []);
 
   // Auto-verify if token is provided
   useEffect(() => {
@@ -41,24 +70,26 @@ export default function VerifyEmailScreen() {
     }
   }, [token, email]);
 
-  // Auto-redirect only if ALREADY verified when this screen first mounts
-  // (e.g. social login users who don't need email verification).
-  // Do NOT redirect if isVerified becomes true after mounting — that could be
-  // a background backend sync, and we don't want to skip the verify step for
-  // users who just created an account.
-  const wasVerifiedOnMount = React.useRef(user?.isVerified);
+  // User may have verified in the browser first; sync when they open / return to this screen.
+  useFocusEffect(
+    React.useCallback(() => {
+      checkVerificationStatus();
+    }, [checkVerificationStatus]),
+  );
 
+  // After profile loads (or markAsVerified), advance anyone who is already verified — fixes
+  // cold resume stuck on /verifyEmail with signupFlowPending overwritten by the old effect.
   useEffect(() => {
-    if (wasVerifiedOnMount.current) {
-      console.log('✅ User already verified on mount, redirecting to onboarding...');
-      persistSignupFlowCheckpoint('/signupFlow/explainerDonate', {});
-      router.replace('/signupFlow/explainerDonate');
-    }
-  }, []);
+    if (user?.isLoading) return;
+    if (!user?.isVerified) return;
+    console.log('✅ User verified — advancing signup past verifyEmail');
+    goPastEmailVerification();
+  }, [user?.isLoading, user?.isVerified, goPastEmailVerification]);
 
-  // Keep pending route on verify until user passes it; re-run when email hydrates from context.
+  // Only while still unverified: keep checkpoint here so a true mid-verify exit resumes correctly.
   useEffect(() => {
-    if (wasVerifiedOnMount.current) return;
+    if (user?.isLoading) return;
+    if (user?.isVerified) return;
     const e = (Array.isArray(paramEmail) ? paramEmail[0] : paramEmail) || user?.email;
     if (e) {
       const t = Array.isArray(token) ? token[0] : token;
@@ -67,7 +98,7 @@ export default function VerifyEmailScreen() {
         ...(t ? { token: String(t) } : {}),
       });
     }
-  }, [paramEmail, token, user?.email]);
+  }, [paramEmail, token, user?.email, user?.isVerified, user?.isLoading]);
 
   const handleVerification = async () => {
     if (!token || !email) return;
@@ -82,19 +113,13 @@ export default function VerifyEmailScreen() {
       // Check if verification was successful
       if (response.success || response.message?.includes('verified') || response.message?.includes('success')) {
         console.log('✅ Email verification successful!');
-        markAsVerified();
+        await markAsVerified();
+        // Move checkpoint off /verifyEmail immediately so a kill-app during the alert still resumes forward.
+        goPastEmailVerification();
         Alert.alert(
           'Email Verified! 🎉',
           'Your email has been successfully verified. Let\'s set up your giving preferences!',
-          [
-            {
-              text: 'Continue',
-              onPress: async () => {
-                await persistSignupFlowCheckpoint('/signupFlow/explainerDonate', {});
-                router.replace('/signupFlow/explainerDonate');
-              },
-            },
-          ]
+          [{ text: 'Continue', onPress: () => {} }],
         );
       } else {
         console.log('❌ Verification failed:', response.message);

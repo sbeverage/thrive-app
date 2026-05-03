@@ -1,8 +1,15 @@
 // context/UserContext.js - Clean user context with Supabase backend integration
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
 import API from '../lib/api';
+import { extractIsVerifiedFromApiProfile } from '../utils/extractIsVerifiedFromApiProfile';
 
 const UserContext = createContext();
 
@@ -110,13 +117,14 @@ export const UserProvider = ({ children }) => {
           points: parsedUser.points ?? user.points ?? 0,
           monthlyDonation: parsedUser.monthlyDonation ?? user.monthlyDonation ?? 15,
           totalSavings: parsedUser.totalSavings ?? user.totalSavings ?? 0,
-          isLoggedIn: parsedUser.isLoggedIn ?? user.isLoggedIn ?? hasAuthToken,
+          // If JWT exists, treat as logged in even when userData has isLoggedIn: false (false ?? token keeps false and causes home ↔ index loops).
+          isLoggedIn: hasAuthToken ? true : !!(parsedUser.isLoggedIn ?? user.isLoggedIn ?? false),
           isVerified: parsedUser.isVerified ?? user.isVerified ?? false,
         };
         
-        // If user is authenticated, always try to sync with backend to get latest data (especially profile image)
-        // This ensures profile image and other data saved to backend is loaded
-        if (parsedUser.email) {
+        // If user is authenticated, sync from backend (verification is profile.isVerified).
+        // Do not gate on parsedUser.email — token-only or pre-profile states must still merge isVerified.
+        if (hasAuthToken) {
           try {
             const isAuth = await API.isAuthenticated();
             if (isAuth) {
@@ -154,8 +162,11 @@ export const UserProvider = ({ children }) => {
                   points: loadedUser.points ?? 0,
                   monthlyDonation: loadedUser.monthlyDonation ?? 15,
                   totalSavings: loadedUser.totalSavings ?? 0,
-                  isLoggedIn: loadedUser.isLoggedIn ?? hasAuthToken,
-                  isVerified: backendProfile.is_verified !== undefined ? (backendProfile.is_verified === 1 || backendProfile.is_verified === true) : (loadedUser.isVerified ?? false),
+                  isLoggedIn: hasAuthToken ? true : !!(loadedUser.isLoggedIn ?? false),
+                  isVerified: extractIsVerifiedFromApiProfile(
+                    backendProfile,
+                    loadedUser.isVerified ?? false,
+                  ),
                 };
                 loadedUser = mergedUser;
                 if (backendBeneficiary) {
@@ -548,8 +559,11 @@ export const UserProvider = ({ children }) => {
           points: localUser.points ?? user.points ?? 0,
           monthlyDonation: localUser.monthlyDonation ?? user.monthlyDonation ?? 15,
           totalSavings: localUser.totalSavings ?? user.totalSavings ?? 0,
-          isLoggedIn: localUser.isLoggedIn ?? true,
-          isVerified: backendProfile.is_verified !== undefined ? (backendProfile.is_verified === 1 || backendProfile.is_verified === true) : (localUser.isVerified ?? false),
+          isLoggedIn: true,
+          isVerified: extractIsVerifiedFromApiProfile(
+            backendProfile,
+            localUser.isVerified ?? false,
+          ),
           isLoading: false,
         };
 
@@ -583,7 +597,6 @@ export const UserProvider = ({ children }) => {
         'selectedBeneficiary',
         'beneficiaryFavorites',
         'userTransactions',
-        'signupFlowPending',
       ]);
       
       setUser({
@@ -676,22 +689,24 @@ export const UserProvider = ({ children }) => {
     }
   };
 
-  const checkVerificationStatus = async () => {
+  /** Stable ref for verify screen focus — uses functional setState (no `user` closure). */
+  const checkVerificationStatus = useCallback(async () => {
     try {
-      if (!user.email) return;
       const response = await API.getProfile();
-      if (response && response.is_verified !== undefined) {
-        const isVerified = response.is_verified === 1 || response.is_verified === true;
-        if (isVerified !== user.isVerified) {
-          const updatedUser = { ...user, isVerified };
-          setUser(updatedUser);
-          await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
-        }
-      }
+      if (!response) return;
+      setUser((prev) => {
+        const isVerified = extractIsVerifiedFromApiProfile(response, prev.isVerified);
+        if (isVerified === prev.isVerified) return prev;
+        const updatedUser = { ...prev, isVerified };
+        AsyncStorage.setItem("userData", JSON.stringify(updatedUser)).catch(
+          () => {},
+        );
+        return updatedUser;
+      });
     } catch {
       // Non-critical — ignore
     }
-  };
+  }, []);
 
   const value = {
     user,

@@ -14,7 +14,11 @@ import React, { useEffect } from 'react';
 import { Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StripeProvider } from '@stripe/stripe-react-native';
-import { STRIPE_PUBLISHABLE_KEY, STRIPE_MERCHANT_IDENTIFIER } from './utils/constants';
+import {
+  STRIPE_PUBLISHABLE_KEY,
+  STRIPE_MERCHANT_IDENTIFIER,
+  APP_URL_SCHEME,
+} from './utils/constants';
 import ErrorBoundary from '../components/ErrorBoundary';
 
 
@@ -164,6 +168,7 @@ function Layout() {
       <StripeProvider
         publishableKey={STRIPE_PUBLISHABLE_KEY}
         merchantIdentifier={STRIPE_MERCHANT_IDENTIFIER}
+        urlScheme={APP_URL_SCHEME}
       >
         <UserProvider>
           <BeneficiaryProvider>

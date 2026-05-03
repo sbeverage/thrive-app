@@ -15,6 +15,7 @@ import { AntDesign, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useSegments } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ConfettiCannon from 'react-native-confetti-cannon';
+import { resolveRemoteImageUri } from '../app/utils/resolveRemoteImageUri';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -572,7 +573,10 @@ export default function BeneficiaryDetailCard({
                   params: {
                     beneficiaryId: data.id,
                     beneficiaryName: data.name || 'Charity',
-                    beneficiaryImage: data.image_url || '',
+                    beneficiaryImage:
+                      resolveRemoteImageUri(data.logoUrl || data.image) ||
+                      resolveRemoteImageUri(data.image_url) ||
+                      '',
                     amount: donationAmount.toString(),
                     userCoveredFees: 'true', // Default to user covering fees
                     donorMessage: '',

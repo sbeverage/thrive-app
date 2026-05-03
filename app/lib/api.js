@@ -1259,7 +1259,7 @@ const API = {
     try {
       await AsyncStorage.removeItem("authToken");
       await AsyncStorage.removeItem("userData");
-      await AsyncStorage.removeItem("signupFlowPending");
+      // signupFlowPending is kept so users can sign out mid-signup and resume after login
       console.log("✅ User logged out successfully");
     } catch (error) {
       console.error("Logout error:", error);
