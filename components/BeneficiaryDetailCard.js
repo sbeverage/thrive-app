@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,12 +10,76 @@ import {
   Dimensions,
   Alert,
   Linking,
+  Modal,
+  ActivityIndicator,
+  Pressable,
 } from 'react-native';
 import { AntDesign, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useSegments } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { resolveRemoteImageUri } from '../app/utils/resolveRemoteImageUri';
+import API from '../app/lib/api';
+
+const ACTIVE_PAYMENT_METHOD_KEY = 'activePaymentMethod';
+
+function formatCardBrand(brand) {
+  if (!brand) return 'Card';
+  const b = String(brand).toLowerCase();
+  if (b === 'amex' || b === 'american express' || b === 'american_express') return 'Amex';
+  if (b === 'diners') return 'Diners';
+  if (b === 'unionpay') return 'UnionPay';
+  return b.charAt(0).toUpperCase() + b.slice(1);
+}
+
+function normalizePaymentMethodsList(methods) {
+  return (methods || []).map((method) => {
+    if (method?.card) return method;
+    if (method?.brand || method?.last4) {
+      return {
+        ...method,
+        card: {
+          brand: method.brand || 'card',
+          last4: method.last4 || '',
+          exp_month: method.exp_month || null,
+          exp_year: method.exp_year || null,
+        },
+      };
+    }
+    return method;
+  });
+}
+
+function paymentMethodToUiState(method) {
+  if (!method?.id) return null;
+  const card = method.card || {};
+  const brand = card.brand || method.brand;
+  const last4 = card.last4 || method.last4 || '';
+  return {
+    type: 'card',
+    id: method.id,
+    cardType: formatCardBrand(brand),
+    last4,
+  };
+}
+
+function pickSavedPaymentMethod(normalized, storedRaw) {
+  if (!normalized?.length) return null;
+  let stored = null;
+  try {
+    stored = storedRaw ? JSON.parse(storedRaw) : null;
+  } catch {
+    stored = null;
+  }
+  if (stored?.id) {
+    const match = normalized.find((m) => m.id === stored.id);
+    if (match) return match;
+  }
+  const def = normalized.find((m) => m.is_default);
+  if (def) return def;
+  return normalized[0];
+}
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -135,7 +199,11 @@ export default function BeneficiaryDetailCard({
   const [showGiftSuccess, setShowGiftSuccess] = useState(false);
   const [confettiTrigger, setConfettiTrigger] = useState(false);
   const [isProcessingGift, setIsProcessingGift] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState(null); // { type: 'card' | 'applepay', cardType?: string, last4?: string }
+  /** Display + AsyncStorage: { type, id, cardType, last4 } from Stripe payment methods API */
+  const [paymentMethod, setPaymentMethod] = useState(null);
+  const [paymentMethodsList, setPaymentMethodsList] = useState([]);
+  const [loadingPaymentMethods, setLoadingPaymentMethods] = useState(false);
+  const [showCardPicker, setShowCardPicker] = useState(false);
 
   const isSignupFlow = segments.includes('signupFlow');
   const presetAmounts = [5, 10, 15];
@@ -143,32 +211,64 @@ export default function BeneficiaryDetailCard({
 
   const aboutPreview = data.about?.split(' ').slice(0, 60).join(' ') + '...';
 
-  // Load payment method info
-  useEffect(() => {
-    const loadPaymentMethod = async () => {
-      try {
-        // Check for saved payment methods in AsyncStorage
-        const savedPaymentMethod = await AsyncStorage.getItem('activePaymentMethod');
-        if (savedPaymentMethod) {
-          setPaymentMethod(JSON.parse(savedPaymentMethod));
-        } else {
-          // Default: check if user has any cards saved (simplified - in production, fetch from backend)
-          // For now, we'll show a default card if none is saved
-          // In a real app, this would come from the backend or payment provider
-          setPaymentMethod({ type: 'card', cardType: 'Visa', last4: '4475' }); // Default for demo
+  const loadPaymentMethodsFromApi = useCallback(async () => {
+    setLoadingPaymentMethods(true);
+    try {
+      const response = await API.getPaymentMethods();
+      const normalized = normalizePaymentMethodsList(response.payment_methods || []);
+      setPaymentMethodsList(normalized);
+      const storedRaw = await AsyncStorage.getItem(ACTIVE_PAYMENT_METHOD_KEY);
+      const selected = pickSavedPaymentMethod(normalized, storedRaw);
+      const ui = paymentMethodToUiState(selected);
+      setPaymentMethod(ui);
+      if (storedRaw && ui) {
+        try {
+          const s = JSON.parse(storedRaw);
+          if (s?.id && !normalized.some((m) => m.id === s.id)) {
+            await AsyncStorage.setItem(ACTIVE_PAYMENT_METHOD_KEY, JSON.stringify(ui));
+          }
+        } catch {
+          await AsyncStorage.setItem(ACTIVE_PAYMENT_METHOD_KEY, JSON.stringify(ui));
         }
-      } catch (error) {
-        console.error('Error loading payment method:', error);
       }
-    };
-    
-    if (activeTab === 'giveGift') {
-      loadPaymentMethod();
+    } catch (error) {
+      console.error('Error loading payment methods:', error);
+      setPaymentMethod(null);
+      setPaymentMethodsList([]);
+    } finally {
+      setLoadingPaymentMethods(false);
     }
-  }, [activeTab]);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'giveGift' && !isSignupFlow) {
+      loadPaymentMethodsFromApi();
+    }
+  }, [activeTab, isSignupFlow, loadPaymentMethodsFromApi]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (activeTab === 'giveGift' && !isSignupFlow) {
+        loadPaymentMethodsFromApi();
+      }
+    }, [activeTab, isSignupFlow, loadPaymentMethodsFromApi]),
+  );
+
+  const persistSelectedPaymentMethod = async (method) => {
+    const ui = paymentMethodToUiState(method);
+    if (!ui) return;
+    setPaymentMethod(ui);
+    try {
+      await AsyncStorage.setItem(ACTIVE_PAYMENT_METHOD_KEY, JSON.stringify(ui));
+    } catch (e) {
+      console.error('Error saving payment method preference:', e);
+    }
+    setShowCardPicker(false);
+  };
 
 
   return (
+    <>
     <ScrollView style={styles.containerNoFlex} contentContainerStyle={{ paddingBottom: 20 }}>
       {/* Header */}
       <View style={styles.headerRow}>
@@ -516,32 +616,67 @@ export default function BeneficiaryDetailCard({
               </View>
             )}
 
-            {/* Payment Method Display */}
-            {giftAmount && parseFloat(giftAmount) > 0 && paymentMethod && (
+            {/* Payment Method: real saved cards from API (demo placeholder removed) */}
+            {giftAmount && parseFloat(giftAmount) > 0 && (
               <View style={styles.giftPaymentMethodCard}>
                 <Text style={styles.giftPaymentMethodLabel}>Payment Method</Text>
-                <View style={styles.giftPaymentMethodRow}>
-                  {paymentMethod.type === 'applepay' ? (
-                    <>
-                      <View style={styles.giftApplePayBadge}>
-                        <Text style={styles.giftApplePayText}>Apple Pay</Text>
-                      </View>
-                      <Text style={styles.giftPaymentMethodText}>Secure digital payment</Text>
-                    </>
-                  ) : (
-                    <>
-                      <View style={styles.giftCardIcon}>
-                        <Feather name="credit-card" size={20} color="#324E58" />
-                      </View>
-                      <View style={styles.giftPaymentMethodInfo}>
-                        <Text style={styles.giftPaymentMethodText}>
-                          {paymentMethod.cardType || 'Card'} ending in {paymentMethod.last4 || '****'}
-                        </Text>
-                        <Text style={styles.giftPaymentMethodSubtext}>Will be charged on checkout</Text>
-                      </View>
-                    </>
-                  )}
-                </View>
+                {loadingPaymentMethods ? (
+                  <View style={styles.giftPaymentMethodLoadingRow}>
+                    <ActivityIndicator color="#DB8633" />
+                    <Text style={[styles.giftPaymentMethodSubtext, styles.giftPaymentMethodLoadingText]}>
+                      Loading saved cards…
+                    </Text>
+                  </View>
+                ) : !paymentMethod ? (
+                  <View>
+                    <Text style={styles.giftPaymentMethodSubtext}>
+                      No saved card on file yet. Add one under Menu → Manage Billing, or use any card at
+                      checkout.
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.giftManageCardsLink}
+                      onPress={() => router.push('/menu/manageCards')}
+                      accessibilityRole="button"
+                      accessibilityLabel="Manage saved cards"
+                    >
+                      <Text style={styles.giftManageCardsLinkText}>Manage saved cards</Text>
+                      <Feather name="chevron-right" size={18} color="#21555b" />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.giftPaymentMethodRow}>
+                    {paymentMethod.type === 'applepay' ? (
+                      <>
+                        <View style={styles.giftApplePayBadge}>
+                          <Text style={styles.giftApplePayText}>Apple Pay</Text>
+                        </View>
+                        <Text style={[styles.giftPaymentMethodText, { flex: 1 }]}>Secure digital payment</Text>
+                      </>
+                    ) : (
+                      <>
+                        <View style={styles.giftCardIcon}>
+                          <Feather name="credit-card" size={20} color="#324E58" />
+                        </View>
+                        <View style={styles.giftPaymentMethodInfo}>
+                          <Text style={styles.giftPaymentMethodText}>
+                            {paymentMethod.cardType || 'Card'} ending in {paymentMethod.last4 || '····'}
+                          </Text>
+                          <Text style={styles.giftPaymentMethodSubtext}>
+                            You can confirm or switch cards on the next screen.
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.giftChangeCardBtn}
+                          onPress={() => setShowCardPicker(true)}
+                          accessibilityRole="button"
+                          accessibilityLabel="Change payment card"
+                        >
+                          <Text style={styles.giftChangeCardText}>Change</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
+                )}
               </View>
             )}
 
@@ -638,6 +773,58 @@ export default function BeneficiaryDetailCard({
         </View>
       )}
     </ScrollView>
+
+    <Modal
+      visible={showCardPicker}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowCardPicker(false)}
+    >
+      <View style={styles.cardPickerRoot}>
+        <Pressable style={styles.cardPickerBackdrop} onPress={() => setShowCardPicker(false)} />
+        <View style={styles.cardPickerSheet}>
+          <Text style={styles.cardPickerTitle}>Choose a card</Text>
+          <ScrollView
+            style={styles.cardPickerList}
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled
+          >
+            {paymentMethodsList.map((pm) => {
+              const ui = paymentMethodToUiState(pm);
+              if (!ui) return null;
+              const selected = paymentMethod?.id === pm.id;
+              return (
+                <TouchableOpacity
+                  key={pm.id}
+                  style={[styles.cardPickerRow, selected && styles.cardPickerRowSelected]}
+                  onPress={() => persistSelectedPaymentMethod(pm)}
+                >
+                  <Text style={styles.cardPickerRowText}>
+                    {ui.cardType} ···· {ui.last4 || '····'}
+                  </Text>
+                  {selected ? (
+                    <Feather name="check" size={22} color="#DB8633" />
+                  ) : (
+                    <View style={{ width: 22 }} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          <TouchableOpacity
+            style={styles.cardPickerFooterBtn}
+            onPress={() => {
+              setShowCardPicker(false);
+              router.push('/menu/manageCards');
+            }}
+          >
+            <Text style={styles.cardPickerFooterText}>Add or remove cards in profile</Text>
+            <Feather name="chevron-right" size={18} color="#21555b" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }
 
@@ -1090,6 +1277,99 @@ const styles = StyleSheet.create({
   giftPaymentMethodSubtext: {
     fontSize: 12,
     color: '#6B7280',
+  },
+  giftPaymentMethodLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    gap: 10,
+  },
+  giftPaymentMethodLoadingText: {
+    marginLeft: 0,
+  },
+  giftManageCardsLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingVertical: 8,
+  },
+  giftManageCardsLinkText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#21555b',
+    flex: 1,
+  },
+  giftChangeCardBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginLeft: 8,
+  },
+  giftChangeCardText: {
+    color: '#21555b',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  cardPickerRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  cardPickerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+  },
+  cardPickerSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 28,
+    maxHeight: '70%',
+  },
+  cardPickerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#324E58',
+    marginBottom: 12,
+  },
+  cardPickerList: {
+    maxHeight: 280,
+  },
+  cardPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  cardPickerRowSelected: {
+    borderColor: '#DB8633',
+    backgroundColor: '#FFF5EB',
+  },
+  cardPickerRowText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#324E58',
+    flex: 1,
+  },
+  cardPickerFooterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  cardPickerFooterText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#21555b',
   },
   giftApplePayBadge: {
     backgroundColor: '#000000',
