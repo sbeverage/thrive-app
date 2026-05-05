@@ -11,7 +11,7 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
-import { Feather, AntDesign, Ionicons } from '@expo/vector-icons';
+import { Feather, AntDesign, MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useBeneficiaryFilter } from '../../context/BeneficiaryFilterContext';
 import { useLocation } from '../../context/LocationContext';
@@ -117,9 +117,9 @@ export default function BeneficiaryFilter() {
 
       {/* Search Input */}
       <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Search nearby you</Text>
+        <Text style={styles.label}>Search near you</Text>
         <View style={styles.inputRow}>
-          <Feather name="map-pin" size={18} color="#DB8633" style={{ marginRight: 8 }} />
+          <MaterialIcons name="place" size={22} color="#DB8633" style={{ marginRight: 6 }} />
           <TextInput
             placeholder="City, State"
             placeholderTextColor="#aaa"
@@ -130,7 +130,7 @@ export default function BeneficiaryFilter() {
           />
           {filters.location.length > 0 && (
             <TouchableOpacity onPress={() => { updateFilters({ location: '' }); setLocationSuggestions([]); }} style={{ padding: 4, marginRight: 4 }}>
-              <AntDesign name="closecircle" size={16} color="#bbb" />
+              <Feather name="x-circle" size={18} color="#bbb" />
             </TouchableOpacity>
           )}
           <TouchableOpacity
@@ -148,7 +148,7 @@ export default function BeneficiaryFilter() {
           >
             {isLoadingLocation
               ? <ActivityIndicator size="small" color="#DB8633" />
-              : <Ionicons name="navigate" size={20} color="#DB8633" />
+              : <Feather name="navigation" size={20} color="#DB8633" />
             }
           </TouchableOpacity>
         </View>
@@ -160,7 +160,7 @@ export default function BeneficiaryFilter() {
                 style={styles.suggestionRow}
                 onPress={() => { updateFilters({ location: s }); setLocationSuggestions([]); }}
               >
-                <Feather name="map-pin" size={14} color="#DB8633" style={{ marginRight: 8 }} />
+                <MaterialIcons name="place" size={18} color="#DB8633" style={{ marginRight: 6 }} />
                 <Text style={styles.suggestionText}>{s}</Text>
               </TouchableOpacity>
             ))}

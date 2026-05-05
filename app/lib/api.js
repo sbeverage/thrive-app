@@ -239,8 +239,12 @@ api.interceptors.response.use(
 
         if (jwtMatchesStorage && !isTokenPreservedEndpoint) {
           console.log("🔐 Token expired or invalid, clearing auth data");
-          await AsyncStorage.removeItem("authToken");
-          await AsyncStorage.removeItem("userData");
+          await AsyncStorage.multiRemove([
+            "authToken",
+            "userData",
+            "signupFlowPending",
+            "selectedBeneficiary",
+          ]);
         } else if (jwtMatchesStorage && isTokenPreservedEndpoint) {
           console.warn("🔐 401 from preserved endpoint; keeping session token:", url);
         } else if (sentUserJwt && existingToken && sentToken !== existingToken) {
@@ -261,8 +265,17 @@ api.interceptors.response.use(
     // Suppress 404 errors for endpoints that might not be implemented yet
     const isRedemptionCountEndpoint = url?.includes("/redemptions/count");
     const isProfileEndpoint = url?.includes("/api/auth/profile");
+    const pathOnly = (url || "").split("?")[0];
+    const transactionIdMatch = pathOnly.match(/^\/api\/transactions\/([^/]+)$/);
+    const isTransactionById404 =
+      status === 404 &&
+      Boolean(transactionIdMatch) &&
+      transactionIdMatch[1] !== "summary";
     const shouldSuppress404 =
-      (isRedemptionCountEndpoint || isProfileEndpoint) && status === 404;
+      status === 404 &&
+      (isRedemptionCountEndpoint ||
+        isProfileEndpoint ||
+        isTransactionById404);
 
     if (!shouldSuppress404) {
       // Log other errors normally (not 401)
@@ -1821,6 +1834,32 @@ const API = {
       console.error("Create transaction failed:", error);
       throw new Error(
         error.response?.data?.message || "Failed to create transaction.",
+      );
+    }
+  },
+
+  /**
+   * Update an existing transaction (e.g. Savings Tracker edit of spent / saved).
+   * Returns: { success: true, transaction: {...} }
+   */
+  updateTransaction: async (transactionId, payload) => {
+    try {
+      const response = await api.put(
+        `/api/transactions/${encodeURIComponent(String(transactionId))}`,
+        payload,
+      );
+      return response.data;
+    } catch (error) {
+      const status = error.response?.status;
+      if (status === 404) {
+        console.warn(
+          "Update transaction: server returned 404 (route not deployed, or transaction id not found). Edits still save locally.",
+        );
+      } else {
+        console.error("Update transaction failed:", error);
+      }
+      throw new Error(
+        getApiErrorMessage(error, "Failed to update transaction."),
       );
     }
   },

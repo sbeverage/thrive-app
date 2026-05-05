@@ -39,6 +39,7 @@ export default function EditDonationAmount() {
   const [savedBeneficiaryId, setSavedBeneficiaryId] = useState(null);
   const [showFeeInfo, setShowFeeInfo] = useState(false);
   const [showDonationInfo, setShowDonationInfo] = useState(false);
+  const [showProcessingFeesInfo, setShowProcessingFeesInfo] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const amountInputRef = useRef(null);
   const toggleAnim = useRef(new Animated.Value(1)).current;
@@ -297,7 +298,15 @@ export default function EditDonationAmount() {
           {/* Processing fee toggle row */}
           <View style={styles.toggleRow}>
             <View style={styles.toggleLeft}>
-              <Text style={styles.summaryLabel}>Cover processing fees</Text>
+              <View style={styles.labelWithInfo}>
+                <Text style={styles.summaryLabel}>Cover processing fees</Text>
+                <TouchableOpacity
+                  onPress={() => setShowProcessingFeesInfo(true)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.infoIcon}>ⓘ</Text>
+                </TouchableOpacity>
+              </View>
               <Text style={styles.feeNote}>3.5% — goes directly to card network</Text>
             </View>
             <View style={styles.toggleRight}>
@@ -374,7 +383,7 @@ export default function EditDonationAmount() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Monthly Donation</Text>
             <Text style={styles.modalBody}>
-              This is the direct amount that goes to your beneficiary — the cause you've chosen to support each month.
+              This is the amount you choose to give each month — 100% goes straight to your cause, creating real impact where it matters most.
             </Text>
             <TouchableOpacity
               style={styles.modalClose}
@@ -401,13 +410,38 @@ export default function EditDonationAmount() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Platform Fee</Text>
             <Text style={styles.modalBody}>
-              The $3.00 monthly platform fee helps our nonprofit, THRIVE, cover
-              the tech costs, operating costs, building awareness and expanding
-              access to more causes and communities.
+              Your $3 monthly platform fee helps power THRIVE — supporting the technology, operations, and growth needed to expand impact across more communities.
             </Text>
             <TouchableOpacity
               style={styles.modalClose}
               onPress={() => setShowFeeInfo(false)}
+            >
+              <Text style={styles.modalCloseText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Credit card / processing fee info (matches signup Stripe screen) */}
+      <Modal
+        visible={showProcessingFeesInfo}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowProcessingFeesInfo(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowProcessingFeesInfo(false)}
+        >
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Credit Card Fees</Text>
+            <Text style={styles.modalBody}>
+              Payment processors charge a small fee (3.5%) to securely handle your donation. By turning this on, you help ensure 100% of your gift goes directly to your cause.
+            </Text>
+            <TouchableOpacity
+              style={styles.modalClose}
+              onPress={() => setShowProcessingFeesInfo(false)}
             >
               <Text style={styles.modalCloseText}>Got it</Text>
             </TouchableOpacity>

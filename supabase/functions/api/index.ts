@@ -17939,6 +17939,123 @@ async function handleTransactionRoute(
     }
   }
 
+  // PATCH or PUT /transactions/:id — update redemption amounts (spent / saved) for Savings Tracker edits
+  // (PUT is used from the app: some clients/gateways handle PATCH less reliably than PUT.)
+  const patchTxMatch = route.match(/^\/transactions\/([^/]+)$/);
+  if ((method === "PATCH" || method === "PUT") && patchTxMatch) {
+    const transactionId = patchTxMatch[1];
+    if (transactionId === "summary") {
+      // not a transaction id
+    } else {
+      try {
+        const body = await req.json();
+        const parseMoney = (v: unknown): number | undefined => {
+          if (v === undefined || v === null || v === "") return undefined;
+          const n = parseFloat(String(v).replace(/[$,]/g, ""));
+          return Number.isFinite(n) ? n : undefined;
+        };
+        const spending = parseMoney(body.spending);
+        const savings = parseMoney(body.savings);
+
+        if (spending === undefined && savings === undefined) {
+          return new Response(
+            JSON.stringify({
+              error: "At least one of spending or savings is required",
+            }),
+            {
+              headers: {"Content-Type": "application/json"},
+              status: 400,
+            },
+          );
+        }
+
+        const {data: existing, error: fetchError} = await supabase
+          .from("transactions")
+          .select("id, user_id, metadata, type")
+          .eq("id", transactionId)
+          .maybeSingle();
+
+        if (fetchError || !existing) {
+          return new Response(
+            JSON.stringify({error: "Transaction not found"}),
+            {
+              headers: {"Content-Type": "application/json"},
+              status: 404,
+            },
+          );
+        }
+        if (Number(existing.user_id) !== Number(userId)) {
+          return new Response(JSON.stringify({error: "Forbidden"}), {
+            headers: {"Content-Type": "application/json"},
+            status: 403,
+          });
+        }
+
+        let meta: Record<string, unknown> = {};
+        const rawMeta = existing.metadata;
+        if (rawMeta != null) {
+          if (typeof rawMeta === "string") {
+            try {
+              meta = JSON.parse(rawMeta) as Record<string, unknown>;
+            } catch {
+              meta = {};
+            }
+          } else if (typeof rawMeta === "object" && !Array.isArray(rawMeta)) {
+            meta = {...(rawMeta as Record<string, unknown>)};
+          }
+        }
+
+        const updates: Record<string, unknown> = {};
+        if (spending !== undefined) {
+          updates.spending = spending;
+          updates.amount = spending;
+          meta.spending = String(spending);
+        }
+        if (savings !== undefined) {
+          updates.savings = savings;
+          meta.savings = String(savings);
+        }
+        updates.metadata = meta;
+
+        const {data: updated, error: updateError} = await supabase
+          .from("transactions")
+          .update(updates)
+          .eq("id", transactionId)
+          .eq("user_id", userId)
+          .select("*, vendors(id, name, logo_url)")
+          .single();
+
+        if (updateError) {
+          console.error("PATCH transaction error:", updateError);
+          return new Response(
+            JSON.stringify({error: "Failed to update transaction"}),
+            {
+              headers: {"Content-Type": "application/json"},
+              status: 500,
+            },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({success: true, transaction: updated}),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 200,
+          },
+        );
+      } catch (error) {
+        console.error("Error patching transaction:", error);
+        return new Response(
+          JSON.stringify({error: "Failed to update transaction"}),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 500,
+          },
+        );
+      }
+    }
+  }
+
   // GET /transactions/summary
   if (method === "GET" && route === "/transactions/summary") {
     try {

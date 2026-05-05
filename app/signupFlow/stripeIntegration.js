@@ -615,7 +615,7 @@ export default function StripeIntegration() {
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Monthly Donation</Text>
             <Text style={styles.modalText}>
-              This is the base amount you've chosen to donate each month to your selected cause. 100% of this amount goes directly to your beneficiary.
+              This is the amount you choose to give each month — 100% goes straight to your cause, creating real impact where it matters most.
             </Text>
             <TouchableOpacity
               style={styles.modalCloseButton}
@@ -643,7 +643,7 @@ export default function StripeIntegration() {
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Platform Fee</Text>
             <Text style={styles.modalText}>
-              A small $3/month platform fee helps keep THRIVE running — covering technology, support, and the tools that connect donors to causes they care about.
+              Your $3 monthly platform fee helps power THRIVE — supporting the technology, operations, and growth needed to expand impact across more communities.
             </Text>
             <TouchableOpacity
               style={styles.modalCloseButton}
@@ -669,9 +669,9 @@ export default function StripeIntegration() {
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Credit Card Processing Fees</Text>
+            <Text style={styles.modalTitle}>Credit Card Fees</Text>
             <Text style={styles.modalText}>
-              Payment processors charge a small fee (3.5%) to handle your transaction securely. By toggling this on, you cover that cost so 100% of your intended donation reaches your cause.
+              Payment processors charge a small fee (3.5%) to securely handle your donation. By turning this on, you help ensure 100% of your gift goes directly to your cause.
             </Text>
             <TouchableOpacity
               style={styles.modalCloseButton}

@@ -255,8 +255,25 @@ export default function BeneficiaryScreen() {
            matchesCause && matchesType && matchesFavorites && matchesEmergency;
   });
 
-  const highlightedBeneficiaries = filteredBeneficiaries.slice(0, 2);
-  const remainingBeneficiaries = filteredBeneficiaries.slice(2);
+  /** Pin selected cause to top of list when it appears in current filters (no duplicate). */
+  let listOrderedWithSelectedFirst = filteredBeneficiaries;
+  if (selectedBeneficiary?.id != null && filteredBeneficiaries.length > 0) {
+    const selId = selectedBeneficiary.id;
+    const idx = filteredBeneficiaries.findIndex(
+      (b) => b.id === selId || String(b.id) === String(selId),
+    );
+    if (idx > 0) {
+      const chosen = filteredBeneficiaries[idx];
+      listOrderedWithSelectedFirst = [
+        chosen,
+        ...filteredBeneficiaries.slice(0, idx),
+        ...filteredBeneficiaries.slice(idx + 1),
+      ];
+    }
+  }
+
+  const highlightedBeneficiaries = listOrderedWithSelectedFirst.slice(0, 2);
+  const remainingBeneficiaries = listOrderedWithSelectedFirst.slice(2);
 
   const handleConfirmBeneficiary = async () => {
     if (!pendingBeneficiary) return;
@@ -407,10 +424,7 @@ export default function BeneficiaryScreen() {
 
         {/* Search Row */}
         <View style={styles.searchRow}>
-          <Image
-            source={require('../../../assets/icons/search-icon.png')}
-            style={{ width: 18, height: 18, tintColor: '#6d6e72', marginRight: 8 }}
-          />
+          <Feather name="search" size={18} color="#6d6e72" style={{ marginRight: 8 }} />
           <TextInput
             placeholder="Search beneficiaries"
             placeholderTextColor="#6d6e72"
@@ -422,7 +436,7 @@ export default function BeneficiaryScreen() {
 
         {/* Location Input */}
         <View style={styles.locationRow}>
-          <Feather name="map-pin" size={16} color="#6d6e72" style={{ marginRight: 8 }} />
+          <MaterialIcons name="place" size={20} color="#6d6e72" style={{ marginRight: 6 }} />
           {isEditingLocation ? (
             <TextInput
               placeholder="Enter city or area (e.g. Atlanta)"
@@ -513,7 +527,7 @@ export default function BeneficiaryScreen() {
             style={[styles.toggleBtn, showMap && styles.toggleActive]} 
             onPress={() => setShowMap(true)}
           >
-            <Feather name="map" size="16" color={showMap ? "#fff" : "#666"} />
+            <Feather name="map" size={16} color={showMap ? "#fff" : "#666"} />
             <Text style={[styles.toggleText, showMap && styles.toggleTextActive]}>Map</Text>
           </TouchableOpacity>
         </View>
@@ -540,7 +554,7 @@ export default function BeneficiaryScreen() {
                 initialRegion={mapRegion}
                 region={mapRegion}
                 showsUserLocation={true}
-                showsMyLocationButton={true}
+                showsMyLocationButton={false}
                 onMapReady={updateMapRegion}
               >
                 <Circle
@@ -658,12 +672,14 @@ export default function BeneficiaryScreen() {
                     </TouchableOpacity>
                   </View>
 
-                  {highlightedBeneficiaries.map((b) => (
+                  {highlightedBeneficiaries.map((b) => {
+                    const isSelected = selectedBeneficiary?.id === b.id;
+                    return (
                     <TouchableOpacity
                       key={b.id}
                       style={[
                         styles.beneficiaryCard,
-                        selectedBeneficiary?.id === b.id && styles.selectedBeneficiaryCard
+                        isSelected && styles.selectedBeneficiaryCard
                       ]}
                       onPress={() => {
                         setSelectedBeneficiaryForPopup(b);
@@ -696,10 +712,12 @@ export default function BeneficiaryScreen() {
                           <Text style={styles.beneficiaryLocationText}>{b.location} • {b.distance}</Text>
                         </View>
                         
-                        {/* Buttons Row */}
-                        <View style={styles.buttonsRow}>
+                        <View style={[styles.buttonsRow, isSelected && styles.buttonsRowSingle]}>
                           <TouchableOpacity 
-                            style={styles.viewDetailsButton}
+                            style={[
+                              styles.viewDetailsButton,
+                              isSelected && styles.viewDetailsButtonAlone,
+                            ]}
                             onPress={(e) => {
                               e.stopPropagation();
                               router.push({
@@ -708,8 +726,12 @@ export default function BeneficiaryScreen() {
                               });
                             }}
                           >
-                            <Text style={styles.viewDetailsButtonText}>Details</Text>
+                            <Text style={[
+                              styles.viewDetailsButtonText,
+                              isSelected && styles.viewDetailsButtonAloneText,
+                            ]}>Details</Text>
                           </TouchableOpacity>
+                          {!isSelected && (
                           <TouchableOpacity 
                             style={styles.changeToThisButton}
                             onPress={(e) => {
@@ -720,18 +742,22 @@ export default function BeneficiaryScreen() {
                           >
                             <Text style={styles.changeToThisButtonText}>Select</Text>
                           </TouchableOpacity>
+                          )}
                         </View>
                       </View>
                     </TouchableOpacity>
-                  ))}
+                    );
+                  })}
                 </View>
 
-                {remainingBeneficiaries.map((b) => (
+                {remainingBeneficiaries.map((b) => {
+                  const isSelected = selectedBeneficiary?.id === b.id;
+                  return (
                   <TouchableOpacity
                     key={b.id}
                     style={[
                       styles.beneficiaryCard,
-                      selectedBeneficiary?.id === b.id && styles.selectedBeneficiaryCard
+                      isSelected && styles.selectedBeneficiaryCard
                     ]}
                     onPress={() => {
                       setSelectedBeneficiaryForPopup(b);
@@ -764,33 +790,27 @@ export default function BeneficiaryScreen() {
                         <Text style={styles.beneficiaryLocationText}>{b.location} • {b.distance}</Text>
                       </View>
                       
-                      {/* Buttons Row */}
-                      <View style={styles.buttonsRow}>
-                        {/* View Details Button */}
+                      <View style={[styles.buttonsRow, isSelected && styles.buttonsRowSingle]}>
                         <TouchableOpacity
-                          style={styles.viewDetailsButton}
+                          style={[
+                            styles.viewDetailsButton,
+                            isSelected && styles.viewDetailsButtonAlone,
+                          ]}
                           onPress={(e) => {
                             e.stopPropagation();
-                            console.log('🔵 Navigating to beneficiary detail with ID:', b.id);
-                            console.log('🔵 Full beneficiary object:', JSON.stringify(b, null, 2));
-                            
-                            // Try the exact same format that works for beneficiaryFilter
-                            const route = '/(tabs)/beneficiary/beneficiaryDetail';
-                            console.log('🔵 Attempting navigation to:', route, 'with id:', b.id);
-                            
-                            router.push({ 
-                              pathname: route,
-                              params: { id: b.id.toString() } 
+                            router.push({
+                              pathname: '/(tabs)/beneficiary/beneficiaryDetail',
+                              params: { id: b.id.toString() },
                             });
-                            
-                            console.log('🔵 Navigation push completed');
                           }}
                         >
-                          <Text style={styles.viewDetailsButtonText}>Details</Text>
+                          <Text style={[
+                            styles.viewDetailsButtonText,
+                            isSelected && styles.viewDetailsButtonAloneText,
+                          ]}>Details</Text>
                         </TouchableOpacity>
 
-                        {/* Change to This Button - only show if not already selected */}
-                        {selectedBeneficiary?.id !== b.id && (
+                        {!isSelected && (
                           <TouchableOpacity
                             style={styles.changeToThisButton}
                             onPress={(e) => {
@@ -805,7 +825,8 @@ export default function BeneficiaryScreen() {
                       </View>
                     </View>
                   </TouchableOpacity>
-                ))}
+                  );
+                })}
               </>
             ) : (
               <View>
@@ -1120,6 +1141,12 @@ const styles = StyleSheet.create({
   },
   selectedBeneficiaryCard: {
     borderColor: '#DB8633',
+    backgroundColor: '#FFFBF7',
+    shadowColor: '#DB8633',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    elevation: 5,
   },
   beneficiaryImage: {
     width: 120,
@@ -1198,6 +1225,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
     gap: 8,
+  },
+  /** Selected cause: one primary action, full width inside card padding */
+  buttonsRowSingle: {
+    justifyContent: 'center',
+    marginTop: 8,
+    gap: 0,
+  },
+  viewDetailsButtonAlone: {
+    flex: 0,
+    flexGrow: 1,
+    alignSelf: 'stretch',
+    width: '100%',
+    marginRight: 0,
+    marginLeft: 0,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    backgroundColor: '#FFF5EB',
+    borderColor: '#DB8633',
+  },
+  viewDetailsButtonAloneText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#DB8633',
   },
   emptyState: {
     flex: 1,

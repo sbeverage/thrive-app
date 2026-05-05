@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
-import { Feather, AntDesign, Ionicons } from '@expo/vector-icons';
+import { Feather, AntDesign, MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useDiscountFilter } from '../../context/DiscountFilterContext';
 import { useLocation } from '../../context/LocationContext';
@@ -147,7 +147,7 @@ export default function FilterScreen() {
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>Search near a location</Text>
         <View style={styles.inputRow}>
-          <Feather name="map-pin" size={18} color="#DB8633" style={{ marginRight: 8 }} />
+          <MaterialIcons name="place" size={22} color="#DB8633" style={{ marginRight: 6 }} />
           <TextInput
             placeholder="City, State"
             placeholderTextColor="#aaa"
@@ -158,13 +158,13 @@ export default function FilterScreen() {
           />
           {location.length > 0 && (
             <TouchableOpacity onPress={() => { setLocation(''); setLocationSuggestions([]); }} style={styles.clearX}>
-              <AntDesign name="closecircle" size={16} color="#bbb" />
+              <Feather name="x-circle" size={18} color="#bbb" />
             </TouchableOpacity>
           )}
           <TouchableOpacity onPress={handleUseCurrentLocation} style={styles.iconTouchable}>
             {isLoadingLocation
               ? <ActivityIndicator size="small" color="#DB8633" />
-              : <Ionicons name="navigate" size={20} color="#DB8633" />
+              : <Feather name="navigation" size={20} color="#DB8633" />
             }
           </TouchableOpacity>
         </View>
@@ -176,7 +176,7 @@ export default function FilterScreen() {
                 style={styles.suggestionRow}
                 onPress={() => { setLocation(s); setLocationSuggestions([]); }}
               >
-                <Feather name="map-pin" size={14} color="#DB8633" style={{ marginRight: 8 }} />
+                <MaterialIcons name="place" size={18} color="#DB8633" style={{ marginRight: 6 }} />
                 <Text style={styles.suggestionText}>{s}</Text>
               </TouchableOpacity>
             ))}
@@ -374,7 +374,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   button: {
-    backgroundColor: '#21555b',
+    backgroundColor: '#DB8633',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',

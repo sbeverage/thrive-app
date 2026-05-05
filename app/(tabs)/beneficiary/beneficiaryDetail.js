@@ -22,6 +22,14 @@ export default function BeneficiaryDetailScreen() {
   const params = useLocalSearchParams();
   // Handle case where id might be an array (expo-router sometimes returns arrays)
   const id = Array.isArray(params?.id) ? params.id[0] : params?.id;
+  const fromSignupRaw = Array.isArray(params?.fromSignup)
+    ? params.fromSignup[0]
+    : params?.fromSignup;
+  const fromSignup = String(fromSignupRaw || "").toLowerCase() === "true";
+  const flowParam = Array.isArray(params?.flow) ? params.flow[0] : params?.flow;
+  const sponsorAmountParam = Array.isArray(params?.sponsorAmount)
+    ? params.sponsorAmount[0]
+    : params?.sponsorAmount;
   const router = useRouter();
   const segments = useSegments();
   const { setSelectedBeneficiary, selectedBeneficiary } = useBeneficiary();
@@ -447,10 +455,28 @@ export default function BeneficiaryDetailScreen() {
   const handleModalClose = () => {
     setShowSuccessModal(false);
 
-    // Only navigate if we're in the signup flow
-    if (segments.includes('signupFlow')) {
-      router.push('/signupFlow/donationType');
+    // Detail lives under (tabs), so segments never include "signupFlow" — use route param instead.
+    if (fromSignup && beneficiary?.id != null) {
+      const next = {
+        pathname: "/signupFlow/donationAmount",
+        params: {
+          beneficiaryId: String(beneficiary.id),
+        },
+      };
+      if (flowParam === "coworking") {
+        next.params.flow = "coworking";
+        next.params.sponsorAmount = String(sponsorAmountParam ?? "15");
+      }
+      router.replace(next);
+      return;
     }
+
+    if (segments.includes("(tabs)")) {
+      router.replace("/(tabs)/beneficiary");
+      return;
+    }
+
+    router.back();
   };
 
   const handleBackPress = () => {

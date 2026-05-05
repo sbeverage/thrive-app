@@ -13,6 +13,35 @@ import { extractIsVerifiedFromApiProfile } from '../utils/extractIsVerifiedFromA
 
 const UserContext = createContext();
 
+/** Local session keys to wipe when the server has no user for this token (deleted account, etc.). */
+const SESSION_RESET_KEYS = [
+  "authToken",
+  "userData",
+  "signupFlowPending",
+  "selectedBeneficiary",
+  "beneficiaryFavorites",
+  "userTransactions",
+];
+
+const LOGGED_OUT_USER_STATE = {
+  firstName: "",
+  lastName: "",
+  email: "",
+  phone: "",
+  profileImage: null,
+  profileImageUrl: null,
+  coworking: false,
+  sponsorAmount: 0,
+  extraDonationAmount: 0,
+  totalMonthlyDonation: 0,
+  points: 0,
+  monthlyDonation: 15,
+  totalSavings: 0,
+  isLoggedIn: false,
+  isLoading: false,
+  isVerified: false,
+};
+
 /** Normalize backend charity payload and sync BeneficiaryContext storage key. */
 async function persistSelectedBeneficiaryToStorage(raw) {
   if (!raw || raw.id == null) return;
@@ -174,15 +203,29 @@ export const UserProvider = ({ children }) => {
                 }
                 // Save the merged data back to storage
                 await AsyncStorage.setItem('userData', JSON.stringify(loadedUser));
+              } else {
+                // GET /auth/profile returned 404 — API.getProfile maps that to null.
+                // Valid JWT but no users row (account removed in Supabase, etc.).
+                console.warn(
+                  "⚠️ Profile missing for authenticated user — clearing local session",
+                );
+                await AsyncStorage.multiRemove(SESSION_RESET_KEYS);
+                loadedUser = { ...LOGGED_OUT_USER_STATE };
               }
             }
           } catch (backendError) {
-            const is401 = backendError.response?.status === 401;
-            if (is401) {
-              // Token expired or signed by the old Render backend — force re-login
-              loadedUser = { ...loadedUser, isLoggedIn: false };
+            const tokenAfter = await AsyncStorage.getItem("authToken");
+            if (!tokenAfter) {
+              // Interceptor may have cleared JWT (401) while getProfile threw a generic Error.
+              await AsyncStorage.multiRemove(SESSION_RESET_KEYS);
+              loadedUser = { ...LOGGED_OUT_USER_STATE };
+            } else {
+              const is401 = backendError.response?.status === 401;
+              if (is401) {
+                loadedUser = { ...loadedUser, isLoggedIn: false };
+              }
             }
-            console.warn('⚠️ Could not fetch from backend:', backendError.message);
+            console.warn("⚠️ Could not fetch from backend:", backendError.message);
           }
         }
         
@@ -478,6 +521,25 @@ export const UserProvider = ({ children }) => {
   };
 
   /**
+   * Set total savings to an absolute value (e.g. sum of loaded redemption rows when history is complete).
+   */
+  const setTotalSavings = useCallback(async (total) => {
+    try {
+      const n = Number(total);
+      const safe = Number.isFinite(n) ? Math.max(0, Math.round(n * 100) / 100) : 0;
+      const raw = await AsyncStorage.getItem('userData');
+      const parsed = raw ? JSON.parse(raw) : {};
+      const next = { ...parsed, totalSavings: safe };
+      setUser((prev) => ({ ...prev, totalSavings: safe }));
+      await AsyncStorage.setItem('userData', JSON.stringify(next));
+      return safe;
+    } catch (error) {
+      console.error('❌ Error setting total savings:', error);
+      return user.totalSavings;
+    }
+  }, []);
+
+  /**
    * Upload profile picture to Supabase storage with compression
    */
   const uploadProfilePicture = async (imageUri) => {
@@ -591,31 +653,8 @@ export const UserProvider = ({ children }) => {
   const logout = async () => {
     try {
       await API.logout();
-      await AsyncStorage.multiRemove([
-        'authToken',
-        'userData',
-        'selectedBeneficiary',
-        'beneficiaryFavorites',
-        'userTransactions',
-      ]);
-      
-      setUser({
-        firstName: '',
-        lastName: '',
-        email: '',
-        phone: '',
-        profileImage: null,
-        profileImageUrl: null,
-        coworking: false,
-        sponsorAmount: 0,
-        extraDonationAmount: 0,
-        totalMonthlyDonation: 0,
-        points: 0,
-        monthlyDonation: 15,
-        totalSavings: 0,
-        isLoggedIn: false,
-        isLoading: false,
-      });
+      await AsyncStorage.multiRemove(SESSION_RESET_KEYS);
+      setUser({ ...LOGGED_OUT_USER_STATE });
     } catch (error) {
       console.error('❌ Error logging out:', error);
     }
@@ -626,32 +665,8 @@ export const UserProvider = ({ children }) => {
    */
   const clearAllData = async () => {
     try {
-      await AsyncStorage.multiRemove([
-        'authToken',
-        'userData',
-        'selectedBeneficiary',
-        'beneficiaryFavorites',
-        'userTransactions',
-        'signupFlowPending',
-      ]);
-      
-      setUser({
-        firstName: '',
-        lastName: '',
-        email: '',
-        phone: '',
-        profileImage: null,
-        profileImageUrl: null,
-        coworking: false,
-        sponsorAmount: 0,
-        extraDonationAmount: 0,
-        totalMonthlyDonation: 0,
-        points: 0,
-        monthlyDonation: 15,
-        totalSavings: 0,
-        isLoggedIn: false,
-        isLoading: false,
-      });
+      await AsyncStorage.multiRemove(SESSION_RESET_KEYS);
+      setUser({ ...LOGGED_OUT_USER_STATE });
     } catch (error) {
       console.error('❌ Error clearing data:', error);
     }
@@ -715,6 +730,7 @@ export const UserProvider = ({ children }) => {
     addPoints,
     syncPoints,
     addSavings,
+    setTotalSavings,
     uploadProfilePicture,
     syncWithBackend,
     loadUserData,

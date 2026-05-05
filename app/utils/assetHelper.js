@@ -36,7 +36,7 @@ export function getAssetSource(localPath) {
 
 /**
  * Get video source - uses Supabase URL if available, otherwise local require
- * @param {string} localPath - Path relative to project root (e.g., 'assets/videos/TI-app-give.mp4')
+ * @param {string} localPath - Path relative to project root (e.g., 'assets/videos/give-loop.mp4')
  * @returns {object} - Video source object ({ uri: '...' } or require(...))
  */
 export function getVideoSource(localPath) {

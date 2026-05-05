@@ -1,6 +1,6 @@
 // File: app/(tabs)/menu/transactionHistory.js
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -40,6 +40,94 @@ function parseMoneyRaw(val) {
   return Number.isFinite(n) ? n : null;
 }
 
+/** First non-null parsed amount (API may use camelCase, snake_case, or metadata only). */
+function pickFirstMoney(...candidates) {
+  for (const c of candidates) {
+    const n = parseMoneyRaw(c);
+    if (n != null) return n;
+  }
+  return null;
+}
+
+/** Parse a formatted list row like `$12.34` or a raw number. */
+function moneyFromDisplayString(val) {
+  if (val == null || val === "") return null;
+  const n = parseFloat(String(val).replace(/[$,]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * When the server row shows $0 but AsyncStorage still has the same id with real amounts
+ * (e.g. legacy column names or a failed PATCH), prefer the cached amounts for display.
+ */
+/** Sum of “Saved” amounts for discount redemptions in the current list (not donations). */
+function sumRedemptionSavingsFromList(items) {
+  let sum = 0;
+  for (const t of items) {
+    if (
+      t.type === "one_time_gift" ||
+      t.type === "donation" ||
+      t.type === "monthly_donation"
+    ) {
+      continue;
+    }
+    const raw = t.savings;
+    if (raw == null || raw === "") continue;
+    const n = parseFloat(String(raw).replace(/[$,]/g, ""));
+    if (Number.isFinite(n)) sum += n;
+  }
+  return Math.round(sum * 100) / 100;
+}
+
+function applyLocalCacheAmountsToServerRows(serverRows, localRows) {
+  return serverRows.map((serverT) => {
+    const localMatch = localRows.find(
+      (l) => l.id != null && String(l.id) === String(serverT.id),
+    );
+    if (!localMatch) return serverT;
+
+    const serverSav = moneyFromDisplayString(serverT.savings);
+    const localSav = moneyFromDisplayString(localMatch.savings);
+    const serverSpent = moneyFromDisplayString(serverT.spending);
+    const localSpent = moneyFromDisplayString(localMatch.spending);
+
+    const preferSav =
+      localSav != null &&
+      localSav > 0 &&
+      (serverSav == null || serverSav === 0);
+    const preferSpent =
+      localSpent != null &&
+      localSpent > 0 &&
+      (serverSpent == null || serverSpent === 0);
+
+    if (!preferSav && !preferSpent) return serverT;
+
+    const fmt = (n) => `$${Number(n).toFixed(2)}`;
+    const spendingStr = preferSpent
+      ? typeof localMatch.spending === "string" && localMatch.spending.startsWith("$")
+        ? localMatch.spending
+        : fmt(localSpent)
+      : serverT.spending;
+    const savingsStr = preferSav
+      ? typeof localMatch.savings === "string" && localMatch.savings.startsWith("$")
+        ? localMatch.savings
+        : fmt(localSav)
+      : serverT.savings;
+
+    const spentNumeric =
+      preferSpent && !serverT.isMonthlyDonation && !serverT.isOneTimeGift
+        ? localSpent
+        : serverT.spentNumeric;
+
+    return {
+      ...serverT,
+      spending: spendingStr,
+      savings: savingsStr,
+      spentNumeric,
+    };
+  });
+}
+
 /** Amount counted toward “Total Spent” for one list item (discount vs donation). */
 function getTransactionSpentAmount(item) {
   const isDonation =
@@ -65,9 +153,14 @@ function getTransactionSpentAmount(item) {
   return 0;
 }
 
+function transactionIdsEqual(a, b) {
+  if (a == null || b == null) return false;
+  return String(a) === String(b);
+}
+
 export default function TransactionHistory() {
   const router = useRouter();
-  const { user, loadUserData, addSavings } = useUser();
+  const { user, loadUserData, addSavings, setTotalSavings } = useUser();
   const [selectedFilter, setSelectedFilter] = useState("all");
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [transactions, setTransactions] = useState([]);
@@ -76,12 +169,6 @@ export default function TransactionHistory() {
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-
-  // Debug logging
-  useEffect(() => {
-    console.log("🔍 TransactionHistory - User data:", user);
-    console.log("🔍 TransactionHistory - Total savings:", user.totalSavings);
-  }, [user]);
 
   // Load user data when component mounts
   useEffect(() => {
@@ -130,8 +217,14 @@ export default function TransactionHistory() {
             t.type === "monthly_donation";
           const isGift = t.type === "one_time_gift" || t.type === "donation";
 
-          let spentNum = parseMoneyRaw(t.spending);
-          if (spentNum == null) spentNum = parseMoneyRaw(meta.spending);
+          let spentNum = pickFirstMoney(
+            t.spending,
+            t.total_bill,
+            t.totalBill,
+            meta.spending,
+            meta.total_bill,
+            meta.totalBill,
+          );
           if (
             spentNum == null &&
             (t.type === "redemption" ||
@@ -143,8 +236,15 @@ export default function TransactionHistory() {
             spentNum = parseMoneyRaw(t.amount);
           }
 
-          let savingsNum = parseMoneyRaw(t.savings);
-          if (savingsNum == null) savingsNum = parseMoneyRaw(meta.savings);
+          let savingsNum = pickFirstMoney(
+            t.savings,
+            t.total_savings,
+            t.totalSavings,
+            t.discount_amount,
+            meta.savings,
+            meta.total_savings,
+            meta.totalSavings,
+          );
           if (savingsNum == null && t.type === "monthly_donation") {
             savingsNum = 0;
           }
@@ -234,11 +334,16 @@ export default function TransactionHistory() {
           return true;
         });
 
+        const dedupedBackendWithLocalAmounts = applyLocalCacheAmountsToServerRows(
+          dedupedBackend,
+          localTransactions,
+        );
+
         // Merge: server is source of truth — only add locals whose id is NOT on the server
         // (e.g. discount redemption saved offline). Previously we prepended almost all cached
         // rows again and doubled history, inflating Total Spent.
         const backendIdSet = new Set(
-          dedupedBackend.map((t) => String(t.id)),
+          dedupedBackendWithLocalAmounts.map((t) => String(t.id)),
         );
         const localOnly = localTransactions.filter(
           (t) =>
@@ -246,14 +351,22 @@ export default function TransactionHistory() {
             String(t.id).trim() !== "" &&
             !backendIdSet.has(String(t.id)),
         );
-        const merged = [...dedupedBackend, ...localOnly].sort((a, b) => {
-          const dateA = new Date(a.date);
-          const dateB = new Date(b.date);
-          return dateB - dateA;
-        });
+        const merged = [...dedupedBackendWithLocalAmounts, ...localOnly].sort(
+          (a, b) => {
+            const dateA = new Date(a.date);
+            const dateB = new Date(b.date);
+            return dateB - dateA;
+          },
+        );
 
         if (append) {
-          setTransactions((prev) => [...prev, ...merged]);
+          setTransactions((prev) => {
+            const prevIds = new Set(prev.map((row) => String(row.id)));
+            const newServerRows = dedupedBackendWithLocalAmounts.filter(
+              (row) => row.id != null && !prevIds.has(String(row.id)),
+            );
+            return [...prev, ...newServerRows];
+          });
         } else {
           setTransactions(merged);
         }
@@ -266,17 +379,7 @@ export default function TransactionHistory() {
             Number(pg.page) < Number(pg.totalPages));
         setHasMore(!!morePages);
         setPage(pageNum);
-        console.log(
-          "✅ Loaded transactions:",
-          merged.length,
-          "(backend:",
-          transformedBackend.length,
-          ", local-only:",
-          localOnly.length,
-          ")",
-        );
-
-        // Save merged result to local storage as backup
+        // Save merged result to local storage as backup (first page only — full merged list)
         if (!append) {
           await AsyncStorage.setItem(
             "userTransactions",
@@ -331,70 +434,108 @@ export default function TransactionHistory() {
     }
   };
 
-  // Update transaction amounts
-  const updateTransactionAmounts = (
+  // Update transaction amounts (persist to API when possible so refetch does not revert edits)
+  const updateTransactionAmounts = async (
     transactionId,
     newSpendingAmount,
     newSavingsAmount,
   ) => {
-    const updatedTransactions = transactions.map((transaction) => {
-      console.log(
-        "🔍 TransactionHistory - updating transaction:=====================`",
-        transaction,
-      );
-      if (transaction.id === transactionId) {
-        const oldSavings = transaction.savings
-          ? parseFloat(transaction.savings.replace("$", ""))
-          : 0;
-        const newSavings = parseFloat(newSavingsAmount.replace("$", ""));
-        const difference = newSavings - oldSavings;
+    const parseAmount = (v) => {
+      const n = parseFloat(String(v ?? "").replace(/[$,]/g, ""));
+      return Number.isFinite(n) ? n : 0;
+    };
 
-        // Update the transaction
-        const updatedTransaction = {
-          ...transaction,
-          spending: newSpendingAmount.startsWith("$")
-            ? newSpendingAmount
-            : `$${newSpendingAmount}`,
-          savings: newSavingsAmount.startsWith("$")
-            ? newSavingsAmount
-            : `$${newSavingsAmount}`,
-        };
+    const target = transactions.find((t) =>
+      transactionIdsEqual(t.id, transactionId),
+    );
+    if (!target) {
+      setEditingTransaction(null);
+      return;
+    }
 
-        // Update total savings in user context
-        if (difference !== 0) {
-          addSavings(difference);
-        }
+    const oldSavings = parseAmount(target.savings);
+    const newSavings = parseAmount(newSavingsAmount);
+    const newSpending = parseAmount(newSpendingAmount);
+    const difference = newSavings - oldSavings;
 
-        return updatedTransaction;
+    const spendingStr = `$${newSpending.toFixed(2)}`;
+    const savingsStr = `$${newSavings.toFixed(2)}`;
+
+    try {
+      const authed = await API.isAuthenticated();
+      if (authed) {
+        await API.updateTransaction(String(transactionId), {
+          spending: newSpending,
+          savings: newSavings,
+        });
       }
-      return transaction;
+    } catch (e) {
+      console.warn(
+        "Savings Tracker: could not sync transaction to server (saved locally):",
+        e?.message || e,
+      );
+    }
+
+    const updatedTransactions = transactions.map((transaction) => {
+      if (!transactionIdsEqual(transaction.id, transactionId)) {
+        return transaction;
+      }
+      return {
+        ...transaction,
+        spending: spendingStr,
+        savings: savingsStr,
+        spentNumeric: newSpending,
+      };
     });
 
-    saveTransactions(updatedTransactions);
+    const listSumAfter = sumRedemptionSavingsFromList(updatedTransactions);
+    if (hasMore) {
+      if (difference !== 0) {
+        await addSavings(difference);
+      }
+    } else {
+      await setTotalSavings(listSumAfter);
+    }
+
+    await saveTransactions(updatedTransactions);
     setEditingTransaction(null);
   };
 
   // Delete transaction
-  const deleteTransaction = (transactionId) => {
-    const transactionToDelete = transactions.find(
-      (t) => t.id === transactionId,
+  const deleteTransaction = async (transactionId) => {
+    const transactionToDelete = transactions.find((t) =>
+      transactionIdsEqual(t.id, transactionId),
     );
-    if (transactionToDelete && transactionToDelete.savings) {
-      // Subtract the savings from total when deleting (only for regular transactions)
-      const savingsAmount = parseFloat(
-        transactionToDelete.savings.replace("$", ""),
-      );
-      addSavings(-savingsAmount); // Subtract the amount
-    }
 
     const updatedTransactions = transactions.filter(
-      (t) => t.id !== transactionId,
+      (t) => !transactionIdsEqual(t.id, transactionId),
     );
-    saveTransactions(updatedTransactions);
+
+    await saveTransactions(updatedTransactions);
+
+    const listSumAfter = sumRedemptionSavingsFromList(updatedTransactions);
+    if (hasMore) {
+      if (transactionToDelete?.savings) {
+        const savingsAmount = parseFloat(
+          String(transactionToDelete.savings).replace(/[$,]/g, ""),
+        );
+        if (Number.isFinite(savingsAmount) && savingsAmount !== 0) {
+          await addSavings(-savingsAmount);
+        }
+      }
+    } else {
+      await setTotalSavings(listSumAfter);
+    }
   };
 
-  // Use real user data for totals
-  const totalSavings = user.totalSavings || 0;
+  const listSavingsSum = useMemo(
+    () => sumRedemptionSavingsFromList(transactions),
+    [transactions],
+  );
+
+  // Total Saved matches the sum of loaded redemption rows; if none loaded, fall back to profile.
+  const totalSavings =
+    transactions.length === 0 ? user.totalSavings || 0 : listSavingsSum;
   const totalSpent = transactions.reduce(
     (sum, item) => sum + getTransactionSpentAmount(item),
     0,
@@ -545,7 +686,11 @@ export default function TransactionHistory() {
         onClose={() => setEditingTransaction(null)}
         onSave={(newSpendingAmount, newSavingsAmount) => {
           if (editingTransaction) {
-            updateTransactionAmounts(editingTransaction.id, newSpendingAmount, newSavingsAmount);
+            void updateTransactionAmounts(
+              editingTransaction.id,
+              newSpendingAmount,
+              newSavingsAmount,
+            );
           }
         }}
       />
@@ -612,13 +757,18 @@ function EditSavingsModal({ visible, transaction, onClose, onSave }) {
     >
       <View style={styles.modalContainer}>
         <View style={styles.modalHeader}>
-          <TouchableOpacity onPress={onClose}>
-            <Text style={styles.modalCancelButton}>Cancel</Text>
-          </TouchableOpacity>
+          <View style={[styles.modalHeaderSlot, styles.modalHeaderSlotLeft]} />
           <Text style={styles.modalTitle}>Edit Transaction</Text>
-          <TouchableOpacity onPress={handleSave}>
-            <Text style={styles.modalSaveButton}>Save</Text>
-          </TouchableOpacity>
+          <View style={[styles.modalHeaderSlot, styles.modalHeaderSlotRight]}>
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
+              <Feather name="x" size={24} color="#6B7280" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView style={styles.modalContent}>
@@ -686,6 +836,14 @@ function EditSavingsModal({ visible, transaction, onClose, onSave }) {
               Enter the amount you saved from this discount redemption
             </Text>
           </View>
+
+          <TouchableOpacity
+            style={styles.modalFormSaveButton}
+            onPress={handleSave}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.modalFormSaveButtonText}>Save</Text>
+          </TouchableOpacity>
         </ScrollView>
       </View>
     </Modal>
@@ -961,19 +1119,34 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#E5E7EB",
   },
-  modalCancelButton: {
-    fontSize: 16,
-    color: "#6B7280",
+  modalHeaderSlot: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  modalHeaderSlotLeft: {
+    alignItems: "flex-start",
+  },
+  modalHeaderSlotRight: {
+    alignItems: "flex-end",
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: "700",
     color: "#324E58",
+    flexShrink: 0,
   },
-  modalSaveButton: {
+  modalFormSaveButton: {
+    marginTop: 8,
+    marginBottom: 24,
+    backgroundColor: "#DB8633",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  modalFormSaveButtonText: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#DB8633",
+    color: "#fff",
   },
   modalContent: {
     flex: 1,

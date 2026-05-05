@@ -11,7 +11,7 @@ import {
   Modal,
   Alert,
 } from "react-native";
-import { AntDesign, Feather, Ionicons } from "@expo/vector-icons";
+import { AntDesign, Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import SuccessModal from "../../components/SuccessModal";
@@ -35,6 +35,18 @@ import { IMAGE_ASSETS } from "../utils/assetConstants";
 export default function BeneficiaryPreferences() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  /** Detail screen lives under (tabs); pass this so success modal can continue signup. */
+  const signupBeneficiaryDetailParams = (beneficiaryId) => {
+    const out = {
+      id: String(beneficiaryId),
+      fromSignup: "true",
+    };
+    if (params?.flow === "coworking") {
+      out.flow = "coworking";
+      out.sponsorAmount = String(params?.sponsorAmount ?? "15");
+    }
+    return out;
+  };
   const { selectedBeneficiary, setSelectedBeneficiary } = useBeneficiary();
   const { filters, updateFilters, clearFilters, hasActiveFilters } =
     useBeneficiaryFilter();
@@ -402,7 +414,6 @@ export default function BeneficiaryPreferences() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
-      <SafeAreaTopSpacer />
       <LinearGradient
         colors={["#2C3E50", "#4CA1AF"]}
         start={{ x: 0, y: 0 }}
@@ -419,10 +430,7 @@ export default function BeneficiaryPreferences() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.searchRow}>
-          <Image
-            source={require("../../assets/icons/search-icon.png")}
-            style={{ width: 18, height: 18, tintColor: "#6d6e72", marginRight: 8 }}
-          />
+          <Feather name="search" size={18} color="#6d6e72" style={{ marginRight: 8 }} />
           <TextInput
             placeholder="Search beneficiaries"
             placeholderTextColor="#6d6e72"
@@ -433,7 +441,7 @@ export default function BeneficiaryPreferences() {
         </View>
 
         <View style={styles.locationRow}>
-          <Feather name="map-pin" size={16} color="#6d6e72" style={{ marginRight: 8 }} />
+          <MaterialIcons name="place" size={20} color="#6d6e72" style={{ marginRight: 6 }} />
           {isEditingLocation ? (
             <TextInput
               placeholder="Enter city or area (e.g. Atlanta)"
@@ -542,7 +550,7 @@ export default function BeneficiaryPreferences() {
                 initialRegion={mapRegion}
                 region={mapRegion}
                 showsUserLocation={true}
-                showsMyLocationButton={true}
+                showsMyLocationButton={false}
                 onMapReady={updateMapRegion}
               >
                 <Circle
@@ -579,7 +587,7 @@ export default function BeneficiaryPreferences() {
 
             <TouchableOpacity
               style={[styles.mapFilterBtn, styles.mapFilterBtnActive]}
-              onPress={() => router.push("/(tabs)/beneficiary/beneficiaryFilter")}
+              onPress={() => router.push("/signupFlow/beneficiaryFilter")}
             >
               <Feather name="filter" size={15} color="#fff" />
               <Text style={[styles.mapFilterBtnText, styles.mapFilterBtnTextActive]}>Filter</Text>
@@ -611,7 +619,7 @@ export default function BeneficiaryPreferences() {
                       setSelectedMarker(null);
                       router.push({
                         pathname: "/(tabs)/beneficiary/beneficiaryDetail",
-                        params: { id: selectedMarker.id.toString() },
+                        params: signupBeneficiaryDetailParams(selectedMarker.id),
                       });
                     }}
                   >
@@ -649,7 +657,7 @@ export default function BeneficiaryPreferences() {
                 <View ref={beneficiarySectionRef}>
                   <View style={[styles.sectionHeader, { flexDirection: "row", alignItems: "center", justifyContent: "flex-end" }]}>
                     <TouchableOpacity
-                      onPress={() => router.push("/(tabs)/beneficiary/beneficiaryFilter")}
+                      onPress={() => router.push("/signupFlow/beneficiaryFilter")}
                       style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
                     >
                       <Feather name="filter" size={15} color={hasActiveFilters() ? "#fff" : "#DB8633"} />
@@ -689,22 +697,23 @@ export default function BeneficiaryPreferences() {
                             style={styles.viewDetailsButton}
                             onPress={(e) => {
                               e.stopPropagation();
-                              router.push({ pathname: "/(tabs)/beneficiary/beneficiaryDetail", params: { id: b.id.toString() } });
+                              router.push({
+                                pathname: "/(tabs)/beneficiary/beneficiaryDetail",
+                                params: signupBeneficiaryDetailParams(b.id),
+                              });
                             }}
                           >
                             <Text style={styles.viewDetailsButtonText}>Details</Text>
                           </TouchableOpacity>
-                          {selectedBeneficiary?.id !== b.id && (
-                            <TouchableOpacity
-                              style={styles.changeToThisButton}
-                              onPress={(e) => {
-                                e.stopPropagation();
-                                openBeneficiaryConfirm(b);
-                              }}
-                            >
-                              <Text style={styles.changeToThisButtonText}>Select</Text>
-                            </TouchableOpacity>
-                          )}
+                          <TouchableOpacity
+                            style={styles.changeToThisButton}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              openBeneficiaryConfirm(b);
+                            }}
+                          >
+                            <Text style={styles.changeToThisButtonText}>Select</Text>
+                          </TouchableOpacity>
                         </View>
                       </View>
                     </TouchableOpacity>
@@ -743,7 +752,10 @@ export default function BeneficiaryPreferences() {
                           style={styles.viewDetailsButton}
                           onPress={(e) => {
                             e.stopPropagation();
-                            router.push({ pathname: "/(tabs)/beneficiary/beneficiaryDetail", params: { id: b.id.toString() } });
+                            router.push({
+                              pathname: "/(tabs)/beneficiary/beneficiaryDetail",
+                              params: signupBeneficiaryDetailParams(b.id),
+                            });
                           }}
                         >
                           <Text style={styles.viewDetailsButtonText}>Details</Text>
@@ -768,7 +780,7 @@ export default function BeneficiaryPreferences() {
               <View>
                 <View style={[styles.sectionHeader, { flexDirection: "row", alignItems: "center", justifyContent: "flex-end" }]}>
                   <TouchableOpacity
-                    onPress={() => router.push("/(tabs)/beneficiary/beneficiaryFilter")}
+                    onPress={() => router.push("/signupFlow/beneficiaryFilter")}
                     style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
                   >
                     <Feather name="filter" size={15} color={hasActiveFilters() ? "#fff" : "#DB8633"} />
@@ -856,7 +868,9 @@ export default function BeneficiaryPreferences() {
                   setMiniPopupVisible(false);
                   router.push({
                     pathname: "/(tabs)/beneficiary/beneficiaryDetail",
-                    params: { id: selectedBeneficiaryForPopup?.id.toString() },
+                    params: signupBeneficiaryDetailParams(
+                      selectedBeneficiaryForPopup?.id,
+                    ),
                   });
                 }}
               >
@@ -880,12 +894,6 @@ export default function BeneficiaryPreferences() {
       )}
     </View>
   );
-}
-
-// Fills the iOS status bar area with the gradient's dark start color
-function SafeAreaTopSpacer() {
-  const { SafeAreaView } = require("react-native");
-  return <SafeAreaView style={{ backgroundColor: "#2C3E50" }} />;
 }
 
 const styles = StyleSheet.create({
