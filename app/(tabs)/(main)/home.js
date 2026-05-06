@@ -7,20 +7,23 @@ import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useFocusEffect, useNavigation } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import MonthlyImpactCard from '../../components/MonthlyImpactCard';
-import { useBeneficiary } from '../context/BeneficiaryContext';
-import { useUser } from '../context/UserContext';
-import { useLocation } from '../context/LocationContext';
-import { useDiscount } from '../context/DiscountContext';
-import API from '../lib/api';
-import InviteFriendsModal from '../../components/InviteFriendsModal';
+import MonthlyImpactCard from '../../../components/MonthlyImpactCard';
+import {
+  resolveBeneficiaryHeroImageSource,
+  useBeneficiary,
+} from '../../context/BeneficiaryContext';
+import { useUser } from '../../context/UserContext';
+import { useLocation } from '../../context/LocationContext';
+import { useDiscount } from '../../context/DiscountContext';
+import API from '../../lib/api';
+import InviteFriendsModal from '../../../components/InviteFriendsModal';
 import {
   REFERRAL_TIERS,
   milestonesForDisplay,
   nextMilestoneFromPaidCount,
   tiersUnlockedCount,
-} from '../constants/referralRewards';
-import { BADGE_ASSETS, IMAGE_ASSETS } from '../utils/assetConstants';
+} from '../../constants/referralRewards';
+import { BADGE_ASSETS, IMAGE_ASSETS } from '../../utils/assetConstants';
 
 export default function MainHome() {
   const router = useRouter();
@@ -140,10 +143,10 @@ export default function MainHome() {
           } else {
             // Try to match vendor name to local logo assets
             const logoMap = {
-              'Starbucks': require('../../assets/images/logos/starbucks.png'),
-              'Apple Store': require('../../assets/images/logos/apple.png'),
-              'Ceviche': require('../../assets/images/ceviche-logo.png'),
-              'Amazon': require('../../assets/logos/amazon.png'),
+              'Starbucks': require('../../../assets/images/logos/starbucks.png'),
+              'Apple Store': require('../../../assets/images/logos/apple.png'),
+              'Ceviche': require('../../../assets/images/ceviche-logo.png'),
+              'Amazon': require('../../../assets/logos/amazon.png'),
             };
             
             // Try exact match first, then partial match
@@ -274,12 +277,19 @@ export default function MainHome() {
     }, [])
   );
 
-  let [fontsLoaded] = useFonts({
+  const [fontsLoaded] = useFonts({
     Figtree_400Regular,
     Figtree_700Bold,
   });
 
-  if (!fontsLoaded) return null;
+  // Never return null — an empty Slot frame reads as a bright flash on tab switch.
+  if (!fontsLoaded) {
+    return (
+      <View style={styles.fontsLoadingShell}>
+        <SafeAreaView style={styles.safeArea} edges={['left', 'right']} />
+      </View>
+    );
+  }
 
   // Use topDiscounts from state, fallback to empty array
   const vouchers = topDiscounts.length > 0 ? topDiscounts : [];
@@ -289,6 +299,7 @@ export default function MainHome() {
       {/* Omit top edge here: SafeAreaView top inset + gray bg created a band above the gradient. Top inset is applied inside headerWrapper instead. */}
       <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
         <ScrollView
+          style={styles.scrollFill}
           contentContainerStyle={styles.scrollContent}
           {...(Platform.OS === 'ios' ? { contentInsetAdjustmentBehavior: 'never' } : {})}
         >
@@ -316,7 +327,7 @@ export default function MainHome() {
                     accessibilityRole="button"
                     accessibilityLabel="Open menu"
                   >
-                    <Image source={require('../../assets/icons/menu.png')} style={styles.iconWhite} />
+                    <Image source={require('../../../assets/icons/menu.png')} style={styles.iconWhite} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -386,7 +397,10 @@ export default function MainHome() {
             >
               <View style={styles.beneficiaryImageContainer}>
                 <Image
-                  source={selectedBeneficiary.image || require('../../assets/images/charity-water.jpg')}
+                  source={
+                    resolveBeneficiaryHeroImageSource(selectedBeneficiary) ||
+                    require('../../../assets/images/charity-water.jpg')
+                  }
                   style={styles.beneficiaryImage}
                   resizeMode="cover"
                 />
@@ -412,7 +426,7 @@ export default function MainHome() {
               activeOpacity={0.9}
             >
               <View style={styles.beneficiaryImageContainer}>
-                <Image source={require('../../assets/images/child-cancer.jpg')} style={styles.beneficiaryImage} resizeMode="cover" />
+                <Image source={require('../../../assets/images/child-cancer.jpg')} style={styles.beneficiaryImage} resizeMode="cover" />
                 <LinearGradient
                   colors={['transparent', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.7)']}
                   style={styles.beneficiaryImageOverlay}
@@ -584,7 +598,13 @@ export default function MainHome() {
 }
 
 const styles = StyleSheet.create({
+  /** Same grey as tabs / stack substrate while Figtree downloads (avoid white flash). */
+  fontsLoadingShell: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+  },
   safeArea: { flex: 1, backgroundColor: '#F5F5F5' },
+  scrollFill: { flex: 1, backgroundColor: '#F5F5F5' },
   scrollContent: { paddingBottom: 16, backgroundColor: '#F5F5F5' },
   headerWrapper: {
     borderBottomLeftRadius: 24,
@@ -603,14 +623,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     minHeight: 30,
-    marginTop: 30,
+    marginTop: 20,
   },
   /** Full-bleed hairline; negative margin matches headerWrapper horizontal padding */
   headerDivider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: 'rgba(255,255,255,0.16)',
     marginTop: 5,
-    marginBottom: 20,
+    marginBottom: 10,
     marginHorizontal: -24,
   },
   /** Greeting + large teal area below (does not affect logo vertical position). */
@@ -626,8 +646,8 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     maxWidth: '78%',
   },
-  /** ~480×45 initiative strip; slight lift mirrors discounts miniBrandLogo marginTop -20. */
-  logo: { height: 18, aspectRatio: 480 / 45, alignSelf: 'flex-start', marginTop: -8 },
+  /** ~480×45 initiative wordmark; vertically centers with menu via headerTopRow alignItems. */
+  logo: { height: 18, aspectRatio: 480 / 45, alignSelf: 'flex-start' },
   rightIcons: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
   iconButton: { marginLeft: 12 },
   iconWhite: { width: 22, height: 22, resizeMode: 'contain', tintColor: 'white' },
@@ -654,7 +674,7 @@ const styles = StyleSheet.create({
    */
   /** With paddingBottom 150, more negative = card sits higher on screen. */
   monthlyCardWrapper: {
-    marginTop: -120,
+    marginTop: -130,
     marginHorizontal: 20,
     marginBottom: 10,
     zIndex: 10,

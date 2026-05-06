@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { Slot, useRouter, usePathname } from 'expo-router';
+import { Stack, useRouter, usePathname } from 'expo-router';
 import { View, TouchableOpacity, Image, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BeneficiaryProvider } from '../context/BeneficiaryContext';
 
 /**
- * Custom tab bar (Slot + footer) — not expo-router `<Tabs>`.
- * Keep inactive icons/labels on these hex values so they never pick up iOS template/system blue.
- * Tab screens must not add SafeArea bottom inset (use edges={['top','left','right']}) or a gray band appears above the footer.
+ * Outer stack: `(main)` (Tabs, 3 roots kept alive) + sibling routes like `menu/*`.
+ * Custom footer sits above the stack (same as prior Slot layout).
  */
 const TAB_NAV = {
   pill: '#FFFFFF',
@@ -19,24 +18,25 @@ const TAB_NAV = {
   activeLabel: '#DB8633',
 };
 
-const ACTIVE_SIZE = 50;
-/** Negative margin pulls FAB up; lower = sits closer to bar (nudge down vs half-diameter). */
-const ACTIVE_FLOAT_UP = 5;
+const TAB_BAR_CONTENT_HEIGHT = 56;
+const ACTIVE_ICON_SIZE = 39;
+const INACTIVE_ICON_SLOT = 33;
 
-export default function AppLayout() {
+export default function TabsRootLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const bottomInset = insets.bottom ?? 0;
-  /** Solid pill behind labels + home-indicator zone (matches reference: flat top, no faux gray band). */
-  const WHITE_BAR_HEIGHT = 52 + bottomInset;
+  const WHITE_BAR_HEIGHT = TAB_BAR_CONTENT_HEIGHT + bottomInset;
 
   const getActiveTab = () => {
     if (pathname?.includes('/home') || pathname === '/' || pathname === '/(tabs)/home') {
       return 'home';
-    } else if (pathname?.includes('/discounts') || pathname === '/(tabs)/discounts') {
+    }
+    if (pathname?.includes('/discounts')) {
       return 'discounts';
-    } else if (pathname?.includes('/beneficiary') || pathname === '/(tabs)/beneficiary') {
+    }
+    if (pathname?.includes('/beneficiary')) {
       return 'beneficiary';
     }
     return 'home';
@@ -47,63 +47,87 @@ export default function AppLayout() {
   useEffect(() => {
     const next = getActiveTab();
     if (next !== activeTab) {
-      console.log('📱 Tab switching from', activeTab, 'to', next, 'pathname:', pathname);
       setActiveTab(next);
     }
   }, [pathname, activeTab]);
 
-  const isDetailPage = /^\/discounts\/[^/]+$/.test(pathname || '');
-  const hideFooter = isDetailPage;
+  const hideFooter = /^\/discounts\/[^/]+$/.test(pathname || '');
 
   const tabs = [
-    { name: 'home', label: 'Home', icon: require('../../assets/icons/home.png') },
-    { name: 'discounts', label: 'Discounts', icon: require('../../assets/icons/discounts.png') },
-    { name: 'beneficiary', label: 'Beneficiary', icon: require('../../assets/icons/beneficiary.png') },
+    { name: 'home', label: 'Home', href: '/home' },
+    { name: 'discounts', label: 'Discounts', href: '/discounts' },
+    { name: 'beneficiary', label: 'Beneficiary', href: '/beneficiary' },
   ];
+
+  const goTab = (href) => {
+    /** Stay inside `(main)` tab navigator; clears stacked overlays like /menu where possible */
+    router.replace(href);
+  };
 
   return (
     <GestureHandlerRootView style={styles.flexVisible}>
       <BeneficiaryProvider>
         <View style={styles.sheet}>
           <View style={[styles.slotClip, { paddingBottom: hideFooter ? 0 : WHITE_BAR_HEIGHT }]}>
-            <Slot />
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: '#F5F5F5' },
+              }}
+            />
           </View>
 
           {!hideFooter && (
-            <>
-              <View style={[styles.footerBarSolid, { height: WHITE_BAR_HEIGHT }]} />
-
-              <View style={[styles.footerNavWrapper, { bottom: bottomInset, height: 72 }]}>
+            <View
+              style={[
+                styles.footerBarSolid,
+                { height: WHITE_BAR_HEIGHT, paddingBottom: bottomInset },
+              ]}
+            >
+              <View style={styles.footerNavRow}>
                 {tabs.map((tab) => {
                   const focused = activeTab === tab.name;
                   return (
                     <TouchableOpacity
                       key={tab.name}
-                      style={[styles.footerItem, focused ? styles.footerItemActive : styles.footerItemInactive]}
+                      style={styles.footerItem}
                       activeOpacity={0.85}
                       onPress={() => {
                         setActiveTab(tab.name);
-                        router.push(`/${tab.name}`);
+                        goTab(tab.href);
                       }}
                     >
-                      <View
-                        style={[
-                          styles.iconContainer,
-                          focused ? styles.iconContainerActive : styles.iconContainerInactive,
-                        ]}
-                      >
-                        <Image
-                          source={tab.icon}
-                          style={[styles.tabIcon, focused ? styles.tabIconActive : styles.tabIconInactive]}
-                          resizeMode="contain"
-                        />
+                      <View style={styles.iconSlot}>
+                        <View
+                          style={[
+                            styles.iconContainer,
+                            focused ? styles.iconContainerActive : styles.iconContainerInactive,
+                          ]}
+                        >
+                          <Image
+                            source={
+                              tab.name === 'home'
+                                ? require('../../assets/icons/home.png')
+                                : tab.name === 'discounts'
+                                  ? require('../../assets/icons/discounts.png')
+                                  : require('../../assets/icons/beneficiary.png')
+                            }
+                            style={[styles.tabIcon, focused ? styles.tabIconActive : styles.tabIconInactive]}
+                            resizeMode="contain"
+                          />
+                        </View>
                       </View>
-                      <Text style={[styles.tabLabel, focused ? styles.tabLabelActive : styles.tabLabelInactive]}>{tab.label}</Text>
+                      <Text
+                        numberOfLines={1}
+                        style={[styles.tabLabel, focused ? styles.tabLabelActive : styles.tabLabelInactive]}
+                      >
+                        {tab.label}
+                      </Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
-            </>
+            </View>
           )}
         </View>
       </BeneficiaryProvider>
@@ -118,12 +142,13 @@ const styles = StyleSheet.create({
   },
   sheet: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#F5F5F5',
     overflow: 'visible',
   },
   slotClip: {
     flex: 1,
     overflow: 'visible',
+    backgroundColor: '#F5F5F5',
   },
   footerBarSolid: {
     position: 'absolute',
@@ -131,43 +156,44 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: TAB_NAV.pill,
-    zIndex: 1,
-  },
-  footerNavWrapper: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'flex-start',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E6EA',
     zIndex: 99,
-    overflow: 'visible',
+    overflow: 'hidden',
+  },
+  footerNavRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingHorizontal: 6,
+    paddingTop: 3,
   },
   footerItem: {
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     flex: 1,
+    minWidth: 0,
   },
-  footerItemActive: {
-    marginTop: -ACTIVE_FLOAT_UP,
-  },
-  footerItemInactive: {
-    paddingTop: 30,
+  iconSlot: {
+    height: ACTIVE_ICON_SIZE,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   iconContainer: {
     justifyContent: 'center',
     alignItems: 'center',
   },
   iconContainerActive: {
-    width: ACTIVE_SIZE,
-    height: ACTIVE_SIZE,
-    borderRadius: ACTIVE_SIZE / 2,
+    width: ACTIVE_ICON_SIZE,
+    height: ACTIVE_ICON_SIZE,
+    borderRadius: ACTIVE_ICON_SIZE / 2,
     backgroundColor: TAB_NAV.activeFill,
   },
   iconContainerInactive: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: INACTIVE_ICON_SLOT,
+    height: INACTIVE_ICON_SLOT,
+    borderRadius: INACTIVE_ICON_SLOT / 2,
     backgroundColor: 'transparent',
   },
   tabIcon: {
@@ -181,9 +207,11 @@ const styles = StyleSheet.create({
     tintColor: TAB_NAV.inactiveIcon,
   },
   tabLabel: {
-    marginTop: 4,
-    fontSize: 11,
-    fontWeight: '700',
+    marginTop: 2,
+    fontSize: 12,
+    lineHeight: 12,
+    fontWeight: '600',
+    letterSpacing: 0.15,
   },
   tabLabelInactive: {
     color: TAB_NAV.inactiveLabel,

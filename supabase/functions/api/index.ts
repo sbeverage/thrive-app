@@ -206,6 +206,120 @@ async function updateReferralStatus(
   }
 }
 
+async function reconcileReferralStatusesForReferrer(
+  supabase: any,
+  referrerId: number,
+): Promise<void> {
+  try {
+    const {data: referrals, error: referralsError} = await supabase
+      .from("referrals")
+      .select(
+        "id, referred_user_id, status, first_payment_at, monthly_donation_amount",
+      )
+      .eq("referrer_id", referrerId);
+
+    if (referralsError || !referrals?.length) {
+      if (referralsError) {
+        console.error("❌ Error loading referrals for reconciliation:", referralsError);
+      }
+      return;
+    }
+
+    const referredUserIds = referrals
+      .map((r: any) => r.referred_user_id)
+      .filter((id: any) => Number.isFinite(id));
+
+    if (referredUserIds.length === 0) return;
+
+    const [{data: referredUsers}, {data: monthlyDonations}, {data: paidTxs}] =
+      await Promise.all([
+        supabase.from("users").select("id").in("id", referredUserIds),
+        supabase
+          .from("monthly_donations")
+          .select("user_id, amount, status, last_payment_amount, last_payment_date")
+          .in("user_id", referredUserIds),
+        supabase
+          .from("transactions")
+          .select("user_id, amount, created_at")
+          .in("user_id", referredUserIds)
+          .eq("type", "monthly_donation")
+          .eq("status", "completed")
+          .order("created_at", {ascending: false}),
+      ]);
+
+    const userIds = new Set((referredUsers || []).map((u: any) => u.id));
+    const paidTxByUser = new Map<number, any>();
+    (paidTxs || []).forEach((tx: any) => {
+      if (!paidTxByUser.has(tx.user_id)) {
+        paidTxByUser.set(tx.user_id, tx);
+      }
+    });
+
+    const donationByUser = new Map<number, any>();
+    (monthlyDonations || []).forEach((donation: any) => {
+      const existing = donationByUser.get(donation.user_id);
+      if (!existing) {
+        donationByUser.set(donation.user_id, donation);
+        return;
+      }
+      const rank = (s: string) =>
+        s === "active" ? 3 : s === "trialing" ? 2 : s === "past_due" ? 1 : 0;
+      if (rank(donation.status) > rank(existing.status)) {
+        donationByUser.set(donation.user_id, donation);
+      }
+    });
+
+    for (const ref of referrals) {
+      const referredUserId = Number(ref.referred_user_id);
+      if (!Number.isFinite(referredUserId)) continue;
+
+      const paidTx = paidTxByUser.get(referredUserId);
+      const donation = donationByUser.get(referredUserId);
+
+      if (paidTx) {
+        if (ref.status !== "paid") {
+          await updateReferralStatus(
+            supabase,
+            referredUserId,
+            "paid",
+            parseFloat(paidTx.amount || 0),
+          );
+        }
+        continue;
+      }
+
+      const hasSignedUp = userIds.has(referredUserId);
+      const donationSetupStatuses = new Set([
+        "incomplete",
+        "incomplete_expired",
+        "trialing",
+        "active",
+        "past_due",
+      ]);
+      const hasDonationSetup =
+        !!donation && donationSetupStatuses.has(String(donation.status || ""));
+
+      let targetStatus: string = "pending";
+      if (hasDonationSetup) targetStatus = "payment_setup";
+      else if (hasSignedUp) targetStatus = "signed_up";
+
+      if (ref.status !== targetStatus && ref.status !== "paid") {
+        const patch: any = {status: targetStatus};
+        if (
+          targetStatus === "payment_setup" &&
+          donation?.amount != null &&
+          ref.monthly_donation_amount == null
+        ) {
+          patch.monthly_donation_amount = parseFloat(donation.amount);
+        }
+        await supabase.from("referrals").update(patch).eq("id", ref.id);
+      }
+    }
+  } catch (error) {
+    console.error("❌ Error reconciling referral statuses:", error);
+  }
+}
+
 async function checkAndGrantMilestones(
   supabase: any,
   referrerId: number,
@@ -2317,6 +2431,9 @@ serve(async (req) => {
     if (!route.startsWith("/")) {
       route = "/" + route;
     }
+
+    // Normalize trailing slashes so handlers can use exact matches
+    route = route.replace(/\/+$/, "") || "/";
 
     // Handle root path
     if (route === "/") {
@@ -12822,17 +12939,24 @@ async function handleAuthRoute(
       if (charityId) {
         const {data: charity} = await supabase
           .from("charities")
-          .select("id, name, description, logo_url, category")
+          .select("id, name, description, logo_url, image_url, category, location")
           .eq("id", charityId)
           .single();
         if (charity) {
+          const heroUrl =
+            (charity.image_url && String(charity.image_url).trim()) ||
+            (charity.logo_url && String(charity.logo_url).trim()) ||
+            "";
           selectedBeneficiary = {
             id: charity.id,
             name: charity.name || "",
             description: charity.description || null,
             logo_url: charity.logo_url || "",
+            image_url: charity.image_url || null,
+            imageUrl: heroUrl || null,
             category: charity.category || null,
-            image: charity.logo_url ? {uri: charity.logo_url} : null,
+            location: charity.location || "",
+            image: heroUrl ? {uri: heroUrl} : null,
           };
         }
       }
@@ -14735,6 +14859,8 @@ async function handleReferralRoute(
   // GET /referrals/info - Get referral information
   if (method === "GET" && route === "/referrals/info") {
     try {
+      await reconcileReferralStatusesForReferrer(supabase, userId);
+
       // Get paid referrals count
       const {data: paidReferrals, error: paidError} = await supabase
         .from("referrals")
@@ -14833,6 +14959,8 @@ async function handleReferralRoute(
   // GET /referrals/friends - Get list of referred friends
   if (method === "GET" && route === "/referrals/friends") {
     try {
+      await reconcileReferralStatusesForReferrer(supabase, userId);
+
       // Get all referrals with user details
       const {data: referrals, error: referralsError} = await supabase
         .from("referrals")
@@ -16623,6 +16751,205 @@ async function handleCharityRoute(
   });
 }
 
+/**
+ * Undo cancel-at-period-end: POST Stripe cancel_at_period_end=false and sync monthly_donations.status.
+ * Also supports rows with no Stripe id but status cancelling (local-only).
+ */
+async function resumeMonthlySubscriptionCore(
+  supabase: any,
+  userId: number,
+  rawIdentifier: string,
+): Promise<Response> {
+  const jsonHeaders: Record<string, string> = {"Content-Type": "application/json"};
+
+  const raw = decodeURIComponent(String(rawIdentifier ?? "").trim());
+  if (!raw) {
+    return new Response(
+      JSON.stringify({error: "Subscription id is required"}),
+      {headers: jsonHeaders, status: 400},
+    );
+  }
+
+  let subQuery = supabase
+    .from("monthly_donations")
+    .select("*")
+    .eq("user_id", userId);
+
+  if (/^\d+$/.test(raw)) {
+    subQuery = subQuery.eq("id", parseInt(raw, 10));
+  } else {
+    subQuery = subQuery.eq("stripe_subscription_id", raw);
+  }
+
+  const {data: subscription, error: fetchError} = await subQuery.maybeSingle();
+
+  if (fetchError || !subscription) {
+    return new Response(JSON.stringify({error: "Subscription not found"}), {
+      headers: jsonHeaders,
+      status: 404,
+    });
+  }
+
+  const rowId = subscription.id;
+  const rowStatus = String(subscription.status || "").toLowerCase();
+
+  if (!subscription.stripe_subscription_id) {
+    if (rowStatus === "cancelling" || rowStatus === "canceling") {
+      await supabase
+        .from("monthly_donations")
+        .update({status: "active"})
+        .eq("id", rowId);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "Subscription will continue renewing.",
+        }),
+        {headers: jsonHeaders, status: 200},
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        error: "This subscription is not scheduled for cancellation.",
+      }),
+      {headers: jsonHeaders, status: 400},
+    );
+  }
+
+  const stripe = getStripeClient();
+  const stripeSubUrl = `${stripe.baseUrl}/subscriptions/${subscription.stripe_subscription_id}`;
+
+  const resumeBody = new URLSearchParams();
+  resumeBody.set("cancel_at_period_end", "false");
+  const stripeRes = await fetch(stripeSubUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${stripe.secretKey}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: resumeBody.toString(),
+  });
+
+  if (!stripeRes.ok) {
+    const errText = await stripeRes.text().catch(() => "");
+    const lowerErr = String(errText || "").toLowerCase();
+    console.error(
+      "Stripe subscription resume (cancel_at_period_end=false) failed:",
+      stripeRes.status,
+      errText,
+    );
+    // If Stripe says this subscription is already canceled/missing, undo is no longer possible.
+    if (
+      (stripeRes.status === 404 &&
+        (lowerErr.includes("no such subscription") ||
+          lowerErr.includes("resource_missing"))) ||
+      (stripeRes.status === 400 &&
+        (lowerErr.includes("already canceled") ||
+          lowerErr.includes("cannot update a canceled subscription") ||
+          lowerErr.includes("status of canceled")))
+    ) {
+      await supabase
+        .from("monthly_donations")
+        .update({status: "cancelled"})
+        .eq("id", rowId);
+      return new Response(
+        JSON.stringify({
+          error:
+            "This subscription has already been canceled by the payment provider and can no longer be resumed.",
+        }),
+        {
+          headers: jsonHeaders,
+          status: 409,
+        },
+      );
+    }
+
+    // Some Stripe failures still leave sub active. Verify state before failing hard.
+    try {
+      const verifyRes = await fetch(stripeSubUrl, {
+        method: "GET",
+        headers: {Authorization: `Bearer ${stripe.secretKey}`},
+      });
+      if (verifyRes.ok) {
+        const verifyJson = (await verifyRes.json().catch(() => null)) as {
+          status?: string;
+          cancel_at_period_end?: boolean;
+        } | null;
+        const verifyStatus = String(verifyJson?.status || "").toLowerCase();
+        const stillActiveish =
+          ["active", "trialing", "past_due", "incomplete", "unpaid", "pending"].includes(
+            verifyStatus,
+          ) && !Boolean(verifyJson?.cancel_at_period_end);
+        if (stillActiveish) {
+          await supabase
+            .from("monthly_donations")
+            .update({status: verifyStatus === "pending" ? "pending" : "active"})
+            .eq("id", rowId);
+          return new Response(
+            JSON.stringify({
+              success: true,
+              message: "Subscription will continue renewing.",
+            }),
+            {headers: jsonHeaders, status: 200},
+          );
+        }
+      }
+    } catch (verifyErr) {
+      console.error("Stripe resume verify step failed:", verifyErr);
+    }
+
+    const conciseProviderError =
+      String(errText || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 240) || null;
+    return new Response(
+      JSON.stringify({
+        error: conciseProviderError
+          ? `Unable to update subscription with payment provider: ${conciseProviderError}`
+          : "Unable to update subscription with payment provider; try again or contact support.",
+      }),
+      {
+        headers: jsonHeaders,
+        status: 502,
+      },
+    );
+  }
+
+  const subJson = (await stripeRes.json().catch(() => null)) as {
+    status?: string;
+  } | null;
+  const stripeSt = String(subJson?.status || "").toLowerCase();
+  if (stripeSt === "canceled" || stripeSt === "incomplete_expired") {
+    await supabase.from("monthly_donations").update({status: "cancelled"}).eq("id", rowId);
+    return new Response(
+      JSON.stringify({
+        error:
+          "This subscription has already been canceled by the payment provider and can no longer be resumed.",
+      }),
+      {headers: jsonHeaders, status: 409},
+    );
+  }
+  const allowedDb = new Set([
+    "active",
+    "trialing",
+    "pending",
+    "past_due",
+    "incomplete",
+    "unpaid",
+  ]);
+  const nextStatus = allowedDb.has(stripeSt) ? stripeSt : "active";
+
+  await supabase.from("monthly_donations").update({status: nextStatus}).eq("id", rowId);
+
+  return new Response(
+    JSON.stringify({
+      success: true,
+      message: "Subscription will continue renewing.",
+    }),
+    {headers: jsonHeaders, status: 200},
+  );
+}
+
 // Donations routes handler
 async function handleDonationRoute(
   req: Request,
@@ -17463,6 +17790,8 @@ async function handleDonationRoute(
             amount: parseFloat(row.amount),
             status: row.status,
             stripe_subscription_id: subId,
+            cancel_at_period_end: Boolean(subJson?.cancel_at_period_end),
+            cancel_at: subJson?.cancel_at ?? null,
             beneficiary_id: row.beneficiary_id,
             currency: row.currency,
           },
@@ -17681,9 +18010,70 @@ async function handleDonationRoute(
     }
   }
 
-  // DELETE /donations/monthly/subscription/:id
+  // POST /donations/monthly/subscription/resume — JSON body monthly_donation_id (preferred vs extra path segments)
+  if (method === "POST" && route === "/donations/monthly/subscription/resume") {
+    if (!userId) {
+      return new Response(JSON.stringify({error: "Unauthorized"}), {
+        headers: {"Content-Type": "application/json"},
+        status: 401,
+      });
+    }
+
+    try {
+      const body = await req.json().catch(() => ({}));
+      const rid =
+        body?.monthly_donation_id ??
+        body?.subscription_id ??
+        body?.subscriptionId ??
+        "";
+      return resumeMonthlySubscriptionCore(supabase, userId, String(rid));
+    } catch (error: any) {
+      console.error("Error resuming subscription (body route):", error);
+      return new Response(
+        JSON.stringify({
+          error: error.message || "Failed to resume subscription",
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // POST /donations/monthly/subscription/:identifier/resume — undo cancel-at-period-end
+  const resumeSubscriptionMatch = route.match(
+    /^\/donations\/monthly\/subscription\/([^/?#]+)\/resume$/,
+  );
+  if (method === "POST" && resumeSubscriptionMatch) {
+    if (!userId) {
+      return new Response(JSON.stringify({error: "Unauthorized"}), {
+        headers: {"Content-Type": "application/json"},
+        status: 401,
+      });
+    }
+
+    try {
+      const raw = decodeURIComponent(resumeSubscriptionMatch[1] || "");
+      return resumeMonthlySubscriptionCore(supabase, userId, raw);
+    } catch (error: any) {
+      console.error("Error resuming subscription:", error);
+      return new Response(
+        JSON.stringify({
+          error: error.message || "Failed to resume subscription",
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // DELETE /donations/monthly/subscription/:identifier
+  // Identifier: monthly_donations.id (digits) OR stripe_subscription_id (e.g. sub_xxx).
   const deleteSubscriptionMatch = route.match(
-    /^\/donations\/monthly\/subscription\/(\d+)$/,
+    /^\/donations\/monthly\/subscription\/([^/?#]+)$/,
   );
   if (method === "DELETE" && deleteSubscriptionMatch) {
     if (!userId) {
@@ -17694,15 +18084,20 @@ async function handleDonationRoute(
     }
 
     try {
-      const subscriptionId = parseInt(deleteSubscriptionMatch[1]);
+      const raw = decodeURIComponent(deleteSubscriptionMatch[1] || "");
 
-      // Get subscription
-      const {data: subscription, error: fetchError} = await supabase
+      let subQuery = supabase
         .from("monthly_donations")
         .select("*")
-        .eq("id", subscriptionId)
-        .eq("user_id", userId)
-        .single();
+        .eq("user_id", userId);
+
+      if (/^\d+$/.test(raw)) {
+        subQuery = subQuery.eq("id", parseInt(raw, 10));
+      } else {
+        subQuery = subQuery.eq("stripe_subscription_id", raw);
+      }
+
+      const {data: subscription, error: fetchError} = await subQuery.maybeSingle();
 
       if (fetchError || !subscription) {
         return new Response(JSON.stringify({error: "Subscription not found"}), {
@@ -17711,30 +18106,134 @@ async function handleDonationRoute(
         });
       }
 
-      // Cancel Stripe subscription
+      const rowId = subscription.id;
+
+      // Schedule cancel at period end (matches in-app copy). Avoid Stripe DELETE sub (immediate cancel).
       if (subscription.stripe_subscription_id) {
         const stripe = getStripeClient();
-        await fetch(
+        const cancelBody = new URLSearchParams();
+        cancelBody.set("cancel_at_period_end", "true");
+        const stripeRes = await fetch(
           `${stripe.baseUrl}/subscriptions/${subscription.stripe_subscription_id}`,
           {
-            method: "DELETE",
+            method: "POST",
             headers: {
               Authorization: `Bearer ${stripe.secretKey}`,
+              "Content-Type": "application/x-www-form-urlencoded",
             },
+            body: cancelBody.toString(),
           },
         );
+        if (!stripeRes.ok) {
+          const errText = await stripeRes.text().catch(() => "");
+          const lowerErr = String(errText || "").toLowerCase();
+          const isMissingSubscription =
+            stripeRes.status === 404 &&
+            (lowerErr.includes("no such subscription") ||
+              lowerErr.includes("resource_missing"));
+          const isAlreadyCanceled =
+            stripeRes.status === 400 &&
+            (lowerErr.includes("already canceled") ||
+              lowerErr.includes("cannot update a canceled subscription") ||
+              lowerErr.includes("status of canceled"));
+          console.error(
+            "Stripe subscription cancel-at-period-end failed:",
+            stripeRes.status,
+            errText,
+          );
+          if (isMissingSubscription || isAlreadyCanceled) {
+            // Stripe no longer considers this subscription renewable. Reflect that locally.
+            await supabase
+              .from("monthly_donations")
+              .update({status: "cancelled"})
+              .eq("id", rowId);
+
+            return new Response(
+              JSON.stringify({
+                success: true,
+                message:
+                  "Subscription is already inactive with payment provider.",
+              }),
+              {
+                headers: {"Content-Type": "application/json"},
+                status: 200,
+              },
+            );
+          }
+
+          // Stripe can reject update even when cancellation is already scheduled.
+          // Verify current Stripe state before treating as a hard failure.
+          try {
+            const verifyRes = await fetch(
+              `${stripe.baseUrl}/subscriptions/${subscription.stripe_subscription_id}`,
+              {
+                method: "GET",
+                headers: {Authorization: `Bearer ${stripe.secretKey}`},
+              },
+            );
+            if (verifyRes.ok) {
+              const verifyJson = (await verifyRes.json().catch(() => null)) as {
+                status?: string;
+                cancel_at_period_end?: boolean;
+              } | null;
+              const verifyStatus = String(verifyJson?.status || "").toLowerCase();
+              const scheduled = Boolean(verifyJson?.cancel_at_period_end);
+              const inactive =
+                verifyStatus === "canceled" || verifyStatus === "incomplete_expired";
+
+              if (scheduled || inactive) {
+                await supabase
+                  .from("monthly_donations")
+                  .update({status: inactive ? "cancelled" : "cancelling"})
+                  .eq("id", rowId);
+
+                return new Response(
+                  JSON.stringify({
+                    success: true,
+                    message: scheduled
+                      ? "Subscription scheduled to cancel at period end."
+                      : "Subscription is already inactive with payment provider.",
+                  }),
+                  {
+                    headers: {"Content-Type": "application/json"},
+                    status: 200,
+                  },
+                );
+              }
+            }
+          } catch (verifyErr) {
+            console.error("Stripe cancellation verify step failed:", verifyErr);
+          }
+
+          const conciseProviderError =
+            String(errText || "")
+              .replace(/\s+/g, " ")
+              .trim()
+              .slice(0, 240) || null;
+          return new Response(
+            JSON.stringify({
+              error: conciseProviderError
+                ? `Unable to cancel with payment provider: ${conciseProviderError}`
+                : "Unable to cancel with payment provider; try again or contact support.",
+            }),
+            {
+              headers: {"Content-Type": "application/json"},
+              status: 502,
+            },
+          );
+        }
       }
 
-      // Update status in database
+      // Still billable until Stripe period end; keep row visible as "cancelling" (see app isSubscriptionRowEligible).
       await supabase
         .from("monthly_donations")
-        .update({status: "cancelled"})
-        .eq("id", subscriptionId);
+        .update({status: "cancelling"})
+        .eq("id", rowId);
 
       return new Response(
         JSON.stringify({
           success: true,
-          message: "Subscription cancelled successfully",
+          message: "Subscription scheduled to cancel at period end.",
         }),
         {
           headers: {"Content-Type": "application/json"},

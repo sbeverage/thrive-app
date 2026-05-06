@@ -3,14 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Dimensions, TouchableOpacity, Image, ActivityIndicator, Text, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter, useSegments } from 'expo-router';
-import BeneficiaryDetailCard from '../../../components/BeneficiaryDetailCard';
-import SuccessModal from '../../../components/SuccessModal';
+import BeneficiaryDetailCard from '../../../../components/BeneficiaryDetailCard';
+import SuccessModal from '../../../../components/SuccessModal';
 import ConfettiCannon from 'react-native-confetti-cannon';
-import { useBeneficiary } from '../../context/BeneficiaryContext';
+import { useBeneficiary } from '../../../context/BeneficiaryContext';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import API from '../../lib/api';
-import { BACKEND_URL } from '../../utils/constants';
+import API from '../../../lib/api';
+import { BACKEND_URL } from '../../../utils/constants';
 
 console.log('🔴 BENEFICIARY DETAIL FILE LOADED - screenWidth:', Dimensions.get('window').width);
 
@@ -158,7 +158,7 @@ export default function BeneficiaryDetailScreen() {
               id,
               name: 'API Error',
               category: 'Unknown',
-              image: require('../../../assets/images/child-cancer.jpg'),
+              image: require('../../../../assets/images/child-cancer.jpg'),
               likes: 0,
               mutual: 0,
               about: 'Unable to load beneficiary data. The API request failed. Please check your connection and try again.',
@@ -237,11 +237,11 @@ export default function BeneficiaryDetailScreen() {
             // Helper function to get default image
             function getDefaultImage(category) {
               if (category === 'Childhood Illness') {
-                return require('../../../assets/images/child-cancer.jpg');
+                return require('../../../../assets/images/child-cancer.jpg');
               } else if (category === 'Animal Welfare') {
-                return require('../../../assets/images/humane-society.jpg');
+                return require('../../../../assets/images/humane-society.jpg');
               } else {
-                return require('../../../assets/images/charity-water.jpg');
+                return require('../../../../assets/images/charity-water.jpg');
               }
             }
             
@@ -377,7 +377,7 @@ export default function BeneficiaryDetailScreen() {
               id,
               name: 'Unknown Beneficiary',
               category: 'Unknown',
-              image: require('../../../assets/images/child-cancer.jpg'),
+              image: require('../../../../assets/images/child-cancer.jpg'),
               likes: 0,
               mutual: 0,
               about: 'Beneficiary information not available. Please check that the beneficiary exists in the system and that the API is returning data correctly.',
@@ -410,7 +410,7 @@ export default function BeneficiaryDetailScreen() {
           id,
           name: 'Error Loading Beneficiary',
           category: 'Unknown',
-          image: require('../../../assets/images/child-cancer.jpg'),
+          image: require('../../../../assets/images/child-cancer.jpg'),
           likes: 0,
           mutual: 0,
           about: 'There was an error loading this beneficiary. Please try again.',
@@ -536,7 +536,7 @@ export default function BeneficiaryDetailScreen() {
       <View style={styles.backButton}>
         <TouchableOpacity onPress={handleBackPress}>
           <Image 
-            source={require('../../../assets/icons/arrow-left.png')} 
+            source={require('../../../../assets/icons/arrow-left.png')} 
             style={{ width: 24, height: 24, tintColor: '#324E58' }} 
           />
         </TouchableOpacity>

@@ -18,15 +18,15 @@ import { AntDesign, Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { useStripe } from '@stripe/stripe-react-native';
-import API from '../../lib/api';
-import { STRIPE_PUBLISHABLE_KEY, STRIPE_CC_FEE_RATE, STRIPE_CC_FEE_FIXED } from '../../utils/constants';
+import API from '../../../lib/api';
+import { STRIPE_PUBLISHABLE_KEY, STRIPE_CC_FEE_RATE, STRIPE_CC_FEE_FIXED } from '../../../utils/constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   hasMonthlySubscriptionPaymentSheet,
   presentMonthlySubscriptionPaymentSheet,
-} from '../../utils/monthlySubscriptionPaymentSheet';
-import { useBeneficiary } from '../../context/BeneficiaryContext';
-import { resolveRemoteImageUri } from '../../utils/resolveRemoteImageUri';
+} from '../../../utils/monthlySubscriptionPaymentSheet';
+import { useBeneficiary } from '../../../context/BeneficiaryContext';
+import { resolveRemoteImageUri } from '../../../utils/resolveRemoteImageUri';
 
 function firstParam(value) {
   if (value == null) return '';
@@ -219,7 +219,7 @@ export default function CheckoutScreen() {
           disabled={isProcessing}
         >
           <Image
-            source={require('../../../assets/icons/arrow-left.png')}
+            source={require('../../../../assets/icons/arrow-left.png')}
             style={styles.backIcon}
           />
         </TouchableOpacity>
@@ -341,7 +341,7 @@ export default function CheckoutScreen() {
             )}
             <View style={styles.successIconContainer}>
               <Image
-                source={require('../../../assets/images/piggy-confetti.png')}
+                source={require('../../../../assets/images/piggy-confetti.png')}
                 style={{ width: 80, height: 80 }}
                 resizeMode="contain"
               />

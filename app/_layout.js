@@ -3,7 +3,7 @@ import * as Sentry from '@sentry/react-native';
 import * as Updates from 'expo-updates';
 import { Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { View, StyleSheet } from 'react-native';
+import * as SystemUI from 'expo-system-ui';
 import { BeneficiaryProvider } from './context/BeneficiaryContext';
 import { UserProvider } from './context/UserContext';
 import { BeneficiaryFilterProvider } from './context/BeneficiaryFilterContext';
@@ -11,7 +11,7 @@ import { LocationProvider } from './context/LocationContext';
 import { DiscountProvider } from './context/DiscountContext';
 import { DiscountFilterProvider } from './context/DiscountFilterContext';
 import React, { useEffect } from 'react';
-import { Linking } from 'react-native';
+import { Linking, View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import {
@@ -21,6 +21,8 @@ import {
 } from './utils/constants';
 import ErrorBoundary from '../components/ErrorBoundary';
 
+/** Matches ScrollView/card surfaces (#F5F5F5) so stack transitions don't flash brighter white underneath. */
+const STACK_SCENE_BACKGROUND = '#F5F5F5';
 
 // Initialize Sentry as early as possible so it captures all errors
 Sentry.init({
@@ -48,6 +50,10 @@ function Layout() {
       }
     };
     checkForUpdate();
+  }, []);
+
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync(STACK_SCENE_BACKGROUND).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -186,6 +192,10 @@ function Layout() {
                             animationEnabled: true,
                             gestureDirection: 'horizontal',
                             fullScreenGestureEnabled: false,
+                            /** Same color behind both screens removes the harsh “camera flash”. */
+                            contentStyle: {
+                              backgroundColor: STACK_SCENE_BACKGROUND,
+                            },
                           }}
                         />
                       </View>
@@ -207,9 +217,10 @@ export default Sentry.wrap(Layout);
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: STACK_SCENE_BACKGROUND,
   },
   container: {
     flex: 1,
+    backgroundColor: STACK_SCENE_BACKGROUND,
   },
 });

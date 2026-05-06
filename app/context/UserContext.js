@@ -9,6 +9,7 @@ import React, {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
 import API from '../lib/api';
+import { pickFirstNonEmptyString } from './BeneficiaryContext';
 import { extractIsVerifiedFromApiProfile } from '../utils/extractIsVerifiedFromApiProfile';
 
 const UserContext = createContext();
@@ -42,18 +43,68 @@ const LOGGED_OUT_USER_STATE = {
   isVerified: false,
 };
 
-/** Normalize backend charity payload and sync BeneficiaryContext storage key. */
+/**
+ * Sync `selectedBeneficiary` in AsyncStorage after profile load.
+ * Profile often includes only logo URLs — merge with any existing row (same id) so the
+ * main/hero image chosen in the app is not replaced by `reloadBeneficiary()`.
+ */
 async function persistSelectedBeneficiaryToStorage(raw) {
   if (!raw || raw.id == null) return;
+
+  let existing = null;
+  try {
+    const prev = await AsyncStorage.getItem('selectedBeneficiary');
+    if (prev) existing = JSON.parse(prev);
+  } catch {}
+
+  const sameId =
+    existing != null && String(existing.id) === String(raw.id);
+
+  const mainFromRaw = pickFirstNonEmptyString(raw.imageUrl, raw.image_url);
+  const logoFromRaw = pickFirstNonEmptyString(raw.logoUrl, raw.logo_url);
+
+  const imageUrl = pickFirstNonEmptyString(
+    mainFromRaw,
+    sameId ? existing?.imageUrl : null,
+    sameId ? existing?.image_url : null,
+  );
+
+  const logoOnly = pickFirstNonEmptyString(
+    logoFromRaw,
+    sameId ? existing?.logo_url : null,
+  );
+
+  const heroUri = pickFirstNonEmptyString(
+    raw.imageUrl,
+    raw.image_url,
+    mainFromRaw,
+    sameId ? existing?.imageUrl : null,
+    sameId ? existing?.image_url : null,
+    sameId && typeof existing?.image?.uri === 'string'
+      ? existing.image.uri
+      : null,
+    logoFromRaw,
+    sameId ? existing?.logo_url : null,
+    typeof raw.image?.uri === 'string' ? raw.image.uri : null,
+  );
+
   const normalized = {
     id: raw.id,
-    name: raw.name || '',
-    description: raw.description ?? null,
-    logo_url: raw.logo_url || '',
+    name: raw.name || existing?.name || '',
+    category: raw.category ?? existing?.category ?? '',
+    description: raw.description ?? existing?.description ?? null,
+    logo_url: logoOnly,
+    imageUrl: imageUrl || null,
+    image: heroUri ? { uri: heroUri } : null,
+    location: raw.location ?? existing?.location ?? '',
+    about: raw.about ?? existing?.about ?? '',
+    website: raw.website ?? existing?.website ?? '',
+    phone: raw.phone ?? existing?.phone ?? '',
+    ein: raw.ein ?? existing?.ein ?? '',
+    latitude: raw.latitude ?? existing?.latitude ?? null,
+    longitude: raw.longitude ?? existing?.longitude ?? null,
   };
-  if (raw.logo_url) {
-    normalized.image = { uri: raw.logo_url };
-  }
+
   await AsyncStorage.setItem('selectedBeneficiary', JSON.stringify(normalized));
 }
 

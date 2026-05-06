@@ -11,9 +11,9 @@ import {
 } from 'react-native';
 import { Feather, AntDesign, MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useDiscountFilter } from '../../context/DiscountFilterContext';
-import { useLocation } from '../../context/LocationContext';
-import { useDiscount } from '../../context/DiscountContext';
+import { useDiscountFilter } from '../../../context/DiscountFilterContext';
+import { useLocation } from '../../../context/LocationContext';
+import { useDiscount } from '../../../context/DiscountContext';
 
 const radiusOptions = ['1 mile', '5 miles', '10 miles', '25 miles'];
 const typeOptions = [
@@ -26,7 +26,8 @@ const availabilityOptions = ['In-Store', 'Online', 'Both'];
 
 export default function FilterScreen() {
   const router = useRouter();
-  const { filters, updateFilters, clearFilters, hasActiveFilters } = useDiscountFilter();
+  const { filters, updateFilters, clearFilters, hasClearableFilterFields } =
+    useDiscountFilter();
   const { locationAddress, refreshLocation, locationPermission, checkLocationPermission } = useLocation();
   const { vendors } = useDiscount();
 
@@ -106,8 +107,9 @@ export default function FilterScreen() {
   };
 
   const handleClearFilters = () => {
+    const preservedLoc = filters.location || '';
     clearFilters();
-    setLocation('');
+    setLocation(preservedLoc);
     setRadius('');
     setType('');
     setAvailability('');
@@ -199,7 +201,7 @@ export default function FilterScreen() {
         >
           {showFavorites
             ? <AntDesign name="heart" size={18} color="#D0861F" />
-            : <Image source={require('../../../assets/icons/heart.png')} style={{ width: 18, height: 18, tintColor: '#D0861F' }} />
+            : <Image source={require('../../../../assets/icons/heart.png')} style={{ width: 18, height: 18, tintColor: '#D0861F' }} />
           }
           <Text style={[styles.favToggleText, showFavorites && styles.favToggleTextActive]}>
             {showFavorites ? 'Showing Favorites Only' : 'Show All Favorites'}
@@ -227,7 +229,7 @@ export default function FilterScreen() {
         </View>
       )}
 
-      {hasActiveFilters() && (
+      {hasClearableFilterFields() && (
         <TouchableOpacity style={styles.clearButton} onPress={handleClearFilters}>
           <Text style={styles.clearButtonText}>Clear All Filters</Text>
         </TouchableOpacity>

@@ -17,22 +17,27 @@ import {
 import { AntDesign, Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import SuccessModal from '../../../components/SuccessModal';
+import SuccessModal from '../../../../components/SuccessModal';
 import ConfettiCannon from 'react-native-confetti-cannon';
-import { useBeneficiary } from '../../context/BeneficiaryContext';
-import { useBeneficiaryFilter } from '../../context/BeneficiaryFilterContext';
-import { useLocation } from '../../context/LocationContext';
+import { useBeneficiary } from '../../../context/BeneficiaryContext';
+import { useBeneficiaryFilter } from '../../../context/BeneficiaryFilterContext';
+import { useLocation } from '../../../context/LocationContext';
 import MapView, { Marker, Circle } from 'react-native-maps';
-import { getCurrentLocation, getDefaultRegion, calculateDistance, formatDistance } from '../../utils/locationService';
-import API from '../../lib/api';
-import SuggestCard from '../../../components/SuggestCard';
+import { getCurrentLocation, getDefaultRegion, calculateDistance, formatDistance } from '../../../utils/locationService';
+import API from '../../../lib/api';
+import SuggestCard from '../../../../components/SuggestCard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { IMAGE_ASSETS } from '../../utils/assetConstants';
+import { IMAGE_ASSETS } from '../../../utils/assetConstants';
+import { beneficiaryLocationMatches } from '../../../utils/beneficiaryLocationMatch';
+
+function normStr(s) {
+  return s != null ? String(s).trim().toLowerCase() : '';
+}
 
 export default function BeneficiaryScreen() {
   const router = useRouter();
   const { selectedBeneficiary, setSelectedBeneficiary } = useBeneficiary();
-  const { filters, updateFilters, clearFilters, hasActiveFilters } = useBeneficiaryFilter();
+  const { filters, updateFilters, hasActiveFilters } = useBeneficiaryFilter();
   const { location: userLocation, locationAddress, locationPermission, checkLocationPermission, refreshLocation, isLoadingLocation } = useLocation();
 
   const [searchText, setSearchText] = useState('');
@@ -95,10 +100,6 @@ export default function BeneficiaryScreen() {
   const [locationSearch, setLocationSearch] = useState('');
   const [isEditingLocation, setIsEditingLocation] = useState(false);
   
-  // Add state for the mini popup
-  const [miniPopupVisible, setMiniPopupVisible] = useState(false);
-  
-  const [selectedBeneficiaryForPopup, setSelectedBeneficiaryForPopup] = useState(null);
   const [selectedMarker, setSelectedMarker] = useState(null);
 
   const categories = ['All', 'Favorites', 'Animal Welfare', 'Arts & Culture', 'Childhood Illness', 'Disabilities', 'Disaster Relief', 'Education', 'Elderly Care', 'Environment', 'Healthcare', 'Homelessness', 'Hunger Relief', 'International Aid', 'Low Income Families', 'Veterans', 'Youth Development'];
@@ -145,11 +146,11 @@ export default function BeneficiaryScreen() {
           } else {
             // Fallback to default image based on category
             if (charity.category === 'Childhood Illness') {
-              imageSource = require('../../../assets/images/child-cancer.jpg');
+              imageSource = require('../../../../assets/images/child-cancer.jpg');
             } else if (charity.category === 'Animal Welfare') {
-              imageSource = require('../../../assets/images/humane-society.jpg');
+              imageSource = require('../../../../assets/images/humane-society.jpg');
             } else {
-              imageSource = require('../../../assets/images/charity-water.jpg');
+              imageSource = require('../../../../assets/images/charity-water.jpg');
             }
           }
 
@@ -195,6 +196,16 @@ export default function BeneficiaryScreen() {
     loadBeneficiaries();
   }, []);
 
+  // Modal cause overrides category chips — reset a conflicting pill so labels match what's listed
+  useEffect(() => {
+    const c = filters.cause?.trim();
+    if (!c) return;
+    if (activeCategory === 'All' || activeCategory === 'Favorites') return;
+    if (normStr(activeCategory) !== normStr(c)) {
+      setActiveCategory('All');
+    }
+  }, [filters.cause]);
+
   // Reload beneficiaries every time the tab is focused (catches admin additions/changes)
   useFocusEffect(
     useCallback(() => {
@@ -225,34 +236,50 @@ export default function BeneficiaryScreen() {
 
   const filteredBeneficiaries = beneficiaries.filter(b => {
     // Search text filter
-    const matchesSearch = b.name.toLowerCase().includes(searchText.toLowerCase()) ||
-                         b.location.toLowerCase().includes(searchText.toLowerCase());
-    
-    // Category filter (from category tags)
-    let matchesCategory = true;
-    if (activeCategory === 'All') {
-      matchesCategory = true;
+    const matchesSearch =
+      b.name.toLowerCase().includes(searchText.toLowerCase()) ||
+      (b.location && b.location.toLowerCase().includes(searchText.toLowerCase()));
+
+    /*
+     * Cause (filter screen) + chips: do not AND a chip category with modal cause — that produced
+     * empty lists (e.g. chip Education + cause Healthcare). When cause is set, it drives category;
+     * Favorites chip further narrows. Otherwise chips behave as before.
+     */
+    const causeTrim = filters.cause && String(filters.cause).trim();
+    let matchesCategoryDimension = true;
+    if (causeTrim) {
+      const causeMatch = normStr(b.category) === normStr(causeTrim);
+      matchesCategoryDimension =
+        activeCategory === 'Favorites' ? causeMatch && favorites.includes(b.id) : causeMatch;
+    } else if (activeCategory === 'All') {
+      matchesCategoryDimension = true;
     } else if (activeCategory === 'Favorites') {
-      matchesCategory = favorites.includes(b.id);
+      matchesCategoryDimension = favorites.includes(b.id);
     } else {
-      matchesCategory = b.category === activeCategory;
+      matchesCategoryDimension = normStr(b.category) === normStr(activeCategory);
     }
-    
-    // Filter by location (only when explicitly set via filter screen or user typing)
+
     const locFilter = (filters.location && filters.location.trim()) || '';
-    const matchesLocation = !locFilter || (b.location && b.location.toLowerCase().includes(locFilter.toLowerCase()));
-    
-    const matchesCause = !filters.cause || b.category === filters.cause;
-    
-    const matchesType = !filters.type || b.type === filters.type;
-    
+    const matchesLocation = beneficiaryLocationMatches(locFilter, b.location || '');
+
+    const wantsOrgType = normStr(filters.type);
+    const matchesType =
+      !wantsOrgType ||
+      !normStr(b.type) ||
+      normStr(b.type) === wantsOrgType;
+
     const matchesFavorites = !filters.showFavorites || favorites.includes(b.id);
-    
-    // Emergency filter - disabled until backend supports emergency tagging
+
     const matchesEmergency = !filters.emergency;
-    
-    return matchesSearch && matchesCategory && matchesLocation && 
-           matchesCause && matchesType && matchesFavorites && matchesEmergency;
+
+    return (
+      matchesSearch &&
+      matchesCategoryDimension &&
+      matchesLocation &&
+      matchesType &&
+      matchesFavorites &&
+      matchesEmergency
+    );
   });
 
   /** Pin selected cause to top of list when it appears in current filters (no duplicate). */
@@ -274,6 +301,10 @@ export default function BeneficiaryScreen() {
 
   const highlightedBeneficiaries = listOrderedWithSelectedFirst.slice(0, 2);
   const remainingBeneficiaries = listOrderedWithSelectedFirst.slice(2);
+  const beneficiariesSectionTitle =
+    activeCategory === 'All' ? 'All Beneficiaries' : `All ${activeCategory}`;
+  const displayedBeneficiaryCount =
+    filteredBeneficiaries.length > 50 ? '50+' : String(filteredBeneficiaries.length);
 
   const handleConfirmBeneficiary = async () => {
     if (!pendingBeneficiary) return;
@@ -404,7 +435,7 @@ export default function BeneficiaryScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+    <View style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
       <LinearGradient
         colors={['#2C3E50', '#4CA1AF']}
         start={{ x: 0, y: 0 }}
@@ -434,64 +465,34 @@ export default function BeneficiaryScreen() {
           />
         </View>
 
-        {/* Location Input */}
-        <View style={styles.locationRow}>
-          <MaterialIcons name="place" size={20} color="#6d6e72" style={{ marginRight: 6 }} />
-          {isEditingLocation ? (
-            <TextInput
-              placeholder="Enter city or area (e.g. Atlanta)"
-              placeholderTextColor="#6d6e72"
-              value={locationSearch}
-              onChangeText={(t) => {
-                setLocationSearch(t);
-                updateFilters({ location: t.trim() });
-              }}
-              style={styles.locationInput}
-              autoFocus
-              onBlur={() => setIsEditingLocation(false)}
-              onSubmitEditing={() => setIsEditingLocation(false)}
-            />
-          ) : (
-            <TouchableOpacity
-              style={styles.locationDisplay}
-              onPress={() => {
-                setIsEditingLocation(true);
-                if (!locationSearch) {
-                  setLocationSearch(locationDisplay);
-                  updateFilters({ location: locationDisplay.trim() });
-                }
-              }}
-            >
-              <Text style={styles.locationText}>{locationSearch || locationDisplay}</Text>
-              <Feather name="edit-2" size={14} color="#DB8633" style={{ marginLeft: 8 }} />
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity 
-            style={styles.refreshLocationButton}
-            onPress={updateUserLocation}
-            disabled={isLoadingLocation}
-          >
-            <Feather 
-              name="refresh-cw" 
-              size={16} 
-              color={isLoadingLocation ? "#ccc" : "#DB8633"} 
-              style={isLoadingLocation ? { transform: [{ rotate: '180deg' }] } : {}}
-            />
-          </TouchableOpacity>
-        </View>
-
         {/* Category Tags */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagsRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tagsRow}
+          contentContainerStyle={{ paddingRight: 8 }}
+        >
           {categories.map(tag => (
             <TouchableOpacity
               key={tag}
               style={[styles.tag, activeCategory === tag && styles.tagActive]}
-              onPress={() => setActiveCategory(tag)}
+              onPress={() => {
+                setActiveCategory(tag);
+                const c = filters.cause?.trim();
+                if (!c) return;
+                if (tag === 'All') {
+                  updateFilters({ cause: '' });
+                  return;
+                }
+                if (tag !== 'Favorites' && normStr(tag) !== normStr(c)) {
+                  updateFilters({ cause: '' });
+                }
+              }}
             >
               <View style={styles.tagContent}>
                 {tag === 'Favorites' && (
                   <Image
-                    source={require('../../../assets/icons/heart.png')}
+                    source={require('../../../../assets/icons/heart.png')}
                     style={[styles.tagIcon, { width: 14, height: 14, tintColor: activeCategory === tag ? '#D0861F' : '#666' }]}
                   />
                 )}
@@ -500,19 +501,6 @@ export default function BeneficiaryScreen() {
             </TouchableOpacity>
           ))}
         </ScrollView>
-
-        {/* Clear Filters Button - only show when filters are active */}
-        {hasActiveFilters() && (
-          <View style={styles.clearFiltersContainer}>
-            <TouchableOpacity 
-              style={styles.clearFiltersButton}
-              onPress={clearFilters}
-            >
-              <Feather name="x" size={16} color="#D0861F" />
-              <Text style={styles.clearFiltersText}>Clear Filters</Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
         {/* List/Map Toggle */}
         <View style={styles.toggleRow}>
@@ -662,7 +650,16 @@ export default function BeneficiaryScreen() {
             ) : filteredBeneficiaries.length > 0 ? (
               <>
                 <View ref={beneficiarySectionRef}>
-                  <View style={[styles.sectionHeader, { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }]}>
+                  <View style={styles.sectionHeader}>
+                    <View>
+                      <Text style={styles.sectionTitle}>{beneficiariesSectionTitle}</Text>
+                      <View style={styles.sectionSubtitleRow}>
+                        <Feather name="map-pin" size={13} color="#8E9BAE" />
+                        <Text style={styles.sectionSubtitle}>
+                          {locationDisplay || 'Current Location'} ({displayedBeneficiaryCount})
+                        </Text>
+                      </View>
+                    </View>
                     <TouchableOpacity
                       onPress={() => router.push('/(tabs)/beneficiary/beneficiaryFilter')}
                       style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
@@ -682,8 +679,10 @@ export default function BeneficiaryScreen() {
                         isSelected && styles.selectedBeneficiaryCard
                       ]}
                       onPress={() => {
-                        setSelectedBeneficiaryForPopup(b);
-                        setMiniPopupVisible(true);
+                        router.push({
+                          pathname: '/(tabs)/beneficiary/beneficiaryDetail',
+                          params: { id: b.id.toString() },
+                        });
                       }}
                     >
                       <Image source={b.image} style={styles.beneficiaryImage} />
@@ -699,7 +698,7 @@ export default function BeneficiaryScreen() {
                           />
                         ) : (
                           <Image 
-                            source={require('../../../assets/icons/heart.png')} 
+                            source={require('../../../../assets/icons/heart.png')} 
                             style={{ width: 20, height: 20, tintColor: '#DB8633' }} 
                           />
                         )}
@@ -760,8 +759,10 @@ export default function BeneficiaryScreen() {
                       isSelected && styles.selectedBeneficiaryCard
                     ]}
                     onPress={() => {
-                      setSelectedBeneficiaryForPopup(b);
-                      setMiniPopupVisible(true);
+                      router.push({
+                        pathname: '/(tabs)/beneficiary/beneficiaryDetail',
+                        params: { id: b.id.toString() },
+                      });
                     }}
                   >
                     <Image source={b.image} style={styles.beneficiaryImage} />
@@ -777,7 +778,7 @@ export default function BeneficiaryScreen() {
                         />
                       ) : (
                         <Image 
-                          source={require('../../../assets/icons/heart.png')} 
+                          source={require('../../../../assets/icons/heart.png')} 
                           style={{ width: 20, height: 20, tintColor: '#DB8633' }} 
                         />
                       )}
@@ -830,7 +831,16 @@ export default function BeneficiaryScreen() {
               </>
             ) : (
               <View>
-                <View style={[styles.sectionHeader, { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }]}>
+                <View style={styles.sectionHeader}>
+                  <View>
+                    <Text style={styles.sectionTitle}>{beneficiariesSectionTitle}</Text>
+                    <View style={styles.sectionSubtitleRow}>
+                      <Feather name="map-pin" size={13} color="#8E9BAE" />
+                      <Text style={styles.sectionSubtitle}>
+                        {locationDisplay || 'Current Location'} ({displayedBeneficiaryCount})
+                      </Text>
+                    </View>
+                  </View>
                   <TouchableOpacity
                     onPress={() => router.push('/(tabs)/beneficiary/beneficiaryFilter')}
                     style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
@@ -839,7 +849,7 @@ export default function BeneficiaryScreen() {
                     <Text style={[styles.filterBtnText, hasActiveFilters() && styles.filterBtnTextActive]}>Filter</Text>
                   </TouchableOpacity>
                 </View>
-                <View style={styles.emptyState}>
+                <View style={[styles.emptyState, { paddingTop: 24 }]}>
                   <Text style={styles.emptyTitle}>No results found</Text>
                   <Text style={styles.emptySubtitle}>
                     {searchText ? `No beneficiaries found for "${searchText}"` : 'Try adjusting your search or filters'}
@@ -887,68 +897,6 @@ export default function BeneficiaryScreen() {
         />
       )}
 
-      {/* Mini Popup Modal */}
-      <Modal
-        visible={miniPopupVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setMiniPopupVisible(false)}
-      >
-        <TouchableOpacity
-          style={styles.miniPopupOverlay}
-          activeOpacity={1}
-          onPress={() => setMiniPopupVisible(false)}
-        >
-          <TouchableOpacity
-            style={styles.miniPopupContent}
-            activeOpacity={1}
-            onPress={() => {}} // Prevent closing when tapping content
-          >
-            <View style={styles.miniPopupHeader}>
-              <Text style={styles.miniPopupTitle}>{selectedBeneficiaryForPopup?.name}</Text>
-              <TouchableOpacity
-                style={styles.miniPopupCloseButton}
-                onPress={() => setMiniPopupVisible(false)}
-              >
-                <AntDesign name="close" size={20} color="#8E9BAE" />
-              </TouchableOpacity>
-            </View>
-            
-            <Text style={styles.miniPopupAbout}>
-              {selectedBeneficiaryForPopup?.about || "Learn more about this amazing cause and the impact you can make in your local community."}
-            </Text>
-            
-            <View style={styles.miniPopupButtons}>
-              {selectedBeneficiaryForPopup?.id !== selectedBeneficiary?.id && (
-                <TouchableOpacity
-                  style={styles.miniPopupChangeButton}
-                  onPress={() => {
-                    setPendingBeneficiary(selectedBeneficiaryForPopup);
-                    setMiniPopupVisible(false);
-                    setConfirmModalVisible(true);
-                  }}
-                >
-                  <Text style={styles.miniPopupChangeButtonText}>Change to this cause</Text>
-                </TouchableOpacity>
-              )}
-              
-              <TouchableOpacity
-                style={styles.miniPopupLearnButton}
-                onPress={() => {
-                  setMiniPopupVisible(false);
-                  router.push({ 
-                    pathname: '/(tabs)/beneficiary/beneficiaryDetail', 
-                    params: { id: selectedBeneficiaryForPopup?.id.toString() } 
-                  });
-                }}
-              >
-                <Text style={styles.miniPopupLearnButtonText}>Learn More</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-      
     </View>
   );
 }
@@ -1035,15 +983,14 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   tagsRow: {
-    flexDirection: 'row',
-    paddingVertical: 5,
-    paddingHorizontal: 20,
+    marginBottom: 10,
+    marginTop: 4,
   },
   tag: {
     backgroundColor: '#f2f2f2',
     borderRadius: 20,
     paddingVertical: 8,
-    paddingHorizontal: 15,
+    paddingHorizontal: 16,
     marginRight: 10,
   },
   tagActive: {
@@ -1060,7 +1007,8 @@ const styles = StyleSheet.create({
   },
   tagText: {
     fontSize: 14,
-    color: '#6d6e72',
+    color: '#666',
+    fontWeight: '500',
   },
   tagTextActive: {
     color: '#D0861F',
@@ -1097,39 +1045,44 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    backgroundColor: '#f5f5fa',
   },
   listContainer: {
     flex: 1,
+    backgroundColor: '#f5f5fa',
   },
   listContent: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 15,
+    paddingBottom: 80,
   },
   sectionHeader: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 4,
-    marginBottom: 4,
-    marginHorizontal: -20,
+    paddingHorizontal: 25,
+    paddingTop: 20,
+    paddingBottom: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '700',
     color: '#324E58',
-    marginBottom: 5,
+    marginBottom: 4,
   },
   sectionSubtitle: {
     fontSize: 14,
-    color: '#6d6e72',
+    color: '#666',
+  },
+  sectionSubtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   beneficiaryCard: {
     flexDirection: 'row',
     backgroundColor: '#fff',
     borderRadius: 12,
     overflow: 'hidden',
-    marginBottom: 15,
+    marginVertical: 10,
+    marginHorizontal: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -1253,7 +1206,8 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     flex: 1,
-    paddingTop: 20,
+    paddingHorizontal: 2,
+    paddingTop: 60,
     alignItems: 'center',
   },
   emptyTitle: {

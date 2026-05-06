@@ -23,22 +23,35 @@ export const BeneficiaryFilterProvider = ({ children }) => {
     setFilters(prev => ({ ...prev, ...newFilters }));
   };
 
+  /** Clears cause, type, favorites, etc. Search location is preserved (user baseline). */
   const clearFilters = () => {
-    setFilters({
-      location: '',
+    setFilters((prev) => ({
+      ...prev,
       type: '',
       cause: '',
       emergency: '',
       showFavorites: false,
-    });
+    }));
   };
 
   const hasActiveFilters = () => {
-    return filters.location || 
-           filters.type || 
-           filters.cause || 
-           filters.emergency || 
-           filters.showFavorites;
+    return !!(
+      filters.location ||
+      filters.type ||
+      filters.cause ||
+      filters.emergency ||
+      filters.showFavorites
+    );
+  };
+
+  /** True when Clear can change something other than location (used for “Clear all” affordance). */
+  const hasClearableFilterFields = () => {
+    return !!(
+      filters.type ||
+      filters.cause ||
+      filters.emergency ||
+      filters.showFavorites
+    );
   };
 
   return (
@@ -48,6 +61,7 @@ export const BeneficiaryFilterProvider = ({ children }) => {
         updateFilters,
         clearFilters,
         hasActiveFilters,
+        hasClearableFilterFields,
       }}
     >
       {children}

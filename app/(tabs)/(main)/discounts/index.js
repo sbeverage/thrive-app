@@ -20,16 +20,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import VoucherCard from '../../../components/VoucherCard';
-import SuggestCard from '../../../components/SuggestCard';
-import API from '../../lib/api';
+import VoucherCard from '../../../../components/VoucherCard';
+import SuggestCard from '../../../../components/SuggestCard';
+import API from '../../../lib/api';
 import MapView, { Marker } from 'react-native-maps';
-import { getCurrentLocation, getDefaultRegion, calculateDistance } from '../../utils/locationService';
-import { useLocation } from '../../context/LocationContext';
-import { useDiscount } from '../../context/DiscountContext';
-import { useDiscountFilter } from '../../context/DiscountFilterContext';
-import { IMAGE_ASSETS } from '../../utils/assetConstants';
-
+import { getCurrentLocation, getDefaultRegion, calculateDistance } from '../../../utils/locationService';
+import { useLocation } from '../../../context/LocationContext';
+import { useDiscount } from '../../../context/DiscountContext';
+import { useDiscountFilter } from '../../../context/DiscountFilterContext';
+import { IMAGE_ASSETS } from '../../../utils/assetConstants';
+import { beneficiaryLocationMatches } from '../../../utils/beneficiaryLocationMatch';
 
 // Note: Vendors should have logoUrl from the admin panel
 // If no logoUrl is provided, the component will handle it gracefully
@@ -50,7 +50,7 @@ export default function DiscountsScreen() {
   const { location: userLocation, locationAddress, locationPermission, checkLocationPermission, refreshLocation, isLoadingLocation } = useLocation();
 
   // Filter context
-  const { filters, updateFilters, clearFilters, hasActiveFilters } = useDiscountFilter();
+  const { filters, updateFilters, hasActiveFilters } = useDiscountFilter();
   const [locationSearch, setLocationSearch] = useState(''); // Location filter from main screen (tap location row to search)
   const [favorites, setFavorites] = useState(new Set());
   const [geocodedCoords, setGeocodedCoords] = useState({});
@@ -261,8 +261,7 @@ export default function DiscountsScreen() {
     let matchesLocation = true;
     const locFilter = (filters.location && filters.location.trim()) || '';
     if (locFilter) {
-      const loc = locFilter.toLowerCase();
-      matchesLocation = (v.location && v.location.toLowerCase().includes(loc));
+      matchesLocation = beneficiaryLocationMatches(locFilter, v.location || '');
     }
 
     // Filter by radius (distance from user) - parse "5 miles" -> 5
@@ -335,6 +334,12 @@ export default function DiscountsScreen() {
 
   const highlightedVendors = filteredVendors.slice(0, 2);
   const remainingVendors = filteredVendors.slice(2);
+  const discountsSectionTitle = filters.showFavorites
+    ? "All Favorites"
+    : filters.category
+      ? `All ${filters.category}`
+      : "All Discounts";
+  const displayedVendorCount = filteredVendors.length > 50 ? "50+" : String(filteredVendors.length);
 
   const handleMarkerPress = (vendor) => {
     console.log('Marker pressed:', vendor);
@@ -447,7 +452,7 @@ export default function DiscountsScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+    <View style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
       <LinearGradient
         colors={['#2C3E50', '#4CA1AF']}
         start={{ x: 0, y: 0 }}
@@ -465,7 +470,7 @@ export default function DiscountsScreen() {
       <View style={styles.header}>
         <View style={styles.searchRow}>
           <Image 
-            source={require('../../../assets/icons/search-icon.png')} 
+            source={require('../../../../assets/icons/search-icon.png')} 
             style={{ width: 18, height: 18, tintColor: '#6d6e72', marginRight: 8 }} 
           />
           <TextInput
@@ -480,61 +485,6 @@ export default function DiscountsScreen() {
               <AntDesign name="closecircle" size={16} color="#bbb" />
             </TouchableOpacity>
           )}
-        </View>
-
-        {/* Location Input */}
-        <View style={styles.locationRow}>
-          {Platform.OS === 'web' ? (
-            <Text style={{ fontSize: 16, color: '#6d6e72', marginRight: 8 }}>📍</Text>
-          ) : (
-            <Feather name="map-pin" size={16} color="#6d6e72" style={{ marginRight: 8 }} />
-          )}
-          {isEditingLocation ? (
-            <TextInput
-              placeholder="Enter city or area to filter (e.g. Atlanta)"
-              placeholderTextColor="#6d6e72"
-              value={locationSearch}
-              onChangeText={(t) => {
-                setLocationSearch(t);
-                updateFilters({ location: t.trim() });
-              }}
-              style={styles.locationInput}
-              autoFocus
-              onBlur={() => setIsEditingLocation(false)}
-              onSubmitEditing={() => setIsEditingLocation(false)}
-            />
-          ) : (
-            <TouchableOpacity 
-              style={styles.locationDisplay}
-              onPress={() => {
-                setIsEditingLocation(true);
-                setLocationSearch(locationSearch || locationDisplay);
-              }}
-            >
-              <Text style={styles.locationText}>{locationSearch || locationDisplay}</Text>
-              {Platform.OS === 'web' ? (
-                <Text style={{ fontSize: 14, color: '#DB8633', marginLeft: 8 }}>✏️</Text>
-              ) : (
-                <Feather name="edit-2" size={14} color="#DB8633" style={{ marginLeft: 8 }} />
-              )}
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity 
-            style={styles.refreshLocationButton}
-            onPress={updateUserLocation}
-            disabled={isLoadingLocation}
-          >
-            {Platform.OS === 'web' ? (
-              <Text style={{ fontSize: 16, color: isLoadingLocation ? '#ccc' : '#DB8633' }}>🔄</Text>
-            ) : (
-              <Feather 
-                name="refresh-cw" 
-                size={16} 
-                color={isLoadingLocation ? "#ccc" : "#DB8633"} 
-                style={isLoadingLocation ? { transform: [{ rotate: '180deg' }] } : {}}
-              />
-            )}
-          </TouchableOpacity>
         </View>
 
         {/* Category Tag Pills */}
@@ -557,7 +507,7 @@ export default function DiscountsScreen() {
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                 <Image
-                  source={require('../../../assets/icons/heart.png')}
+                  source={require('../../../../assets/icons/heart.png')}
                   style={{ width: 13, height: 13, tintColor: filters.showFavorites ? '#D0861F' : '#666' }}
                 />
                 <Text style={[styles.tagText, filters.showFavorites && styles.tagTextActive]}>Favorites</Text>
@@ -575,19 +525,6 @@ export default function DiscountsScreen() {
               </TouchableOpacity>
             ))}
           </ScrollView>
-        )}
-
-        {/* Clear Filters Button - only show when filters are active */}
-        {hasActiveFilters() && (
-          <View style={styles.clearFiltersContainer}>
-            <TouchableOpacity
-              style={styles.clearFiltersButton}
-              onPress={clearFilters}
-            >
-              <Feather name="x" size={16} color="#D0861F" />
-              <Text style={styles.clearFiltersText}>Clear Filters</Text>
-            </TouchableOpacity>
-          </View>
         )}
 
         {/* List/Map Toggle */}
@@ -754,8 +691,13 @@ export default function DiscountsScreen() {
               <View>
                 <View style={styles.sectionHeader}>
                   <View>
-                    <Text style={styles.sectionTitle}>All Discounts</Text>
-                    <Text style={styles.sectionSubtitle}>{filteredVendors.length} business{filteredVendors.length !== 1 ? 'es' : ''} found</Text>
+                    <Text style={styles.sectionTitle}>{discountsSectionTitle}</Text>
+                    <View style={styles.sectionSubtitleRow}>
+                      <Feather name="map-pin" size={13} color="#8E9BAE" />
+                      <Text style={styles.sectionSubtitle}>
+                        {locationDisplay || "Current Location"} ({displayedVendorCount})
+                      </Text>
+                    </View>
                   </View>
                   <TouchableOpacity
                     onPress={() => router.push('/(tabs)/discounts/filter')}
@@ -789,7 +731,16 @@ export default function DiscountsScreen() {
               </View>
             ) : (
               <View>
-                <View style={[styles.sectionHeader, { justifyContent: 'flex-end' }]}>
+                <View style={styles.sectionHeader}>
+                  <View>
+                    <Text style={styles.sectionTitle}>{discountsSectionTitle}</Text>
+                    <View style={styles.sectionSubtitleRow}>
+                      <Feather name="map-pin" size={13} color="#8E9BAE" />
+                      <Text style={styles.sectionSubtitle}>
+                        {locationDisplay || 'Current Location'} ({displayedVendorCount})
+                      </Text>
+                    </View>
+                  </View>
                   <TouchableOpacity
                     onPress={() => router.push('/(tabs)/discounts/filter')}
                     style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
@@ -1028,9 +979,9 @@ const styles = StyleSheet.create({
     paddingBottom: 80,
   },
   sectionHeader: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 25,
     paddingTop: 20,
-    paddingBottom: 12,
+    paddingBottom: 15,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1066,6 +1017,11 @@ const styles = StyleSheet.create({
   sectionSubtitle: {
     fontSize: 14,
     color: '#666',
+  },
+  sectionSubtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   emptyState: {
     flex: 1,

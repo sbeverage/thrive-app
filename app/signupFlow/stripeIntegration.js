@@ -25,11 +25,14 @@ import { SvgXml } from "react-native-svg";
 import { Asset } from "expo-asset";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useStripe } from "@stripe/stripe-react-native";
+import { useSafeApplePay } from "../utils/safeApplePay";
 import { useBeneficiary } from "../context/BeneficiaryContext";
 import { useUser } from "../context/UserContext";
 import API from "../lib/api";
 import {
   hasMonthlySubscriptionPaymentSheet,
+  isStripeExpoGoHost,
+  presentMonthlySubscriptionNativeWallet,
   presentMonthlySubscriptionPaymentSheet,
 } from "../utils/monthlySubscriptionPaymentSheet";
 import { resolveCheckoutBeneficiaryId } from "../utils/resolveCheckoutBeneficiaryId";
@@ -54,7 +57,12 @@ export default function StripeIntegration() {
   /** Which payment action is in progress — spinners only on that button */
   const [paymentLoading, setPaymentLoading] = useState(null);
   const { saveUserData, user } = useUser();
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const { initPaymentSheet, presentPaymentSheet, confirmPlatformPayPayment } =
+    useStripe();
+  const { isPlatformPaySupported } = useSafeApplePay();
+  const [isWalletSupported, setIsWalletSupported] = useState(
+    Platform.OS === "android" ? true : null,
+  );
 
   const stripeParamsSnapshot = JSON.stringify(params ?? {});
 
@@ -81,6 +89,26 @@ export default function StripeIntegration() {
     };
     loadSvg();
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const checkWalletSupport = async () => {
+      if (Platform.OS !== "ios") {
+        setIsWalletSupported(true);
+        return;
+      }
+      try {
+        const supported = await isPlatformPaySupported();
+        if (mounted) setIsWalletSupported(!!supported);
+      } catch {
+        if (mounted) setIsWalletSupported(false);
+      }
+    };
+    checkWalletSupport();
+    return () => {
+      mounted = false;
+    };
+  }, [isPlatformPaySupported]);
   const baseAmount = params.amount ? parseFloat(params.amount) : 15;
   const sponsorAmount = params.sponsorAmount
     ? parseFloat(params.sponsorAmount)
@@ -165,16 +193,27 @@ export default function StripeIntegration() {
     await runSubscriptionCheckout({ useNativeWallet: false });
   };
 
-  /** Same Stripe Payment Sheet, with Apple Pay (iOS) / Google Pay (Android) enabled in initPaymentSheet. */
+  /**
+   * On real dev/production builds: native Apple/Google Pay (`confirmPlatformPayPayment`) —
+   * goes straight to the wallet sheet (no Stripe Payment Sheet “tap Apple Pay again” step).
+   * Expo Go still uses Payment Sheet with wallet buttons (native wallet is unreliable there).
+   */
   const handleApplePay = async () => {
+    if (Platform.OS === "ios" && isWalletSupported === false) {
+      Alert.alert(
+        "Apple Pay Unavailable",
+        "Apple Pay isn't available on this device/build yet. Please use Pay with card for now.",
+      );
+      return;
+    }
     setSelectedPaymentMethod("applepay");
     await runSubscriptionCheckout({ useNativeWallet: true });
   };
 
   /**
-   * Stripe flow: backend returns PaymentIntent client secret → initPaymentSheet → presentPaymentSheet.
-   * Apple Pay is not a separate API — pass `applePay` in initPaymentSheet (see monthlySubscriptionPaymentSheet.js).
-   * Root `StripeProvider` must set `merchantIdentifier` for Apple Pay.
+   * Card: Payment Sheet card-only (`cardOnly`).
+   * Wallet (iOS/Android, non–Expo Go): `confirmPlatformPayPayment` native sheet.
+   * Wallet on Expo Go: Payment Sheet with `applePay`/`googlePay` in initPaymentSheet (fallback).
    */
   const runSubscriptionCheckout = async ({ useNativeWallet }) => {
     if (paymentLoading) return;
@@ -247,17 +286,35 @@ export default function StripeIntegration() {
         return;
       }
 
-      const payResult = await presentMonthlySubscriptionPaymentSheet(
-        { initPaymentSheet, presentPaymentSheet },
-        response,
-        { cardOnly: !useNativeWallet },
-      );
+      const useWalletWithoutHostedSheet =
+        useNativeWallet && !isStripeExpoGoHost();
+
+      const payResult = useWalletWithoutHostedSheet
+        ? await presentMonthlySubscriptionNativeWallet(
+            { confirmPlatformPayPayment },
+            response,
+            { amountUsd: subscriptionChargeAmount },
+          )
+        : await presentMonthlySubscriptionPaymentSheet(
+            { initPaymentSheet, presentPaymentSheet },
+            response,
+            { cardOnly: !useNativeWallet },
+          );
 
       if (!payResult.ok) {
         if (!payResult.canceled && payResult.error) {
+          const message =
+            typeof payResult.error.message === "string"
+              ? payResult.error.message
+              : "";
+          const looksLikeApplePayUnexpectedError =
+            useNativeWallet &&
+            /unexpected error/i.test(message || "");
           Alert.alert(
             "Payment",
-            payResult.error.message || "Could not complete payment.",
+            looksLikeApplePayUnexpectedError
+              ? "Apple Pay had an unexpected issue on this device/build. Please use Pay with card and try Apple Pay again after a fresh app build."
+              : payResult.error.message || "Could not complete payment.",
           );
         }
         return;
@@ -510,10 +567,11 @@ export default function StripeIntegration() {
                     style={[
                       styles.walletPayButton,
                       styles.paymentMethodHalf,
+                      isWalletSupported === false && styles.walletPayButtonDisabled,
                       paymentLoading !== null && styles.continueButtonDisabled,
                     ]}
                     onPress={handleApplePay}
-                    disabled={paymentLoading !== null}
+                    disabled={paymentLoading !== null || isWalletSupported === false}
                     accessibilityRole="button"
                     accessibilityLabel={
                       Platform.OS === "ios"
@@ -935,6 +993,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 4,
+  },
+  walletPayButtonDisabled: {
+    opacity: 0.45,
   },
   walletMarkLoadingSlot: {
     width: 56,

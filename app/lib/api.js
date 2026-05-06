@@ -1789,8 +1789,67 @@ const API = {
     } catch (error) {
       console.error("Cancel monthly donation failed:", error);
       const enhancedError = new Error(
-        error.response?.data?.message || "Failed to cancel subscription.",
+        error.response?.data?.error ||
+          error.response?.data?.message ||
+          "Failed to cancel subscription.",
       );
+      enhancedError.response = error.response;
+      enhancedError.status = error.response?.status;
+      enhancedError.data = error.response?.data;
+      throw enhancedError;
+    }
+  },
+
+  /**
+   * Undo cancel-at-period-end (Stripe cancel_at_period_end=false + DB status).
+   */
+  resumeMonthlySubscription: async (subscriptionId) => {
+    const id =
+      subscriptionId == null
+        ? ""
+        : typeof subscriptionId === "object"
+          ? ""
+          : String(subscriptionId).trim();
+    if (!id || id === "[object Object]") {
+      const err = new Error("Missing subscription id.");
+      err.status = 400;
+      throw err;
+    }
+    try {
+      const response = await api.post(
+        `/api/donations/monthly/subscription/resume`,
+        {monthly_donation_id: id},
+      );
+      return response.data;
+    } catch (error) {
+      if (error.response?.status === 404) {
+        try {
+          const enc = encodeURIComponent(id);
+          const response = await api.post(
+            `/api/donations/monthly/subscription/${enc}/resume`,
+          );
+          return response.data;
+        } catch (err2) {
+          console.error("Resume monthly subscription failed:", err2);
+          const msg =
+            err2.response?.data?.error ||
+            err2.response?.data?.message ||
+            error.response?.data?.error ||
+            error.response?.data?.message ||
+            "Failed to keep subscription active.";
+          const enhancedError = new Error(msg);
+          enhancedError.response = err2.response ?? error.response;
+          enhancedError.status = err2.response?.status ?? error.response?.status;
+          enhancedError.data = err2.response?.data ?? error.response?.data;
+          throw enhancedError;
+        }
+      }
+      console.error("Resume monthly subscription failed:", error);
+      const msg =
+        error.response?.data?.error ||
+        error.response?.data?.message ||
+        "Failed to keep subscription active.";
+      const enhancedError = new Error(msg);
       enhancedError.response = error.response;
       enhancedError.status = error.response?.status;
       enhancedError.data = error.response?.data;

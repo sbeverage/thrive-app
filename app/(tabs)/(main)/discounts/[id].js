@@ -17,9 +17,9 @@ import {
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { AntDesign, Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useDiscount } from '../../context/DiscountContext';
-import { useUser } from '../../context/UserContext';
-import API from '../../lib/api';
+import { useDiscount } from '../../../context/DiscountContext';
+import { useUser } from '../../../context/UserContext';
+import API from '../../../lib/api';
 import { useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -301,17 +301,17 @@ export default function VendorDetails() {
     
     // Otherwise, use local logo based on vendor name
     const logoMap = {
-      'Starbucks': require('../../../assets/images/logos/starbucks.png'),
-      'Apple Store': require('../../../assets/images/logos/apple.png'),
-      'Pizza Palace': require('../../../assets/images/logos/starbucks.png'), // Fallback
-      'Fashion Forward': require('../../../assets/images/logos/zara.png'),
-      'Local Coffee House': require('../../../assets/images/logos/starbucks.png'), // Fallback
-      'Fresh Market': require('../../../assets/images/logos/starbucks.png'), // Fallback
-      'Cinema Plus': require('../../../assets/images/logos/starbucks.png'), // Fallback
-      'FitZone Gym': require('../../../assets/images/logos/starbucks.png'), // Fallback
+      'Starbucks': require('../../../../assets/images/logos/starbucks.png'),
+      'Apple Store': require('../../../../assets/images/logos/apple.png'),
+      'Pizza Palace': require('../../../../assets/images/logos/starbucks.png'), // Fallback
+      'Fashion Forward': require('../../../../assets/images/logos/zara.png'),
+      'Local Coffee House': require('../../../../assets/images/logos/starbucks.png'), // Fallback
+      'Fresh Market': require('../../../../assets/images/logos/starbucks.png'), // Fallback
+      'Cinema Plus': require('../../../../assets/images/logos/starbucks.png'), // Fallback
+      'FitZone Gym': require('../../../../assets/images/logos/starbucks.png'), // Fallback
     };
     
-    return logoMap[vendorName] || require('../../../assets/images/logos/starbucks.png');
+    return logoMap[vendorName] || require('../../../../assets/images/logos/starbucks.png');
   };
   
   const logoSource = getLogoSource(vendor?.name, vendor?.logoUrl);
@@ -333,7 +333,7 @@ export default function VendorDetails() {
         >
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Image
-              source={require('../../../assets/icons/arrow-left.png')}
+              source={require('../../../../assets/icons/arrow-left.png')}
               style={{ width: 20, height: 20, tintColor: '#fff' }}
             />
           </TouchableOpacity>
@@ -628,7 +628,7 @@ export default function VendorDetails() {
           <View style={styles.modalContent}>
             <View style={styles.modalIconContainer}>
               <Image
-                source={require('../../../assets/images/piggy-coin.png')}
+                source={require('../../../../assets/images/piggy-coin.png')}
                 style={{ width: 72, height: 72 }}
                 resizeMode="contain"
               />

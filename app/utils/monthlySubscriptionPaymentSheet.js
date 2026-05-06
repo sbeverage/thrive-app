@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import Constants from "expo-constants";
+import { PlatformPay } from "@stripe/stripe-react-native";
 import {
   STRIPE_MERCHANT_IDENTIFIER,
   STRIPE_PUBLISHABLE_KEY,
@@ -10,12 +11,16 @@ import {
  * Expo Go is not the real app binary — Stripe Apple Pay / Google Pay bind to the host
  * client and can glitch the Payment Sheet. Dev / preview builds use a real bundleId.
  */
-function isExpoGoHost() {
+export function isStripeExpoGoHost() {
   try {
     return Constants.appOwnership === "expo";
   } catch {
     return false;
   }
+}
+
+function isExpoGoHost() {
+  return isStripeExpoGoHost();
 }
 
 /**
@@ -165,4 +170,114 @@ export async function presentMonthlySubscriptionPaymentSheet(
   }
 
   return { ok: true, canceled: false };
+}
+
+/**
+ * Apple Pay / Google Pay only — skips Stripe Payment Sheet (“pick wallet” step).
+ * @param {{ confirmPlatformPayPayment: Function }} stripe
+ * @param {object} apiResponse — body from createMonthlySubscription
+ * @param {{ amountUsd?: number, merchantDisplayName?: string }} options — amountUsd must match the Payment Intent total (dollars)
+ */
+export async function presentMonthlySubscriptionNativeWallet(
+  stripe,
+  apiResponse,
+  options = {},
+) {
+  const { confirmPlatformPayPayment } = stripe;
+  const merchantDisplayName = options.merchantDisplayName || "Thrive Initiative";
+  const { paymentIntentClientSecret } =
+    extractMonthlySubscriptionPaymentSecrets(apiResponse);
+
+  if (
+    !paymentIntentClientSecret ||
+    typeof confirmPlatformPayPayment !== "function"
+  ) {
+    return {
+      ok: false,
+      canceled: false,
+      error: new Error(
+        "Missing paymentIntentClientSecret or confirmPlatformPayPayment",
+      ),
+    };
+  }
+
+  const amountUsd = Number(options.amountUsd);
+  const safeUsd = Number.isFinite(amountUsd) ? Math.max(amountUsd, 0) : 0;
+  /** Must match Stripe PaymentIntent currency amount (Stripe cart uses USD strings here). */
+  const amountStr = (Math.round(safeUsd * 100) / 100).toFixed(2);
+
+  try {
+    if (Platform.OS === "ios") {
+      if (!STRIPE_MERCHANT_IDENTIFIER) {
+        return {
+          ok: false,
+          canceled: false,
+          error: new Error("Missing STRIPE_MERCHANT_IDENTIFIER for Apple Pay"),
+        };
+      }
+      const cartItems = [
+        {
+          paymentType: PlatformPay.PaymentType.Immediate,
+          label: "Monthly subscription (incl. fees)",
+          amount: amountStr,
+        },
+      ];
+      const applePay = {
+        merchantCountryCode: "US",
+        currencyCode: "USD",
+        cartItems,
+        merchantCapabilities: [PlatformPay.ApplePayMerchantCapability.Supports3DS],
+      };
+
+      const { error } = await confirmPlatformPayPayment(
+        paymentIntentClientSecret,
+        { applePay },
+      );
+
+      if (error) {
+        const canceled =
+          error.code === "Canceled" ||
+          String(error.declineCode || "").toLowerCase() === "cancel" ||
+          /cancel|cancell?ed/i.test(String(error.message || ""));
+        return { ok: false, canceled, error };
+      }
+      return { ok: true, canceled: false };
+    }
+
+    if (Platform.OS === "android") {
+      const googlePayTestEnv =
+        typeof STRIPE_PUBLISHABLE_KEY === "string" &&
+        STRIPE_PUBLISHABLE_KEY.startsWith("pk_test_");
+
+      const { error } = await confirmPlatformPayPayment(
+        paymentIntentClientSecret,
+        {
+          googlePay: {
+            testEnv: googlePayTestEnv,
+            merchantCountryCode: "US",
+            currencyCode: "USD",
+            merchantName: merchantDisplayName,
+            label: options.googlePayLabel || "Monthly donation",
+            amount: Math.round(safeUsd * 100),
+          },
+        },
+      );
+
+      if (error) {
+        const canceled =
+          error.code === "Canceled" ||
+          /cancel|cancell?ed/i.test(String(error.message || ""));
+        return { ok: false, canceled, error };
+      }
+      return { ok: true, canceled: false };
+    }
+
+    return {
+      ok: false,
+      canceled: false,
+      error: new Error("Native wallet is only supported on iOS and Android."),
+    };
+  } catch (e) {
+    return { ok: false, canceled: false, error: e };
+  }
 }

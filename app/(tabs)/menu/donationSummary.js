@@ -169,7 +169,7 @@ function formatNextPaymentLabel(isoDate) {
   });
 }
 
-/** Stripe subscription id for cancel API — must start with sub_ */
+/** Stripe subscription id from subscription payload — must start with sub_ */
 function pickStripeSubscriptionId(sub) {
   if (!sub || typeof sub !== "object") return null;
   const candidates = [
@@ -242,6 +242,8 @@ export default function DonationSummary() {
   const [activeSubscription, setActiveSubscription] = useState(null);
   const [billingPreview, setBillingPreview] = useState(null);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isResumingSubscription, setIsResumingSubscription] = useState(false);
+  const [localCancellationScheduled, setLocalCancellationScheduled] = useState(false);
   const [oneTimeYearTotal, setOneTimeYearTotal] = useState(0);
   const [oneTimeAllTimeTotal, setOneTimeAllTimeTotal] = useState(0);
   const [oneTimeGifts, setOneTimeGifts] = useState([]);
@@ -513,16 +515,19 @@ export default function DonationSummary() {
         beneficiary_name: activeSubscription?.charity_name || null,
       });
 
-      const stripeSubId =
-        pickStripeSubscriptionId(activeSubscription) ||
-        subscriptions.map(pickStripeSubscriptionId).find(Boolean) ||
-        null;
-      setActiveSubscriptionId(stripeSubId);
+      // DELETE /donations/monthly/subscription/:id expects monthly_donations row id (digits), not sub_xxx
+      const monthlyDonationRowId =
+        activeSubscription?.id != null
+          ? activeSubscription.id
+          : subscriptions.find((s) => s?.id != null)?.id ?? null;
+      setActiveSubscriptionId(monthlyDonationRowId);
 
+      let billingPreviewResponse = null;
       try {
-        const preview = await API.getMonthlyBillingPreview(
+        billingPreviewResponse = await API.getMonthlyBillingPreview(
           activeSubscription?.id,
         );
+        const preview = billingPreviewResponse;
         if (preview?.success && preview?.billing) {
           const payload = {
             billing: preview.billing,
@@ -547,6 +552,31 @@ export default function DonationSummary() {
         /* keep billingPreview + stripeBillingCacheRef */
       }
 
+      {
+        const dbStatus = String(activeSubscription?.status || "").toLowerCase();
+        const dbCancelling = dbStatus === "cancelling";
+        const dbCancelled = dbStatus === "cancelled" || dbStatus === "canceled";
+        const prevSub =
+          billingPreviewResponse?.subscription &&
+          typeof billingPreviewResponse.subscription === "object"
+            ? billingPreviewResponse.subscription
+            : null;
+        const capFromPreview = prevSub?.cancel_at_period_end;
+
+        setLocalCancellationScheduled((wasOptimistic) => {
+          if (dbCancelling || capFromPreview === true) {
+            return true;
+          }
+          // Keep the cancellation notice visible after successful cancel even if backend
+          // immediately reports "cancelled" (observed for some Stripe states).
+          if (wasOptimistic && dbCancelled) {
+            return true;
+          }
+          /* GET /monthly can lag; keep optimistic true until explicit undo action clears it */
+          return wasOptimistic;
+        });
+      }
+
       await loadOneTimeGiftRows();
     } catch (error) {
       console.error("❌ Error loading donation summary:", error);
@@ -554,6 +584,7 @@ export default function DonationSummary() {
       setActiveSubscription(null);
       setActiveSubscriptionId(null);
       setBillingPreview(null);
+      setLocalCancellationScheduled(false);
       await loadOneTimeGiftRows();
     } finally {
       setIsLoading(false);
@@ -610,6 +641,7 @@ export default function DonationSummary() {
             try {
               setIsCancelling(true);
               await API.cancelMonthlyAtPeriodEnd(activeSubscriptionId);
+              setLocalCancellationScheduled(true);
               Alert.alert(
                 "Cancellation Scheduled",
                 "Your subscription will cancel at the end of the current billing period.",
@@ -630,6 +662,44 @@ export default function DonationSummary() {
     );
   };
 
+  const handleResumeSubscription = () => {
+    if (!activeSubscriptionId || isResumingSubscription) return;
+    Alert.alert(
+      "Keep this subscription?",
+      "Your monthly donations will continue to renew after the current period.",
+      [
+        { text: "Not now", style: "cancel" },
+        {
+          text: "Keep my subscription",
+          onPress: async () => {
+            try {
+              setIsResumingSubscription(true);
+              await API.resumeMonthlySubscription(activeSubscriptionId);
+              setLocalCancellationScheduled(false);
+              Alert.alert(
+                "You're all set",
+                "Your subscription will keep renewing.",
+              );
+              await loadActiveSubscriptionId();
+            } catch (error) {
+              Alert.alert(
+                "Could not update subscription",
+                error.message ||
+                  "Please try again or contact support if this keeps happening.",
+              );
+            } finally {
+              setIsResumingSubscription(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleStartNewMonthlyDonation = () => {
+    router.push("/signupFlow/beneficiarySignupCause");
+  };
+
   // Use API data if available, otherwise fallback to local data
   const monthlyDonationAmount =
     user.monthlyDonation || donationSummary?.total_monthly_amount || 15;
@@ -647,6 +717,25 @@ export default function DonationSummary() {
   const nextPaymentLabel = formatNextPaymentLabel(
     donationSummary?.next_payment_date,
   );
+
+  const stripeScheduledCancel =
+    Boolean(billingPreview?.subscription?.cancel_at_period_end) ||
+    Boolean(stripeBillingCacheRef.current?.subscription?.cancel_at_period_end);
+  const billingStatus = String(billingPreview?.subscription?.status || "").toLowerCase();
+  const activeStatus = String(activeSubscription?.status || "").toLowerCase();
+  const cancellationFinalized =
+    billingStatus === "cancelled" ||
+    billingStatus === "canceled" ||
+    activeStatus === "cancelled" ||
+    activeStatus === "canceled";
+  const isScheduledToCancel =
+    localCancellationScheduled ||
+    stripeScheduledCancel ||
+    activeStatus === "cancelling";
+  const cancellationDatePhrase =
+    currentPeriodEnd && currentPeriodEnd !== "—"
+      ? currentPeriodEnd
+      : nextPaymentLabel || null;
 
   return (
     <View style={styles.container}>
@@ -730,24 +819,68 @@ export default function DonationSummary() {
               <Text style={styles.statLabel}>Months Active</Text>
             </View>
           </View>
-          {!!activeSubscriptionId && (
-            <TouchableOpacity
-              style={[
-                styles.cancelSubscriptionButton,
-                isCancelling && styles.cancelSubscriptionButtonDisabled,
-              ]}
-              onPress={handleCancelSubscription}
-              disabled={isCancelling}
-            >
-              {isCancelling ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.cancelSubscriptionButtonText}>
-                  Cancel at Period End
+          {!!activeSubscriptionId &&
+            (isScheduledToCancel ? (
+              <View style={styles.scheduledCancelNotice}>
+                <Text style={styles.scheduledCancelTitle}>
+                  Cancellation scheduled
                 </Text>
-              )}
-            </TouchableOpacity>
-          )}
+                <Text style={styles.scheduledCancelBody}>
+                  {cancellationFinalized
+                    ? "Your subscription is already canceled with the payment provider. To donate monthly again, start a new monthly donation."
+                    : cancellationDatePhrase
+                    ? `Your subscription will end after ${cancellationDatePhrase}. You keep full access until then.`
+                    : "Your subscription will end at the close of your current billing period. You keep full access until then."}
+                </Text>
+                {cancellationFinalized ? (
+                  <TouchableOpacity
+                    style={styles.keepSubscriptionButton}
+                    onPress={handleStartNewMonthlyDonation}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.keepSubscriptionButtonText}>
+                      Start monthly donation again
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[
+                      styles.keepSubscriptionButton,
+                      isResumingSubscription &&
+                        styles.keepSubscriptionButtonDisabled,
+                    ]}
+                    onPress={handleResumeSubscription}
+                    disabled={isResumingSubscription}
+                    activeOpacity={0.85}
+                  >
+                    {isResumingSubscription ? (
+                      <ActivityIndicator size="small" color="#21555b" />
+                    ) : (
+                      <Text style={styles.keepSubscriptionButtonText}>
+                        Keep my subscription
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[
+                  styles.cancelSubscriptionButton,
+                  isCancelling && styles.cancelSubscriptionButtonDisabled,
+                ]}
+                onPress={handleCancelSubscription}
+                disabled={isCancelling}
+              >
+                {isCancelling ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.cancelSubscriptionButtonText}>
+                    Cancel at Period End
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ))}
         </LinearGradient>
 
         {/* Billing Summary */}
@@ -944,7 +1077,7 @@ export default function DonationSummary() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff", paddingTop: 20 },
+  container: { flex: 1, backgroundColor: "#fff" },
   scrollContainer: { flex: 1 },
   headerRow: {
     flexDirection: "row",
@@ -954,7 +1087,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 8,
     marginHorizontal: 20,
-    marginTop: 20,
+    marginTop: 0,
     marginBottom: 8,
   },
   backButton: {
@@ -1268,6 +1401,44 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: 13,
+    textAlign: "center",
+  },
+  scheduledCancelNotice: {
+    marginTop: 16,
+    padding: 14,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.32)",
+  },
+  scheduledCancelTitle: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 15,
+    marginBottom: 6,
+  },
+  scheduledCancelBody: {
+    color: "rgba(255,255,255,0.92)",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  keepSubscriptionButton: {
+    marginTop: 12,
+    backgroundColor: "#fff",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 40,
+  },
+  keepSubscriptionButtonDisabled: {
+    opacity: 0.85,
+  },
+  keepSubscriptionButtonText: {
+    color: "#21555b",
+    fontWeight: "600",
+    fontSize: 14,
     textAlign: "center",
   },
 });

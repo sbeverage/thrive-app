@@ -24,20 +24,31 @@ export const DiscountFilterProvider = ({ children }) => {
     setFilters(prev => ({ ...prev, ...newFilters }));
   };
 
+  /** Clears radius/type/category/availability/favorites; search location preserved (baseline). */
   const clearFilters = () => {
-    setFilters({
-      location: '',
+    setFilters((prev) => ({
+      ...prev,
       radius: '',
       type: '',
       category: '',
       availability: '',
       showFavorites: false,
-    });
+    }));
   };
 
   const hasActiveFilters = () => {
     return !!(
       filters.location ||
+      filters.radius ||
+      filters.type ||
+      filters.category ||
+      filters.availability ||
+      filters.showFavorites
+    );
+  };
+
+  const hasClearableFilterFields = () => {
+    return !!(
       filters.radius ||
       filters.type ||
       filters.category ||
@@ -53,6 +64,7 @@ export const DiscountFilterProvider = ({ children }) => {
         updateFilters,
         clearFilters,
         hasActiveFilters,
+        hasClearableFilterFields,
       }}
     >
       {children}

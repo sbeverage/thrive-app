@@ -3,9 +3,9 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ScrollView,
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { AntDesign, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useUser } from '../../context/UserContext';
+import { useUser } from '../../../context/UserContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import API from '../../lib/api';
+import API from '../../../lib/api';
 import ConfettiCannon from 'react-native-confetti-cannon';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -22,7 +22,7 @@ export default function DiscountApproved() {
   const vendorName = params.vendorName || 'Starbucks Coffee';
   const discountTitle = params.discountTitle || 'Free Appetizer';
   const vendorLogoUri = params.vendorLogo ? String(params.vendorLogo) : '';
-  const vendorLogo = vendorLogoUri ? { uri: vendorLogoUri } : require('../../../assets/images/logos/starbucks.png');
+  const vendorLogo = vendorLogoUri ? { uri: vendorLogoUri } : require('../../../../assets/images/logos/starbucks.png');
   const discountType = params.discountType || '';
   const discountValue = params.discountValue ? parseFloat(params.discountValue) : null;
   const maxDiscount = params.maxDiscount ? parseFloat(params.maxDiscount) : null;
@@ -179,7 +179,7 @@ export default function DiscountApproved() {
             discount: discountTitle,
             spending: '$0',
             savings: '$0',
-            logo: vendorLogoUri ? { uri: vendorLogoUri } : require('../../../assets/images/logos/starbucks.png'),
+            logo: vendorLogoUri ? { uri: vendorLogoUri } : require('../../../../assets/images/logos/starbucks.png'),
           }).catch(() => {});
         }
       };
@@ -417,17 +417,6 @@ export default function DiscountApproved() {
           </View>
         </View>
 
-        {/* Terms Link */}
-        <TouchableOpacity style={styles.termsLink}>
-          <Text style={styles.termsText}>Read Discount Terms & Conditions</Text>
-          {Platform.OS === 'web' ? (
-            <Text style={{ fontSize: 14, color: '#8E9BAE' }}>›</Text>
-          ) : (
-            <AntDesign name="right" size={14} color="#8E9BAE" />
-          )}
-        </TouchableOpacity>
-
-
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -447,7 +436,7 @@ export default function DiscountApproved() {
         <View style={styles.modalBackground}>
           <View style={styles.modalContent}>
             <View style={styles.modalIconContainer}>
-              <Image source={require('../../../assets/images/piggy-confetti.png')} style={styles.modalIcon} />
+              <Image source={require('../../../../assets/images/piggy-confetti.png')} style={styles.modalIcon} />
             </View>
             <Text style={styles.modalTitle}>Savings Recorded! 🎉</Text>
             <Text style={styles.modalMessage}>

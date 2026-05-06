@@ -1,6 +1,32 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+/** First non-empty string (trimmed); ignores null / undefined / "". */
+export function pickFirstNonEmptyString(...values) {
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (v != null && typeof v === 'string' && v.trim() !== '') return v.trim();
+  }
+  return null;
+}
+
+/**
+ * Image source for large “hero” cards (Home, etc.). Prefers main/hero URLs over logos.
+ */
+export function resolveBeneficiaryHeroImageSource(beneficiary) {
+  if (!beneficiary) return null;
+  const uri = pickFirstNonEmptyString(
+    beneficiary.imageUrl,
+    beneficiary.image_url,
+    typeof beneficiary.image?.uri === 'string' ? beneficiary.image.uri : null,
+    beneficiary.logoUrl,
+    beneficiary.logo_url,
+  );
+  if (uri) return { uri };
+  if (beneficiary.image !== undefined && beneficiary.image !== null) return beneficiary.image;
+  return null;
+}
+
 // 1. Create the context
 const BeneficiaryContext = createContext();
 
@@ -47,16 +73,30 @@ export const BeneficiaryProvider = ({ children }) => {
   const saveBeneficiary = useCallback(async (beneficiary) => {
     try {
       if (beneficiary) {
-        // Normalize before storage: strip non-serializable fields (require() returns a module
-        // ID number that becomes meaningless after JSON round-trip if there is no logo_url)
-        const imageUri = beneficiary.image?.uri || beneficiary.logo_url || beneficiary.imageUrl || null;
+        // Prefer main hero image over logo URLs (URLs survive JSON round-trip; require() does not.)
+        const heroUri = pickFirstNonEmptyString(
+          beneficiary.imageUrl,
+          beneficiary.image_url,
+          typeof beneficiary.image?.uri === 'string' ? beneficiary.image.uri : null,
+          beneficiary.logoUrl,
+          beneficiary.logo_url,
+        );
+        const logoOnly = pickFirstNonEmptyString(
+          beneficiary.logoUrl,
+          beneficiary.logo_url,
+        );
+        const mainUrlOnly = pickFirstNonEmptyString(
+          beneficiary.imageUrl,
+          beneficiary.image_url,
+        );
         const toStore = {
           id: beneficiary.id,
           name: beneficiary.name || '',
           category: beneficiary.category || '',
           description: beneficiary.description ?? null,
-          logo_url: beneficiary.logo_url || beneficiary.imageUrl || null,
-          image: imageUri ? { uri: imageUri } : null,
+          logo_url: logoOnly,
+          imageUrl: mainUrlOnly,
+          image: heroUri ? { uri: heroUri } : null,
           location: beneficiary.location || '',
           about: beneficiary.about || '',
           website: beneficiary.website || '',
@@ -66,7 +106,12 @@ export const BeneficiaryProvider = ({ children }) => {
           longitude: beneficiary.longitude ?? null,
         };
         await AsyncStorage.setItem('selectedBeneficiary', JSON.stringify(toStore));
-        setSelectedBeneficiary({ ...beneficiary, image: imageUri ? { uri: imageUri } : beneficiary.image });
+        setSelectedBeneficiary({
+          ...beneficiary,
+          imageUrl: mainUrlOnly ?? beneficiary.imageUrl ?? beneficiary.image_url,
+          logo_url: logoOnly ?? beneficiary.logo_url,
+          image: heroUri ? { uri: heroUri } : beneficiary.image,
+        });
       } else {
         await AsyncStorage.removeItem('selectedBeneficiary');
         setSelectedBeneficiary(null);

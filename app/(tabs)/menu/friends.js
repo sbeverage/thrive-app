@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import API from '../../lib/api';
 
@@ -9,21 +9,28 @@ export default function FriendsScreen() {
   const [friends, setFriends] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const loadFriends = async () => {
-      try {
-        const data = await API.getReferredFriends();
-        setFriends(data?.friends || []);
-      } catch (error) {
-        console.error('Error loading referred friends:', error);
-        setFriends([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadFriends();
+  const loadFriends = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const data = await API.getReferredFriends();
+      setFriends(data?.friends || []);
+    } catch (error) {
+      console.error('Error loading referred friends:', error);
+      setFriends([]);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadFriends();
+  }, [loadFriends]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadFriends();
+    }, [loadFriends]),
+  );
 
   const getStatusIcon = (status) => {
     switch (status) {

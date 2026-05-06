@@ -13,8 +13,8 @@ import {
 } from 'react-native';
 import { Feather, AntDesign, MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useBeneficiaryFilter } from '../../context/BeneficiaryFilterContext';
-import { useLocation } from '../../context/LocationContext';
+import { useBeneficiaryFilter } from '../../../context/BeneficiaryFilterContext';
+import { useLocation } from '../../../context/LocationContext';
 
 const typeOptions = ['Small', 'Medium', 'Large'];
 // Must match the categories used in the charities table
@@ -37,7 +37,8 @@ const causeOptions = [
 ];
 
 export default function BeneficiaryFilter() {
-  const { filters, updateFilters } = useBeneficiaryFilter();
+  const { filters, updateFilters, clearFilters, hasClearableFilterFields } =
+    useBeneficiaryFilter();
   const [isCauseDropdownOpen, setIsCauseDropdownOpen] = useState(false);
   const [locationSuggestions, setLocationSuggestions] = useState([]);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
@@ -81,9 +82,13 @@ export default function BeneficiaryFilter() {
   }, [locationAddress]);
 
   const handleApplyFilters = () => {
-    // Filters are already updated in state via the form inputs
-    // Navigate back to beneficiary page
     router.back();
+  };
+
+  const handleClearFilters = () => {
+    clearFilters();
+    setLocationSuggestions([]);
+    setIsCauseDropdownOpen(false);
   };
 
   const renderOptions = (options, selected, setSelected) => (
@@ -107,7 +112,7 @@ export default function BeneficiaryFilter() {
       {/* Back Navigation */}
       <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
         <Image 
-          source={require('../../../assets/icons/arrow-left.png')} 
+          source={require('../../../../assets/icons/arrow-left.png')} 
           style={{ width: 24, height: 24, tintColor: '#324E58' }} 
         />
       </TouchableOpacity>
@@ -184,7 +189,7 @@ export default function BeneficiaryFilter() {
               />
             ) : (
               <Image 
-                source={require('../../../assets/icons/heart.png')} 
+                source={require('../../../../assets/icons/heart.png')} 
                 style={{ width: 20, height: 20, tintColor: '#D0861F' }} 
               />
             )}
@@ -202,11 +207,22 @@ export default function BeneficiaryFilter() {
           style={styles.dropdownToggle}
           onPress={() => setIsCauseDropdownOpen(!isCauseDropdownOpen)}
         >
-          <Text style={styles.dropdownToggleText}>{filters.cause || 'Select Category'}</Text>
+          <Text style={styles.dropdownToggleText}>{filters.cause || 'All categories (optional)'}</Text>
           <Feather name={isCauseDropdownOpen ? 'chevron-up' : 'chevron-down'} size={18} color="#666" />
         </TouchableOpacity>
         {isCauseDropdownOpen && (
           <ScrollView style={styles.dropdownScroll}>
+            <TouchableOpacity
+              style={[styles.dropdownItem, !filters.cause && styles.dropdownItemSelected]}
+              onPress={() => {
+                updateFilters({ cause: '' });
+                setIsCauseDropdownOpen(false);
+              }}
+            >
+              <Text style={[styles.optionText, !filters.cause && styles.optionTextSelected]}>
+                All categories
+              </Text>
+            </TouchableOpacity>
             {causeOptions.map(option => (
               <TouchableOpacity
                 key={option}
@@ -230,6 +246,12 @@ export default function BeneficiaryFilter() {
         <Text style={styles.label}>Size of the organization</Text>
         {renderOptions(typeOptions, filters.type, (type) => updateFilters({ type }))}
       </View>
+
+      {hasClearableFilterFields() && (
+        <TouchableOpacity style={styles.clearButton} onPress={handleClearFilters}>
+          <Text style={styles.clearButtonText}>Clear All Filters</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Continue Button */}
       <TouchableOpacity style={styles.button} onPress={handleApplyFilters}>
@@ -376,11 +398,25 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 10,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 12,
   },
   buttonText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  clearButton: {
+    backgroundColor: 'transparent',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 8,
+    borderWidth: 1.5,
+    borderColor: '#e1e1e5',
+  },
+  clearButtonText: {
+    color: '#666',
+    fontSize: 15,
     fontWeight: '600',
   },
   

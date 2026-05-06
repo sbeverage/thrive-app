@@ -11,7 +11,7 @@ import {
   Modal,
   Alert,
 } from "react-native";
-import { AntDesign, Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { AntDesign, Feather, Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import SuccessModal from "../../components/SuccessModal";
@@ -31,6 +31,11 @@ import SuggestCard from "../../components/SuggestCard";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { persistSignupFlowCheckpointFromParams } from "../utils/signupFlowCheckpoint";
 import { IMAGE_ASSETS } from "../utils/assetConstants";
+import { beneficiaryLocationMatches } from "../utils/beneficiaryLocationMatch";
+
+function normStr(s) {
+  return s != null ? String(s).trim().toLowerCase() : "";
+}
 
 export default function BeneficiaryPreferences() {
   const router = useRouter();
@@ -48,8 +53,13 @@ export default function BeneficiaryPreferences() {
     return out;
   };
   const { selectedBeneficiary, setSelectedBeneficiary } = useBeneficiary();
-  const { filters, updateFilters, clearFilters, hasActiveFilters } =
-    useBeneficiaryFilter();
+  const {
+    filters,
+    updateFilters,
+    clearFilters,
+    hasActiveFilters,
+    hasClearableFilterFields,
+  } = useBeneficiaryFilter();
   const {
     location: userLocation,
     locationAddress,
@@ -114,13 +124,21 @@ export default function BeneficiaryPreferences() {
   }, [favorites]);
 
   const [activeCategory, setActiveCategory] = useState("All");
+
+  useEffect(() => {
+    const c = filters.cause?.trim();
+    if (!c) return;
+    if (activeCategory === "All" || activeCategory === "Favorites") return;
+    if (normStr(activeCategory) !== normStr(c)) {
+      setActiveCategory("All");
+    }
+  }, [filters.cause]);
+
   const [showMap, setShowMap] = useState(false);
   const [mapRegion, setMapRegion] = useState(getDefaultRegion());
   const [locationDisplay, setLocationDisplay] = useState(
     "Detecting location...",
   );
-  const [locationSearch, setLocationSearch] = useState("");
-  const [isEditingLocation, setIsEditingLocation] = useState(false);
   const [miniPopupVisible, setMiniPopupVisible] = useState(false);
   const [selectedBeneficiaryForPopup, setSelectedBeneficiaryForPopup] =
     useState(null);
@@ -258,35 +276,44 @@ export default function BeneficiaryPreferences() {
     }
   }, [userLocation]);
 
-  // ── Filtering ─────────────────────────────────────────────────────────────
+  // ── Filtering (aligned with Beneficiary tab: cause vs chips, location tokens/states) ──
   const filteredBeneficiaries = beneficiaries.filter((b) => {
     const matchesSearch =
       b.name.toLowerCase().includes(searchText.toLowerCase()) ||
-      b.location.toLowerCase().includes(searchText.toLowerCase());
+      (b.location &&
+        b.location.toLowerCase().includes(searchText.toLowerCase()));
 
-    let matchesCategory = true;
-    if (activeCategory === "Favorites") {
-      matchesCategory = favorites.includes(b.id);
-    } else if (activeCategory !== "All") {
-      matchesCategory = b.category === activeCategory;
+    const causeTrim = filters.cause && String(filters.cause).trim();
+    let matchesCategoryDimension = true;
+    if (causeTrim) {
+      const causeMatch = normStr(b.category) === normStr(causeTrim);
+      matchesCategoryDimension =
+        activeCategory === "Favorites"
+          ? causeMatch && favorites.includes(b.id)
+          : causeMatch;
+    } else if (activeCategory === "All") {
+      matchesCategoryDimension = true;
+    } else if (activeCategory === "Favorites") {
+      matchesCategoryDimension = favorites.includes(b.id);
+    } else {
+      matchesCategoryDimension = normStr(b.category) === normStr(activeCategory);
     }
 
     const locFilter = (filters.location && filters.location.trim()) || "";
-    const matchesLocation =
-      !locFilter ||
-      (b.location && b.location.toLowerCase().includes(locFilter.toLowerCase()));
+    const matchesLocation = beneficiaryLocationMatches(locFilter, b.location || "");
 
-    const matchesCause = !filters.cause || b.category === filters.cause;
-    const matchesType = !filters.type || b.type === filters.type;
+    const wantsOrgType = normStr(filters.type);
+    const matchesType =
+      !wantsOrgType || !normStr(b.type) || normStr(b.type) === wantsOrgType;
+
     const matchesFavorites =
       !filters.showFavorites || favorites.includes(b.id);
     const matchesEmergency = !filters.emergency;
 
     return (
       matchesSearch &&
-      matchesCategory &&
+      matchesCategoryDimension &&
       matchesLocation &&
-      matchesCause &&
       matchesType &&
       matchesFavorites &&
       matchesEmergency
@@ -295,6 +322,10 @@ export default function BeneficiaryPreferences() {
 
   const highlightedBeneficiaries = filteredBeneficiaries.slice(0, 2);
   const remainingBeneficiaries = filteredBeneficiaries.slice(2);
+  const beneficiariesSectionTitle =
+    activeCategory === "All" ? "All Beneficiaries" : `All ${activeCategory}`;
+  const displayedBeneficiaryCount =
+    filteredBeneficiaries.length > 50 ? "50+" : String(filteredBeneficiaries.length);
 
   /** Same as tab: confirm in modal, then persist, set context, and continue signup. */
   const handleConfirmBeneficiary = async () => {
@@ -352,7 +383,6 @@ export default function BeneficiaryPreferences() {
 
   const updateUserLocation = async () => {
     if (locationPermission === "granted") {
-      setLocationSearch("");
       updateFilters({ location: "" });
       await refreshLocation();
     } else {
@@ -388,7 +418,6 @@ export default function BeneficiaryPreferences() {
           } catch {}
         }
         setLocationDisplay(display);
-        setLocationSearch((prev) => (prev ? prev : display));
         setMapRegion({
           latitude: userLocation.latitude,
           longitude: userLocation.longitude,
@@ -440,57 +469,28 @@ export default function BeneficiaryPreferences() {
           />
         </View>
 
-        <View style={styles.locationRow}>
-          <MaterialIcons name="place" size={20} color="#6d6e72" style={{ marginRight: 6 }} />
-          {isEditingLocation ? (
-            <TextInput
-              placeholder="Enter city or area (e.g. Atlanta)"
-              placeholderTextColor="#6d6e72"
-              value={locationSearch}
-              onChangeText={(t) => {
-                setLocationSearch(t);
-                updateFilters({ location: t.trim() });
-              }}
-              style={styles.locationInput}
-              autoFocus
-              onBlur={() => setIsEditingLocation(false)}
-              onSubmitEditing={() => setIsEditingLocation(false)}
-            />
-          ) : (
-            <TouchableOpacity
-              style={styles.locationDisplay}
-              onPress={() => {
-                setIsEditingLocation(true);
-                if (!locationSearch) {
-                  setLocationSearch(locationDisplay);
-                  updateFilters({ location: locationDisplay.trim() });
-                }
-              }}
-            >
-              <Text style={styles.locationText}>{locationSearch || locationDisplay}</Text>
-              <Feather name="edit-2" size={14} color="#DB8633" style={{ marginLeft: 8 }} />
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={styles.refreshLocationButton}
-            onPress={updateUserLocation}
-            disabled={isLoadingLocation}
-          >
-            <Feather
-              name="refresh-cw"
-              size={16}
-              color={isLoadingLocation ? "#ccc" : "#DB8633"}
-              style={isLoadingLocation ? { transform: [{ rotate: "180deg" }] } : {}}
-            />
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagsRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tagsRow}
+          contentContainerStyle={{ paddingRight: 8 }}
+        >
           {categories.map((tag) => (
             <TouchableOpacity
               key={tag}
               style={[styles.tag, activeCategory === tag && styles.tagActive]}
-              onPress={() => setActiveCategory(tag)}
+              onPress={() => {
+                setActiveCategory(tag);
+                const c = filters.cause?.trim();
+                if (!c) return;
+                if (tag === "All") {
+                  updateFilters({ cause: "" });
+                  return;
+                }
+                if (tag !== "Favorites" && normStr(tag) !== normStr(c)) {
+                  updateFilters({ cause: "" });
+                }
+              }}
             >
               <View style={styles.tagContent}>
                 {tag === "Favorites" && (
@@ -505,7 +505,7 @@ export default function BeneficiaryPreferences() {
           ))}
         </ScrollView>
 
-        {hasActiveFilters() && (
+        {hasClearableFilterFields() && (
           <View style={styles.clearFiltersContainer}>
             <TouchableOpacity style={styles.clearFiltersButton} onPress={clearFilters}>
               <Feather name="x" size={16} color="#D0861F" />
@@ -655,7 +655,16 @@ export default function BeneficiaryPreferences() {
             ) : filteredBeneficiaries.length > 0 ? (
               <>
                 <View ref={beneficiarySectionRef}>
-                  <View style={[styles.sectionHeader, { flexDirection: "row", alignItems: "center", justifyContent: "flex-end" }]}>
+                  <View style={styles.sectionHeader}>
+                    <View>
+                      <Text style={styles.sectionTitle}>{beneficiariesSectionTitle}</Text>
+                      <View style={styles.sectionSubtitleRow}>
+                        <Feather name="map-pin" size={13} color="#8E9BAE" />
+                        <Text style={styles.sectionSubtitle}>
+                          {locationDisplay || "Current Location"} ({displayedBeneficiaryCount})
+                        </Text>
+                      </View>
+                    </View>
                     <TouchableOpacity
                       onPress={() => router.push("/signupFlow/beneficiaryFilter")}
                       style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
@@ -778,7 +787,16 @@ export default function BeneficiaryPreferences() {
               </>
             ) : (
               <View>
-                <View style={[styles.sectionHeader, { flexDirection: "row", alignItems: "center", justifyContent: "flex-end" }]}>
+                <View style={styles.sectionHeader}>
+                  <View>
+                    <Text style={styles.sectionTitle}>{beneficiariesSectionTitle}</Text>
+                    <View style={styles.sectionSubtitleRow}>
+                      <Feather name="map-pin" size={13} color="#8E9BAE" />
+                      <Text style={styles.sectionSubtitle}>
+                        {locationDisplay || "Current Location"} ({displayedBeneficiaryCount})
+                      </Text>
+                    </View>
+                  </View>
                   <TouchableOpacity
                     onPress={() => router.push("/signupFlow/beneficiaryFilter")}
                     style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
@@ -787,7 +805,7 @@ export default function BeneficiaryPreferences() {
                     <Text style={[styles.filterBtnText, hasActiveFilters() && styles.filterBtnTextActive]}>Filter</Text>
                   </TouchableOpacity>
                 </View>
-                <View style={styles.emptyState}>
+                <View style={[styles.emptyState, { paddingTop: 24 }]}>
                   <Text style={styles.emptyTitle}>No results found</Text>
                   <Text style={styles.emptySubtitle}>
                     {searchText ? `No beneficiaries found for "${searchText}"` : "Try adjusting your search or filters"}
@@ -946,46 +964,15 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 0,
   },
-  locationRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f5f5fa",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e1e1e5",
-    paddingHorizontal: 15,
-    marginBottom: 16,
-    height: 48,
-  },
-  locationInput: {
-    flex: 1,
-    fontSize: 16,
-    color: "#324E58",
-  },
-  locationDisplay: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  locationText: {
-    fontSize: 16,
-    color: "#324E58",
-    fontWeight: "500",
-  },
-  refreshLocationButton: {
-    padding: 8,
-    marginLeft: 8,
-  },
   tagsRow: {
-    flexDirection: "row",
-    paddingVertical: 5,
-    paddingHorizontal: 20,
+    marginBottom: 10,
+    marginTop: 4,
   },
   tag: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
     backgroundColor: "#f2f2f2",
     borderRadius: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 15,
     marginRight: 10,
   },
   tagActive: {
@@ -1002,7 +989,8 @@ const styles = StyleSheet.create({
   },
   tagText: {
     fontSize: 14,
-    color: "#6d6e72",
+    color: "#666",
+    fontWeight: "500",
   },
   tagTextActive: {
     color: "#D0861F",
@@ -1060,29 +1048,44 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    backgroundColor: "#f5f5fa",
   },
   listContainer: {
     flex: 1,
+    backgroundColor: "#f5f5fa",
   },
   listContent: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 15,
+    paddingBottom: 32,
   },
   sectionHeader: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 4,
+    paddingHorizontal: 25,
+    paddingTop: 20,
+    paddingBottom: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#324E58",
     marginBottom: 4,
-    marginHorizontal: -20,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: "#666",
+  },
+  sectionSubtitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   beneficiaryCard: {
     flexDirection: "row",
     backgroundColor: "#fff",
     borderRadius: 12,
     overflow: "hidden",
-    marginBottom: 15,
+    marginVertical: 10,
+    marginHorizontal: 20,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -1094,6 +1097,12 @@ const styles = StyleSheet.create({
   },
   selectedBeneficiaryCard: {
     borderColor: "#DB8633",
+    backgroundColor: "#FFFBF7",
+    shadowColor: "#DB8633",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    elevation: 5,
   },
   beneficiaryImage: {
     width: 120,
@@ -1174,7 +1183,8 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     flex: 1,
-    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingTop: 60,
     alignItems: "center",
   },
   emptyTitle: {

@@ -17,14 +17,14 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useStripe } from "@stripe/stripe-react-native";
-import { useBeneficiary } from "../../context/BeneficiaryContext";
-import API from "../../lib/api";
+import { useBeneficiary } from "../../../context/BeneficiaryContext";
+import API from "../../../lib/api";
 import {
   hasMonthlySubscriptionPaymentSheet,
   presentMonthlySubscriptionPaymentSheet,
-} from "../../utils/monthlySubscriptionPaymentSheet";
-import { resolveCheckoutBeneficiaryId } from "../../utils/resolveCheckoutBeneficiaryId";
-import { resolveRemoteImageUri } from "../../utils/resolveRemoteImageUri";
+} from "../../../utils/monthlySubscriptionPaymentSheet";
+import { resolveCheckoutBeneficiaryId } from "../../../utils/resolveCheckoutBeneficiaryId";
+import { resolveRemoteImageUri } from "../../../utils/resolveRemoteImageUri";
 
 function firstParam(value) {
   if (value == null) return "";
@@ -181,7 +181,7 @@ export default function OneTimeGiftScreen() {
           onPress={() => router.back()}
         >
           <Image
-            source={require("../../../assets/icons/arrow-left.png")}
+            source={require("../../../../assets/icons/arrow-left.png")}
             style={styles.backIcon}
           />
         </TouchableOpacity>
