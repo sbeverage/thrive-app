@@ -14,8 +14,8 @@ import {
   Alert,
 } from 'react-native';
 
-import { AntDesign, Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { AntDesign, Feather, Ionicons } from '@expo/vector-icons';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import SuccessModal from '../../../../components/SuccessModal';
 import ConfettiCannon from 'react-native-confetti-cannon';
@@ -34,8 +34,10 @@ function normStr(s) {
   return s != null ? String(s).trim().toLowerCase() : '';
 }
 
-export default function BeneficiaryScreen() {
+export default function BeneficiaryScreen({ isSignupFlow = false, signupParams = null } = {}) {
   const router = useRouter();
+  const localParams = useLocalSearchParams();
+  const routeParams = signupParams || localParams;
   const { selectedBeneficiary, setSelectedBeneficiary } = useBeneficiary();
   const { filters, updateFilters, hasActiveFilters } = useBeneficiaryFilter();
   const { location: userLocation, locationAddress, locationPermission, checkLocationPermission, refreshLocation, isLoadingLocation } = useLocation();
@@ -98,7 +100,6 @@ export default function BeneficiaryScreen() {
   const [mapRegion, setMapRegion] = useState(getDefaultRegion());
   const [locationDisplay, setLocationDisplay] = useState('Detecting location...');
   const [locationSearch, setLocationSearch] = useState('');
-  const [isEditingLocation, setIsEditingLocation] = useState(false);
   
   const [selectedMarker, setSelectedMarker] = useState(null);
 
@@ -306,6 +307,22 @@ export default function BeneficiaryScreen() {
   const displayedBeneficiaryCount =
     filteredBeneficiaries.length > 50 ? '50+' : String(filteredBeneficiaries.length);
 
+  const filterRoute = isSignupFlow
+    ? '/signupFlow/beneficiaryFilter'
+    : '/(tabs)/beneficiary/beneficiaryFilter';
+  const detailRoute = '/(tabs)/beneficiary/beneficiaryDetail';
+  const detailParamsFor = (beneficiaryId) => {
+    const out = { id: String(beneficiaryId) };
+    if (isSignupFlow) {
+      out.fromSignup = 'true';
+      if (routeParams?.flow === 'coworking') {
+        out.flow = 'coworking';
+        out.sponsorAmount = String(routeParams?.sponsorAmount ?? '15');
+      }
+    }
+    return out;
+  };
+
   const handleConfirmBeneficiary = async () => {
     if (!pendingBeneficiary) return;
     setConfirmModalVisible(false);
@@ -315,9 +332,23 @@ export default function BeneficiaryScreen() {
       console.warn('⚠️ Could not persist beneficiary to server:', e.message);
     }
     setSelectedBeneficiary(pendingBeneficiary);
-    setSuccessMessage("Awesome! You've selected your cause!");
-    setShowSuccessModal(true);
-    setConfettiTrigger(true);
+    if (isSignupFlow) {
+      if (routeParams?.flow === 'coworking') {
+        router.push({
+          pathname: '/signupFlow/coworkingDonationPrompt',
+          params: { sponsorAmount: String(routeParams?.sponsorAmount ?? '15') },
+        });
+      } else {
+        router.push({
+          pathname: '/signupFlow/donationAmount',
+          params: { beneficiaryId: String(pendingBeneficiary.id) },
+        });
+      }
+    } else {
+      setSuccessMessage("Awesome! You've selected your cause!");
+      setShowSuccessModal(true);
+      setConfettiTrigger(true);
+    }
     setPendingBeneficiary(null);
   };
 
@@ -577,7 +608,7 @@ export default function BeneficiaryScreen() {
             {/* Floating Filter Button */}
             <TouchableOpacity
               style={[styles.mapFilterBtn, styles.mapFilterBtnActive]}
-              onPress={() => router.push('/(tabs)/beneficiary/beneficiaryFilter')}
+              onPress={() => router.push(filterRoute)}
             >
               <Feather name="filter" size={15} color="#fff" />
               <Text style={[styles.mapFilterBtnText, styles.mapFilterBtnTextActive]}>Filter</Text>
@@ -612,8 +643,8 @@ export default function BeneficiaryScreen() {
                     onPress={() => {
                       setSelectedMarker(null);
                       router.push({
-                        pathname: '/(tabs)/beneficiary/beneficiaryDetail',
-                        params: { id: selectedMarker.id.toString() },
+                        pathname: detailRoute,
+                        params: detailParamsFor(selectedMarker.id),
                       });
                     }}
                   >
@@ -643,6 +674,27 @@ export default function BeneficiaryScreen() {
             automaticallyAdjustKeyboardInsets={true}
             keyboardShouldPersistTaps="handled"
           >
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionHeaderTextCol}>
+                <Text style={styles.sectionTitle}>{beneficiariesSectionTitle}</Text>
+                <View style={styles.sectionSubtitleRow}>
+                  <Feather name="map-pin" size={13} color="#8E9BAE" />
+                  <Text style={styles.sectionSubtitle}>
+                    {locationPermission === 'granted'
+                      ? `${locationDisplay || 'Current Location'} (${displayedBeneficiaryCount})`
+                      : `${locationDisplay ? `${locationDisplay} ` : ''}(${displayedBeneficiaryCount})`}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => router.push(filterRoute)}
+                style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
+              >
+                <Feather name="filter" size={15} color={hasActiveFilters() ? '#fff' : '#DB8633'} />
+                <Text style={[styles.filterBtnText, hasActiveFilters() && styles.filterBtnTextActive]}>Filter</Text>
+              </TouchableOpacity>
+            </View>
+
             {loadingBeneficiaries ? (
               <View style={{ padding: 40, alignItems: 'center' }}>
                 <Text style={{ color: '#666', fontSize: 16 }}>Loading beneficiaries...</Text>
@@ -650,25 +702,6 @@ export default function BeneficiaryScreen() {
             ) : filteredBeneficiaries.length > 0 ? (
               <>
                 <View ref={beneficiarySectionRef}>
-                  <View style={styles.sectionHeader}>
-                    <View>
-                      <Text style={styles.sectionTitle}>{beneficiariesSectionTitle}</Text>
-                      <View style={styles.sectionSubtitleRow}>
-                        <Feather name="map-pin" size={13} color="#8E9BAE" />
-                        <Text style={styles.sectionSubtitle}>
-                          {locationDisplay || 'Current Location'} ({displayedBeneficiaryCount})
-                        </Text>
-                      </View>
-                    </View>
-                    <TouchableOpacity
-                      onPress={() => router.push('/(tabs)/beneficiary/beneficiaryFilter')}
-                      style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
-                    >
-                      <Feather name="filter" size={15} color={hasActiveFilters() ? '#fff' : '#DB8633'} />
-                      <Text style={[styles.filterBtnText, hasActiveFilters() && styles.filterBtnTextActive]}>Filter</Text>
-                    </TouchableOpacity>
-                  </View>
-
                   {highlightedBeneficiaries.map((b) => {
                     const isSelected = selectedBeneficiary?.id === b.id;
                     return (
@@ -680,8 +713,8 @@ export default function BeneficiaryScreen() {
                       ]}
                       onPress={() => {
                         router.push({
-                          pathname: '/(tabs)/beneficiary/beneficiaryDetail',
-                          params: { id: b.id.toString() },
+                          pathname: detailRoute,
+                          params: detailParamsFor(b.id),
                         });
                       }}
                     >
@@ -706,10 +739,12 @@ export default function BeneficiaryScreen() {
                       <View style={styles.beneficiaryCardContent}>
                         <Text style={styles.beneficiaryName}>{b.name}</Text>
                         <Text style={styles.beneficiaryCategory}>{b.category}</Text>
-                        <View style={styles.beneficiaryLocation}>
-                          <Ionicons name="location" size={14} color="#8E9BAE" />
-                          <Text style={styles.beneficiaryLocationText}>{b.location} • {b.distance}</Text>
-                        </View>
+                        {!isSignupFlow && (
+                          <View style={styles.beneficiaryLocation}>
+                            <Ionicons name="location" size={14} color="#8E9BAE" />
+                            <Text style={styles.beneficiaryLocationText}>{b.location} • {b.distance}</Text>
+                          </View>
+                        )}
                         
                         <View style={[styles.buttonsRow, isSelected && styles.buttonsRowSingle]}>
                           <TouchableOpacity 
@@ -720,8 +755,8 @@ export default function BeneficiaryScreen() {
                             onPress={(e) => {
                               e.stopPropagation();
                               router.push({
-                                pathname: '/(tabs)/beneficiary/beneficiaryDetail',
-                                params: { id: b.id.toString() }
+                                pathname: detailRoute,
+                                params: detailParamsFor(b.id),
                               });
                             }}
                           >
@@ -760,8 +795,8 @@ export default function BeneficiaryScreen() {
                     ]}
                     onPress={() => {
                       router.push({
-                        pathname: '/(tabs)/beneficiary/beneficiaryDetail',
-                        params: { id: b.id.toString() },
+                        pathname: detailRoute,
+                        params: detailParamsFor(b.id),
                       });
                     }}
                   >
@@ -786,10 +821,12 @@ export default function BeneficiaryScreen() {
                     <View style={styles.beneficiaryCardContent}>
                       <Text style={styles.beneficiaryName}>{b.name}</Text>
                       <Text style={styles.beneficiaryCategory}>{b.category}</Text>
-                      <View style={styles.beneficiaryLocation}>
-                        <Ionicons name="location" size={14} color="#8E9BAE" />
-                        <Text style={styles.beneficiaryLocationText}>{b.location} • {b.distance}</Text>
-                      </View>
+                      {!isSignupFlow && (
+                        <View style={styles.beneficiaryLocation}>
+                          <Ionicons name="location" size={14} color="#8E9BAE" />
+                          <Text style={styles.beneficiaryLocationText}>{b.location} • {b.distance}</Text>
+                        </View>
+                      )}
                       
                       <View style={[styles.buttonsRow, isSelected && styles.buttonsRowSingle]}>
                         <TouchableOpacity
@@ -800,8 +837,8 @@ export default function BeneficiaryScreen() {
                           onPress={(e) => {
                             e.stopPropagation();
                             router.push({
-                              pathname: '/(tabs)/beneficiary/beneficiaryDetail',
-                              params: { id: b.id.toString() },
+                              pathname: detailRoute,
+                              params: detailParamsFor(b.id),
                             });
                           }}
                         >
@@ -831,24 +868,6 @@ export default function BeneficiaryScreen() {
               </>
             ) : (
               <View>
-                <View style={styles.sectionHeader}>
-                  <View>
-                    <Text style={styles.sectionTitle}>{beneficiariesSectionTitle}</Text>
-                    <View style={styles.sectionSubtitleRow}>
-                      <Feather name="map-pin" size={13} color="#8E9BAE" />
-                      <Text style={styles.sectionSubtitle}>
-                        {locationDisplay || 'Current Location'} ({displayedBeneficiaryCount})
-                      </Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => router.push('/(tabs)/beneficiary/beneficiaryFilter')}
-                    style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
-                  >
-                    <Feather name="filter" size={15} color={hasActiveFilters() ? '#fff' : '#DB8633'} />
-                    <Text style={[styles.filterBtnText, hasActiveFilters() && styles.filterBtnTextActive]}>Filter</Text>
-                  </TouchableOpacity>
-                </View>
                 <View style={[styles.emptyState, { paddingTop: 24 }]}>
                   <Text style={styles.emptyTitle}>No results found</Text>
                   <Text style={styles.emptySubtitle}>
@@ -1060,6 +1079,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  sectionHeaderTextCol: {
+    flex: 1,
+    marginRight: 12,
   },
   sectionTitle: {
     fontSize: 18,

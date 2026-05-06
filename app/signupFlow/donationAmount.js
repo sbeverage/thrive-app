@@ -10,6 +10,7 @@ import {
   ScrollView,
   Image,
   Alert,
+  TextInput,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { AntDesign } from "@expo/vector-icons";
@@ -34,6 +35,8 @@ export default function DonationAmount() {
     routeParams?.isCoworking === "true";
   const MIN_AMOUNT = isCoworkingUser ? 1 : 15;
   const [amount, setAmount] = useState(MIN_AMOUNT);
+  const [isEditingAmount, setIsEditingAmount] = useState(false);
+  const [amountInput, setAmountInput] = useState(String(MIN_AMOUNT));
   const MAX_AMOUNT = 250;
 
   const routeParamsSnapshot = JSON.stringify(routeParams ?? {});
@@ -53,8 +56,23 @@ export default function DonationAmount() {
     }
   }, [MIN_AMOUNT, amount]);
 
+  useEffect(() => {
+    setAmountInput(String(Math.round(amount || MIN_AMOUNT)));
+  }, [amount, MIN_AMOUNT]);
+
   const handleSliderChange = (value) => {
-    setAmount(Math.round(value));
+    const rounded = Math.round(value);
+    setAmount(rounded);
+    setAmountInput(String(rounded));
+  };
+
+  const commitManualAmount = () => {
+    const parsed = parseInt(String(amountInput || "").replace(/[^0-9]/g, ""), 10);
+    const safe = Number.isFinite(parsed) ? parsed : amount;
+    const clamped = Math.min(MAX_AMOUNT, Math.max(MIN_AMOUNT, safe));
+    setAmount(clamped);
+    setAmountInput(String(clamped));
+    setIsEditingAmount(false);
   };
 
   const handleSaveAndContinue = async () => {
@@ -178,9 +196,31 @@ export default function DonationAmount() {
           {/* Donation amount, slider, and button directly on the gradient */}
           <View style={styles.infoCardCurved}>
             <View style={styles.amountCardProminentCurved}>
-              <Text style={styles.amountProminent}>
-                ${Math.round(amount || 0)}
-              </Text>
+              {isEditingAmount ? (
+                <View style={styles.amountEditRow}>
+                  <Text style={styles.amountDollarSign}>$</Text>
+                  <TextInput
+                    value={amountInput}
+                    onChangeText={setAmountInput}
+                    style={styles.amountInput}
+                    keyboardType="number-pad"
+                    returnKeyType="done"
+                    onBlur={commitManualAmount}
+                    onSubmitEditing={commitManualAmount}
+                    autoFocus
+                    maxLength={3}
+                  />
+                </View>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => setIsEditingAmount(true)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.amountProminent}>
+                    ${Math.round(amount || 0)}
+                  </Text>
+                </TouchableOpacity>
+              )}
               <Text style={styles.perMonthProminent}>per month</Text>
             </View>
             <View style={styles.sliderRowWrapCurved}>
@@ -316,7 +356,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#DB8633",
     borderRadius: 10,
     alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 15,
+    paddingHorizontal: 16,
     width: "100%",
     marginTop: 10,
     shadowColor: "#000",
@@ -329,6 +371,8 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
+    textAlign: "center",
+    width: "100%",
   },
   backButton: {
     position: "absolute",
@@ -449,5 +493,25 @@ const styles = StyleSheet.create({
     minWidth: 120,
     maxWidth: 200,
     alignSelf: "center",
+  },
+  amountEditRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  amountDollarSign: {
+    color: "#2C3E50",
+    fontSize: 38,
+    fontWeight: "bold",
+    marginRight: 4,
+  },
+  amountInput: {
+    minWidth: 90,
+    textAlign: "center",
+    color: "#2C3E50",
+    fontSize: 38,
+    fontWeight: "bold",
+    borderBottomWidth: 1,
+    borderBottomColor: "#d0d7de",
+    paddingVertical: 0,
   },
 });
