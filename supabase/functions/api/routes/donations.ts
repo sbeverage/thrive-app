@@ -1,0 +1,1318 @@
+import { verify as verifyJWT } from "https://deno.land/x/djwt@v2.9/mod.ts";
+import { getAppAuthHeader } from "../lib/jwt-app.ts";
+import {
+  createOrGetStripeCustomer,
+  createStripeSubscriptionSetup,
+  getStripeClient,
+} from "../lib/stripe.ts";
+
+export async function handleDonationRoute(
+  req: Request,
+  supabase: any,
+  route: string,
+  method: string,
+) {
+  // GET /donations (public)
+  if (method === "GET" && route === "/donations") {
+    try {
+      const {data: donations, error} = await supabase
+        .from("donations")
+        .select(
+          `
+          *,
+          charity:charities (
+            id,
+            name,
+            logo_url
+          ),
+          donor:users!donor_id (
+            id,
+            email,
+            first_name,
+            last_name
+          )
+        `,
+        )
+        .order("created_at", {ascending: false});
+
+      if (error) {
+        console.error("Error fetching donations:", error);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: "Failed to fetch donations",
+          }),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 500,
+          },
+        );
+      }
+
+      // Format donations for API response
+      const formattedDonations = (donations || []).map((donation: any) => ({
+        id: donation.id,
+        donor_id: donation.donor_id,
+        charity_id: donation.charity_id,
+        amount: donation.amount,
+        stripe_subscription_id: donation.stripe_subscription_id,
+        status: donation.status,
+        created_at: donation.created_at,
+        updated_at: donation.updated_at,
+        charity_name: donation.charity?.name || null,
+        donor_email: donation.donor?.email || null,
+      }));
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: formattedDonations,
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 200,
+        },
+      );
+    } catch (error) {
+      console.error("Error fetching donations:", error);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          message: "Failed to fetch donations",
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // POST /donations (requires auth - creates donation with Stripe)
+  if (method === "POST" && route === "/donations") {
+    try {
+      const body = await req.json();
+      const {charityId, amount, priceId} = body;
+
+      if (!charityId || !amount || !priceId) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: "Charity ID, amount, and Stripe price ID are required",
+          }),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 400,
+          },
+        );
+      }
+
+      const authHeader = getAppAuthHeader(req);
+      const payload = await getJwtPayload(authHeader);
+      if (!payload?.id) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: "Authentication required. JWT token must be provided.",
+          }),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 401,
+          },
+        );
+      }
+
+      const {data: charity, error: charityError} = await supabase
+        .from("charities")
+        .select("id, name")
+        .eq("id", charityId)
+        .single();
+
+      if (charityError || !charity) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: "Invalid charity ID",
+          }),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 400,
+          },
+        );
+      }
+
+      const donationPayload: any = {
+        donor_id: payload.id,
+        charity_id: charityId,
+        amount: parseFloat(amount),
+        status: "pending",
+      };
+
+      try {
+        const paymentIntent = await createStripePaymentIntent(
+          parseFloat(amount),
+          "usd",
+          {
+            donor_id: payload.id.toString(),
+            charity_id: charityId.toString(),
+            price_id: priceId?.toString() || "none",
+          },
+        );
+
+        donationPayload.stripe_payment_intent_id = paymentIntent.id;
+        donationPayload.status =
+          paymentIntent.status === "succeeded" ? "completed" : "pending";
+      } catch (stripeError) {
+        console.warn(
+          "⚠️ Stripe payment intent failed, saving donation without Stripe id:",
+          stripeError,
+        );
+      }
+
+      let {data: donation, error: donationError} = await supabase
+        .from("donations")
+        .insert([donationPayload])
+        .select()
+        .single();
+
+      if (donationError) {
+        if (donationError.message?.includes("stripe_payment_intent_id")) {
+          const retryPayload = {...donationPayload};
+          delete retryPayload.stripe_payment_intent_id;
+          ({data: donation, error: donationError} = await supabase
+            .from("donations")
+            .insert([retryPayload])
+            .select()
+            .single());
+        }
+      }
+
+      if (donationError) {
+        console.error("Error creating donation:", donationError);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: "Failed to create donation",
+          }),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 500,
+          },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: donation,
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 201,
+        },
+      );
+    } catch (error) {
+      console.error("Error creating donation:", error);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          message: "Failed to create donation",
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // GET /donations/my-donations (requires auth)
+  if (method === "GET" && route === "/donations/my-donations") {
+    try {
+      const authHeader = getAppAuthHeader(req);
+      const payload = await getJwtPayload(authHeader);
+      if (!payload?.id) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: "Authentication required. JWT token must be provided.",
+          }),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 401,
+          },
+        );
+      }
+
+      const {data: donations, error} = await supabase
+        .from("donations")
+        .select(
+          `
+          *,
+          charity:charities (
+            id,
+            name,
+            logo_url
+          )
+        `,
+        )
+        .eq("donor_id", payload.id)
+        .order("created_at", {ascending: false});
+
+      if (error) {
+        console.error("Error fetching user donations:", error);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: "Failed to fetch donations",
+          }),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 500,
+          },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: donations || [],
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 200,
+        },
+      );
+    } catch (error) {
+      console.error("Error fetching user donations:", error);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          message: "Failed to fetch donations",
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // ============================================
+  // MONTHLY DONATIONS ENDPOINTS
+  // ============================================
+
+  // Get user ID from JWT token
+  const authHeader = getAppAuthHeader(req);
+  let userId: number | null = null;
+
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    const jwtSecret = Deno.env.get("JWT_SECRET");
+
+    if (jwtSecret) {
+      try {
+        const secretKey = await crypto.subtle.importKey(
+          "raw",
+          new TextEncoder().encode(jwtSecret),
+          {name: "HMAC", hash: "SHA-256"},
+          false,
+          ["sign", "verify"],
+        );
+
+        const payload = await verifyJWT(token, secretKey);
+        userId = ((payload as any).id ?? (payload as any).userId) as number;
+      } catch (error) {
+        // Invalid token - will be handled per endpoint
+      }
+    }
+  }
+
+  // POST /donations/monthly/subscribe
+  if (method === "POST" && route === "/donations/monthly/subscribe") {
+    if (!userId) {
+      return new Response(JSON.stringify({error: "Unauthorized"}), {
+        headers: {"Content-Type": "application/json"},
+        status: 401,
+      });
+    }
+
+    try {
+      const body = await req.json();
+      const {beneficiary_id, amount, currency = "USD"} = body;
+
+      if (!beneficiary_id || !amount) {
+        return new Response(
+          JSON.stringify({error: "beneficiary_id and amount are required"}),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 400,
+          },
+        );
+      }
+
+      if (amount < 1 || amount > 10000) {
+        return new Response(
+          JSON.stringify({error: "Amount must be between $1 and $10,000"}),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 400,
+          },
+        );
+      }
+
+      // Get user email
+      const {data: user, error: userError} = await supabase
+        .from("users")
+        .select("email, stripe_customer_id, preferences")
+        .eq("id", userId)
+        .single();
+
+      if (userError || !user) {
+        return new Response(JSON.stringify({error: "User not found"}), {
+          headers: {"Content-Type": "application/json"},
+          status: 404,
+        });
+      }
+
+      // Idempotency guard: one active subscription per user at a time.
+      // Prevents duplicate charges when the user goes through the signup flow more than once.
+      const {data: activeSubs} = await supabase
+        .from("monthly_donations")
+        .select("id, status, amount, beneficiary_id, next_payment_date")
+        .eq("user_id", userId)
+        .in("status", ["active", "pending", "trialing", "incomplete"])
+        .limit(1);
+
+      if (activeSubs && activeSubs.length > 0) {
+        const existing = activeSubs[0];
+        return new Response(
+          JSON.stringify({
+            error: "You already have an active subscription",
+            code: "SUBSCRIPTION_EXISTS",
+            existing: {
+              id: existing.id,
+              status: existing.status,
+              amount: existing.amount,
+              beneficiary_id: existing.beneficiary_id,
+              next_payment_date: existing.next_payment_date,
+            },
+          }),
+          {headers: {"Content-Type": "application/json"}, status: 409},
+        );
+      }
+
+      // Get or create Stripe customer
+      let customerId = user.stripe_customer_id;
+      if (!customerId) {
+        const stripeCustomer = await createOrGetStripeCustomer(
+          user.email,
+          userId,
+        );
+        customerId = stripeCustomer.id;
+
+        // Save customer ID to user
+        await supabase
+          .from("users")
+          .update({stripe_customer_id: customerId})
+          .eq("id", userId);
+      }
+
+      // Create Stripe subscription
+      const subscription = await createStripeSubscriptionSetup(
+        customerId,
+        parseFloat(amount),
+        currency.toLowerCase(),
+        {
+          user_id: userId.toString(),
+          beneficiary_id: beneficiary_id.toString(),
+          source: "monthly_subscription",
+        },
+      );
+
+      // Calculate next payment date (1 month from now)
+      const nextPaymentDate = new Date();
+      nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+
+      // Save to database
+      const {data: monthlyDonation, error: dbError} = await supabase
+        .from("monthly_donations")
+        .insert([
+          {
+            user_id: userId,
+            beneficiary_id: beneficiary_id,
+            amount: parseFloat(amount),
+            currency: currency,
+            stripe_subscription_id: subscription.subscriptionId,
+            stripe_customer_id: customerId,
+            status: subscription.status === "incomplete" ? "pending" : "active",
+            next_payment_date: nextPaymentDate.toISOString().split("T")[0],
+          },
+        ])
+        .select()
+        .single();
+
+      if (dbError) {
+        console.error("Error saving monthly donation:", dbError);
+        return new Response(
+          JSON.stringify({error: "Failed to save subscription"}),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 500,
+          },
+        );
+      }
+
+      // Persist the chosen beneficiary on the user record so the admin and
+      // profile endpoint always reflect the current preferred charity.
+      try {
+        const updatedPreferences = {
+          ...(user.preferences || {}),
+          preferredCharity: beneficiary_id,
+        };
+        await supabase
+          .from("users")
+          .update({preferences: updatedPreferences})
+          .eq("id", userId);
+      } catch (e) {
+        console.warn("Could not update preferred charity on user:", e);
+      }
+
+      // Ephemeral key helps Stripe Payment Sheet (especially Apple Pay) attach to customer
+      let customerEphemeralKeySecret: string | null = null;
+      try {
+        const stripe = getStripeClient();
+        const ephemeralFormData = new URLSearchParams();
+        ephemeralFormData.append("customer", customerId);
+        const ephemeralRes = await fetch(`${stripe.baseUrl}/ephemeral_keys`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${stripe.secretKey}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Stripe-Version": "2024-06-20",
+          },
+          body: ephemeralFormData.toString(),
+        });
+        if (ephemeralRes.ok) {
+          const ek = await ephemeralRes.json();
+          customerEphemeralKeySecret = ek.secret || null;
+        } else {
+          const errText = await ephemeralRes.text();
+          console.warn("Ephemeral key (subscribe) non-OK:", ephemeralRes.status, errText);
+        }
+      } catch (e) {
+        console.warn("Ephemeral key (subscribe) failed:", e);
+      }
+
+      const clientSecret = subscription.clientSecret || null;
+      if (!clientSecret) {
+        console.error("Monthly subscribe: missing PaymentIntent client_secret after Stripe create");
+        return new Response(
+          JSON.stringify({
+            error:
+              "Subscription created but payment could not be initialized. Try again or use a card.",
+          }),
+          {headers: {"Content-Type": "application/json"}, status: 500},
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          paymentIntentClientSecret: clientSecret,
+          customerId,
+          customerEphemeralKeySecret,
+          subscription: {
+            id: monthlyDonation.id,
+            subscriptionId: subscription.subscriptionId,
+            clientSecret,
+            status: monthlyDonation.status,
+            amount: monthlyDonation.amount,
+            beneficiary_id: monthlyDonation.beneficiary_id,
+            next_payment_date: monthlyDonation.next_payment_date,
+            requiresPaymentMethod: subscription.status === "incomplete",
+          },
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 201,
+        },
+      );
+    } catch (error: any) {
+      console.error("Error creating subscription:", error);
+      return new Response(
+        JSON.stringify({
+          error: error.message || "Failed to create subscription",
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // GET /donations/monthly
+  if (method === "GET" && route === "/donations/monthly") {
+    if (!userId) {
+      return new Response(JSON.stringify({error: "Unauthorized"}), {
+        headers: {"Content-Type": "application/json"},
+        status: 401,
+      });
+    }
+
+    try {
+      const {data: subscriptions, error} = await supabase
+        .from("monthly_donations")
+        .select(
+          `
+          *,
+          beneficiary:charities (
+            id,
+            name,
+            logo_url
+          )
+        `,
+        )
+        .eq("user_id", userId)
+        .order("created_at", {ascending: false});
+
+      if (error) {
+        console.error("Error fetching subscriptions:", error);
+        return new Response(
+          JSON.stringify({error: "Failed to fetch subscriptions"}),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 500,
+          },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          subscriptions: (subscriptions || []).map((sub: any) => ({
+            id: sub.id,
+            beneficiary_id: sub.beneficiary_id,
+            amount: parseFloat(sub.amount),
+            currency: sub.currency,
+            status: sub.status,
+            next_payment_date: sub.next_payment_date,
+            last_payment_date: sub.last_payment_date,
+            last_payment_amount: sub.last_payment_amount
+              ? parseFloat(sub.last_payment_amount)
+              : null,
+            stripe_subscription_id: sub.stripe_subscription_id ?? null,
+            charity_name: sub.beneficiary?.name ?? null,
+            beneficiary: sub.beneficiary || null,
+            created_at: sub.created_at,
+          })),
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 200,
+        },
+      );
+    } catch (error) {
+      console.error("Error fetching subscriptions:", error);
+      return new Response(
+        JSON.stringify({error: "Failed to fetch subscriptions"}),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // GET /donations/monthly/billing-preview — live Stripe amounts + period dates (no client cache)
+  if (method === "GET" && route === "/donations/monthly/billing-preview") {
+    if (!userId) {
+      return new Response(JSON.stringify({error: "Unauthorized"}), {
+        headers: {"Content-Type": "application/json"},
+        status: 401,
+      });
+    }
+
+    try {
+      const url = new URL(req.url);
+      const monthlyDonationIdParam = url.searchParams.get("monthly_donation_id");
+
+      const {data: mdRows, error: mdError} = await supabase
+        .from("monthly_donations")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", {ascending: false});
+
+      if (mdError) {
+        console.error("billing-preview monthly_donations error:", mdError);
+        return new Response(
+          JSON.stringify({error: "Failed to load monthly donations"}),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 500,
+          },
+        );
+      }
+
+      const rows = mdRows || [];
+      let row: any = null;
+      if (monthlyDonationIdParam) {
+        const mid = parseInt(monthlyDonationIdParam, 10);
+        if (!Number.isNaN(mid)) {
+          row = rows.find((r: any) => r.id === mid) || null;
+        }
+      }
+      if (!row) {
+        row =
+          rows.find((r: any) => r.stripe_subscription_id) || rows[0] || null;
+      }
+
+      if (!row?.stripe_subscription_id) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            billing: null,
+            subscription: null,
+          }),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 200,
+          },
+        );
+      }
+
+      const {data: dbUser} = await supabase
+        .from("users")
+        .select("stripe_customer_id")
+        .eq("id", userId)
+        .single();
+
+      const customerId = row.stripe_customer_id || dbUser?.stripe_customer_id;
+      if (!customerId) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            billing: null,
+            subscription: {
+              id: row.id,
+              stripe_subscription_id: row.stripe_subscription_id,
+              status: row.status,
+            },
+          }),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 200,
+          },
+        );
+      }
+
+      const stripe = getStripeClient();
+      const subId = row.stripe_subscription_id;
+
+      const subRes = await fetch(
+        `${stripe.baseUrl}/subscriptions/${subId}?expand[]=latest_invoice`,
+        {
+          method: "GET",
+          headers: {Authorization: `Bearer ${stripe.secretKey}`},
+        },
+      );
+
+      if (!subRes.ok) {
+        const errText = await subRes.text();
+        console.error("Stripe subscription fetch failed:", subRes.status, errText);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "Failed to fetch subscription from Stripe",
+          }),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 502,
+          },
+        );
+      }
+
+      const subJson = await subRes.json();
+
+      const sumRecurring = (s: any) => {
+        let total = 0;
+        for (const item of s.items?.data || []) {
+          const ua = item.price?.unit_amount;
+          if (ua != null) {
+            total += (ua * (item.quantity || 1)) / 100;
+          }
+        }
+        return total;
+      };
+
+      const nextRecurring = sumRecurring(subJson);
+
+      const upcomingParams = new URLSearchParams({
+        customer: customerId,
+        subscription: subId,
+      });
+      const upRes = await fetch(
+        `${stripe.baseUrl}/invoices/upcoming?${upcomingParams.toString()}`,
+        {
+          method: "GET",
+          headers: {Authorization: `Bearer ${stripe.secretKey}`},
+        },
+      );
+
+      let upcomingInvoice: any = null;
+      let currentAmount = nextRecurring;
+      if (upRes.ok) {
+        upcomingInvoice = await upRes.json();
+        const cents =
+          upcomingInvoice.amount_due != null
+            ? upcomingInvoice.amount_due
+            : upcomingInvoice.total ?? null;
+        if (cents != null && typeof cents === "number") {
+          currentAmount = cents / 100;
+        }
+      }
+
+      const fmtDate = (unix: number | string | undefined | null) => {
+        if (unix == null || unix === "") return null;
+        const n = typeof unix === "string" ? parseInt(unix, 10) : Number(unix);
+        if (!Number.isFinite(n) || n <= 0) return null;
+        return new Date(n * 1000).toISOString().split("T")[0];
+      };
+
+      // Incomplete/pending subs may omit current_period_*; use start_date / upcoming invoice periods
+      let periodStartUnix: number | null =
+        subJson.current_period_start != null
+          ? Number(subJson.current_period_start)
+          : null;
+      let periodEndUnix: number | null =
+        subJson.current_period_end != null
+          ? Number(subJson.current_period_end)
+          : null;
+
+      if (periodStartUnix == null && subJson.start_date != null) {
+        const sd = Number(subJson.start_date);
+        if (Number.isFinite(sd) && sd > 0) periodStartUnix = sd;
+      }
+      if (upcomingInvoice) {
+        const ips = upcomingInvoice.period_start;
+        const ipe = upcomingInvoice.period_end;
+        if (ips != null && periodStartUnix == null) {
+          const n = Number(ips);
+          if (Number.isFinite(n) && n > 0) periodStartUnix = n;
+        }
+        if (ipe != null && periodEndUnix == null) {
+          const n = Number(ipe);
+          if (Number.isFinite(n) && n > 0) periodEndUnix = n;
+        }
+      }
+
+      let periodStartStr = fmtDate(periodStartUnix);
+      let periodEndStr = fmtDate(periodEndUnix);
+
+      // DB often has next_payment_date when Stripe omits period fields (e.g. incomplete/pending)
+      if (!periodEndStr && row.next_payment_date) {
+        periodEndStr = String(row.next_payment_date).split("T")[0];
+      }
+      if (!periodStartStr && periodEndStr) {
+        try {
+          const end = new Date(`${periodEndStr}T12:00:00`);
+          if (!Number.isNaN(end.getTime())) {
+            const start = new Date(end);
+            start.setMonth(start.getMonth() - 1);
+            periodStartStr = start.toISOString().split("T")[0];
+          }
+        } catch (_) {
+          /* ignore */
+        }
+      }
+
+      const billing = {
+        current_amount: currentAmount,
+        next_amount: nextRecurring,
+        current_period_start: periodStartStr,
+        current_period_end: periodEndStr,
+        // When plan/amount change applies at next cycle; align with period end if Stripe does not send a separate field
+        effective_from: periodEndStr,
+      };
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          billing,
+          subscription: {
+            id: row.id,
+            amount: parseFloat(row.amount),
+            status: row.status,
+            stripe_subscription_id: subId,
+            cancel_at_period_end: Boolean(subJson?.cancel_at_period_end),
+            cancel_at: subJson?.cancel_at ?? null,
+            beneficiary_id: row.beneficiary_id,
+            currency: row.currency,
+          },
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 200,
+        },
+      );
+    } catch (error: any) {
+      console.error("billing-preview error:", error);
+      return new Response(
+        JSON.stringify({
+          error: error.message || "Failed to load billing preview",
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // PUT /donations/monthly/amount
+  if (method === "PUT" && route === "/donations/monthly/amount") {
+    if (!userId) {
+      return new Response(JSON.stringify({error: "Unauthorized"}), {
+        headers: {"Content-Type": "application/json"},
+        status: 401,
+      });
+    }
+
+    try {
+      const body = await req.json();
+      const {subscription_id, amount} = body;
+
+      if (!subscription_id || !amount) {
+        return new Response(
+          JSON.stringify({error: "subscription_id and amount are required"}),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 400,
+          },
+        );
+      }
+
+      // Get existing subscription
+      const {data: existing, error: fetchError} = await supabase
+        .from("monthly_donations")
+        .select("*")
+        .eq("id", subscription_id)
+        .eq("user_id", userId)
+        .single();
+
+      if (fetchError || !existing) {
+        return new Response(JSON.stringify({error: "Subscription not found"}), {
+          headers: {"Content-Type": "application/json"},
+          status: 404,
+        });
+      }
+
+      // Cancel old Stripe subscription
+      if (existing.stripe_subscription_id) {
+        const stripe = getStripeClient();
+        await fetch(
+          `${stripe.baseUrl}/subscriptions/${existing.stripe_subscription_id}`,
+          {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${stripe.secretKey}`,
+            },
+          },
+        );
+      }
+
+      // Create new subscription with new amount
+      const subscription = await createStripeSubscriptionSetup(
+        existing.stripe_customer_id,
+        parseFloat(amount),
+        existing.currency.toLowerCase(),
+        {
+          user_id: userId.toString(),
+          beneficiary_id: existing.beneficiary_id?.toString() || "",
+          source: "update_amount",
+        },
+      );
+
+      // Calculate next payment date
+      const nextPaymentDate = new Date();
+      nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+
+      // Update database
+      const {data: updated, error: updateError} = await supabase
+        .from("monthly_donations")
+        .update({
+          amount: parseFloat(amount),
+          stripe_subscription_id: subscription.subscriptionId,
+          status: subscription.status === "incomplete" ? "pending" : "active",
+          next_payment_date: nextPaymentDate.toISOString().split("T")[0],
+        })
+        .eq("id", subscription_id)
+        .select()
+        .single();
+
+      if (updateError) {
+        return new Response(
+          JSON.stringify({error: "Failed to update subscription"}),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 500,
+          },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          subscription: {
+            id: updated.id,
+            subscriptionId: subscription.subscriptionId,
+            clientSecret: subscription.clientSecret,
+            status: updated.status,
+            amount: updated.amount,
+            requiresPaymentMethod: subscription.status === "incomplete",
+          },
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 200,
+        },
+      );
+    } catch (error: any) {
+      console.error("Error updating subscription:", error);
+      return new Response(
+        JSON.stringify({
+          error: error.message || "Failed to update subscription",
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // GET /donations/monthly/summary
+  if (method === "GET" && route === "/donations/monthly/summary") {
+    if (!userId) {
+      return new Response(JSON.stringify({error: "Unauthorized"}), {
+        headers: {"Content-Type": "application/json"},
+        status: 401,
+      });
+    }
+
+    try {
+      const {data: subscriptions, error} = await supabase
+        .from("monthly_donations")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("status", "active");
+
+      if (error) {
+        return new Response(
+          JSON.stringify({error: "Failed to fetch subscriptions"}),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 500,
+          },
+        );
+      }
+
+      const totalMonthly = (subscriptions || []).reduce(
+        (sum: number, sub: any) => sum + parseFloat(sub.amount || 0),
+        0,
+      );
+
+      // Get transaction history for monthly donations
+      const {data: transactions} = await supabase
+        .from("transactions")
+        .select("amount, created_at")
+        .eq("user_id", userId)
+        .eq("type", "monthly_donation")
+        .eq("status", "completed")
+        .order("created_at", {ascending: false})
+        .limit(12);
+
+      const monthlyBreakdown = (transactions || []).map((t: any) => ({
+        month: new Date(t.created_at).toISOString().substring(0, 7),
+        amount: parseFloat(t.amount || 0),
+      }));
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          summary: {
+            total_monthly_amount: totalMonthly,
+            active_subscriptions: subscriptions?.length || 0,
+            monthly_breakdown: monthlyBreakdown,
+            total_donated: monthlyBreakdown.reduce(
+              (sum: number, m: any) => sum + m.amount,
+              0,
+            ),
+          },
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 200,
+        },
+      );
+    } catch (error) {
+      console.error("Error fetching summary:", error);
+      return new Response(JSON.stringify({error: "Failed to fetch summary"}), {
+        headers: {"Content-Type": "application/json"},
+        status: 500,
+      });
+    }
+  }
+
+  // POST /donations/monthly/subscription/resume — JSON body monthly_donation_id (preferred vs extra path segments)
+  if (method === "POST" && route === "/donations/monthly/subscription/resume") {
+    if (!userId) {
+      return new Response(JSON.stringify({error: "Unauthorized"}), {
+        headers: {"Content-Type": "application/json"},
+        status: 401,
+      });
+    }
+
+    try {
+      const body = await req.json().catch(() => ({}));
+      const rid =
+        body?.monthly_donation_id ??
+        body?.subscription_id ??
+        body?.subscriptionId ??
+        "";
+      return resumeMonthlySubscriptionCore(supabase, userId, String(rid));
+    } catch (error: any) {
+      console.error("Error resuming subscription (body route):", error);
+      return new Response(
+        JSON.stringify({
+          error: error.message || "Failed to resume subscription",
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // POST /donations/monthly/subscription/:identifier/resume — undo cancel-at-period-end
+  const resumeSubscriptionMatch = route.match(
+    /^\/donations\/monthly\/subscription\/([^/?#]+)\/resume$/,
+  );
+  if (method === "POST" && resumeSubscriptionMatch) {
+    if (!userId) {
+      return new Response(JSON.stringify({error: "Unauthorized"}), {
+        headers: {"Content-Type": "application/json"},
+        status: 401,
+      });
+    }
+
+    try {
+      const raw = decodeURIComponent(resumeSubscriptionMatch[1] || "");
+      return resumeMonthlySubscriptionCore(supabase, userId, raw);
+    } catch (error: any) {
+      console.error("Error resuming subscription:", error);
+      return new Response(
+        JSON.stringify({
+          error: error.message || "Failed to resume subscription",
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // DELETE /donations/monthly/subscription/:identifier
+  // Identifier: monthly_donations.id (digits) OR stripe_subscription_id (e.g. sub_xxx).
+  const deleteSubscriptionMatch = route.match(
+    /^\/donations\/monthly\/subscription\/([^/?#]+)$/,
+  );
+  if (method === "DELETE" && deleteSubscriptionMatch) {
+    if (!userId) {
+      return new Response(JSON.stringify({error: "Unauthorized"}), {
+        headers: {"Content-Type": "application/json"},
+        status: 401,
+      });
+    }
+
+    try {
+      const raw = decodeURIComponent(deleteSubscriptionMatch[1] || "");
+
+      let subQuery = supabase
+        .from("monthly_donations")
+        .select("*")
+        .eq("user_id", userId);
+
+      if (/^\d+$/.test(raw)) {
+        subQuery = subQuery.eq("id", parseInt(raw, 10));
+      } else {
+        subQuery = subQuery.eq("stripe_subscription_id", raw);
+      }
+
+      const {data: subscription, error: fetchError} = await subQuery.maybeSingle();
+
+      if (fetchError || !subscription) {
+        return new Response(JSON.stringify({error: "Subscription not found"}), {
+          headers: {"Content-Type": "application/json"},
+          status: 404,
+        });
+      }
+
+      const rowId = subscription.id;
+
+      // Schedule cancel at period end (matches in-app copy). Avoid Stripe DELETE sub (immediate cancel).
+      if (subscription.stripe_subscription_id) {
+        const stripe = getStripeClient();
+        const cancelBody = new URLSearchParams();
+        cancelBody.set("cancel_at_period_end", "true");
+        const stripeRes = await fetch(
+          `${stripe.baseUrl}/subscriptions/${subscription.stripe_subscription_id}`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${stripe.secretKey}`,
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: cancelBody.toString(),
+          },
+        );
+        if (!stripeRes.ok) {
+          const errText = await stripeRes.text().catch(() => "");
+          const lowerErr = String(errText || "").toLowerCase();
+          const isMissingSubscription =
+            stripeRes.status === 404 &&
+            (lowerErr.includes("no such subscription") ||
+              lowerErr.includes("resource_missing"));
+          const isAlreadyCanceled =
+            stripeRes.status === 400 &&
+            (lowerErr.includes("already canceled") ||
+              lowerErr.includes("cannot update a canceled subscription") ||
+              lowerErr.includes("status of canceled"));
+          console.error(
+            "Stripe subscription cancel-at-period-end failed:",
+            stripeRes.status,
+            errText,
+          );
+          if (isMissingSubscription || isAlreadyCanceled) {
+            // Stripe no longer considers this subscription renewable. Reflect that locally.
+            await supabase
+              .from("monthly_donations")
+              .update({status: "cancelled"})
+              .eq("id", rowId);
+
+            return new Response(
+              JSON.stringify({
+                success: true,
+                message:
+                  "Subscription is already inactive with payment provider.",
+              }),
+              {
+                headers: {"Content-Type": "application/json"},
+                status: 200,
+              },
+            );
+          }
+
+          // Stripe can reject update even when cancellation is already scheduled.
+          // Verify current Stripe state before treating as a hard failure.
+          try {
+            const verifyRes = await fetch(
+              `${stripe.baseUrl}/subscriptions/${subscription.stripe_subscription_id}`,
+              {
+                method: "GET",
+                headers: {Authorization: `Bearer ${stripe.secretKey}`},
+              },
+            );
+            if (verifyRes.ok) {
+              const verifyJson = (await verifyRes.json().catch(() => null)) as {
+                status?: string;
+                cancel_at_period_end?: boolean;
+              } | null;
+              const verifyStatus = String(verifyJson?.status || "").toLowerCase();
+              const scheduled = Boolean(verifyJson?.cancel_at_period_end);
+              const inactive =
+                verifyStatus === "canceled" || verifyStatus === "incomplete_expired";
+
+              if (scheduled || inactive) {
+                await supabase
+                  .from("monthly_donations")
+                  .update({status: inactive ? "cancelled" : "cancelling"})
+                  .eq("id", rowId);
+
+                return new Response(
+                  JSON.stringify({
+                    success: true,
+                    message: scheduled
+                      ? "Subscription scheduled to cancel at period end."
+                      : "Subscription is already inactive with payment provider.",
+                  }),
+                  {
+                    headers: {"Content-Type": "application/json"},
+                    status: 200,
+                  },
+                );
+              }
+            }
+          } catch (verifyErr) {
+            console.error("Stripe cancellation verify step failed:", verifyErr);
+          }
+
+          const conciseProviderError =
+            String(errText || "")
+              .replace(/\s+/g, " ")
+              .trim()
+              .slice(0, 240) || null;
+          return new Response(
+            JSON.stringify({
+              error: conciseProviderError
+                ? `Unable to cancel with payment provider: ${conciseProviderError}`
+                : "Unable to cancel with payment provider; try again or contact support.",
+            }),
+            {
+              headers: {"Content-Type": "application/json"},
+              status: 502,
+            },
+          );
+        }
+      }
+
+      // Still billable until Stripe period end; keep row visible as "cancelling" (see app isSubscriptionRowEligible).
+      await supabase
+        .from("monthly_donations")
+        .update({status: "cancelling"})
+        .eq("id", rowId);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "Subscription scheduled to cancel at period end.",
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 200,
+        },
+      );
+    } catch (error: any) {
+      console.error("Error cancelling subscription:", error);
+      return new Response(
+        JSON.stringify({
+          error: error.message || "Failed to cancel subscription",
+        }),
+        {
+          headers: {"Content-Type": "application/json"},
+          status: 500,
+        },
+      );
+    }
+  }
+
+  return new Response(JSON.stringify({error: "Donation route not found"}), {
+    headers: {"Content-Type": "application/json"},
+    status: 404,
+  });
+}
+
+// Transaction route handler
