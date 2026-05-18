@@ -295,35 +295,136 @@ export async function createStripeSubscriptionSetup(
   }
 
   const subscription = await response.json();
-  const inv = subscription.latest_invoice as any;
+  const inv = subscription.latest_invoice as Record<string, unknown> | null;
   const piRaw = inv?.payment_intent;
-  let clientSecret: string | null =
-    typeof piRaw === "object" && piRaw?.client_secret
-      ? piRaw.client_secret
+  let piObject: Record<string, unknown> | null =
+    typeof piRaw === "object" && piRaw !== null
+      ? (piRaw as Record<string, unknown>)
       : null;
+  let clientSecret: string | null =
+    typeof piObject?.client_secret === "string" ? piObject.client_secret : null;
 
-  if (!clientSecret) {
-    const piId =
-      typeof piRaw === "string"
-        ? piRaw
-        : typeof piRaw === "object" && piRaw?.id
-          ? piRaw.id
-          : null;
-    if (piId) {
-      const piRes = await fetch(`${stripe.baseUrl}/payment_intents/${piId}`, {
-        headers: { Authorization: `Bearer ${stripe.secretKey}` },
-      });
-      if (piRes.ok) {
-        const pi = await piRes.json();
-        clientSecret = pi.client_secret || null;
-      }
+  const piId =
+    typeof piRaw === "string"
+      ? piRaw
+      : typeof piObject?.id === "string"
+        ? piObject.id
+        : null;
+
+  if ((!clientSecret || piObject?.amount == null) && piId) {
+    const piRes = await fetch(`${stripe.baseUrl}/payment_intents/${piId}`, {
+      headers: { Authorization: `Bearer ${stripe.secretKey}` },
+    });
+    if (piRes.ok) {
+      piObject = await piRes.json();
+      clientSecret =
+        typeof piObject?.client_secret === "string"
+          ? piObject.client_secret
+          : clientSecret;
     }
   }
+
+  const paymentIntentAmountCents =
+    typeof piObject?.amount === "number"
+      ? piObject.amount
+      : Math.round(amount * 100);
+  const paymentIntentAmountUsd = (paymentIntentAmountCents / 100).toFixed(2);
 
   return {
     subscriptionId: subscription.id,
     clientSecret: clientSecret || "",
     status: subscription.status,
     latestInvoice: subscription.latest_invoice,
+    paymentIntentAmountCents,
+    paymentIntentAmountUsd,
+  };
+}
+
+/**
+ * Latest invoice PaymentIntent for an existing Stripe subscription (resume incomplete checkout).
+ */
+export async function getStripeSubscriptionInvoicePaymentDetails(
+  stripeSubscriptionId: string,
+): Promise<{
+  clientSecret: string | null;
+  paymentIntentStatus: string | null;
+  subscriptionStatus: string | null;
+  paymentIntentAmountCents: number | null;
+  paymentIntentAmountUsd: string | null;
+}> {
+  const stripe = getStripeClient();
+  const url =
+    `${stripe.baseUrl}/subscriptions/${encodeURIComponent(stripeSubscriptionId)}` +
+    "?expand[]=latest_invoice.payment_intent";
+
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${stripe.secretKey}` },
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    console.warn(
+      "getStripeSubscriptionInvoicePaymentDetails failed:",
+      response.status,
+      errText,
+    );
+    return {
+      clientSecret: null,
+      paymentIntentStatus: null,
+      subscriptionStatus: null,
+      paymentIntentAmountCents: null,
+      paymentIntentAmountUsd: null,
+    };
+  }
+
+  const subscription = await response.json();
+  const inv = subscription.latest_invoice as Record<string, unknown> | null;
+  const piRaw = inv?.payment_intent;
+  let piObject: Record<string, unknown> | null =
+    typeof piRaw === "object" && piRaw !== null
+      ? (piRaw as Record<string, unknown>)
+      : null;
+  let clientSecret: string | null =
+    typeof piObject?.client_secret === "string" ? piObject.client_secret : null;
+  let paymentIntentStatus: string | null =
+    typeof piObject?.status === "string" ? piObject.status : null;
+
+  const piId =
+    typeof piRaw === "string"
+      ? piRaw
+      : typeof piObject?.id === "string"
+        ? piObject.id
+        : null;
+
+  if ((!clientSecret || piObject?.amount == null) && piId) {
+    const piRes = await fetch(`${stripe.baseUrl}/payment_intents/${piId}`, {
+      headers: { Authorization: `Bearer ${stripe.secretKey}` },
+    });
+    if (piRes.ok) {
+      piObject = await piRes.json();
+      clientSecret =
+        typeof piObject?.client_secret === "string"
+          ? piObject.client_secret
+          : clientSecret;
+      paymentIntentStatus =
+        typeof piObject?.status === "string"
+          ? piObject.status
+          : paymentIntentStatus;
+    }
+  }
+
+  const paymentIntentAmountCents =
+    typeof piObject?.amount === "number" ? piObject.amount : null;
+  const paymentIntentAmountUsd =
+    paymentIntentAmountCents != null
+      ? (paymentIntentAmountCents / 100).toFixed(2)
+      : null;
+
+  return {
+    clientSecret,
+    paymentIntentStatus,
+    subscriptionStatus: subscription.status || null,
+    paymentIntentAmountCents,
+    paymentIntentAmountUsd,
   };
 }

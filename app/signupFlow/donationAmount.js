@@ -100,10 +100,6 @@ export default function DonationAmount() {
     }
   };
 
-  const handleSkip = () => {
-    router.replace("/(tabs)/home");
-  };
-
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
       {/* Modern blue gradient background for slider area with curved bottom */}
@@ -143,11 +139,6 @@ export default function DonationAmount() {
               style={{ width: 24, height: 24, tintColor: "#324E58" }}
             />
           </TouchableOpacity>
-          {isCoworkingUser ? (
-            <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-              <Text style={styles.skipButtonText}>Skip</Text>
-            </TouchableOpacity>
-          ) : null}
           {/* Piggy and Speech Bubble in blue area */}
           <View
             style={{
@@ -193,10 +184,16 @@ export default function DonationAmount() {
             </View>
           </View>
 
-          {/* Donation amount, slider, and button directly on the gradient */}
+          {/* Donation amount, slider, and button */}
           <View style={styles.infoCardCurved}>
-            <View style={styles.amountCardProminentCurved}>
-              {isEditingAmount ? (
+            <Text style={styles.cardEyebrow}>Choose your monthly gift</Text>
+
+            {/* Tap-to-type amount */}
+            {isEditingAmount ? (
+              <View
+                style={[styles.amountTapTarget, styles.amountTapTargetEditing]}
+              >
+                <Text style={styles.amountTapLabel}>Enter amount</Text>
                 <View style={styles.amountEditRow}>
                   <Text style={styles.amountDollarSign}>$</Text>
                   <TextInput
@@ -209,42 +206,57 @@ export default function DonationAmount() {
                     onSubmitEditing={commitManualAmount}
                     autoFocus
                     maxLength={3}
+                    selectTextOnFocus
                   />
                 </View>
-              ) : (
+                <Text style={styles.perMonthProminent}>per month</Text>
                 <TouchableOpacity
-                  onPress={() => setIsEditingAmount(true)}
-                  activeOpacity={0.75}
+                  style={styles.doneTypingButton}
+                  onPress={commitManualAmount}
+                  activeOpacity={0.85}
                 >
+                  <AntDesign name="check" size={16} color="#fff" />
+                  <Text style={styles.doneTypingText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.amountTapTarget}
+                onPress={() => setIsEditingAmount(true)}
+                activeOpacity={0.88}
+                accessibilityRole="button"
+                accessibilityLabel={`${Math.round(amount || 0)} dollars per month`}
+                accessibilityHint="Opens keyboard so you can type a custom amount"
+              >
+                <View style={styles.amountValueRow}>
                   <Text style={styles.amountProminent}>
                     ${Math.round(amount || 0)}
                   </Text>
-                </TouchableOpacity>
-              )}
-              <Text style={styles.perMonthProminent}>per month</Text>
-            </View>
-            <View style={styles.sliderRowWrapCurved}>
-              <Text style={styles.amountLabelCard}>${MIN_AMOUNT}</Text>
-              <View
-                style={{
-                  flex: 1,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Slider
-                  style={styles.sliderCentered}
-                  minimumValue={MIN_AMOUNT}
-                  maximumValue={MAX_AMOUNT}
-                  value={amount}
-                  onValueChange={handleSliderChange}
-                  minimumTrackTintColor="#4CA1AF"
-                  maximumTrackTintColor="#e0e0e0"
-                  thumbTintColor="#2C3E50"
-                />
+                  <View style={styles.editIconBadge}>
+                    <AntDesign name="edit" size={15} color="#DB8633" />
+                  </View>
+                </View>
+                <Text style={styles.perMonthProminent}>per month</Text>
+              </TouchableOpacity>
+            )}
+
+            <View style={styles.sliderSection}>
+              <Slider
+                style={styles.sliderFullWidth}
+                minimumValue={MIN_AMOUNT}
+                maximumValue={MAX_AMOUNT}
+                value={amount}
+                onValueChange={handleSliderChange}
+                minimumTrackTintColor="#4CA1AF"
+                maximumTrackTintColor="#E8ECEF"
+                thumbTintColor="#DB8633"
+              />
+              <View style={styles.sliderLabelsRow}>
+                <Text style={styles.amountLabelMuted}>${MIN_AMOUNT}</Text>
+                <Text style={styles.amountLabelMuted}>$250</Text>
               </View>
-              <Text style={styles.amountLabelCard}>$250</Text>
             </View>
+
             <TouchableOpacity
               onPress={handleSaveAndContinue}
               style={styles.continueButtonCard}
@@ -406,33 +418,102 @@ const styles = StyleSheet.create({
     position: "relative",
     zIndex: 2,
   },
-  amountCardProminent: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    paddingVertical: 18,
-    paddingHorizontal: 40,
+  cardEyebrow: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#6B7C87",
+    marginBottom: 16,
+    textAlign: "center",
+    letterSpacing: 0.2,
+  },
+  amountTapTarget: {
+    width: "100%",
     alignItems: "center",
-    marginBottom: 18,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
-    alignSelf: "center",
-    marginTop: 10,
+    paddingVertical: 20,
+    paddingHorizontal: 24,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "#EBC9A8",
+    backgroundColor: "#FFF9F4",
+  },
+  amountTapTargetEditing: {
+    borderStyle: "solid",
+    borderColor: "#DB8633",
+    backgroundColor: "#fff",
+  },
+  amountTapLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#DB8633",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  amountValueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  editIconBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#fff",
+    borderWidth: 1.5,
+    borderColor: "#F0D4BC",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
   },
   amountProminent: {
     color: "#2C3E50",
-    fontSize: 38,
+    fontSize: 44,
     fontWeight: "bold",
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   perMonthProminent: {
     color: "#4CA1AF",
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "600",
-    marginTop: 2,
-    letterSpacing: 0.5,
+    marginTop: 4,
+    letterSpacing: 0.3,
+  },
+  doneTypingButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 14,
+    backgroundColor: "#DB8633",
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+    borderRadius: 24,
+  },
+  doneTypingText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  sliderSection: {
+    width: "100%",
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  sliderFullWidth: {
+    width: "100%",
+    height: 40,
+  },
+  sliderLabelsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 4,
+    marginTop: -4,
+    marginBottom: 6,
+  },
+  amountLabelMuted: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#9AABB8",
   },
   sliderRowWrap: {
     flexDirection: "row",
@@ -465,53 +546,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     zIndex: 2,
   },
-  amountCardProminentCurved: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    paddingVertical: 18,
-    paddingHorizontal: 40,
-    alignItems: "center",
-    marginBottom: 18,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
-    alignSelf: "center",
-    marginTop: 0,
-  },
-  sliderRowWrapCurved: {
-    flexDirection: "row",
-    alignItems: "center",
-    width: "100%",
-    justifyContent: "space-between",
-    marginBottom: 10,
-    gap: 0,
-  },
-  sliderCentered: {
-    width: "100%",
-    minWidth: 120,
-    maxWidth: 200,
-    alignSelf: "center",
-  },
   amountEditRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
   },
   amountDollarSign: {
     color: "#2C3E50",
-    fontSize: 38,
+    fontSize: 44,
     fontWeight: "bold",
-    marginRight: 4,
+    marginRight: 2,
   },
   amountInput: {
-    minWidth: 90,
+    minWidth: 72,
     textAlign: "center",
     color: "#2C3E50",
-    fontSize: 38,
+    fontSize: 44,
     fontWeight: "bold",
-    borderBottomWidth: 1,
-    borderBottomColor: "#d0d7de",
+    borderBottomWidth: 2,
+    borderBottomColor: "#DB8633",
     paddingVertical: 0,
+    paddingBottom: 2,
   },
 });

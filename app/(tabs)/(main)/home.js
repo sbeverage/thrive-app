@@ -16,6 +16,7 @@ import { useUser } from '../../context/UserContext';
 import { useLocation } from '../../context/LocationContext';
 import { useDiscount } from '../../context/DiscountContext';
 import API from '../../lib/api';
+import { readSignupFlowPending } from '../../utils/signupFlowCheckpoint';
 import InviteFriendsModal from '../../../components/InviteFriendsModal';
 import {
   REFERRAL_TIERS,
@@ -85,11 +86,18 @@ export default function MainHome() {
   );
   
   
-  // Load user data when component mounts or when screen is focused
+  // Block Home while signup is incomplete (avoids tab-stack back landing here mid-signup).
   useFocusEffect(
     useCallback(() => {
+      let cancelled = false;
       const loadData = async () => {
         try {
+          const pending = await readSignupFlowPending();
+          if (cancelled) return;
+          if (pending?.route) {
+            router.replace({ pathname: pending.route, params: pending.params || {} });
+            return;
+          }
           await loadUserData();
           await reloadBeneficiary();
         } catch (error) {
@@ -97,7 +105,10 @@ export default function MainHome() {
         }
       };
       loadData();
-    }, [])
+      return () => {
+        cancelled = true;
+      };
+    }, [router, loadUserData, reloadBeneficiary]),
   );
   
   // Load referral data
@@ -512,7 +523,7 @@ export default function MainHome() {
             >
               <Text style={styles.inviteSectionTitle}>Grow Your Impact</Text>
               <Text style={styles.inviteSectionSubtitle}>
-                Invite friends & unlock recognition while amplifying your cause.
+                Invite friends so more support reaches the causes you care about.
               </Text>
               <View style={styles.inviteStatsContainer}>
                 <View style={styles.inviteStatItem}>
@@ -647,7 +658,7 @@ const styles = StyleSheet.create({
     maxWidth: '78%',
   },
   /** ~480×45 initiative wordmark; vertically centers with menu via headerTopRow alignItems. */
-  logo: { height: 18, aspectRatio: 480 / 45, alignSelf: 'flex-start' },
+  logo: { height: 20, aspectRatio: 480 / 45, alignSelf: 'flex-start' },
   rightIcons: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
   iconButton: { marginLeft: 12 },
   iconWhite: { width: 22, height: 22, resizeMode: 'contain', tintColor: 'white' },
@@ -841,24 +852,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 18,
     paddingBottom: 20,
+    alignItems: 'center',
   },
   inviteSectionTitle: {
     fontSize: 22,
     fontWeight: '800',
     color: '#fff',
     marginBottom: 6,
+    textAlign: 'center',
+    width: '100%',
   },
   inviteSectionSubtitle: {
     fontSize: 14,
     color: 'rgba(255,255,255,0.75)',
     lineHeight: 20,
     marginBottom: 20,
+    textAlign: 'center',
+    width: '100%',
   },
   inviteStatsContainer: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255,255,255,0.12)',
     borderRadius: 14,
     overflow: 'hidden',
+    alignSelf: 'stretch',
+    width: '100%',
   },
   inviteStatItem: {
     flex: 1,

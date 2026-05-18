@@ -25,15 +25,14 @@ import { SvgXml } from "react-native-svg";
 import { Asset } from "expo-asset";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useStripe } from "@stripe/stripe-react-native";
-import { useSafeApplePay } from "../utils/safeApplePay";
 import { useBeneficiary } from "../context/BeneficiaryContext";
 import { useUser } from "../context/UserContext";
 import API from "../lib/api";
 import {
   hasMonthlySubscriptionPaymentSheet,
-  isStripeExpoGoHost,
-  presentMonthlySubscriptionNativeWallet,
+  checkNativeWalletSupported,
   presentMonthlySubscriptionPaymentSheet,
+  presentSignupWalletCheckout,
 } from "../utils/monthlySubscriptionPaymentSheet";
 import { resolveCheckoutBeneficiaryId } from "../utils/resolveCheckoutBeneficiaryId";
 import { persistSignupFlowCheckpointFromParams } from "../utils/signupFlowCheckpoint";
@@ -57,9 +56,12 @@ export default function StripeIntegration() {
   /** Which payment action is in progress — spinners only on that button */
   const [paymentLoading, setPaymentLoading] = useState(null);
   const { saveUserData, user } = useUser();
-  const { initPaymentSheet, presentPaymentSheet, confirmPlatformPayPayment } =
-    useStripe();
-  const { isPlatformPaySupported } = useSafeApplePay();
+  const {
+    initPaymentSheet,
+    presentPaymentSheet,
+    confirmPlatformPayPayment,
+    isPlatformPaySupported,
+  } = useStripe();
   const [isWalletSupported, setIsWalletSupported] = useState(
     Platform.OS === "android" ? true : null,
   );
@@ -98,7 +100,7 @@ export default function StripeIntegration() {
         return;
       }
       try {
-        const supported = await isPlatformPaySupported();
+        const supported = await checkNativeWalletSupported(isPlatformPaySupported);
         if (mounted) setIsWalletSupported(!!supported);
       } catch {
         if (mounted) setIsWalletSupported(false);
@@ -160,6 +162,30 @@ export default function StripeIntegration() {
       }),
     ]).start();
   }, []);
+
+  /** Confirm payment landed (Stripe + DB) before clearing signup and opening Home. */
+  const verifyMonthlySubscriptionActive = async () => {
+    const isPaidStatus = (status) => {
+      const st = String(status || "").toLowerCase();
+      return st === "active" || st === "trialing";
+    };
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const sync = await API.syncMonthlySubscriptionPaymentStatus();
+        if (sync?.paid) return true;
+
+        const data = await API.getMonthlyDonations();
+        const subs = Array.isArray(data?.subscriptions) ? data.subscriptions : [];
+        if (subs.some((s) => isPaidStatus(s.status))) return true;
+      } catch (e) {
+        console.warn("Subscription verify attempt failed:", e?.message);
+      }
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+    }
+    return false;
+  };
 
   const finishSubscriptionAfterSuccessfulPayment = async (
     donationAmountForProfile,
@@ -263,10 +289,19 @@ export default function StripeIntegration() {
         currency: "USD",
       });
 
-      // Backend returned 409: subscription already exists (e.g. user re-entered signup flow).
-      // Treat as a completed payment and proceed to home.
+      // 409 only when a paid subscription already exists (active / trialing).
       if (response?.alreadySubscribed) {
-        await finishSubscriptionAfterSuccessfulPayment(donationAmountForProfile);
+        const existingStatus = String(
+          response?.existing?.status || "",
+        ).toLowerCase();
+        if (existingStatus === "active" || existingStatus === "trialing") {
+          await finishSubscriptionAfterSuccessfulPayment(donationAmountForProfile);
+          return;
+        }
+        Alert.alert(
+          "Payment required",
+          "Your monthly gift still needs a card on file. Tap Pay with card to finish checkout.",
+        );
         return;
       }
 
@@ -286,19 +321,20 @@ export default function StripeIntegration() {
         return;
       }
 
-      const useWalletWithoutHostedSheet =
-        useNativeWallet && !isStripeExpoGoHost();
-
-      const payResult = useWalletWithoutHostedSheet
-        ? await presentMonthlySubscriptionNativeWallet(
-            { confirmPlatformPayPayment },
+      const payResult = useNativeWallet
+        ? await presentSignupWalletCheckout(
+            { initPaymentSheet, presentPaymentSheet, confirmPlatformPayPayment },
             response,
-            { amountUsd: subscriptionChargeAmount },
+            { fallbackAmountUsd: subscriptionChargeAmount },
           )
         : await presentMonthlySubscriptionPaymentSheet(
             { initPaymentSheet, presentPaymentSheet },
             response,
-            { cardOnly: !useNativeWallet },
+            {
+              cardOnly: true,
+              // Signup must collect a card — don't auto-confirm from a saved Stripe PM without showing the sheet.
+              skipSavedPaymentMethods: true,
+            },
           );
 
       if (!payResult.ok) {
@@ -320,6 +356,17 @@ export default function StripeIntegration() {
         return;
       }
 
+      const subscriptionConfirmed = await verifyMonthlySubscriptionActive();
+      if (!subscriptionConfirmed) {
+        Alert.alert(
+          "Payment not confirmed",
+          useNativeWallet
+            ? "We couldn't confirm your Apple Pay payment. Please try again or use Pay with card."
+            : "We couldn't confirm your card payment. Please try Pay with card again.",
+        );
+        return;
+      }
+
       await finishSubscriptionAfterSuccessfulPayment(donationAmountForProfile);
     } catch (error) {
       console.error("❌ Error saving donation amount:", error);
@@ -330,10 +377,6 @@ export default function StripeIntegration() {
     } finally {
       setPaymentLoading(null);
     }
-  };
-
-  const handleSkip = () => {
-    router.replace("/(tabs)/home");
   };
 
   return (
@@ -1037,12 +1080,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6d6e72",
     fontWeight: "400",
-  },
-  skipButton: {
-    position: "absolute",
-    top: 20,
-    right: 20,
-    zIndex: 10,
   },
   speechBubble: {
     backgroundColor: "#F5F5FA",

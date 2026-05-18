@@ -32,12 +32,54 @@ function isExpoGoHost() {
 /**
  * Backend may return secrets at the top level, under `data`, or under `subscription`.
  */
+/** USD string that matches the Stripe PaymentIntent (required for Apple Pay cart total). */
+export function resolvePaymentIntentAmountUsd(apiResponse, fallbackUsd) {
+  if (!apiResponse || typeof apiResponse !== "object") {
+    const n = Number(fallbackUsd);
+    return Number.isFinite(n) ? (Math.round(n * 100) / 100).toFixed(2) : "0.00";
+  }
+  const r = apiResponse;
+  if (r.paymentIntentAmountUsd != null && String(r.paymentIntentAmountUsd).trim() !== "") {
+    const n = Number(r.paymentIntentAmountUsd);
+    if (Number.isFinite(n)) return (Math.round(n * 100) / 100).toFixed(2);
+  }
+  if (typeof r.paymentIntentAmountCents === "number" && Number.isFinite(r.paymentIntentAmountCents)) {
+    return (r.paymentIntentAmountCents / 100).toFixed(2);
+  }
+  const n = Number(fallbackUsd);
+  return Number.isFinite(n) ? (Math.round(n * 100) / 100).toFixed(2) : "0.00";
+}
+
+export async function checkNativeWalletSupported(isPlatformPaySupported) {
+  if (typeof isPlatformPaySupported !== "function") return false;
+  try {
+    if (Platform.OS === "ios") {
+      return !!(await isPlatformPaySupported({
+        applePay: { merchantCountryCode: "US" },
+      }));
+    }
+    if (Platform.OS === "android") {
+      const googlePayTestEnv =
+        typeof STRIPE_PUBLISHABLE_KEY === "string" &&
+        STRIPE_PUBLISHABLE_KEY.startsWith("pk_test_");
+      return !!(await isPlatformPaySupported({
+        googlePay: { testEnv: googlePayTestEnv },
+      }));
+    }
+    return false;
+  } catch (e) {
+    console.warn("[wallet] isPlatformPaySupported failed:", e?.message);
+    return false;
+  }
+}
+
 export function extractMonthlySubscriptionPaymentSecrets(response) {
   if (!response || typeof response !== "object") {
     return {
       paymentIntentClientSecret: null,
       customerId: null,
       customerEphemeralKeySecret: null,
+      paymentIntentAmountUsd: null,
     };
   }
   const nested = response.data;
@@ -74,7 +116,31 @@ export function extractMonthlySubscriptionPaymentSecrets(response) {
     paymentIntentClientSecret,
     customerId,
     customerEphemeralKeySecret,
+    paymentIntentAmountUsd: resolvePaymentIntentAmountUsd(r, r.amount),
   };
+}
+
+function buildApplePayCartItems(amountStr, { isSubscription = true, label } = {}) {
+  const lineLabel = label || "Monthly donation (incl. fees)";
+  if (isSubscription) {
+    return [
+      {
+        paymentType:
+          PlatformPay.PaymentType?.Recurring ?? "Recurring",
+        label: lineLabel,
+        amount: amountStr,
+        intervalUnit: PlatformPay.IntervalUnit?.Month ?? "month",
+        intervalCount: 1,
+      },
+    ];
+  }
+  return [
+    {
+      paymentType: PlatformPay.PaymentType?.Immediate ?? "Immediate",
+      label: lineLabel,
+      amount: amountStr,
+    },
+  ];
 }
 
 export function hasMonthlySubscriptionPaymentSheet(response) {
@@ -201,10 +267,11 @@ export async function presentMonthlySubscriptionNativeWallet(
     };
   }
 
-  const amountUsd = Number(options.amountUsd);
-  const safeUsd = Number.isFinite(amountUsd) ? Math.max(amountUsd, 0) : 0;
-  /** Must match Stripe PaymentIntent currency amount (Stripe cart uses USD strings here). */
-  const amountStr = (Math.round(safeUsd * 100) / 100).toFixed(2);
+  const amountStr = resolvePaymentIntentAmountUsd(
+    apiResponse,
+    options.amountUsd,
+  );
+  const safeUsd = Number(amountStr);
 
   try {
     if (Platform.OS === "ios") {
@@ -215,18 +282,17 @@ export async function presentMonthlySubscriptionNativeWallet(
           error: new Error("Missing STRIPE_MERCHANT_IDENTIFIER for Apple Pay"),
         };
       }
-      const cartItems = [
-        {
-          paymentType: PlatformPay.PaymentType.Immediate,
-          label: "Monthly subscription (incl. fees)",
-          amount: amountStr,
-        },
-      ];
+      const cartItems = buildApplePayCartItems(amountStr, {
+        isSubscription: options.isSubscription !== false,
+        label: options.applePayLabel,
+      });
       const applePay = {
         merchantCountryCode: "US",
         currencyCode: "USD",
         cartItems,
-        merchantCapabilities: [PlatformPay.ApplePayMerchantCapability.Supports3DS],
+        merchantCapabilities: [
+          PlatformPay.ApplePayMerchantCapability.Supports3DS,
+        ],
       };
 
       const { error } = await confirmPlatformPayPayment(
@@ -280,4 +346,39 @@ export async function presentMonthlySubscriptionNativeWallet(
   } catch (e) {
     return { ok: false, canceled: false, error: e };
   }
+}
+
+/**
+ * Signup Apple Pay / Google Pay: try native wallet on dev builds, then Payment Sheet with wallet enabled.
+ */
+export async function presentSignupWalletCheckout(stripe, apiResponse, options = {}) {
+  const { preferNativeWallet = true, fallbackAmountUsd } = options;
+  const walletStripe = {
+    confirmPlatformPayPayment: stripe.confirmPlatformPayPayment,
+  };
+  const sheetStripe = {
+    initPaymentSheet: stripe.initPaymentSheet,
+    presentPaymentSheet: stripe.presentPaymentSheet,
+  };
+
+  if (preferNativeWallet && !isStripeExpoGoHost()) {
+    const native = await presentMonthlySubscriptionNativeWallet(
+      walletStripe,
+      apiResponse,
+      {
+        amountUsd: fallbackAmountUsd,
+        isSubscription: true,
+      },
+    );
+    if (native.ok || native.canceled) return native;
+    console.warn(
+      "[signup wallet] Native wallet failed, falling back to Payment Sheet:",
+      native.error?.message || native.error,
+    );
+  }
+
+  return presentMonthlySubscriptionPaymentSheet(sheetStripe, apiResponse, {
+    cardOnly: false,
+    skipSavedPaymentMethods: true,
+  });
 }

@@ -89,6 +89,8 @@ export default function BeneficiaryDetailCard({
   showBackArrow = true,
   /** When true (e.g. viewing your chosen charity from Home), primary CTA shows selected state instead of “Select”. */
   isUsersMainCause = false,
+  /** When set, overrides segment-based signup detection (beneficiary detail lives under `(tabs)` during signup). */
+  isSignupFlow: isSignupFlowProp,
 }) {
   const router = useRouter();
   const segments = useSegments();
@@ -205,7 +207,8 @@ export default function BeneficiaryDetailCard({
   const [loadingPaymentMethods, setLoadingPaymentMethods] = useState(false);
   const [showCardPicker, setShowCardPicker] = useState(false);
 
-  const isSignupFlow = segments.includes('signupFlow');
+  const isSignupFlow =
+    isSignupFlowProp != null ? !!isSignupFlowProp : segments.includes('signupFlow');
   const presetAmounts = [5, 10, 15];
   const giftPresetAmounts = [10, 25, 50, 100, 250, 500];
 

@@ -203,11 +203,11 @@ export default function UserProfile() {
           </View>
           <AntDesign name="right" size={16} color="#ccc" />
         </TouchableOpacity>
-      </View>
 
-      <View style={styles.dangerSection}>
+        <View style={styles.separator} />
+
         <TouchableOpacity
-          style={styles.dangerItem}
+          style={styles.actionItem}
           onPress={handleDelete}
           disabled={isDeletingAccount}
         >
@@ -257,10 +257,9 @@ const styles = StyleSheet.create({
   },
   profileGradient: {
     borderRadius: 20,
-    marginHorizontal: 20,
-    marginBottom: 30,
+    marginBottom: 16,
     padding: 24,
-    paddingBottom: 30,
+    paddingBottom: 24,
   },
   avatar: {
     width: 100,
@@ -304,7 +303,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   actionList: {
-    marginTop: 30,
+    marginTop: 0,
     backgroundColor: '#fff',
     borderRadius: 12,
     shadowColor: '#000',
@@ -335,23 +334,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f0f0',
     marginHorizontal: 20,
   },
-  dangerSection: {
-    marginTop: 20,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  dangerItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-  },
   dangerText: {
     fontSize: 16,
     color: '#EF4444',
@@ -359,7 +341,7 @@ const styles = StyleSheet.create({
   },
   badgesSection: {
     marginTop: 0,
-    marginBottom: 30,
+    marginBottom: 16,
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 20,

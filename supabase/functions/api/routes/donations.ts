@@ -5,6 +5,7 @@ import {
   createOrGetStripeCustomer,
   createStripeSubscriptionSetup,
   getStripeClient,
+  getStripeSubscriptionInvoicePaymentDetails,
 } from "../lib/stripe.ts";
 
 /**
@@ -575,17 +576,18 @@ export async function handleDonationRoute(
         });
       }
 
-      // Idempotency guard: one active subscription per user at a time.
-      // Prevents duplicate charges when the user goes through the signup flow more than once.
-      const {data: activeSubs} = await supabase
+      const jsonHeaders = {"Content-Type": "application/json"};
+
+      // Paid subscription — signup can finish without charging again.
+      const {data: paidSubs} = await supabase
         .from("monthly_donations")
-        .select("id, status, amount, beneficiary_id, next_payment_date")
+        .select("id, status, amount, beneficiary_id, next_payment_date, stripe_subscription_id")
         .eq("user_id", userId)
-        .in("status", ["active", "pending", "trialing", "incomplete"])
+        .in("status", ["active", "trialing"])
         .limit(1);
 
-      if (activeSubs && activeSubs.length > 0) {
-        const existing = activeSubs[0];
+      if (paidSubs && paidSubs.length > 0) {
+        const existing = paidSubs[0];
         return new Response(
           JSON.stringify({
             error: "You already have an active subscription",
@@ -598,8 +600,102 @@ export async function handleDonationRoute(
               next_payment_date: existing.next_payment_date,
             },
           }),
-          {headers: {"Content-Type": "application/json"}, status: 409},
+          {headers: jsonHeaders, status: 409},
         );
+      }
+
+      // Unpaid / incomplete row from a prior signup attempt — resume Payment Sheet instead of skipping to home.
+      const {data: unpaidSubs} = await supabase
+        .from("monthly_donations")
+        .select(
+          "id, status, amount, beneficiary_id, next_payment_date, stripe_subscription_id, stripe_customer_id",
+        )
+        .eq("user_id", userId)
+        .in("status", ["pending", "incomplete", "past_due", "unpaid"])
+        .order("id", {ascending: false})
+        .limit(1);
+
+      if (unpaidSubs && unpaidSubs.length > 0) {
+        const existing = unpaidSubs[0];
+        const resumeCustomerId =
+          existing.stripe_customer_id || user.stripe_customer_id;
+
+        if (existing.stripe_subscription_id && resumeCustomerId) {
+          const paymentDetails = await getStripeSubscriptionInvoicePaymentDetails(
+            existing.stripe_subscription_id,
+          );
+
+          if (paymentDetails.paymentIntentStatus === "succeeded") {
+            await supabase
+              .from("monthly_donations")
+              .update({status: "active"})
+              .eq("id", existing.id);
+            return new Response(
+              JSON.stringify({
+                error: "You already have an active subscription",
+                code: "SUBSCRIPTION_EXISTS",
+                existing: {
+                  id: existing.id,
+                  status: "active",
+                  amount: existing.amount,
+                  beneficiary_id: existing.beneficiary_id,
+                  next_payment_date: existing.next_payment_date,
+                },
+              }),
+              {headers: jsonHeaders, status: 409},
+            );
+          }
+
+          if (paymentDetails.clientSecret) {
+            let customerEphemeralKeySecret: string | null = null;
+            try {
+              const stripe = getStripeClient();
+              const ephemeralFormData = new URLSearchParams();
+              ephemeralFormData.append("customer", resumeCustomerId);
+              const ephemeralRes = await fetch(`${stripe.baseUrl}/ephemeral_keys`, {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${stripe.secretKey}`,
+                  "Content-Type": "application/x-www-form-urlencoded",
+                  "Stripe-Version": "2024-06-20",
+                },
+                body: ephemeralFormData.toString(),
+              });
+              if (ephemeralRes.ok) {
+                const ek = await ephemeralRes.json();
+                customerEphemeralKeySecret = ek.secret || null;
+              }
+            } catch (e) {
+              console.warn("Ephemeral key (resume subscribe) failed:", e);
+            }
+
+            return new Response(
+              JSON.stringify({
+                success: true,
+                resumedIncompletePayment: true,
+                paymentIntentClientSecret: paymentDetails.clientSecret,
+                paymentIntentAmountCents: paymentDetails.paymentIntentAmountCents,
+                paymentIntentAmountUsd: paymentDetails.paymentIntentAmountUsd,
+                customerId: resumeCustomerId,
+                customerEphemeralKeySecret,
+                subscription: {
+                  id: existing.id,
+                  subscriptionId: existing.stripe_subscription_id,
+                  clientSecret: paymentDetails.clientSecret,
+                  status: existing.status,
+                  amount: existing.amount,
+                  beneficiary_id: existing.beneficiary_id,
+                  next_payment_date: existing.next_payment_date,
+                  requiresPaymentMethod: true,
+                },
+              }),
+              {headers: jsonHeaders, status: 200},
+            );
+          }
+        }
+
+        // Orphan or unrecoverable row — remove so a fresh subscription can be created.
+        await supabase.from("monthly_donations").delete().eq("id", existing.id);
       }
 
       // Get or create Stripe customer
@@ -720,6 +816,8 @@ export async function handleDonationRoute(
         JSON.stringify({
           success: true,
           paymentIntentClientSecret: clientSecret,
+          paymentIntentAmountCents: subscription.paymentIntentAmountCents,
+          paymentIntentAmountUsd: subscription.paymentIntentAmountUsd,
           customerId,
           customerEphemeralKeySecret,
           subscription: {
@@ -748,6 +846,88 @@ export async function handleDonationRoute(
           headers: {"Content-Type": "application/json"},
           status: 500,
         },
+      );
+    }
+  }
+
+  // POST /donations/monthly/sync-status — after Payment Sheet success, align DB with Stripe
+  if (method === "POST" && route === "/donations/monthly/sync-status") {
+    if (!userId) {
+      return new Response(JSON.stringify({error: "Unauthorized"}), {
+        headers: {"Content-Type": "application/json"},
+        status: 401,
+      });
+    }
+
+    try {
+      const {data: rows} = await supabase
+        .from("monthly_donations")
+        .select("id, status, stripe_subscription_id")
+        .eq("user_id", userId)
+        .order("id", {ascending: false})
+        .limit(5);
+
+      const list = rows || [];
+      const paidStatuses = new Set(["active", "trialing"]);
+      const alreadyPaid = list.find((r) =>
+        paidStatuses.has(String(r.status || "").toLowerCase()),
+      );
+      if (alreadyPaid) {
+        return new Response(
+          JSON.stringify({paid: true, status: alreadyPaid.status}),
+          {headers: {"Content-Type": "application/json"}, status: 200},
+        );
+      }
+
+      const unpaid = list.find((r) =>
+        ["pending", "incomplete", "past_due", "unpaid"].includes(
+          String(r.status || "").toLowerCase(),
+        ),
+      );
+
+      if (!unpaid?.stripe_subscription_id) {
+        return new Response(
+          JSON.stringify({paid: false, reason: "no_subscription"}),
+          {headers: {"Content-Type": "application/json"}, status: 200},
+        );
+      }
+
+      const details = await getStripeSubscriptionInvoicePaymentDetails(
+        unpaid.stripe_subscription_id,
+      );
+      const stripeSubSt = String(details.subscriptionStatus || "").toLowerCase();
+      const piSt = String(details.paymentIntentStatus || "").toLowerCase();
+      const paidOnStripe =
+        paidStatuses.has(stripeSubSt) ||
+        piSt === "succeeded" ||
+        piSt === "processing";
+
+      if (paidOnStripe) {
+        const nextStatus = paidStatuses.has(stripeSubSt) ? stripeSubSt : "active";
+        await supabase
+          .from("monthly_donations")
+          .update({status: nextStatus})
+          .eq("id", unpaid.id);
+        return new Response(
+          JSON.stringify({paid: true, status: nextStatus}),
+          {headers: {"Content-Type": "application/json"}, status: 200},
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          paid: false,
+          reason: "payment_incomplete",
+          paymentIntentStatus: details.paymentIntentStatus,
+          subscriptionStatus: details.subscriptionStatus,
+        }),
+        {headers: {"Content-Type": "application/json"}, status: 200},
+      );
+    } catch (error: any) {
+      console.error("sync-status error:", error);
+      return new Response(
+        JSON.stringify({error: error.message || "Failed to sync payment status"}),
+        {headers: {"Content-Type": "application/json"}, status: 500},
       );
     }
   }

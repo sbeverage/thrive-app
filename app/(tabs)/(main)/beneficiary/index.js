@@ -29,6 +29,7 @@ import SuggestCard from '../../../../components/SuggestCard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { IMAGE_ASSETS } from '../../../utils/assetConstants';
 import { beneficiaryLocationMatches } from '../../../utils/beneficiaryLocationMatch';
+import { readSignupFlowPending } from '../../../utils/signupFlowCheckpoint';
 
 function normStr(s) {
   return s != null ? String(s).trim().toLowerCase() : '';
@@ -41,6 +42,26 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
   const { selectedBeneficiary, setSelectedBeneficiary } = useBeneficiary();
   const { filters, updateFilters, hasActiveFilters } = useBeneficiaryFilter();
   const { location: userLocation, locationAddress, locationPermission, checkLocationPermission, refreshLocation, isLoadingLocation } = useLocation();
+
+  useFocusEffect(
+    useCallback(() => {
+      if (isSignupFlow) return undefined;
+      let cancelled = false;
+      const run = async () => {
+        try {
+          const pending = await readSignupFlowPending();
+          if (cancelled || !pending?.route) return;
+          router.replace({ pathname: pending.route, params: pending.params || {} });
+        } catch {
+          /* non-fatal */
+        }
+      };
+      run();
+      return () => {
+        cancelled = true;
+      };
+    }, [router, isSignupFlow]),
+  );
 
   const [searchText, setSearchText] = useState('');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -310,7 +331,9 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
   const filterRoute = isSignupFlow
     ? '/signupFlow/beneficiaryFilter'
     : '/(tabs)/beneficiary/beneficiaryFilter';
-  const detailRoute = '/(tabs)/beneficiary/beneficiaryDetail';
+  const detailRoute = isSignupFlow
+    ? '/signupFlow/beneficiaryDetail'
+    : '/(tabs)/beneficiary/beneficiaryDetail';
   const detailParamsFor = (beneficiaryId) => {
     const out = { id: String(beneficiaryId) };
     if (isSignupFlow) {

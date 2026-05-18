@@ -1436,6 +1436,16 @@ const API = {
    * payment_intent_id, stripeApiVersion, subscription (local id + Stripe ids).
    * Mobile: initPaymentSheet → presentPaymentSheet → card confirms first invoice.
    */
+  syncMonthlySubscriptionPaymentStatus: async () => {
+    try {
+      const response = await api.post("/api/donations/monthly/sync-status", {});
+      return response.data;
+    } catch (error) {
+      console.error("Sync monthly subscription status failed:", error);
+      return { paid: false };
+    }
+  },
+
   createMonthlySubscription: async (subscriptionData) => {
     try {
       console.log("💳 Creating monthly subscription:", subscriptionData);
@@ -1445,9 +1455,8 @@ const API = {
       );
       return response.data;
     } catch (error) {
-      // 409 means the user already has an active subscription.
-      // Return a sentinel value so the caller can navigate to home without
-      // showing an error — this is expected when resuming a completed signup.
+      // 409 = paid subscription already exists (active/trialing). Unpaid/pending rows are
+      // resumed with a 200 + paymentIntentClientSecret from the API instead.
       if (error.response?.status === 409 && error.response?.data?.code === "SUBSCRIPTION_EXISTS") {
         return { alreadySubscribed: true, ...error.response.data };
       }

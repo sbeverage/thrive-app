@@ -19,6 +19,7 @@ import { Feather, AntDesign } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { readSignupFlowPending } from '../../../utils/signupFlowCheckpoint';
 import { LinearGradient } from 'expo-linear-gradient';
 import VoucherCard from '../../../../components/VoucherCard';
 import SuggestCard from '../../../../components/SuggestCard';
@@ -45,7 +46,25 @@ export default function DiscountsScreen() {
   const [selectedMarker, setSelectedMarker] = useState(null);
   const [mapRegion, setMapRegion] = useState(getDefaultRegion());
   const router = useRouter();
-  
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const pending = await readSignupFlowPending();
+          if (cancelled || !pending?.route) return;
+          router.replace({ pathname: pending.route, params: pending.params || {} });
+        } catch {
+          /* non-fatal */
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [router]),
+  );
+
   // Location context
   const { location: userLocation, locationAddress, locationPermission, checkLocationPermission, refreshLocation, isLoadingLocation } = useLocation();
 

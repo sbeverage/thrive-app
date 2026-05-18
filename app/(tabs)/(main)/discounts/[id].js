@@ -428,7 +428,7 @@ export default function VendorDetails() {
                   <View key={discount.id} style={[styles.discountCard, isLimitReached && styles.discountCardDisabled]}>
                     {/* Coupon band */}
                     <LinearGradient
-                      colors={isLimitReached ? ['#9CA3AF', '#B0BEC5'] : ['#F2A84E', '#DB8633']}
+                      colors={isLimitReached ? ['#9CA3AF', '#B0BEC5'] : ['#DB8633', '#F2A84E']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                       style={styles.discountBand}
@@ -722,16 +722,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Gradient Header
+  // Gradient Header (SafeAreaView handles status bar; keep top inset modest)
   gradientHeader: {
-    paddingTop: 54,
-    paddingBottom: 36,
+    paddingTop: 16,
+    paddingBottom: 32,
     paddingHorizontal: 20,
     alignItems: 'center',
   },
   backButton: {
     position: 'absolute',
-    top: 54,
+    top: 16,
     left: 20,
     padding: 10,
     backgroundColor: 'rgba(255,255,255,0.15)',

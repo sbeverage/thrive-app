@@ -17,7 +17,8 @@
     "build:ios": "eas build --platform ios --profile development",
     "build:android": "eas build --platform android --profile development",
     "build:all": "eas build --platform all --profile development",
-    "update": "eas update --branch preview"
+    "update": "eas update --branch preview",
+    "postinstall": "node ./scripts/link-worklets-babel-deps.js"
   },
   "jest": {
     "preset": "jest-expo"
@@ -44,6 +45,7 @@
     "expo-auth-session": "~7.0.9",
     "expo-av": "~16.0.7",
     "expo-blur": "~15.0.7",
+    "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.9",
     "expo-crypto": "~15.0.7",
     "expo-dev-client": "~6.0.13",
@@ -85,6 +87,15 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@babel/plugin-transform-arrow-functions": "^7.27.1",
+    "@babel/plugin-transform-class-properties": "^7.27.1",
+    "@babel/plugin-transform-classes": "^7.28.4",
+    "@babel/plugin-transform-nullish-coalescing-operator": "^7.27.1",
+    "@babel/plugin-transform-optional-chaining": "^7.27.1",
+    "@babel/plugin-transform-shorthand-properties": "^7.27.1",
+    "@babel/plugin-transform-template-literals": "^7.27.1",
+    "@babel/plugin-transform-unicode-regex": "^7.27.1",
+    "@babel/preset-typescript": "^7.27.1",
     "@types/jest": "^29.5.12",
     "@types/react": "~19.1.10",
     "@types/react-test-renderer": "^19.1.0",

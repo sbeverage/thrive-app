@@ -30,7 +30,8 @@ export default function MenuScreen() {
       { title: 'Manage Billing', icon: 'credit-card', page: 'menu/manageCards' },
     ]},
     { section: 'App', data: [
-      { title: 'Send Feedback', icon: 'message-square', page: 'menu/feedback' },
+      { title: 'Send Feedback', icon: 'message-circle', page: 'menu/feedback' },
+      { title: 'FAQs', icon: 'book-open', page: 'menu/faqs' },
     ]},
   ];
 

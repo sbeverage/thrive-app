@@ -283,24 +283,32 @@ export default function DiscountApproved() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
       >
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={[styles.scrollContainer, { paddingBottom: contentPaddingBottom }]}
-          keyboardShouldPersistTaps="handled"
-        >
-        {/* Top Navigation */}
+        {/* Root _layout SafeAreaView already applies top inset — do not add insets.top again */}
         <View style={styles.headerWrapper}>
-          <View style={{ width: 24 }} />
-          <Text style={styles.headerTitle}>Discount Redeemed!</Text>
-          <TouchableOpacity onPress={() => router.push('/(tabs)/home')} style={styles.closeButton}>
+          <View style={styles.headerSideSlot} />
+          <Text style={styles.headerTitle}>DISCOUNT REDEEMED!</Text>
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)/home')}
+            style={styles.closeButton}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+          >
             {Platform.OS === 'web' ? (
-              <Text style={{ fontSize: 24, color: '#fff' }}>✕</Text>
+              <Text style={styles.closeButtonText}>✕</Text>
             ) : (
-              <AntDesign name="close" size={24} color="#fff" />
+              <AntDesign name="close" size={18} color="#fff" />
             )}
           </TouchableOpacity>
         </View>
 
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={[styles.scrollContainer, { paddingBottom: contentPaddingBottom }]}
+          contentInsetAdjustmentBehavior="never"
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
         {/* Combined Company Info & Discount Code Card */}
         <View style={styles.combinedCard}>
           {/* Company Info Section */}
@@ -475,21 +483,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 50,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    zIndex: 1,
+    paddingTop: 28,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    zIndex: 2,
+  },
+  headerSideSlot: {
+    width: 34,
   },
   closeButton: {
-    padding: 8,
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 10,
+  },
+  closeButtonText: {
+    fontSize: 18,
+    color: '#fff',
+    lineHeight: 20,
   },
   headerTitle: {
-    fontSize: 18,
+    flex: 1,
+    fontSize: 20,
     fontWeight: '700',
     color: '#fff',
+    textAlign: 'center',
+    letterSpacing: 0.5,
   },
   scrollContainer: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    paddingBottom: 20,
     zIndex: 1,
   },
   
@@ -514,7 +540,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    paddingBottom: 24,
   },
   companyLeft: {
     flex: 1,
@@ -577,7 +603,7 @@ const styles = StyleSheet.create({
   cardDivider: {
     height: 1,
     backgroundColor: '#E2E8F0',
-    marginVertical: 20,
+    marginBottom: 24,
   },
 
   // Discount Code Section

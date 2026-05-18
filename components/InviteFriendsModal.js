@@ -13,10 +13,11 @@ import {
   Platform,
   Dimensions,
   TextInput,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { AntDesign, Feather, MaterialIcons } from '@expo/vector-icons';
-import * as Linking from 'expo-linking';
+import { AntDesign, Feather } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useUser } from '../app/context/UserContext';
 import API from '../app/lib/api';
 import {
@@ -25,8 +26,20 @@ import {
   nextMilestoneFromPaidCount,
   tiersUnlockedCount,
 } from '../app/constants/referralRewards';
+import { BADGE_ASSETS } from '../app/utils/assetConstants';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+const MILESTONE_BADGE_IMAGES = [
+  BADGE_ASSETS.SUPPORTER,
+  BADGE_ASSETS.SPOTLIGHT,
+  BADGE_ASSETS.CHAMPION,
+];
+const MILESTONE_BADGE_IMAGES_LOCKED = [
+  BADGE_ASSETS.SUPPORTER_LOCKED,
+  BADGE_ASSETS.SPOTLIGHT_LOCKED,
+  BADGE_ASSETS.CHAMPION_LOCKED,
+];
 
 export default function InviteFriendsModal({ visible, onClose }) {
   const { user } = useUser();
@@ -96,78 +109,39 @@ export default function InviteFriendsModal({ visible, onClose }) {
     }
   };
 
+  const buildInviteMessage = () =>
+    `Join me on Thrive! Together we can make a real difference in our community. Get exclusive discounts from local businesses while supporting amazing causes. Sign up here: ${referralLink}`;
+
   const handleCopyLink = async () => {
+    if (!referralLink) {
+      Alert.alert('Please wait', 'Your referral link is still loading.');
+      return;
+    }
     try {
-      // Use Share API which works on all platforms
-      // On iOS/Android, users can copy from the share sheet
-      const result = await Share.share({
-        message: referralLink,
-        title: 'Thrive Referral Link',
-      });
-      
-      if (result.action === Share.sharedAction) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
+      await Clipboard.setStringAsync(referralLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     } catch (error) {
-      console.error('Error sharing link:', error);
-      // Fallback: Show the link in an alert so user can manually copy
-      Alert.alert('Referral Link', referralLink, [
-        { text: 'OK' }
-      ]);
+      console.error('Error copying link:', error);
+      Alert.alert('Referral Link', referralLink, [{ text: 'OK' }]);
     }
   };
 
-  const handleShare = async (method) => {
-    const message = `Join me on Thrive! Together we can make a real difference in our community. Get exclusive discounts from local businesses while supporting amazing causes. Sign up here: ${referralLink}`;
+  const handleShareInvite = async () => {
+    if (!referralLink) {
+      Alert.alert('Please wait', 'Your referral link is still loading.');
+      return;
+    }
+    const message = buildInviteMessage();
     const title = 'Join Thrive with me!';
-
     try {
-      switch (method) {
-        case 'native':
-          const result = await Share.share({
-            message: message,
-            title: title,
-            url: referralLink,
-          });
-          if (result.action === Share.sharedAction) {
-            console.log('Shared successfully');
-          }
-          break;
-
-        case 'sms':
-          const smsUrl = `sms:?body=${encodeURIComponent(message)}`;
-          if (await Linking.canOpenURL(smsUrl)) {
-            await Linking.openURL(smsUrl);
-          } else {
-            Alert.alert('Error', 'SMS is not available on this device');
-          }
-          break;
-
-        case 'email':
-          const emailUrl = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(message)}`;
-          if (await Linking.canOpenURL(emailUrl)) {
-            await Linking.openURL(emailUrl);
-          } else {
-            Alert.alert('Error', 'Email is not available on this device');
-          }
-          break;
-
-        case 'whatsapp':
-          // Use wa.me URL - opens WhatsApp app when installed, or WhatsApp Web when not
-          const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-          try {
-            await Linking.openURL(whatsappUrl);
-          } catch (err) {
-            Alert.alert('Error', 'Could not open WhatsApp. Please try the Share button instead.');
-          }
-          break;
-
-        default:
-          break;
-      }
+      await Share.share(
+        Platform.OS === 'ios'
+          ? { message, title, url: referralLink }
+          : { message, title }
+      );
     } catch (error) {
-      console.error('Error sharing:', error);
+      console.error('Error sharing invite:', error);
       Alert.alert('Error', 'Failed to share. Please try again.');
     }
   };
@@ -194,11 +168,11 @@ export default function InviteFriendsModal({ visible, onClose }) {
               <View style={styles.headerTop}>
                 <Text style={styles.title}>Grow Your Impact</Text>
                 <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                  <AntDesign name="close" size={24} color="#324E58" />
+                  <AntDesign name="close" size={20} color="#324E58" />
                 </TouchableOpacity>
               </View>
               <Text style={styles.subtitle}>
-                Invite friends to grow the movement—recognition and badges only, so more support reaches the causes you care about.
+                Invite friends so more support reaches the causes you care about.
               </Text>
             </View>
 
@@ -278,29 +252,86 @@ export default function InviteFriendsModal({ visible, onClose }) {
               );
             })()}
 
+            {/* Referral link + share */}
+            <View style={styles.referralSection}>
+              <Text style={styles.sectionTitle}>Invite friends</Text>
+              <View style={styles.referralLinkContainer}>
+                <TextInput
+                  style={styles.referralLink}
+                  value={referralLink || 'Loading...'}
+                  editable={false}
+                  selectTextOnFocus
+                  numberOfLines={1}
+                />
+              </View>
+              <View style={styles.referralActions}>
+                <TouchableOpacity
+                  onPress={handleCopyLink}
+                  disabled={!referralLink}
+                  style={[
+                    styles.referralActionButton,
+                    styles.copyLinkButton,
+                    copied && styles.copyLinkButtonCopied,
+                    !referralLink && styles.referralActionButtonDisabled,
+                  ]}
+                >
+                  <Feather
+                    name={copied ? 'check' : 'copy'}
+                    size={18}
+                    color={copied ? '#fff' : '#DB8633'}
+                  />
+                  <Text
+                    style={[
+                      styles.copyLinkButtonText,
+                      copied && styles.copyLinkButtonTextCopied,
+                    ]}
+                  >
+                    {copied ? 'Copied' : 'Copy link'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleShareInvite}
+                  disabled={!referralLink}
+                  style={[
+                    styles.referralActionButton,
+                    styles.shareInviteButton,
+                    !referralLink && styles.referralActionButtonDisabled,
+                  ]}
+                >
+                  <Feather name="share-2" size={18} color="#fff" />
+                  <Text style={styles.shareInviteButtonText}>Share</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
             {/* Milestones */}
             <View style={styles.milestonesSection}>
-              <Text style={styles.sectionTitle}>Milestones & recognition</Text>
-              <Text style={styles.milestoneNote}>
-                Tiers unlock when invited friends become active donors (first successful donation). No cash back—just badges and spotlight so donations stay with nonprofits.
-              </Text>
+              <Text style={styles.sectionTitle}>Milestones</Text>
               <View style={styles.milestonesList}>
-                {milestones.map((milestone, index) => (
+                {milestones.map((milestone, index) => {
+                  const unlocked =
+                    milestone.unlocked || paidFriendsCount >= milestone.count;
+                  const badgeUri = unlocked
+                    ? MILESTONE_BADGE_IMAGES[index]
+                    : MILESTONE_BADGE_IMAGES_LOCKED[index];
+
+                  return (
                   <View
                     key={index}
                     style={[
                       styles.milestoneItem,
-                      (milestone.unlocked || paidFriendsCount >= milestone.count) && styles.milestoneItemUnlocked,
+                      unlocked && styles.milestoneItemUnlocked,
                     ]}
                   >
                     <View style={styles.milestoneIcon}>
-                      {(milestone.unlocked || paidFriendsCount >= milestone.count) ? (
-                        <AntDesign name="checkcircle" size={24} color="#DB8633" />
-                      ) : (
-                        <View style={styles.milestoneIconLocked}>
-                          <Text style={styles.milestoneIconText}>{milestone.count}</Text>
-                        </View>
-                      )}
+                      <Image
+                        source={{ uri: badgeUri }}
+                        style={[
+                          styles.milestoneBadgeImage,
+                          !unlocked && styles.milestoneBadgeImageLocked,
+                        ]}
+                        resizeMode="contain"
+                      />
                     </View>
                     <View style={styles.milestoneContent}>
                       <Text style={styles.milestoneCount}>{milestone.count} Friend{milestone.count > 1 ? 's' : ''} Joined</Text>
@@ -313,7 +344,8 @@ export default function InviteFriendsModal({ visible, onClose }) {
                       )}
                     </View>
                   </View>
-                ))}
+                  );
+                })}
               </View>
             </View>
 
@@ -372,71 +404,6 @@ export default function InviteFriendsModal({ visible, onClose }) {
               </View>
             )}
 
-            {/* Referral Link */}
-            <View style={styles.referralSection}>
-              <Text style={styles.sectionTitle}>Your Referral Link</Text>
-              <View style={styles.referralLinkContainer}>
-                <TextInput
-                  style={styles.referralLink}
-                  value={referralLink || 'Loading...'}
-                  editable={false}
-                  selectTextOnFocus={true}
-                  numberOfLines={1}
-                />
-                <TouchableOpacity
-                  onPress={handleCopyLink}
-                  style={[styles.copyButton, copied && styles.copyButtonCopied]}
-                >
-                  {copied ? (
-                    <AntDesign name="check" size={20} color="#fff" />
-                  ) : (
-                    <Feather name="share" size={20} color="#fff" />
-                  )}
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.referralHint}>
-                Tap the link to select it, or use the share button to copy
-              </Text>
-            </View>
-
-            {/* Share Options */}
-            <View style={styles.shareSection}>
-              <Text style={styles.sectionTitle}>Share with Friends</Text>
-              <View style={styles.shareButtons}>
-                <TouchableOpacity
-                  style={[styles.shareButton, styles.shareButtonPrimary]}
-                  onPress={() => handleShare('native')}
-                >
-                  <MaterialIcons name="share" size={24} color="#fff" />
-                  <Text style={styles.shareButtonText}>Share</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.shareButton}
-                  onPress={() => handleShare('sms')}
-                >
-                  <MaterialIcons name="message" size={24} color="#DB8633" />
-                  <Text style={[styles.shareButtonText, styles.shareButtonTextSecondary]}>SMS</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.shareButton}
-                  onPress={() => handleShare('email')}
-                >
-                  <MaterialIcons name="email" size={24} color="#DB8633" />
-                  <Text style={[styles.shareButtonText, styles.shareButtonTextSecondary]}>Email</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.shareButton}
-                  onPress={() => handleShare('whatsapp')}
-                >
-                  <MaterialIcons name="chat" size={24} color="#DB8633" />
-                  <Text style={[styles.shareButtonText, styles.shareButtonTextSecondary]}>WhatsApp</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
             {/* Benefits */}
             <View style={styles.benefitsSection}>
               <Text style={styles.sectionTitle}>Why invite friends?</Text>
@@ -452,10 +419,6 @@ export default function InviteFriendsModal({ visible, onClose }) {
                 <View style={styles.benefitItem}>
                   <AntDesign name="team" size={20} color="#DB8633" />
                   <Text style={styles.benefitText}>Build a community of people who give back locally</Text>
-                </View>
-                <View style={styles.benefitItem}>
-                  <AntDesign name="gift" size={20} color="#DB8633" />
-                  <Text style={styles.benefitText}>No donor cash rewards—more of every dollar supports missions</Text>
                 </View>
               </View>
             </View>
@@ -490,25 +453,37 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 20,
+    alignItems: 'center',
   },
   headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    position: 'relative',
+    justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
+    width: '100%',
+    minHeight: 28,
   },
   title: {
-    fontSize: 28,
+    fontSize: 20,
     fontWeight: '700',
     color: '#324E58',
+    textAlign: 'center',
+    width: '100%',
+    paddingHorizontal: 32,
   },
   closeButton: {
     padding: 4,
+    position: 'absolute',
+    right: 0,
+    top: 2,
+    zIndex: 1,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#7A8D9C',
-    lineHeight: 22,
+    lineHeight: 20,
+    textAlign: 'center',
+    width: '100%',
   },
   statsCard: {
     borderRadius: 16,
@@ -612,18 +587,12 @@ const styles = StyleSheet.create({
   milestoneIcon: {
     marginRight: 16,
   },
-  milestoneIconLocked: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#E5E7EB',
-    justifyContent: 'center',
-    alignItems: 'center',
+  milestoneBadgeImage: {
+    width: 56,
+    height: 56,
   },
-  milestoneIconText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#7A8D9C',
+  milestoneBadgeImageLocked: {
+    opacity: 0.6,
   },
   milestoneContent: {
     flex: 1,
@@ -645,13 +614,6 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     marginTop: 4,
     lineHeight: 16,
-  },
-  milestoneNote: {
-    fontSize: 12,
-    color: '#7A8D9C',
-    marginBottom: 16,
-    textAlign: 'center',
-    fontStyle: 'italic',
   },
   milestoneEarnedDate: {
     fontSize: 11,
@@ -780,58 +742,51 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: '#324E58',
-    marginRight: 12,
     paddingVertical: 8,
     paddingHorizontal: 4,
   },
-  referralHint: {
-    fontSize: 12,
-    color: '#7A8D9C',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  copyButton: {
-    backgroundColor: '#DB8633',
-    padding: 10,
-    borderRadius: 8,
-  },
-  copyButtonCopied: {
-    backgroundColor: '#10B981',
-  },
-  shareSection: {
-    marginBottom: 24,
-  },
-  shareButtons: {
+  referralActions: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 12,
+    marginTop: 12,
   },
-  shareButton: {
+  referralActionButton: {
     flex: 1,
-    minWidth: '45%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
-    backgroundColor: '#F9FAFB',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
     borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
     gap: 8,
   },
-  shareButtonPrimary: {
-    backgroundColor: '#DB8633',
-    borderColor: '#DB8633',
-    width: '100%',
-    minWidth: '100%',
+  referralActionButtonDisabled: {
+    opacity: 0.5,
   },
-  shareButtonText: {
+  copyLinkButton: {
+    backgroundColor: '#FFF7ED',
+    borderWidth: 2,
+    borderColor: '#DB8633',
+  },
+  copyLinkButtonCopied: {
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
+  },
+  copyLinkButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#DB8633',
+  },
+  copyLinkButtonTextCopied: {
+    color: '#fff',
+  },
+  shareInviteButton: {
+    backgroundColor: '#DB8633',
+  },
+  shareInviteButtonText: {
     fontSize: 16,
     fontWeight: '700',
     color: '#fff',
-  },
-  shareButtonTextSecondary: {
-    color: '#DB8633',
   },
   benefitsSection: {
     marginBottom: 20,

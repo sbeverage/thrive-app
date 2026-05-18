@@ -1,7 +1,8 @@
 // File: app/(tabs)/beneficiary/beneficiaryDetail.js
 
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Dimensions, TouchableOpacity, Image, ActivityIndicator, Text, Alert } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, StyleSheet, Dimensions, TouchableOpacity, Image, ActivityIndicator, Text, Alert, BackHandler } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter, useSegments } from 'expo-router';
 import BeneficiaryDetailCard from '../../../../components/BeneficiaryDetailCard';
 import SuccessModal from '../../../../components/SuccessModal';
@@ -11,6 +12,7 @@ import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import API from '../../../lib/api';
 import { BACKEND_URL } from '../../../utils/constants';
+import { readSignupFlowPending } from '../../../utils/signupFlowCheckpoint';
 
 console.log('🔴 BENEFICIARY DETAIL FILE LOADED - screenWidth:', Dimensions.get('window').width);
 
@@ -42,6 +44,57 @@ export default function BeneficiaryDetailScreen() {
   const [beneficiary, setBeneficiary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [debugInfo, setDebugInfo] = useState(null);
+  /** True when URL says signup or AsyncStorage still has a signup checkpoint (params can be dropped under (tabs)). */
+  const [signupIncomplete, setSignupIncomplete] = useState(fromSignup);
+  const inSignupStack = segments.includes('signupFlow');
+
+  useEffect(() => {
+    if (fromSignup || inSignupStack) {
+      setSignupIncomplete(true);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const pending = await readSignupFlowPending();
+        if (!cancelled && pending?.route) setSignupIncomplete(true);
+        else if (!cancelled) setSignupIncomplete(false);
+      } catch {
+        if (!cancelled) setSignupIncomplete(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fromSignup, inSignupStack]);
+
+  const resolveSignupNavigation = async () => {
+    if (fromSignup || inSignupStack || signupIncomplete) return true;
+    try {
+      const pending = await readSignupFlowPending();
+      return Boolean(pending?.route);
+    } catch {
+      return false;
+    }
+  };
+
+  const navigateBackInSignup = useCallback(() => {
+    const backParams = { fromSignup: 'true' };
+    if (flowParam) backParams.flow = flowParam;
+    if (sponsorAmountParam) backParams.sponsorAmount = String(sponsorAmountParam);
+    router.replace({ pathname: '/signupFlow/beneficiarySignupCause', params: backParams });
+  }, [router, flowParam, sponsorAmountParam]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!inSignupStack && !fromSignup && !signupIncomplete) return undefined;
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        navigateBackInSignup();
+        return true;
+      });
+      return () => sub.remove();
+    }, [inSignupStack, fromSignup, signupIncomplete, navigateBackInSignup]),
+  );
 
   // Log params on mount
   useEffect(() => {
@@ -452,11 +505,12 @@ export default function BeneficiaryDetailScreen() {
     setConfettiTrigger(true);
   };
 
-  const handleModalClose = () => {
+  const handleModalClose = async () => {
     setShowSuccessModal(false);
 
-    // Detail lives under (tabs), so segments never include "signupFlow" — use route param instead.
-    if (fromSignup && beneficiary?.id != null) {
+    const inSignup = await resolveSignupNavigation();
+    // Detail lives under (tabs), so segments never include "signupFlow" — use param + checkpoint.
+    if (inSignup && beneficiary?.id != null) {
       const next = {
         pathname: "/signupFlow/donationAmount",
         params: {
@@ -479,7 +533,11 @@ export default function BeneficiaryDetailScreen() {
     router.back();
   };
 
-  const handleBackPress = () => {
+  const handleBackPress = async () => {
+    if (await resolveSignupNavigation()) {
+      navigateBackInSignup();
+      return;
+    }
     router.back();
   };
 
@@ -549,6 +607,7 @@ export default function BeneficiaryDetailScreen() {
             onSelect={handleBeneficiarySelect}
             showBackArrow={false}
             isUsersMainCause={isUsersMainCause}
+            isSignupFlow={fromSignup || signupIncomplete}
           />
         )}
         {!beneficiary && !loading && (
