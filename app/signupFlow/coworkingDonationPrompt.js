@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Image,
+  Dimensions,
+} from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import ProfileCompleteModal from '../../components/ProfileCompleteModal';
@@ -9,6 +17,8 @@ import { useBeneficiary } from '../context/BeneficiaryContext';
 import API from '../lib/api';
 import { persistSignupFlowCheckpointFromParams } from '../utils/signupFlowCheckpoint';
 
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 export default function CoworkingDonationPrompt() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -17,7 +27,7 @@ export default function CoworkingDonationPrompt() {
   const [showModal, setShowModal] = useState(false);
 
   const sponsorAmount = parseFloat(params.sponsorAmount || '15');
-  const charityName = selectedBeneficiary?.name || 'your charity';
+  const charityName = selectedBeneficiary?.name || 'your chosen cause';
 
   const coworkingPromptParamsKey = JSON.stringify(params ?? {});
   useEffect(() => {
@@ -36,10 +46,9 @@ export default function CoworkingDonationPrompt() {
       totalMonthlyDonation: sponsorAmount,
       monthlyDonation: sponsorAmount,
       externalBilled: true,
-      inviteType: 'coworking'
+      inviteType: 'coworking',
     }, true);
 
-    // Save selected beneficiary to backend profile
     if (selectedBeneficiary?.id) {
       try {
         await API.saveProfile({ beneficiary: selectedBeneficiary.id });
@@ -51,36 +60,80 @@ export default function CoworkingDonationPrompt() {
     setShowModal(true);
   };
 
+  const goToExtraDonation = () => {
+    router.push({
+      pathname: '/signupFlow/coworkingExtraDonation',
+      params: {
+        sponsorAmount: sponsorAmount.toString(),
+        charityName,
+      },
+    });
+  };
+
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      <View style={styles.gradientAbsoluteBg} pointerEvents="none">
+    <View style={styles.screen}>
+      <View style={styles.gradientBgWrap} pointerEvents="none">
         <LinearGradient
-          colors={["#2C3E50", "#4CA1AF"]}
+          colors={['#21555b', '#2d7a82']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.gradientBg}
         />
       </View>
-      <ScrollView contentContainerStyle={styles.container}>
+
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.hero}>
+          <Image
+            source={require('../../assets/images/bolt-piggy.png')}
+            style={styles.piggy}
+          />
+          <Text style={styles.heroEyebrow}>Coworking membership</Text>
+        </View>
+
         <View style={styles.card}>
-          <Image source={require('../../assets/images/bolt-piggy.png')} style={styles.piggy} />
-          <Text style={styles.title}>You're Already Making an Impact!</Text>
-          <Text style={styles.subtitle}>
-            With your coworking membership, you're already giving ${sponsorAmount.toFixed(0)}/month to {charityName}.
+          <Text style={styles.title}>
+            Your THRIVE Coworking membership includes a monthly donation
           </Text>
-          <Text style={styles.question}>Want to go a little further? Even a small extra gift can create an even bigger ripple for those who need it.</Text>
+
+          <View style={styles.includedBox}>
+            <Text style={styles.includedLabel}>Included with your membership</Text>
+            <Text style={styles.includedAmount}>
+              ${sponsorAmount.toFixed(0)}
+              <Text style={styles.includedPer}>/month</Text>
+            </Text>
+            <Text style={styles.includedCause}>to {charityName}</Text>
+          </View>
+
+          <Text style={styles.body}>
+            This monthly gift is already set up through your coworking membership—you
+            do not need a separate donation for that amount.
+          </Text>
+
+          <Text style={styles.bodySecondary}>
+            If you would like, you can add an optional extra monthly gift from you on
+            the next screen. Otherwise, you can continue with only what your
+            membership provides.
+          </Text>
+
           <View style={styles.buttonRow}>
-            <TouchableOpacity style={styles.secondaryButton} onPress={completeWithoutExtra}>
-              <Text style={styles.secondaryButtonText}>No thanks</Text>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={completeWithoutExtra}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.secondaryButtonText}>
+                Continue (${sponsorAmount.toFixed(0)}/mo only)
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.primaryButton}
-              onPress={() => router.push({
-                pathname: '/signupFlow/coworkingExtraDonation',
-                params: { sponsorAmount: sponsorAmount.toString() }
-              })}
+              onPress={goToExtraDonation}
+              activeOpacity={0.85}
             >
-              <Text style={styles.primaryButtonText}>Yes, add more</Text>
+              <Text style={styles.primaryButtonText}>Add extra support</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -105,47 +158,142 @@ export default function CoworkingDonationPrompt() {
 }
 
 const styles = StyleSheet.create({
-  gradientAbsoluteBg: { position: 'absolute', top: 0, left: 0, right: 0, height: 240, zIndex: 0, overflow: 'hidden' },
-  gradientBg: { width: '100%', height: '100%', borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
-  container: {
+  screen: { flex: 1, backgroundColor: '#F5F5F5' },
+  gradientBgWrap: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: SCREEN_HEIGHT * 0.42,
+    zIndex: 0,
+    overflow: 'hidden',
+  },
+  gradientBg: {
+    width: '100%',
+    height: '100%',
+    borderBottomLeftRadius: 40,
+    borderBottomRightRadius: 40,
+  },
+  scroll: {
     flexGrow: 1,
-    paddingTop: 80,
+    paddingTop: 56,
     paddingHorizontal: 20,
     paddingBottom: 40,
-    alignItems: 'center'
+  },
+  hero: {
+    alignItems: 'center',
+    marginBottom: 20,
+    zIndex: 1,
+  },
+  piggy: {
+    width: 100,
+    height: 100,
+    resizeMode: 'contain',
+    marginBottom: 8,
+  },
+  heroEyebrow: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.9)',
+    letterSpacing: 0.3,
   },
   card: {
     width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
     backgroundColor: '#fff',
     borderRadius: 24,
     padding: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 4,
-    alignItems: 'center'
-  },
-  piggy: { width: 90, height: 90, resizeMode: 'contain', marginBottom: 16 },
-  title: { fontSize: 22, fontWeight: '700', color: '#324E58', marginBottom: 8, textAlign: 'center' },
-  subtitle: { fontSize: 16, color: '#4CA1AF', textAlign: 'center', marginBottom: 16 },
-  question: { fontSize: 15, color: '#6d6e72', textAlign: 'center', marginBottom: 20, lineHeight: 22 },
-  buttonRow: { flexDirection: 'row', gap: 12 },
-  secondaryButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
     borderWidth: 1,
+    borderColor: '#E8ECEF',
+    shadowColor: '#21555b',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 6,
+    zIndex: 2,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#324E58',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 26,
+  },
+  includedBox: {
+    backgroundColor: '#E8F4F5',
+    borderRadius: 16,
+    padding: 18,
+    alignItems: 'center',
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: '#C5E4E7',
+  },
+  includedLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#21555b',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 8,
+  },
+  includedAmount: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#21555b',
+  },
+  includedPer: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#21555b',
+  },
+  includedCause: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#324E58',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  body: {
+    fontSize: 15,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 12,
+  },
+  bodySecondary: {
+    fontSize: 15,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  buttonRow: { gap: 12 },
+  secondaryButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 2,
     borderColor: '#DB8633',
-    alignItems: 'center'
+    alignItems: 'center',
+    backgroundColor: '#fff',
   },
-  secondaryButtonText: { color: '#DB8633', fontWeight: '600' },
+  secondaryButtonText: {
+    color: '#DB8633',
+    fontWeight: '700',
+    fontSize: 15,
+    textAlign: 'center',
+  },
   primaryButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
+    paddingVertical: 14,
+    borderRadius: 12,
     backgroundColor: '#DB8633',
-    alignItems: 'center'
+    alignItems: 'center',
   },
-  primaryButtonText: { color: '#fff', fontWeight: '700' }
+  primaryButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  },
 });
-

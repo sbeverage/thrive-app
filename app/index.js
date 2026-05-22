@@ -27,7 +27,7 @@ const slides = [
   {
     key: '1',
     title: 'GIVE',
-    description: 'Give monthly to any charity you love.',
+    description: 'Donate monthly to any charity you love.',
     image: { uri: `${SUPABASE_STORAGE_BASE}/assets/images/slider-image-3.png` },
     video: { uri: VIDEO_ASSETS.GIVE_LOOP }, // Using Supabase URL
   },

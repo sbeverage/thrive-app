@@ -351,7 +351,7 @@ export default function VendorDetails() {
           {/* Available Discounts */}
           <View style={styles.discountsSection}>
             <View style={styles.discountsHeader}>
-              <Text style={styles.sectionTitle}>Available Discounts</Text>
+              <Text style={[styles.sectionTitle, styles.discountsHeaderTitle]}>Available Discounts</Text>
               <View style={styles.discountCountBadge}>
                 <Text style={styles.discountCountText}>
                   {vendorDiscounts.length} {vendorDiscounts.length === 1 ? 'discount' : 'discounts'}
@@ -738,9 +738,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   headerLogoWrap: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
     backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
@@ -752,9 +752,9 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   headerLogo: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 86,
+    height: 86,
+    borderRadius: 43,
     resizeMode: 'contain',
   },
   headerVendorName: {
@@ -796,6 +796,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 16,
+  },
+  discountsHeaderTitle: {
+    marginBottom: 0,
   },
   discountCountBadge: {
     backgroundColor: '#E8F4F5',
