@@ -237,6 +237,8 @@ export default function DonationSummary() {
   const { user, loadUserData } = useUser();
   const { selectedBeneficiary, reloadBeneficiary } = useBeneficiary();
   const [donationSummary, setDonationSummary] = useState(null);
+  const [showTotalDonatedInfo, setShowTotalDonatedInfo] = useState(false);
+  const [showTaxDonationsInfo, setShowTaxDonationsInfo] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [activeSubscriptionId, setActiveSubscriptionId] = useState(null);
   const [activeSubscription, setActiveSubscription] = useState(null);
@@ -246,6 +248,7 @@ export default function DonationSummary() {
   const [localCancellationScheduled, setLocalCancellationScheduled] = useState(false);
   const [oneTimeYearTotal, setOneTimeYearTotal] = useState(0);
   const [oneTimeAllTimeTotal, setOneTimeAllTimeTotal] = useState(0);
+  const [oneTimeTaxDeductibleYear, setOneTimeTaxDeductibleYear] = useState(0);
   const [oneTimeGifts, setOneTimeGifts] = useState([]);
   const [billingDetailRow, setBillingDetailRow] = useState(null);
   const isFetchingRef = useRef(false);
@@ -460,6 +463,14 @@ export default function DonationSummary() {
             : sum;
         }, 0);
         setOneTimeYearTotal(yearTotal);
+        // Tax-deductible year total for one-time gifts: full amount charged.
+        const yearTaxTotal = gifts.reduce((sum, g) => {
+          const date = new Date(g?.created_at || g?.last_payment_date || 0);
+          return date.getFullYear() === currentYear
+            ? sum + getOneTimeBilling(g.amount).total
+            : sum;
+        }, 0);
+        setOneTimeTaxDeductibleYear(yearTaxTotal);
       } catch (e) {
         console.warn("[DonationSummary] one-time gift history failed:", e?.message || e);
       }
@@ -506,14 +517,47 @@ export default function DonationSummary() {
           ? sum + getSubscriptionBilling(sub?.amount).donationAmount
           : sum;
       }, 0);
+      // Tax-deductible total = full amount charged (donation + platform + CC fees).
+      // Under IRS rules, when a donor covers the processing fees, the entire charge
+      // qualifies as the gift to the 501(c)(3).
+      const subscriptionTaxDeductibleYear = subscriptions.reduce((sum, sub) => {
+        const date = new Date(sub?.created_at || sub?.last_payment_date || 0);
+        return date.getFullYear() === currentYear
+          ? sum + getSubscriptionBilling(sub?.amount).total
+          : sum;
+      }, 0);
+      // Months active = months elapsed from the earliest subscription start (active or
+      // cancelled — historical "I donated for N months" doesn't go to zero on cancel).
+      // Coworking external-bill subs still have a created_at, so this works for them too.
+      const subStartDates = subscriptions
+        .map((sub) => sub?.created_at || sub?.last_payment_date)
+        .filter(Boolean)
+        .map((d) => new Date(d))
+        .filter((d) => !isNaN(d.getTime()));
+      const monthsActive = subStartDates.length
+        ? Math.max(
+            1,
+            Math.floor(
+              (Date.now() -
+                subStartDates.reduce(
+                  (earliest, d) => (d < earliest ? d : earliest),
+                  subStartDates[0],
+                ).getTime()) /
+                (1000 * 60 * 60 * 24 * 30.44),
+            ) + 1,
+          )
+        : 0;
+
       setDonationSummary({
         total_monthly_amount: activeSubscription?.amount || 0,
         total_donated: subscriptionAllTimeTotal,
         total_donated_this_year: subscriptionYearTotal,
+        tax_deductible_this_year: subscriptionTaxDeductibleYear,
         active_subscriptions: subscriptions.filter((sub) => {
           const status = String(sub?.status || "").toLowerCase();
           return !["canceled", "cancelled"].includes(status);
         }).length,
+        months_active: monthsActive,
         monthly_breakdown: monthlyBreakdown,
         next_payment_date: activeSubscription?.next_payment_date || null,
         beneficiary_name: activeSubscription?.charity_name || null,
@@ -716,6 +760,9 @@ export default function DonationSummary() {
     "No charity selected";
   const totalDonated = (donationSummary?.total_donated || 0) + oneTimeAllTimeTotal;
   const totalDonatedThisYear = (donationSummary?.total_donated_this_year || 0) + (oneTimeYearTotal || 0);
+  // Tax-deductible total = full amount charged across subs + one-time gifts this year.
+  const totalTaxDeductibleThisYear =
+    (donationSummary?.tax_deductible_this_year || 0) + (oneTimeTaxDeductibleYear || 0);
   const monthlyBreakdown = donationSummary?.monthly_breakdown || [];
   const hasCompletedDonations = totalDonated > 0 || monthlyBreakdown.length > 0;
   const nextPaymentLabel = formatNextPaymentLabel(
@@ -794,32 +841,6 @@ export default function DonationSummary() {
           <View style={styles.charityStats}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
-                ${Math.round(totalDonated)}
-              </Text>
-              <TouchableOpacity
-                style={styles.statLabelRow}
-                onPress={() =>
-                  Alert.alert(
-                    'Total Donated',
-                    "This is the total amount that goes directly to your chosen charity. Platform fees and card processing fees aren't included — 100% of your selected donation amount reaches the cause you support.",
-                    [{ text: 'Got it' }],
-                  )
-                }
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={styles.statLabel}>Total Donated</Text>
-                <Feather
-                  name="info"
-                  size={12}
-                  color="rgba(255,255,255,0.85)"
-                  style={styles.statInfoIcon}
-                />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>
                 ${Math.round(monthlyDonationAmount || 0)}
               </Text>
               <Text style={styles.statLabel}>Monthly Amount</Text>
@@ -833,13 +854,25 @@ export default function DonationSummary() {
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
-                {donationSummary?.active_subscriptions ||
-                  monthlyBreakdown.filter(
-                    (d) => d.status === "completed" || d.status === "paid",
-                  ).length ||
-                  0}
+                {donationSummary?.months_active ?? 0}
               </Text>
               <Text style={styles.statLabel}>Months Active</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>
+                ${Math.round(totalDonated)}
+              </Text>
+              <View style={styles.statLabelRow}>
+                <Text style={styles.statLabel}>Total Donated</Text>
+                <TouchableOpacity
+                  onPress={() => setShowTotalDonatedInfo(true)}
+                  style={styles.infoIconButton}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Feather name="info" size={13} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
           {!!activeSubscriptionId &&
@@ -899,7 +932,7 @@ export default function DonationSummary() {
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <Text style={styles.cancelSubscriptionButtonText}>
-                    Cancel at Period End
+                    Cancel Membership
                   </Text>
                 )}
               </TouchableOpacity>
@@ -908,7 +941,16 @@ export default function DonationSummary() {
 
         {/* Billing Summary */}
         <View style={styles.breakdownSection}>
-          <Text style={styles.sectionTitle}>Billing Summary</Text>
+          <View style={styles.sectionTitleRow}>
+            <Text style={styles.sectionTitle}>Billing Summary</Text>
+            <TouchableOpacity
+              style={styles.viewDetailsButton}
+              onPress={() => router.push("/menu/transactionDetails")}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.viewDetailsButtonText}>View Details</Text>
+            </TouchableOpacity>
+          </View>
           {isLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color="#DB8633" />
@@ -995,9 +1037,23 @@ export default function DonationSummary() {
           <Text style={styles.sectionTitle}>Tax Summary</Text>
           <View style={styles.taxCard}>
             <View style={styles.taxRow}>
-              <Text style={styles.taxLabel}>Total Donations ({new Date().getFullYear()})</Text>
+              <View style={styles.taxLabelRow}>
+                <Text style={styles.taxLabel}>
+                  Total Donations ({new Date().getFullYear()})
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setShowTaxDonationsInfo(true)}
+                  style={styles.infoIconButton}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Image
+                    source={require("../../../assets/icons/info.png")}
+                    style={styles.infoIcon}
+                  />
+                </TouchableOpacity>
+              </View>
               <Text style={styles.taxValue}>
-                ${Math.round(totalDonatedThisYear)}
+                ${totalTaxDeductibleThisYear.toFixed(2)}
               </Text>
             </View>
             <View style={styles.taxRow}>
@@ -1023,6 +1079,69 @@ export default function DonationSummary() {
         {/* Bottom Spacer */}
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Total Donated Info Modal */}
+      <Modal
+        visible={showTotalDonatedInfo}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowTotalDonatedInfo(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowTotalDonatedInfo(false)}
+        >
+          <View style={styles.infoModalContent}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.infoModalTitle}>Total Donated</Text>
+            <Text style={styles.infoModalText}>
+              This is the total amount that goes directly to your chosen
+              charity. Platform fees and card processing fees aren&apos;t
+              included — 100% of your selected donation amount reaches the
+              cause you support.
+            </Text>
+            <TouchableOpacity
+              style={styles.infoModalCloseButton}
+              onPress={() => setShowTotalDonatedInfo(false)}
+            >
+              <Text style={styles.infoModalCloseButtonText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Tax-Deductible Total Info Modal */}
+      <Modal
+        visible={showTaxDonationsInfo}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowTaxDonationsInfo(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowTaxDonationsInfo(false)}
+        >
+          <View style={styles.infoModalContent}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.infoModalTitle}>Tax-Deductible Total</Text>
+            <Text style={styles.infoModalText}>
+              This is the full amount you donated to Thrive Initiative, Inc.
+              this year — including platform and processing fees. Under IRS
+              rules for gifts to a 501(c)(3), the entire amount you paid is
+              generally tax-deductible. Consult your tax advisor for your
+              specific situation.
+            </Text>
+            <TouchableOpacity
+              style={styles.infoModalCloseButton}
+              onPress={() => setShowTaxDonationsInfo(false)}
+            >
+              <Text style={styles.infoModalCloseButtonText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Billing Detail Modal */}
       <Modal
@@ -1175,15 +1294,25 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 12,
     color: "rgba(255,255,255,0.8)",
-    marginTop: 5,
   },
   statLabelRow: {
     flexDirection: "row",
     alignItems: "center",
-  },
-  statInfoIcon: {
-    marginLeft: 4,
     marginTop: 5,
+  },
+  infoIconButton: {
+    padding: 2,
+    marginLeft: 3,
+  },
+  infoIcon: {
+    width: 16,
+    height: 16,
+    tintColor: "#DB8633",
+  },
+  infoIconWhite: {
+    width: 14,
+    height: 14,
+    tintColor: "#FFFFFF",
   },
   editAmountButton: {
     marginTop: 8,
@@ -1209,6 +1338,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#F5F5FA",
     borderRadius: 12,
   },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 15,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: "700",
@@ -1217,6 +1352,22 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: "#21555b",
     paddingLeft: 10,
+  },
+  viewDetailsButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: "#21555b",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    marginBottom: 15,
+  },
+  viewDetailsButtonText: {
+    color: "#21555b",
+    fontSize: 13,
+    fontWeight: "700",
   },
   donationsList: {
     // No specific styles needed for ScrollView, content is handled by donationRow
@@ -1312,6 +1463,40 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginBottom: 20,
   },
+  infoModalContent: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+    maxHeight: "50%",
+  },
+  infoModalTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#324E58",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  infoModalText: {
+    fontSize: 16,
+    color: "#6d6e72",
+    lineHeight: 24,
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  infoModalCloseButton: {
+    backgroundColor: "#DB8633",
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    alignSelf: "center",
+  },
+  infoModalCloseButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
   billingModalTitle: {
     fontSize: 20,
     fontWeight: "700",
@@ -1384,7 +1569,13 @@ const styles = StyleSheet.create({
   taxRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 10,
+  },
+  taxLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexShrink: 1,
   },
   taxLabel: {
     fontSize: 14,
@@ -1420,7 +1611,9 @@ const styles = StyleSheet.create({
   },
   cancelSubscriptionButton: {
     marginTop: 16,
-    backgroundColor: "#D9534F",
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: "#fff",
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
