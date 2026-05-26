@@ -111,7 +111,7 @@ export default function CoworkingExtraDonation() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.title}>Optional extra monthly gift</Text>
+          <Text style={styles.title}>Optional Extra Monthly Gift</Text>
           <Text style={styles.body}>
             Your coworking membership already covers ${sponsorAmount.toFixed(0)}/month
             to {charityName}. Enter any additional amount you would like to give from
@@ -144,7 +144,7 @@ export default function CoworkingExtraDonation() {
             )}
           </View>
 
-          <Text style={styles.amountSectionLabel}>Your extra amount</Text>
+          <Text style={styles.amountSectionLabel}>Your Extra Amount</Text>
           <View style={styles.amountCard}>
             <View style={styles.amountRow}>
               <Text style={styles.dollarSign}>$</Text>
@@ -162,8 +162,7 @@ export default function CoworkingExtraDonation() {
           </View>
 
           <Text style={styles.paymentNote}>
-            Payment on the next screen is only for your extra gift—not the amount
-            already included with your membership.
+            Payment on the next screen is only for your extra gift.
           </Text>
 
           <TouchableOpacity
@@ -171,7 +170,7 @@ export default function CoworkingExtraDonation() {
             onPress={handleContinue}
             activeOpacity={0.85}
           >
-            <Text style={styles.primaryButtonText}>Continue to payment</Text>
+            <Text style={styles.primaryButtonText}>Continue</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -198,7 +197,7 @@ const styles = StyleSheet.create({
   },
   scroll: {
     flexGrow: 1,
-    paddingTop: 48,
+    paddingTop: 16,
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
@@ -307,8 +306,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     marginBottom: 16,
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FED7AA',
+    borderWidth: 1,
+    borderColor: '#DB8633',
   },
   amountRow: {
     flexDirection: 'row',

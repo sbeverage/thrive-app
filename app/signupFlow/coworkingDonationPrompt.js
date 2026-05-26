@@ -90,12 +90,11 @@ export default function CoworkingDonationPrompt() {
             source={require('../../assets/images/bolt-piggy.png')}
             style={styles.piggy}
           />
-          <Text style={styles.heroEyebrow}>Coworking membership</Text>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.title}>
-            Your THRIVE Coworking membership includes a monthly donation
+            Your THRIVE Membership Includes a Monthly Donation
           </Text>
 
           <View style={styles.includedBox}>
@@ -108,14 +107,11 @@ export default function CoworkingDonationPrompt() {
           </View>
 
           <Text style={styles.body}>
-            This monthly gift is already set up through your coworking membership—you
-            do not need a separate donation for that amount.
+            This monthly gift is already set up through your THRIVE membership.
           </Text>
 
           <Text style={styles.bodySecondary}>
-            If you would like, you can add an optional extra monthly gift from you on
-            the next screen. Otherwise, you can continue with only what your
-            membership provides.
+            If you would like, you can add an optional extra monthly gift.
           </Text>
 
           <View style={styles.buttonRow}>
@@ -133,7 +129,7 @@ export default function CoworkingDonationPrompt() {
               onPress={goToExtraDonation}
               activeOpacity={0.85}
             >
-              <Text style={styles.primaryButtonText}>Add extra support</Text>
+              <Text style={styles.primaryButtonText}>Give Extra</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -269,7 +265,7 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 24,
   },
-  buttonRow: { gap: 12 },
+  buttonRow: { gap: 12, marginHorizontal: 16 },
   secondaryButton: {
     paddingVertical: 14,
     paddingHorizontal: 16,

@@ -428,12 +428,6 @@ export default function DonationSummary() {
     const loadOneTimeGiftRows = async () => {
       try {
         const oneTimeRes = await API.getOneTimeGiftHistory(1, 100);
-        const yearRaw =
-          oneTimeRes?.summary?.this_year_total ??
-          oneTimeRes?.summary?.this_year;
-        setOneTimeYearTotal(
-          Number.isFinite(Number(yearRaw)) ? Number(yearRaw) : 0,
-        );
         const rawList = Array.isArray(oneTimeRes?.gifts)
           ? oneTimeRes.gifts
           : [];
@@ -452,11 +446,20 @@ export default function DonationSummary() {
           return !blocked.has(s);
         });
         setOneTimeGifts(gifts);
+        // Sum only the donation portion (strip CC fees), not the total charged.
         const allTimeTotal = gifts.reduce(
-          (sum, g) => sum + Number(g.amount || 0),
+          (sum, g) => sum + getOneTimeBilling(g.amount).donationAmount,
           0,
         );
         setOneTimeAllTimeTotal(allTimeTotal);
+        const currentYear = new Date().getFullYear();
+        const yearTotal = gifts.reduce((sum, g) => {
+          const date = new Date(g?.created_at || g?.last_payment_date || 0);
+          return date.getFullYear() === currentYear
+            ? sum + getOneTimeBilling(g.amount).donationAmount
+            : sum;
+        }, 0);
+        setOneTimeYearTotal(yearTotal);
       } catch (e) {
         console.warn("[DonationSummary] one-time gift history failed:", e?.message || e);
       }
@@ -492,14 +495,15 @@ export default function DonationSummary() {
         };
       });
       const currentYear = new Date().getFullYear();
+      // Sum only the donation portion (strip platform + CC fees), not the total charged.
       const subscriptionAllTimeTotal = subscriptions.reduce(
-        (sum, sub) => sum + Number(sub?.amount || 0),
+        (sum, sub) => sum + getSubscriptionBilling(sub?.amount).donationAmount,
         0,
       );
       const subscriptionYearTotal = subscriptions.reduce((sum, sub) => {
         const date = new Date(sub?.created_at || sub?.last_payment_date || 0);
         return date.getFullYear() === currentYear
-          ? sum + Number(sub?.amount || 0)
+          ? sum + getSubscriptionBilling(sub?.amount).donationAmount
           : sum;
       }, 0);
       setDonationSummary({
@@ -792,7 +796,26 @@ export default function DonationSummary() {
               <Text style={styles.statValue}>
                 ${Math.round(totalDonated)}
               </Text>
-              <Text style={styles.statLabel}>Total Donated</Text>
+              <TouchableOpacity
+                style={styles.statLabelRow}
+                onPress={() =>
+                  Alert.alert(
+                    'Total Donated',
+                    "This is the total amount that goes directly to your chosen charity. Platform fees and card processing fees aren't included — 100% of your selected donation amount reaches the cause you support.",
+                    [{ text: 'Got it' }],
+                  )
+                }
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.statLabel}>Total Donated</Text>
+                <Feather
+                  name="info"
+                  size={12}
+                  color="rgba(255,255,255,0.85)"
+                  style={styles.statInfoIcon}
+                />
+              </TouchableOpacity>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
@@ -1152,6 +1175,14 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 12,
     color: "rgba(255,255,255,0.8)",
+    marginTop: 5,
+  },
+  statLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  statInfoIcon: {
+    marginLeft: 4,
     marginTop: 5,
   },
   editAmountButton: {

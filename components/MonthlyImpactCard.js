@@ -33,7 +33,7 @@ export default function MonthlyImpactCard({
       <View style={styles.headerRow}>
         <View style={styles.dateRow}>
           <Feather name="calendar" size={16} color="#324E58" style={{ marginRight: 6 }} />
-          <Text style={styles.dateText}>Next Billing: {getNextBillingDate()}</Text>
+          <Text style={styles.dateText}>Next Donation: {getNextBillingDate()}</Text>
         </View>
       </View>
 
@@ -45,8 +45,12 @@ export default function MonthlyImpactCard({
           <Text style={styles.amount}>${Math.round(parseFloat(monthlyDonation || 0))}</Text>
           <Text style={styles.caption}>Monthly Donation</Text>
           {coworking && (sponsorAmount > 0 || extraDonationAmount > 0) && (
-            <Text style={styles.subcaption}>
-              Coworking ${parseFloat(sponsorAmount || 0).toFixed(0)} + You ${parseFloat(extraDonationAmount || 0).toFixed(0)}
+            <Text
+              style={styles.subcaption}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              THRIVE ${parseFloat(sponsorAmount || 0).toFixed(0)} + YOU ${parseFloat(extraDonationAmount || 0).toFixed(0)}
             </Text>
           )}
         </View>
@@ -136,5 +140,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#9AA9B6',
     marginTop: 4,
+    textAlign: 'center',
   },
 });

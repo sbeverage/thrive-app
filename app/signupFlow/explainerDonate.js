@@ -436,7 +436,7 @@ const styles = StyleSheet.create({
   },
   extraContent: {
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 12,
     paddingHorizontal: 20,
   },
   extraText: {
