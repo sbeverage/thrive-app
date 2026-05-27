@@ -2,6 +2,7 @@ import {
   create as createJWT,
   verify as verifyJWT,
 } from "https://deno.land/x/djwt@v2.9/mod.ts";
+import { corsHeaders } from "../lib/cors.ts";
 import { bcryptHash, bcryptCompare } from "../lib/password.ts";
 import { capitalizeName } from "../lib/strings.ts";
 import { geocodeAddress } from "../lib/geocoding.ts";
