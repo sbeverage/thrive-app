@@ -46,3 +46,6 @@ ti-admin-panel/
 
 app-example
 .vercel
+
+# Supabase local temp artifacts
+supabase/.temp/
