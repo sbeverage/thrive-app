@@ -48,7 +48,7 @@ export async function sendInvitationEmail({
   try {
     // Get email service configuration from environment variables
     const emailService = Deno.env.get("EMAIL_SERVICE") || "resend"; // 'resend', 'sendgrid', 'supabase'
-    const appName = Deno.env.get("APP_NAME") || "Thrive Initiative";
+    const appName = "THRIVE Initiative";
 
     // Determine if this is an invitation (64-char token) or self-signup
     const isInvitationToken = verificationToken.length === 64;
@@ -67,10 +67,10 @@ export async function sendInvitationEmail({
     const appStoreLinks = {
       ios:
         Deno.env.get("APP_STORE_IOS_URL") ||
-        "https://apps.apple.com/app/your-app",
+        "https://apps.apple.com/app/thrive-initiative/id6744030078",
       android:
         Deno.env.get("APP_STORE_ANDROID_URL") ||
-        "https://play.google.com/store/apps/details?id=your.app",
+        "https://play.google.com/store/apps/details?id=com.thriveinitiative.app",
     };
 
     // Email content (adapt subject based on context)
@@ -236,38 +236,37 @@ export async function sendInvitationEmail({
         <h1>Welcome, ${name}! 👋</h1>
       </div>
       <div class="content">
-    
+
         ${
           isInvitation
             ? `<p>You've been invited to join <span class="highlight">${appName}</span> as a donor! We're excited to have you join our community of changemakers.</p>`
             : `<p>Thank you for signing up for <span class="highlight">${appName}</span>! We're thrilled to have you on board.</p>`
         }
-        
-        <p>Click the button below to verify your email address and get started:</p>
-        
-        <div class="button-container">
-          <a href="${verificationLink}" class="button">
-            ${isInvitation ? "Verify Email & Download App" : "Verify Email"}
-          </a>
-        </div>
-        
-        <p style="font-size: 14px; color: #666; text-align: center;">
-          ${
-            isInvitation
-              ? `This link will expire in 24 hours. If you're on a mobile device, this will open our app directly. If you're on a desktop, you'll be redirected to download the app.`
-              : `This link will open in the Thrive app to verify your email and continue with signup.`
-          }
-        </p>
-        
         ${
           isInvitation
             ? `
-        <div class="token-link">
-          <strong>Or copy this link:</strong><br>
-          ${verificationLink}
+        <p><strong>Here's how to get started — just 3 steps:</strong></p>
+        <ol style="color:#555;font-size:16px;line-height:1.8;padding-left:20px;margin:20px 0;">
+          <li><a href="${appStoreLinks.ios}" style="color:#324E58;font-weight:600;text-decoration:underline;">Download the iOS app</a></li>
+          <li>Come back to this email and tap the button below to verify</li>
+          <li>Done! 🎉</li>
+        </ol>
+
+        <div class="button-container">
+          <a href="${verificationLink}" class="button">Verify Email &amp; Open App</a>
         </div>
         `
             : `
+        <p>Click the button below to verify your email address and get started:</p>
+
+        <div class="button-container">
+          <a href="${verificationLink}" class="button">Verify Email</a>
+        </div>
+
+        <p style="font-size: 14px; color: #666; text-align: center;">
+          This link will open in the ${appName} app to verify your email and continue with signup.
+        </p>
+
         <p style="font-size: 14px; color: #666; text-align: center;">
           If the app doesn't open automatically, tap the button above or paste this link into your browser:<br>
           <span style="font-size: 12px; color: #999; word-break: break-all;">${verificationLink}</span>
@@ -275,22 +274,13 @@ export async function sendInvitationEmail({
         `
         }
       </div>
-      
-      ${
-        isInvitation
-          ? `
-      <div class="app-links">
-        <p>📱 Download our mobile app:</p>
-        <a href="${appStoreLinks.ios}">📱 Download for iOS</a>
-        <span>|</span>
-        <a href="${appStoreLinks.android}">📱 Download for Android</a>
-      </div>
-      `
-          : ""
-      }
-      
+
       <div class="footer">
-        <p>If you didn't request this ${isInvitation ? "invitation" : "account"}, you can safely ignore this email.</p>
+        ${
+          isInvitation
+            ? `<p style="color:#555;">Not on an iPhone? Reply to this email or contact your community manager and we'll help you get set up.</p>`
+            : `<p>If you didn't request this account, you can safely ignore this email.</p>`
+        }
         <p>Need help? Contact <a href="mailto:info@jointhriveinitiative.org">info@jointhriveinitiative.org</a></p>
       </div>
     </div>
@@ -299,35 +289,34 @@ export async function sendInvitationEmail({
 </html>
     `;
 
-    const emailText = `
-${
-  isInvitation
-    ? `Welcome to ${appName}, ${name}!\n\nYou've been invited to join as a donor.`
-    : `Thank you for signing up for ${appName}, ${name}!\n\nPlease verify your email to complete your account setup.`
-}
+    const emailText = isInvitation
+      ? `
+Welcome to ${appName}, ${name}!
 
-Verify your email and get started:
+You've been invited to join as a donor. We're excited to have you join our community of changemakers.
+
+Here's how to get started — just 3 steps:
+
+  1. Download the iOS app: ${appStoreLinks.ios}
+  2. Come back to this email and tap the link below to verify
+  3. Done!
+
+Verify your email and open the app:
 ${verificationLink}
 
-This link will expire in 24 hours.
+Not on an iPhone? Reply to this email or contact your community manager and we'll help you get set up.
 
-${
-  isInvitation
-    ? `
-Download our mobile app:
-- iOS: ${appStoreLinks.ios}
-- Android: ${appStoreLinks.android}
-`
-    : `
-This link will open in the Thrive app to complete your verification.
-`
-}
+Need help? Contact info@jointhriveinitiative.org
+    `.trim()
+      : `
+Thank you for signing up for ${appName}, ${name}!
 
-${
-  isInvitation
-    ? "If you didn't request this invitation, you can safely ignore this email."
-    : "If you didn't create this account, you can safely ignore this email."
-}
+Please verify your email to complete your account setup:
+${verificationLink}
+
+This link will open in the ${appName} app to complete your verification.
+
+If you didn't create this account, you can safely ignore this email.
 
 Need help? Contact info@jointhriveinitiative.org
     `.trim();
@@ -540,7 +529,7 @@ export async function sendReferralReminderEmail({
 }): Promise<void> {
   try {
     const emailService = Deno.env.get("EMAIL_SERVICE") || "resend";
-    const appName = Deno.env.get("APP_NAME") || "Thrive Initiative";
+    const appName = "THRIVE Initiative";
     const appBaseUrl =
       Deno.env.get("APP_BASE_URL") || "https://thrive-web-jet.vercel.app";
     const fromEmail = Deno.env.get("EMAIL_FROM") || "noreply@yourapp.com";
@@ -658,7 +647,7 @@ export async function sendAdminTempPasswordEmail({
 }): Promise<void> {
   try {
     const emailService = Deno.env.get("EMAIL_SERVICE") || "resend";
-    const appName = Deno.env.get("APP_NAME") || "Thrive Initiative";
+    const appName = "THRIVE Initiative";
     const fromEmail = Deno.env.get("EMAIL_FROM") || "noreply@yourapp.com";
 
     const emailSubject = `${appName} Admin Access - Temporary Password`;
@@ -810,7 +799,7 @@ export async function sendNotificationEmail({
 }): Promise<void> {
   try {
     const emailService = Deno.env.get("EMAIL_SERVICE") || "resend";
-    const appName = Deno.env.get("APP_NAME") || "Thrive Initiative";
+    const appName = "THRIVE Initiative";
     const fromEmail = Deno.env.get("EMAIL_FROM") || "noreply@yourapp.com";
 
     const emailSubject = `[${appName}] ${title}`;
@@ -914,7 +903,7 @@ export async function sendPasswordResetEmail({
 }): Promise<void> {
   try {
     const emailService = Deno.env.get("EMAIL_SERVICE") || "resend";
-    const appName = Deno.env.get("APP_NAME") || "Thrive Initiative";
+    const appName = "THRIVE Initiative";
     const fromEmail = Deno.env.get("EMAIL_FROM") || "noreply@yourapp.com";
     const appUrl =
       Deno.env.get("APP_BASE_URL") || "https://thrive-web-jet.vercel.app";

@@ -1262,61 +1262,51 @@ export async function handleAuthRoute(
 
   // GET /auth/verify - Verify email token and redirect to mobile app
   if (method === "GET" && route === "/auth/verify") {
-    try {
-      const url = new URL(req.url);
-      const token = url.searchParams.get("token");
-      const wantsJson =
-        url.searchParams.get("format") === "json" ||
-        (req.headers.get("accept")?.includes("application/json") ?? false);
-      const email = url.searchParams.get("email");
+    // Declared outside the try so the catch block can also use respondVerify.
+    const url = new URL(req.url);
+    const token = url.searchParams.get("token");
+    const wantsJson =
+      url.searchParams.get("format") === "json" ||
+      (req.headers.get("accept")?.includes("application/json") ?? false);
+    const email = url.searchParams.get("email");
 
-      if (!token || !email) {
+    // Respond with JSON for API consumers (format=json / Accept: application/json),
+    // and 302-redirect browser hits to the Vercel /verify page. We never return raw
+    // HTML here: Supabase's anti-phishing layer rewrites HTML Content-Type to
+    // text/plain on *.supabase.co, which made the page download as a file.
+    const appBaseUrl =
+      Deno.env.get("APP_BASE_URL") || "https://thrive-web-jet.vercel.app";
+    const respondVerify = (opts: {
+      ok: boolean;
+      error?: string;
+      status: number;
+    }) => {
+      if (wantsJson) {
         return new Response(
-          `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Verification Failed</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      text-align: center;
-      padding: 50px 20px;
-      background: linear-gradient(135deg, #4a6b7a 0%, #324E58 100%);
-      color: white;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-    }
-    .container {
-      background: white;
-      color: #333;
-      border-radius: 12px;
-      padding: 40px;
-      max-width: 400px;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-    }
-    h1 { color: #324E58; margin-bottom: 20px; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>❌ Verification Failed</h1>
-    <p>Missing verification token or email.</p>
-  </div>
-</body>
-</html>`,
+          JSON.stringify(
+            opts.ok ? {success: true} : {success: false, error: opts.error},
+          ),
           {
-            status: 400,
-            headers: {
-              "Content-Type": "text/html; charset=utf-8",
-              ...corsHeaders,
-            },
+            headers: {...corsHeaders, "Content-Type": "application/json"},
+            status: opts.status,
           },
         );
+      }
+      const params = new URLSearchParams();
+      if (token) params.set("token", token);
+      if (email) params.set("email", email);
+      if (opts.ok) params.set("verified", "true");
+      else if (opts.error) params.set("error", opts.error);
+      return Response.redirect(`${appBaseUrl}/verify?${params.toString()}`, 302);
+    };
+
+    try {
+      if (!token || !email) {
+        return respondVerify({
+          ok: false,
+          error: "Missing verification token or email.",
+          status: 400,
+        });
       }
 
       // Verify user with token
@@ -1328,52 +1318,11 @@ export async function handleAuthRoute(
         .single();
 
       if (userError || !user) {
-        return new Response(
-          `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Verification Failed</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      text-align: center;
-      padding: 50px 20px;
-      background: linear-gradient(135deg, #4a6b7a 0%, #324E58 100%);
-      color: white;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-    }
-    .container {
-      background: white;
-      color: #333;
-      border-radius: 12px;
-      padding: 40px;
-      max-width: 400px;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-    }
-    h1 { color: #324E58; margin-bottom: 20px; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>❌ Verification Failed</h1>
-    <p>Invalid or expired verification token.</p>
-  </div>
-</body>
-</html>`,
-          {
-            status: 400,
-            headers: {
-              "Content-Type": "text/html; charset=utf-8",
-              ...corsHeaders,
-            },
-          },
-        );
+        return respondVerify({
+          ok: false,
+          error: "This verification link is invalid or has expired.",
+          status: 400,
+        });
       }
 
       // Update user as verified
@@ -1397,174 +1346,15 @@ export async function handleAuthRoute(
         // Continue anyway - token is valid
       }
 
-      // Use universal link (HTTPS) instead of custom scheme for better compatibility
-      // Universal links work in all browsers and can open the app if configured
-      const appBaseUrl =
-        Deno.env.get("APP_BASE_URL") || "https://thrive-web-jet.vercel.app";
-      const universalLink = `${appBaseUrl}/verify-success?token=${token}&email=${encodeURIComponent(email)}&verified=true`;
-
-      // Also provide custom scheme as fallback
-      const appDeepLinkScheme =
-        Deno.env.get("APP_DEEP_LINK_SCHEME") || "thriveapp";
-      const appDeepLink = `${appDeepLinkScheme}://verify?token=${token}&email=${encodeURIComponent(email)}&verified=true`;
-
-      // Return HTML page that redirects to mobile app
-      return new Response(
-        `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Email Verified - Opening App</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      text-align: center;
-      padding: 50px 20px;
-      background: linear-gradient(135deg, #4a6b7a 0%, #324E58 100%);
-      color: white;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-    }
-    .container {
-      background: white;
-      color: #333;
-      border-radius: 12px;
-      padding: 40px;
-      max-width: 400px;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-    }
-    h1 { color: #324E58; margin-bottom: 20px; }
-    .check { font-size: 48px; margin-bottom: 20px; color: #4a6b7a; }
-    .link {
-      display: inline-block;
-      margin: 10px;
-      padding: 12px 24px;
-      background: #324E58;
-      color: white;
-      text-decoration: none;
-      border-radius: 6px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .link:hover { background: #4a6b7a; }
-    .link.secondary {
-      background: #6c757d;
-    }
-    .link.secondary:hover {
-      background: #5a6268;
-    }
-    .button-group {
-      margin-top: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="check">✅</div>
-    <h1>Email Verified!</h1>
-    <p>Your email has been verified successfully.</p>
-    <p style="font-size: 14px; color: #666; margin-top: 20px;">
-      Opening the Thrive app...
-    </p>
-    <div class="button-group">
-      <a href="${universalLink}" class="link" id="appLink">Open in Thrive App</a>
-      <a href="${appDeepLink}" class="link" id="deepLink" style="display: none;">Try Alternative Link</a>
-      <button onclick="window.close()" class="link secondary" id="skipLink" style="border: none; font-size: inherit; font-family: inherit; width: 100%;">Close & Return to App</button>
-      <p style="font-size: 12px; color: #999; margin-top: 10px;">
-        Your email is verified! You can close this page and return to the Thrive app.
-      </p>
-    </div>
-  </div>
-  <script>
-    // Try universal link first (works better with universal links configured)
-    setTimeout(function() {
-      window.location.href = "${universalLink}";
-    }, 500);
-    
-    // Fallback: try custom scheme after 1 second
-    setTimeout(function() {
-      const deepLink = document.getElementById('deepLink');
-      if (deepLink) {
-        deepLink.style.display = 'block';
-        window.location.href = "${appDeepLink}";
-      }
-    }, 1500);
-    
-    // Update message after 2 seconds if app hasn't opened
-    setTimeout(function() {
-      const message = document.querySelector('p:last-of-type');
-      if (message) {
-        message.innerHTML = 'If the app didn\'t open automatically, tap "Close & Return to App" above.';
-        message.style.color = '#324E58';
-        message.style.fontWeight = '600';
-      }
-    }, 2000);
-  </script>
-</body>
-</html>`,
-        {
-          status: 200,
-          headers: {
-            "Content-Type": "text/html; charset=utf-8",
-            ...corsHeaders,
-          },
-        },
-      );
+      // Verified — JSON for API callers, 302 to the Vercel /verify page for browsers.
+      return respondVerify({ok: true, status: 200});
     } catch (error) {
       console.error("❌ Verify Error:", error);
-      return new Response(
-        `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Verification Error</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      text-align: center;
-      padding: 50px 20px;
-      background: linear-gradient(135deg, #4a6b7a 0%, #324E58 100%);
-      color: white;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-    }
-    .container {
-      background: white;
-      color: #333;
-      border-radius: 12px;
-      padding: 40px;
-      max-width: 400px;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-    }
-    h1 { color: #324E58; margin-bottom: 20px; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>❌ Verification Error</h1>
-    <p>An error occurred during verification. Please try again later.</p>
-  </div>
-</body>
-</html>`,
-        {
-          status: 500,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "text/html; charset=utf-8",
-          },
-        },
-      );
+      return respondVerify({
+        ok: false,
+        error: "An error occurred during verification. Please try again later.",
+        status: 500,
+      });
     }
   }
 
