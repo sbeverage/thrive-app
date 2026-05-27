@@ -138,7 +138,7 @@ export default function CardManagement() {
       // confirmPlatformPaySetupIntent presents the Apple Pay sheet and confirms in one call
       const { error } = await confirmPlatformPaySetupIntent(response.client_secret, {
         applePay: {
-          cartItems: [{ label: "Thrive Initiative", amount: "0.00", paymentType: "Immediate", isPending: true }],
+          cartItems: [{ label: "THRIVE Initiative", amount: "0.00", paymentType: "Immediate", isPending: true }],
           merchantCountryCode: "US",
           currencyCode: "USD",
         },

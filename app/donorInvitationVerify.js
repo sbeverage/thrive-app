@@ -234,7 +234,7 @@ export default function DonorInvitationVerifyScreen() {
         
         // Show success message
         Alert.alert(
-          '🎉 Welcome to Thrive!',
+          '🎉 Welcome to THRIVE!',
           coworking
             ? 'Your account is ready. Next, choose a charity for your coworking-sponsored donation.'
             : 'Your account has been successfully created. You can now access all features of the app.',
@@ -388,7 +388,7 @@ export default function DonorInvitationVerifyScreen() {
           />
           <Text style={styles.loadingText}>Email Verified! 🎉</Text>
           <Text style={styles.loadingSubtext}>
-            Your email has been verified. Please open the Thrive app to complete your signup.
+            Your email has been verified. Please open the THRIVE app to complete your signup.
           </Text>
           <TouchableOpacity
             style={styles.button}
@@ -415,7 +415,7 @@ export default function DonorInvitationVerifyScreen() {
                 console.error('❌ Error redirecting:', error);
                 Alert.alert(
                   'Email Verified!',
-                  'Your email has been verified. Please open the Thrive app on your device to complete your signup.',
+                  'Your email has been verified. Please open the THRIVE app on your device to complete your signup.',
                   [{ text: 'OK' }]
                 );
               }
@@ -424,7 +424,7 @@ export default function DonorInvitationVerifyScreen() {
             <Text style={styles.buttonText}>Open in App</Text>
           </TouchableOpacity>
           <Text style={styles.helpText}>
-            If the app doesn't open automatically, tap the button above or open the Thrive app manually.
+            If the app doesn't open automatically, tap the button above or open the THRIVE app manually.
           </Text>
         </View>
       </View>

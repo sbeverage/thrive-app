@@ -140,7 +140,7 @@ export default function FriendsScreen() {
         <View style={styles.emptyState}>
           <Feather name="users" size={48} color="#D1D5DB" />
           <Text style={styles.emptyTitle}>No Friends Yet</Text>
-          <Text style={styles.emptySubtitle}>Invite friends to join Thrive and start making an impact together!</Text>
+          <Text style={styles.emptySubtitle}>Invite friends to join THRIVE and start making an impact together!</Text>
         </View>
       )}
     </View>

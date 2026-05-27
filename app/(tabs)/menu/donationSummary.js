@@ -1058,7 +1058,7 @@ export default function DonationSummary() {
             </View>
             <View style={styles.taxRow}>
               <Text style={styles.taxLabel}>Charity Name</Text>
-              <Text style={styles.taxValue}>Thrive Initiative, Inc.</Text>
+              <Text style={styles.taxValue}>THRIVE Initiative, Inc.</Text>
             </View>
             <View style={styles.taxRow}>
               <Text style={styles.taxLabel}>EIN Number</Text>
@@ -1127,7 +1127,7 @@ export default function DonationSummary() {
             <View style={styles.modalHandle} />
             <Text style={styles.infoModalTitle}>Tax-Deductible Total</Text>
             <Text style={styles.infoModalText}>
-              This is the full amount you donated to Thrive Initiative, Inc.
+              This is the full amount you donated to THRIVE Initiative, Inc.
               this year — including platform and processing fees. Under IRS
               rules for gifts to a 501(c)(3), the entire amount you paid is
               generally tax-deductible. Consult your tax advisor for your

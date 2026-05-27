@@ -140,7 +140,7 @@ export default function FeedbackScreen() {
         >
           <Text style={styles.heroTitle}>We Value Your Opinion!</Text>
           <Text style={styles.heroSubtitle}>
-            Help us improve Thrive by sharing your thoughts, suggestions, or reporting any issues you encounter.
+            Help us improve THRIVE by sharing your thoughts, suggestions, or reporting any issues you encounter.
           </Text>
         </LinearGradient>
 

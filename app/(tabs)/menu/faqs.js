@@ -13,9 +13,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 const FAQ_ITEMS = [
   {
-    question: 'What is Thrive Initiative?',
+    question: 'What is THRIVE Initiative?',
     answer:
-      'Thrive connects you with local business discounts while supporting a nonprofit you care about. You save money when you shop, and your monthly donation goes directly to your chosen cause.',
+      'THRIVE connects you with local business discounts while supporting a nonprofit you care about. You save money when you shop, and your monthly donation goes directly to your chosen cause.',
   },
   {
     question: 'How do discounts work?',
@@ -25,7 +25,7 @@ const FAQ_ITEMS = [
   {
     question: 'How does my monthly donation work?',
     answer:
-      'During signup you choose a cause and a monthly amount. Thrive charges your card each month and sends your gift to that beneficiary. View or update your plan anytime under Donation Summary or Manage Billing in the menu.',
+      'During signup you choose a cause and a monthly amount. THRIVE charges your card each month and sends your gift to that beneficiary. View or update your plan anytime under Donation Summary or Manage Billing in the menu.',
   },
   {
     question: 'Can I change my cause or donation amount?',

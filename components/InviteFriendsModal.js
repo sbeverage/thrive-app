@@ -110,7 +110,7 @@ export default function InviteFriendsModal({ visible, onClose }) {
   };
 
   const buildInviteMessage = () =>
-    `Join me on Thrive! Together we can make a real difference in our community. Get exclusive discounts from local businesses while supporting amazing causes. Sign up here: ${referralLink}`;
+    `Join me on THRIVE! Together we can make a real difference in our community. Get exclusive discounts from local businesses while supporting amazing causes. Sign up here: ${referralLink}`;
 
   const handleCopyLink = async () => {
     if (!referralLink) {
@@ -133,7 +133,7 @@ export default function InviteFriendsModal({ visible, onClose }) {
       return;
     }
     const message = buildInviteMessage();
-    const title = 'Join Thrive with me!';
+    const title = 'Join THRIVE with me!';
     try {
       await Share.share(
         Platform.OS === 'ios'

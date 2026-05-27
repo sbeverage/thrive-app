@@ -10,7 +10,7 @@ export default function ProfileCompleteModal({ visible, onClose }) {
         <View style={styles.card}>
           <Image source={require('../assets/images/piggy-confetti.png')} style={styles.piggy} />
 
-          <Text style={styles.title}>Welcome to Thrive!</Text>
+          <Text style={styles.title}>Welcome to THRIVE!</Text>
 
           <Text style={styles.message}>
             <Text style={{ color: '#DB8633', fontWeight: '600' }}>You're all set!</Text>

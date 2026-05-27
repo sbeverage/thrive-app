@@ -80,7 +80,7 @@ export default function UserProfile() {
   const handleDelete = () => {
     Alert.alert(
       'Delete account?',
-      'This permanently removes your Thrive account and associated data. This cannot be undone.',
+      'This permanently removes your THRIVE account and associated data. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {

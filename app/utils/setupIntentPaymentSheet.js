@@ -55,7 +55,7 @@ export async function presentSetupIntentPaymentSheet(
   options = {},
 ) {
   const { initPaymentSheet, presentPaymentSheet } = stripe;
-  const { merchantDisplayName = "Thrive Initiative" } = options;
+  const { merchantDisplayName = "THRIVE Initiative" } = options;
   const {
     setupIntentClientSecret,
     customerId,

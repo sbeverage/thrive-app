@@ -50,7 +50,7 @@ export default function MonthlyImpactCard({
               numberOfLines={1}
               adjustsFontSizeToFit
             >
-              THRIVE ${parseFloat(sponsorAmount || 0).toFixed(0)} + YOU ${parseFloat(extraDonationAmount || 0).toFixed(0)}
+              THRIVE ${parseFloat(sponsorAmount || 0).toFixed(0)} + You ${parseFloat(extraDonationAmount || 0).toFixed(0)}
             </Text>
           )}
         </View>
@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dateText: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#324E58',
   },
   impactRow: {

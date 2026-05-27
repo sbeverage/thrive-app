@@ -161,7 +161,7 @@ export async function presentMonthlySubscriptionPaymentSheet(
 ) {
   const { initPaymentSheet, presentPaymentSheet } = stripe;
   const {
-    merchantDisplayName = "Thrive Initiative",
+    merchantDisplayName = "THRIVE Initiative",
     cardOnly = false,
     // When true, omits customerId / ephemeral key (no saved cards or Link on file).
     skipSavedPaymentMethods = false,
@@ -250,7 +250,7 @@ export async function presentMonthlySubscriptionNativeWallet(
   options = {},
 ) {
   const { confirmPlatformPayPayment } = stripe;
-  const merchantDisplayName = options.merchantDisplayName || "Thrive Initiative";
+  const merchantDisplayName = options.merchantDisplayName || "THRIVE Initiative";
   const { paymentIntentClientSecret } =
     extractMonthlySubscriptionPaymentSecrets(apiResponse);
 
