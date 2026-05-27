@@ -1,13 +1,11 @@
 import { getStripeClient } from "../lib/stripe.ts";
-
-export type FormatCharityResponseFn = (charity: any) => any;
+import { formatCharityResponse } from "../lib/charities.ts";
 
 export async function handleCharityRoute(
   req: Request,
   supabase: any,
   route: string,
   method: string,
-  formatCharityResponse: FormatCharityResponseFn,
 ) {
   // GET /charities (public)
   if (method === "GET" && route === "/charities") {
