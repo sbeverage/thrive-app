@@ -17,7 +17,7 @@ export const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || ''
 // Set EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY in your .env file or EAS Secrets
 export const STRIPE_PUBLISHABLE_KEY =
   process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
-  "pk_test_51I1hawHeCafBpXfQZYUqZqKNh2pIiQ975wm9xUMvAdCnYhlmS8Glm9sDCyRZjzzJ6lazR4JChRu4rhJ4ZeOpnW3b00kbYiafyl";
+  "pk_live_51I1hawHeCafBpXfQqPVLpHXaC173LzBXMKPYR7ugaMOFbuApV9mBSbcyrQcAmtubmg5TqV12ItSxiptK19ROyZmQ000fra8rBo";
 
 /** Apple Pay — must match Apple Developer Merchant ID + Xcode entitlements */
 export const STRIPE_MERCHANT_IDENTIFIER =
