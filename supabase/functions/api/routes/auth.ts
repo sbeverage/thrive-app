@@ -7,7 +7,7 @@ import { bcryptHash, bcryptCompare } from "../lib/password.ts";
 import { capitalizeName } from "../lib/strings.ts";
 import { geocodeAddress } from "../lib/geocoding.ts";
 import { getAppAuthHeader } from "../lib/jwt-app.ts";
-import { createOrGetStripeCustomer } from "../lib/stripe.ts";
+import { createOrGetStripeCustomer, getStripeClient } from "../lib/stripe.ts";
 import {
   verifyAppleToken,
   verifyGoogleToken,
@@ -2191,10 +2191,10 @@ export async function handleAuthRoute(
 
       console.log(`🗑️ Attempting to delete user: ${email}`);
 
-      // Get user to check if exists and get profile picture URL
+      // Get user to check if exists and get profile picture URL + Stripe customer
       const {data: users, error: userError} = await supabase
         .from("users")
-        .select("id, email, profile_picture_url")
+        .select("id, email, profile_picture_url, stripe_customer_id")
         .eq("email", email)
         .limit(1);
 
@@ -2206,6 +2206,67 @@ export async function handleAuthRoute(
       }
 
       const user = users[0];
+
+      // Cancel any active/pending Stripe subscriptions BEFORE deleting the user,
+      // so a deleted account doesn't continue to get billed monthly. We also
+      // delete the Stripe customer (soft delete in Stripe — keeps historical
+      // charges/refunds but stops future activity and frees the email).
+      try {
+        const stripe = getStripeClient();
+        const {data: activeSubs} = await supabase
+          .from("monthly_donations")
+          .select("id, stripe_subscription_id")
+          .eq("user_id", user.id)
+          .in("status", ["active", "trialing", "past_due", "incomplete", "pending"]);
+
+        for (const sub of activeSubs || []) {
+          if (sub.stripe_subscription_id) {
+            try {
+              await fetch(
+                `${stripe.baseUrl}/subscriptions/${sub.stripe_subscription_id}`,
+                {
+                  method: "DELETE",
+                  headers: {Authorization: `Bearer ${stripe.secretKey}`},
+                },
+              );
+              console.log(
+                `✅ Canceled Stripe subscription ${sub.stripe_subscription_id} for deleted user ${user.id}`,
+              );
+            } catch (subErr) {
+              console.warn(
+                `⚠️ Failed to cancel Stripe sub ${sub.stripe_subscription_id} during account delete:`,
+                subErr,
+              );
+              // Continue — best-effort cancellation; the DB delete should still proceed.
+            }
+          }
+        }
+
+        if (user.stripe_customer_id) {
+          try {
+            await fetch(
+              `${stripe.baseUrl}/customers/${user.stripe_customer_id}`,
+              {
+                method: "DELETE",
+                headers: {Authorization: `Bearer ${stripe.secretKey}`},
+              },
+            );
+            console.log(
+              `✅ Deleted Stripe customer ${user.stripe_customer_id} for user ${user.id}`,
+            );
+          } catch (custErr) {
+            console.warn(
+              "⚠️ Failed to delete Stripe customer during account delete:",
+              custErr,
+            );
+          }
+        }
+      } catch (stripeErr) {
+        console.warn(
+          "⚠️ Stripe cleanup during account delete failed (continuing):",
+          stripeErr,
+        );
+      }
 
       // Delete profile picture from Supabase Storage if it exists
       if (user.profile_picture_url) {
