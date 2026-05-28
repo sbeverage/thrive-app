@@ -759,19 +759,24 @@ export async function handleDonationRoute(
         );
       }
 
-      // Persist the chosen beneficiary on the user record so the admin and
-      // profile endpoint always reflect the current preferred charity.
+      // Persist the chosen beneficiary AND the monthly donation amount on the
+      // user record so the admin donors list (which reads total_monthly_donation
+      // / preferences.donationAmount) reflects the active subscription.
       try {
         const updatedPreferences = {
           ...(user.preferences || {}),
           preferredCharity: beneficiary_id,
+          donationAmount: amount,
         };
         await supabase
           .from("users")
-          .update({preferences: updatedPreferences})
+          .update({
+            preferences: updatedPreferences,
+            total_monthly_donation: amount,
+          })
           .eq("id", userId);
       } catch (e) {
-        console.warn("Could not update preferred charity on user:", e);
+        console.warn("Could not update user record after subscribe:", e);
       }
 
       // Ephemeral key helps Stripe Payment Sheet (especially Apple Pay) attach to customer

@@ -309,6 +309,14 @@ export async function handleWebhookRoute(
                 { onConflict: "reference_id", ignoreDuplicates: true },
               );
 
+              // Safety net: sync user.total_monthly_donation so the admin donors
+              // list reflects this donor's active monthly amount even if the
+              // subscribe handler didn't set it (legacy rows / older code paths).
+              await supabase
+                .from("users")
+                .update({total_monthly_donation: amount})
+                .eq("id", donation.user_id);
+
               console.log(
                 "✅ Monthly donation payment succeeded:",
                 donation.id,
