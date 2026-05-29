@@ -909,9 +909,25 @@ export async function handleDonationRoute(
 
       if (paidOnStripe) {
         const nextStatus = paidStatuses.has(stripeSubSt) ? stripeSubSt : "active";
+        // Stamp the first payment so admin reporting picks this donor up in the
+        // current billing month even if the Stripe webhook hasn't landed yet.
+        const today = new Date().toISOString().split("T")[0];
+        const nextMonth = new Date();
+        nextMonth.setMonth(nextMonth.getMonth() + 1);
+        const paymentAmount = details.paymentIntentAmountUsd
+          ? parseFloat(details.paymentIntentAmountUsd)
+          : null;
+        const updatePayload: Record<string, any> = {
+          status: nextStatus,
+          last_payment_date: today,
+          next_payment_date: nextMonth.toISOString().split("T")[0],
+        };
+        if (paymentAmount != null && !Number.isNaN(paymentAmount)) {
+          updatePayload.last_payment_amount = paymentAmount;
+        }
         await supabase
           .from("monthly_donations")
-          .update({status: nextStatus})
+          .update(updatePayload)
           .eq("id", unpaid.id);
         return new Response(
           JSON.stringify({paid: true, status: nextStatus}),

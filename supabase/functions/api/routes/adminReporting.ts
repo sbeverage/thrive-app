@@ -1,4 +1,5 @@
 import { corsHeaders } from "../lib/cors.ts";
+import { getStripeClient } from "../lib/stripe.ts";
 
 export async function handleAdminReporting(
   req: Request,
@@ -6,6 +7,131 @@ export async function handleAdminReporting(
   route: string,
   method: string,
 ) {
+  // POST /admin/reporting/backfill-payment-dates
+  // For each monthly_donations row missing last_payment_date, look up the
+  // Stripe subscription's latest paid invoice and stamp last_payment_date /
+  // last_payment_amount from Stripe. Idempotent — only touches rows missing data.
+  if (method === "POST" && route === "/admin/reporting/backfill-payment-dates") {
+    try {
+      const {data: rows, error: rowsError} = await supabase
+        .from("monthly_donations")
+        .select("id, stripe_subscription_id, last_payment_date")
+        .is("last_payment_date", null)
+        .not("stripe_subscription_id", "is", null);
+
+      if (rowsError) {
+        console.error("backfill: row lookup failed", rowsError);
+        return new Response(
+          JSON.stringify({error: "Failed to query monthly_donations"}),
+          {
+            headers: {...corsHeaders, "Content-Type": "application/json"},
+            status: 500,
+          },
+        );
+      }
+
+      const stripe = getStripeClient();
+      const results: Array<{
+        id: number;
+        subscription: string;
+        updated: boolean;
+        reason?: string;
+        last_payment_date?: string;
+        last_payment_amount?: number;
+      }> = [];
+
+      for (const row of rows || []) {
+        try {
+          const url =
+            `${stripe.baseUrl}/subscriptions/${encodeURIComponent(row.stripe_subscription_id)}` +
+            "?expand[]=latest_invoice";
+          const resp = await fetch(url, {
+            headers: {Authorization: `Bearer ${stripe.secretKey}`},
+          });
+          if (!resp.ok) {
+            results.push({
+              id: row.id,
+              subscription: row.stripe_subscription_id,
+              updated: false,
+              reason: `stripe_${resp.status}`,
+            });
+            continue;
+          }
+          const sub = await resp.json();
+          const inv = sub.latest_invoice || {};
+          const paidAt =
+            inv.status_transitions?.paid_at ?? inv.created ?? null;
+          const amountPaidCents = inv.amount_paid ?? null;
+
+          if (!paidAt || amountPaidCents == null) {
+            results.push({
+              id: row.id,
+              subscription: row.stripe_subscription_id,
+              updated: false,
+              reason: "no_paid_invoice",
+            });
+            continue;
+          }
+
+          const paidDate = new Date(paidAt * 1000)
+            .toISOString()
+            .split("T")[0];
+          const amountPaidUsd = amountPaidCents / 100;
+          const nextDate = new Date(paidAt * 1000);
+          nextDate.setMonth(nextDate.getMonth() + 1);
+
+          await supabase
+            .from("monthly_donations")
+            .update({
+              last_payment_date: paidDate,
+              last_payment_amount: amountPaidUsd,
+              next_payment_date: nextDate.toISOString().split("T")[0],
+            })
+            .eq("id", row.id);
+
+          results.push({
+            id: row.id,
+            subscription: row.stripe_subscription_id,
+            updated: true,
+            last_payment_date: paidDate,
+            last_payment_amount: amountPaidUsd,
+          });
+        } catch (err: any) {
+          console.error("backfill: per-row error", row.id, err);
+          results.push({
+            id: row.id,
+            subscription: row.stripe_subscription_id,
+            updated: false,
+            reason: err?.message || "unknown_error",
+          });
+        }
+      }
+
+      const updatedCount = results.filter((r) => r.updated).length;
+      return new Response(
+        JSON.stringify({
+          success: true,
+          scanned: results.length,
+          updated: updatedCount,
+          results,
+        }),
+        {
+          headers: {...corsHeaders, "Content-Type": "application/json"},
+          status: 200,
+        },
+      );
+    } catch (error: any) {
+      console.error("❌ backfill-payment-dates error:", error);
+      return new Response(
+        JSON.stringify({error: error.message || "Backfill failed"}),
+        {
+          headers: {...corsHeaders, "Content-Type": "application/json"},
+          status: 500,
+        },
+      );
+    }
+  }
+
   // GET /admin/reporting/payouts - Get payout data for date range
   if (method === "GET" && route === "/admin/reporting/payouts") {
     try {
