@@ -93,9 +93,12 @@ export async function handleAdminReporting(
             return sum;
           }, 0);
 
-          const netAmount = totalDonations - serviceFee - processingFees;
-          const platformFee = netAmount * 0.2; // 20% platform fee
-          const payoutAmount = netAmount * 0.8; // 80% to beneficiary
+          // Platform fee = $3 service fee per donation (THRIVE's revenue).
+          // Beneficiary receives the donation net of the service fee plus any
+          // processing fees the donor did not opt to cover.
+          const platformFee = serviceFee;
+          const payoutAmount = totalDonations - serviceFee - processingFees;
+          const netAmount = payoutAmount;
 
           // Get charity details including bank info
           const {data: charityDetails} = await supabase
