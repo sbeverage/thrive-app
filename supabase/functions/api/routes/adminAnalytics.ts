@@ -18,27 +18,40 @@ export async function handleAdminAnalytics(
   const { sendReferralReminderEmail } = deps;
 
   // GET /admin/analytics/donor-overview
-  // Returns KPI numbers powering the Dashboard's Donor Overview section:
-  //   - totalActive / totalInactive (snapshot)
-  //   - newDonors / lostDonors / netChange for rolling 7-, 30-, and 90-day windows
-  //   - each period reports count + growth rate (period_count / starting_total × 100)
-  // "Active donor" = role 'donor' AND has an active/trialing monthly subscription
-  //   OR donated (one-time or monthly) in the last 90 days.
-  // "Inactive donor" = role 'donor' AND not active.
-  // "New donor in window" = donor whose earliest donation timestamp falls in the window.
-  // "Lost donor in window" = monthly_donations row whose status flipped to 'cancelled',
-  //   'past_due', or 'unpaid' in the window (approximated via updated_at since we don't
-  //   yet have an explicit status_changed_at column).
+  // Powers the Dashboard's Donor Overview section. Returns:
+  //   - totalActive / totalInactive snapshot
+  //   - current: weekly / monthly / quarterly { new, lost, net } counts + growth rates
+  //   - previous: same shape, for the period immediately before each window (for vs-prev deltas)
+  //   - weeklySeries: last 12 calendar weeks of { weekStart, new, lost, net } for sparklines
+  // Definitions:
+  //   Active donor  = role 'donor' AND has active/trialing monthly subscription
+  //                   OR has donated (one-time or monthly) in last 90 days.
+  //   New in window = donor whose earliest donation timestamp falls inside the window.
+  //   Lost in window = monthly_donations row whose status flipped to cancelled/past_due/unpaid
+  //                    inside the window (approximated via updated_at).
   if (method === "GET" && route === "/admin/analytics/donor-overview") {
     try {
       const now = new Date();
       const ms = (days: number) => days * 24 * 60 * 60 * 1000;
-      const windows = {
-        weekly: new Date(now.getTime() - ms(7)).toISOString(),
-        monthly: new Date(now.getTime() - ms(30)).toISOString(),
-        quarterly: new Date(now.getTime() - ms(90)).toISOString(),
+      const isoDaysAgo = (days: number) =>
+        new Date(now.getTime() - ms(days)).toISOString();
+
+      // Windows for current period (most recent N days) and the previous
+      // period immediately before that (the prior N days).
+      const cur = {
+        weekly: isoDaysAgo(7),
+        monthly: isoDaysAgo(30),
+        quarterly: isoDaysAgo(90),
       };
-      const ninetyDaysAgo = windows.quarterly;
+      const prev = {
+        weeklyStart: isoDaysAgo(14),
+        weeklyEnd: cur.weekly,
+        monthlyStart: isoDaysAgo(60),
+        monthlyEnd: cur.monthly,
+        quarterlyStart: isoDaysAgo(180),
+        quarterlyEnd: cur.quarterly,
+      };
+      const ninetyDaysAgo = cur.quarterly;
 
       // All donor users — we'll classify each as active/inactive below.
       const { data: donors, error: donorsError } = await supabase
@@ -119,38 +132,91 @@ export async function handleAdminAnalytics(
         if (!cur || ts < cur) firstDonationByUser.set(row.user_id, ts);
       }
 
-      const countNewSince = (sinceIso: string) => {
+      // Count "new" donors whose first donation falls in [sinceIso, untilIso).
+      // If untilIso is undefined, the window has no upper bound (i.e., "since X to now").
+      const countNewBetween = (sinceIso: string, untilIso?: string) => {
         let n = 0;
         for (const ts of firstDonationByUser.values()) {
-          if (ts >= sinceIso) n += 1;
+          if (ts >= sinceIso && (!untilIso || ts < untilIso)) n += 1;
         }
         return n;
       };
 
-      // Lost-in-window: monthly_donations rows flipped to cancelled/past_due/unpaid
-      // within the window. Uses updated_at as a proxy timestamp for the status change.
+      // Lost = monthly_donations rows flipped to cancelled/past_due/unpaid within
+      // the window. Pull rows from up to 180 days ago to cover the prev-quarter window.
       const { data: lostRows } = await supabase
         .from("monthly_donations")
         .select("user_id, status, updated_at")
         .in("status", ["cancelled", "past_due", "unpaid"])
-        .gte("updated_at", windows.quarterly);
+        .gte("updated_at", prev.quarterlyStart);
 
-      const countLostSince = (sinceIso: string) => {
+      const countLostBetween = (sinceIso: string, untilIso?: string) => {
         const lostUsers = new Set<number>();
         for (const row of lostRows || []) {
-          if (row.updated_at && row.updated_at >= sinceIso) {
+          if (
+            row.updated_at &&
+            row.updated_at >= sinceIso &&
+            (!untilIso || row.updated_at < untilIso)
+          ) {
             lostUsers.add(row.user_id);
           }
         }
         return lostUsers.size;
       };
 
-      const newWeekly = countNewSince(windows.weekly);
-      const newMonthly = countNewSince(windows.monthly);
-      const newQuarterly = countNewSince(windows.quarterly);
-      const lostWeekly = countLostSince(windows.weekly);
-      const lostMonthly = countLostSince(windows.monthly);
-      const lostQuarterly = countLostSince(windows.quarterly);
+      // Current windows (from N days ago to now).
+      const newWeekly = countNewBetween(cur.weekly);
+      const newMonthly = countNewBetween(cur.monthly);
+      const newQuarterly = countNewBetween(cur.quarterly);
+      const lostWeekly = countLostBetween(cur.weekly);
+      const lostMonthly = countLostBetween(cur.monthly);
+      const lostQuarterly = countLostBetween(cur.quarterly);
+
+      // Previous windows (the period immediately before each current window).
+      const prevNewWeekly = countNewBetween(prev.weeklyStart, prev.weeklyEnd);
+      const prevNewMonthly = countNewBetween(prev.monthlyStart, prev.monthlyEnd);
+      const prevNewQuarterly = countNewBetween(
+        prev.quarterlyStart,
+        prev.quarterlyEnd,
+      );
+      const prevLostWeekly = countLostBetween(prev.weeklyStart, prev.weeklyEnd);
+      const prevLostMonthly = countLostBetween(
+        prev.monthlyStart,
+        prev.monthlyEnd,
+      );
+      const prevLostQuarterly = countLostBetween(
+        prev.quarterlyStart,
+        prev.quarterlyEnd,
+      );
+
+      // 12-week sparkline series. Buckets are aligned to Monday-start weeks.
+      const weeklySeries: Array<{
+        weekStart: string;
+        new: number;
+        lost: number;
+        net: number;
+      }> = [];
+      const dayMs = 24 * 60 * 60 * 1000;
+      // Find the Monday of the current week.
+      const currentMonday = new Date(now);
+      const dayOfWeek = currentMonday.getUTCDay();
+      const daysToMonday = (dayOfWeek + 6) % 7;
+      currentMonday.setUTCDate(currentMonday.getUTCDate() - daysToMonday);
+      currentMonday.setUTCHours(0, 0, 0, 0);
+      for (let i = 11; i >= 0; i--) {
+        const weekStart = new Date(currentMonday.getTime() - i * 7 * dayMs);
+        const weekEnd = new Date(weekStart.getTime() + 7 * dayMs);
+        const startIso = weekStart.toISOString();
+        const endIso = weekEnd.toISOString();
+        const n = countNewBetween(startIso, endIso);
+        const l = countLostBetween(startIso, endIso);
+        weeklySeries.push({
+          weekStart: startIso.split("T")[0],
+          new: n,
+          lost: l,
+          net: n - l,
+        });
+      }
 
       // Period rate = |change| / starting_total_before_change × 100.
       // For new donors:  newC      / (totalActive - newC)
@@ -174,12 +240,32 @@ export async function handleAdminAnalytics(
         };
       };
 
+      // Simple counts for the previous-period block (frontend computes delta).
+      const buildPrevBlock = (newC: number, lostC: number) => ({
+        new: { count: newC },
+        lost: { count: lostC },
+        net: { count: newC - lostC },
+      });
+
       return new Response(
         JSON.stringify({
           success: true,
           data: {
             totalActive,
             totalInactive,
+            current: {
+              weekly: buildBlock(newWeekly, lostWeekly),
+              monthly: buildBlock(newMonthly, lostMonthly),
+              quarterly: buildBlock(newQuarterly, lostQuarterly),
+            },
+            previous: {
+              weekly: buildPrevBlock(prevNewWeekly, prevLostWeekly),
+              monthly: buildPrevBlock(prevNewMonthly, prevLostMonthly),
+              quarterly: buildPrevBlock(prevNewQuarterly, prevLostQuarterly),
+            },
+            weeklySeries,
+            // Backwards-compat: also expose at the top level so older clients
+            // (still reading data.weekly/monthly/quarterly) don't break.
             weekly: buildBlock(newWeekly, lostWeekly),
             monthly: buildBlock(newMonthly, lostMonthly),
             quarterly: buildBlock(newQuarterly, lostQuarterly),
