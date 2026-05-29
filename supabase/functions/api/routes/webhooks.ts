@@ -1,3 +1,5 @@
+import { getStripeClient } from "../lib/stripe.ts";
+
 /** Injected from index.ts to avoid circular imports with referral helpers. */
 export type UpdateReferralStatusFn = (
   supabase: any,
@@ -6,6 +8,26 @@ export type UpdateReferralStatusFn = (
   monthlyDonationAmount?: number,
   stripeSubscriptionId?: string,
 ) => Promise<void>;
+
+// Best-effort: pull the Stripe processing fee for a charge id. Returns null
+// on any failure so the caller can fall back gracefully.
+async function fetchStripeFeeUsd(chargeId: string): Promise<number | null> {
+  try {
+    const stripe = getStripeClient();
+    const res = await fetch(
+      `${stripe.baseUrl}/charges/${encodeURIComponent(chargeId)}?expand[]=balance_transaction`,
+      { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+    );
+    if (!res.ok) return null;
+    const charge = await res.json();
+    if (typeof charge.balance_transaction?.fee === "number") {
+      return charge.balance_transaction.fee / 100;
+    }
+    return null;
+  } catch (_e) {
+    return null;
+  }
+}
 
 export async function handleWebhookRoute(
   req: Request,
@@ -278,17 +300,30 @@ export async function handleWebhookRoute(
               const nextPaymentDate = new Date();
               nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
 
+              // Best-effort: capture the real Stripe processing fee for this
+              // invoice so admin reporting can show what Stripe took.
+              const chargeId =
+                typeof invoice.charge === "string"
+                  ? invoice.charge
+                  : invoice.charge?.id;
+              const processingFee = chargeId
+                ? await fetchStripeFeeUsd(chargeId)
+                : null;
+
+              const updatePayload: Record<string, any> = {
+                status: "active",
+                last_payment_date: new Date().toISOString().split("T")[0],
+                last_payment_amount: amount,
+                next_payment_date: nextPaymentDate.toISOString().split("T")[0],
+              };
+              if (processingFee != null) {
+                updatePayload.processing_fee = processingFee;
+              }
+
               // Update monthly donation
               await supabase
                 .from("monthly_donations")
-                .update({
-                  status: "active",
-                  last_payment_date: new Date().toISOString().split("T")[0],
-                  last_payment_amount: amount,
-                  next_payment_date: nextPaymentDate
-                    .toISOString()
-                    .split("T")[0],
-                })
+                .update(updatePayload)
                 .eq("id", donation.id);
 
               // Create transaction record — upsert on stripe_invoice_id to be idempotent

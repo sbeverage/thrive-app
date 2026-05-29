@@ -15,9 +15,9 @@ export async function handleAdminReporting(
     try {
       const {data: rows, error: rowsError} = await supabase
         .from("monthly_donations")
-        .select("id, stripe_subscription_id, last_payment_date")
-        .is("last_payment_date", null)
-        .not("stripe_subscription_id", "is", null);
+        .select("id, stripe_subscription_id, last_payment_date, processing_fee")
+        .not("stripe_subscription_id", "is", null)
+        .or("last_payment_date.is.null,processing_fee.is.null");
 
       if (rowsError) {
         console.error("backfill: row lookup failed", rowsError);
@@ -38,7 +38,30 @@ export async function handleAdminReporting(
         reason?: string;
         last_payment_date?: string;
         last_payment_amount?: number;
+        processing_fee?: number;
       }> = [];
+
+      // Helper: fetch the Stripe processing fee for a charge id by looking up
+      // its balance_transaction. Returns null on any failure.
+      const fetchChargeFeeUsd = async (
+        chargeId: string,
+      ): Promise<number | null> => {
+        try {
+          const chargeRes = await fetch(
+            `${stripe.baseUrl}/charges/${encodeURIComponent(chargeId)}?expand[]=balance_transaction`,
+            { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+          );
+          if (!chargeRes.ok) return null;
+          const charge = await chargeRes.json();
+          const bt = charge.balance_transaction;
+          if (bt && typeof bt === "object" && typeof bt.fee === "number") {
+            return bt.fee / 100;
+          }
+          return null;
+        } catch (_e) {
+          return null;
+        }
+      };
 
       for (const row of rows || []) {
         try {
@@ -80,13 +103,26 @@ export async function handleAdminReporting(
           const nextDate = new Date(paidAt * 1000);
           nextDate.setMonth(nextDate.getMonth() + 1);
 
+          // Pull the real Stripe fee from the charge's balance_transaction so
+          // admin reporting shows what Stripe actually took (not an estimate).
+          const chargeId =
+            typeof inv.charge === "string" ? inv.charge : inv.charge?.id;
+          const processingFeeUsd = chargeId
+            ? await fetchChargeFeeUsd(chargeId)
+            : null;
+
+          const updatePayload: Record<string, any> = {
+            last_payment_date: paidDate,
+            last_payment_amount: amountPaidUsd,
+            next_payment_date: nextDate.toISOString().split("T")[0],
+          };
+          if (processingFeeUsd != null) {
+            updatePayload.processing_fee = processingFeeUsd;
+          }
+
           await supabase
             .from("monthly_donations")
-            .update({
-              last_payment_date: paidDate,
-              last_payment_amount: amountPaidUsd,
-              next_payment_date: nextDate.toISOString().split("T")[0],
-            })
+            .update(updatePayload)
             .eq("id", row.id);
 
           results.push({
@@ -95,6 +131,7 @@ export async function handleAdminReporting(
             updated: true,
             last_payment_date: paidDate,
             last_payment_amount: amountPaidUsd,
+            processing_fee: processingFeeUsd ?? undefined,
           });
         } catch (err: any) {
           console.error("backfill: per-row error", row.id, err);
@@ -179,7 +216,7 @@ export async function handleAdminReporting(
           const {data: monthlyDonations} = await supabase
             .from("monthly_donations")
             .select(
-              "id, amount, status, last_payment_date, last_payment_amount",
+              "id, amount, status, last_payment_date, last_payment_amount, processing_fee",
             )
             .eq("beneficiary_id", charity.id)
             .eq("status", "active")
@@ -212,16 +249,27 @@ export async function handleAdminReporting(
 
           // Calculate fees
           const serviceFee = donationCount * 3.0; // $3 per donation
-          const processingFees = (oneTimeGifts || []).reduce((sum, g) => {
+          // Real Stripe processing fees taken from the charge's balance_transaction.
+          // For one-time gifts we historically only counted fees the donor didn't
+          // cover (beneficiary absorbed); we keep that behavior, plus the monthly
+          // Stripe fee (always counted since donors who cover fees pay an estimate,
+          // not the exact Stripe cut — the real cut still reduces what hits THRIVE's
+          // bank from the gross charge).
+          const oneTimeAbsorbedFees = (oneTimeGifts || []).reduce((sum, g) => {
             if (!g.user_covered_fees) {
               return sum + parseFloat(g.processing_fee || 0);
             }
             return sum;
           }, 0);
+          const monthlyStripeFees = (monthlyDonations || []).reduce(
+            (sum, d) => sum + parseFloat(d.processing_fee || 0),
+            0,
+          );
+          const processingFees = oneTimeAbsorbedFees + monthlyStripeFees;
 
           // Platform fee = $3 service fee per donation (THRIVE's revenue).
-          // Beneficiary receives the donation net of the service fee plus any
-          // processing fees the donor did not opt to cover.
+          // Beneficiary receives the gross donations minus the service fee and
+          // the actual Stripe processing fees that came out of the gross charge.
           const platformFee = serviceFee;
           const payoutAmount = totalDonations - serviceFee - processingFees;
           const netAmount = payoutAmount;

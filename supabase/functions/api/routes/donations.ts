@@ -925,6 +925,44 @@ export async function handleDonationRoute(
         if (paymentAmount != null && !Number.isNaN(paymentAmount)) {
           updatePayload.last_payment_amount = paymentAmount;
         }
+        // Best-effort: pull the real Stripe processing fee for this charge so
+        // admin reporting can show what Stripe actually took. Don't block the
+        // sync response on this — webhook + backfill will catch any misses.
+        try {
+          const subRes = await fetch(
+            `${getStripeClient().baseUrl}/subscriptions/${encodeURIComponent(unpaid.stripe_subscription_id)}?expand[]=latest_invoice`,
+            {
+              headers: {
+                Authorization: `Bearer ${getStripeClient().secretKey}`,
+              },
+            },
+          );
+          if (subRes.ok) {
+            const sub = await subRes.json();
+            const chargeId =
+              typeof sub.latest_invoice?.charge === "string"
+                ? sub.latest_invoice.charge
+                : sub.latest_invoice?.charge?.id;
+            if (chargeId) {
+              const chargeRes = await fetch(
+                `${getStripeClient().baseUrl}/charges/${encodeURIComponent(chargeId)}?expand[]=balance_transaction`,
+                {
+                  headers: {
+                    Authorization: `Bearer ${getStripeClient().secretKey}`,
+                  },
+                },
+              );
+              if (chargeRes.ok) {
+                const charge = await chargeRes.json();
+                if (typeof charge.balance_transaction?.fee === "number") {
+                  updatePayload.processing_fee = charge.balance_transaction.fee / 100;
+                }
+              }
+            }
+          }
+        } catch (_e) {
+          // Swallow — non-critical, backfill will catch later.
+        }
         await supabase
           .from("monthly_donations")
           .update(updatePayload)
