@@ -16,6 +16,192 @@ export async function handleAdminAnalytics(
   deps: AdminAnalyticsDeps,
 ) {
   const { sendReferralReminderEmail } = deps;
+
+  // GET /admin/analytics/donor-overview
+  // Returns KPI numbers powering the Dashboard's Donor Overview section:
+  //   - totalActive / totalInactive (snapshot)
+  //   - newDonors / lostDonors / netChange for rolling 7-, 30-, and 90-day windows
+  //   - each period reports count + growth rate (period_count / starting_total × 100)
+  // "Active donor" = role 'donor' AND has an active/trialing monthly subscription
+  //   OR donated (one-time or monthly) in the last 90 days.
+  // "Inactive donor" = role 'donor' AND not active.
+  // "New donor in window" = donor whose earliest donation timestamp falls in the window.
+  // "Lost donor in window" = monthly_donations row whose status flipped to 'cancelled',
+  //   'past_due', or 'unpaid' in the window (approximated via updated_at since we don't
+  //   yet have an explicit status_changed_at column).
+  if (method === "GET" && route === "/admin/analytics/donor-overview") {
+    try {
+      const now = new Date();
+      const ms = (days: number) => days * 24 * 60 * 60 * 1000;
+      const windows = {
+        weekly: new Date(now.getTime() - ms(7)).toISOString(),
+        monthly: new Date(now.getTime() - ms(30)).toISOString(),
+        quarterly: new Date(now.getTime() - ms(90)).toISOString(),
+      };
+      const ninetyDaysAgo = windows.quarterly;
+
+      // All donor users — we'll classify each as active/inactive below.
+      const { data: donors, error: donorsError } = await supabase
+        .from("users")
+        .select("id, created_at")
+        .eq("role", "donor");
+
+      if (donorsError) {
+        console.error("donor-overview: users query failed", donorsError);
+        return new Response(
+          JSON.stringify({ error: "Failed to load donors" }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 500,
+          },
+        );
+      }
+
+      const donorIds: number[] = (donors || []).map((d: any) => d.id);
+
+      // Active monthly subscriptions (status in active/trialing) per user.
+      const { data: activeSubs } = await supabase
+        .from("monthly_donations")
+        .select("user_id")
+        .in("user_id", donorIds.length ? donorIds : [0])
+        .in("status", ["active", "trialing"]);
+      const activeSubUserIds = new Set<number>(
+        (activeSubs || []).map((r: any) => r.user_id),
+      );
+
+      // Anyone with a donation (monthly payment or one-time gift) in last 90d.
+      const { data: recentMonthlyPayments } = await supabase
+        .from("monthly_donations")
+        .select("user_id, last_payment_date")
+        .in("user_id", donorIds.length ? donorIds : [0])
+        .gte("last_payment_date", ninetyDaysAgo.split("T")[0]);
+      const { data: recentOneTime } = await supabase
+        .from("one_time_gifts")
+        .select("user_id, created_at")
+        .in("user_id", donorIds.length ? donorIds : [0])
+        .eq("status", "completed")
+        .gte("created_at", ninetyDaysAgo);
+
+      const recentlyDonatedUserIds = new Set<number>([
+        ...(recentMonthlyPayments || []).map((r: any) => r.user_id),
+        ...(recentOneTime || []).map((r: any) => r.user_id),
+      ]);
+      const activeUserIds = new Set<number>([
+        ...activeSubUserIds,
+        ...recentlyDonatedUserIds,
+      ]);
+
+      const totalActive = activeUserIds.size;
+      const totalInactive = (donors || []).length - totalActive;
+
+      // First donation timestamp per donor, used to identify "new in window".
+      const { data: allMonthlyPayments } = await supabase
+        .from("monthly_donations")
+        .select("user_id, last_payment_date")
+        .in("user_id", donorIds.length ? donorIds : [0])
+        .not("last_payment_date", "is", null);
+      const { data: allOneTime } = await supabase
+        .from("one_time_gifts")
+        .select("user_id, created_at")
+        .in("user_id", donorIds.length ? donorIds : [0])
+        .eq("status", "completed");
+
+      const firstDonationByUser = new Map<number, string>();
+      for (const row of allMonthlyPayments || []) {
+        const ts = `${row.last_payment_date}T00:00:00Z`;
+        const cur = firstDonationByUser.get(row.user_id);
+        if (!cur || ts < cur) firstDonationByUser.set(row.user_id, ts);
+      }
+      for (const row of allOneTime || []) {
+        const ts = row.created_at;
+        if (!ts) continue;
+        const cur = firstDonationByUser.get(row.user_id);
+        if (!cur || ts < cur) firstDonationByUser.set(row.user_id, ts);
+      }
+
+      const countNewSince = (sinceIso: string) => {
+        let n = 0;
+        for (const ts of firstDonationByUser.values()) {
+          if (ts >= sinceIso) n += 1;
+        }
+        return n;
+      };
+
+      // Lost-in-window: monthly_donations rows flipped to cancelled/past_due/unpaid
+      // within the window. Uses updated_at as a proxy timestamp for the status change.
+      const { data: lostRows } = await supabase
+        .from("monthly_donations")
+        .select("user_id, status, updated_at")
+        .in("status", ["cancelled", "past_due", "unpaid"])
+        .gte("updated_at", windows.quarterly);
+
+      const countLostSince = (sinceIso: string) => {
+        const lostUsers = new Set<number>();
+        for (const row of lostRows || []) {
+          if (row.updated_at && row.updated_at >= sinceIso) {
+            lostUsers.add(row.user_id);
+          }
+        }
+        return lostUsers.size;
+      };
+
+      const newWeekly = countNewSince(windows.weekly);
+      const newMonthly = countNewSince(windows.monthly);
+      const newQuarterly = countNewSince(windows.quarterly);
+      const lostWeekly = countLostSince(windows.weekly);
+      const lostMonthly = countLostSince(windows.monthly);
+      const lostQuarterly = countLostSince(windows.quarterly);
+
+      // Period rate = |change| / starting_total_before_change × 100.
+      // For new donors:  newC      / (totalActive - newC)
+      // For lost donors: lostC     / (totalActive + lostC)   [starting was higher by lostC]
+      // For net change:  netC      / (totalActive - netC)
+      const rateForDelta = (
+        magnitude: number,
+        signedDelta: number,
+      ): number | null => {
+        const starting = totalActive - signedDelta;
+        if (starting <= 0 || magnitude === 0) return magnitude === 0 ? 0 : null;
+        return Math.round((magnitude / starting) * 1000) / 10; // one decimal
+      };
+
+      const buildBlock = (newC: number, lostC: number) => {
+        const net = newC - lostC;
+        return {
+          new: { count: newC, growthRate: rateForDelta(newC, newC) },
+          lost: { count: lostC, lossRate: rateForDelta(lostC, -lostC) },
+          net: { count: net, growthRate: rateForDelta(Math.abs(net), net) },
+        };
+      };
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            totalActive,
+            totalInactive,
+            weekly: buildBlock(newWeekly, lostWeekly),
+            monthly: buildBlock(newMonthly, lostMonthly),
+            quarterly: buildBlock(newQuarterly, lostQuarterly),
+          },
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        },
+      );
+    } catch (err: any) {
+      console.error("donor-overview error:", err);
+      return new Response(
+        JSON.stringify({ error: err?.message || "donor-overview failed" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        },
+      );
+    }
+  }
+
   // GET /admin/analytics/leaderboard/:type
   const leaderboardMatch = route.match(
     /^\/admin\/analytics\/leaderboard\/(\w+)$/,
