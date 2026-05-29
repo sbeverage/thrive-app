@@ -93,6 +93,38 @@ export async function handleAdminDonors(
         }
       }
 
+      // Build a most-recent-donation-date lookup per user from real data.
+      // The previous version hardcoded last_donation_date: null, so every
+      // donor showed "Never" in the admin Donors tab.
+      const userIds = (users || []).map((u: any) => u.id);
+      const lastDonationByUser = new Map<number, string>();
+      if (userIds.length > 0) {
+        const {data: monthlyRows} = await supabase
+          .from("monthly_donations")
+          .select("user_id, last_payment_date")
+          .in("user_id", userIds)
+          .not("last_payment_date", "is", null);
+        for (const row of monthlyRows || []) {
+          const cur = lastDonationByUser.get(row.user_id);
+          if (!cur || row.last_payment_date > cur) {
+            lastDonationByUser.set(row.user_id, row.last_payment_date);
+          }
+        }
+        const {data: oneTimeRows} = await supabase
+          .from("one_time_gifts")
+          .select("user_id, created_at")
+          .in("user_id", userIds)
+          .eq("status", "completed");
+        for (const row of oneTimeRows || []) {
+          const dateOnly = (row.created_at || "").split("T")[0];
+          if (!dateOnly) continue;
+          const cur = lastDonationByUser.get(row.user_id);
+          if (!cur || dateOnly > cur) {
+            lastDonationByUser.set(row.user_id, dateOnly);
+          }
+        }
+      }
+
       // Format donors data to match what the frontend expects
       const formattedDonors = (users || []).map((user: any) => {
         const fullName =
@@ -121,7 +153,7 @@ export async function handleAdminDonors(
             user.coworking === true || user.invite_type === "coworking",
           total_donations: parseFloat(monthlyDonation) || 0,
           one_time_donation: parseFloat(oneTimeDonation) || 0,
-          last_donation_date: null,
+          last_donation_date: lastDonationByUser.get(user.id) || null,
           address: {
             city: user.city || "",
             state: user.state || "",
