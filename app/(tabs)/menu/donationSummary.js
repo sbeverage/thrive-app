@@ -26,7 +26,14 @@ import { useBeneficiary } from "../../context/BeneficiaryContext";
 import API from "../../lib/api";
 
 const SERVICE_FEE = 3.0;
+// Legacy "donor covers fees" rate (3.5% on top of subtotal). Used by the
+// one-time gift helper and to reconcile pre-existing monthly subscriptions
+// that were created before the gross-up formula change.
 const CC_RATE = 0.035;
+// Current Stripe nonprofit pricing — used by the gross-up formula in
+// stripeIntegration.js for new monthly subscriptions.
+const STRIPE_FEE_PERCENT = 0.022;
+const STRIPE_FIXED_FEE = 0.3;
 
 /**
  * Given a subscription's stored amount, returns the display total and fee breakdown.
@@ -44,24 +51,46 @@ function getSubscriptionBilling(rawAmount) {
   const isBase = n === Math.round(n); // whole dollar = base amount
 
   if (isBase) {
-    // Compute fee-inclusive total (CC fees assumed covered — default in the app)
+    // Treat as base donation amount and recompute with current gross-up formula.
     const subtotal = n + SERVICE_FEE;
-    const ccFee = Math.round(subtotal * CC_RATE * 100) / 100;
-    const total = Math.round((subtotal + ccFee) * 100) / 100;
+    const total =
+      Math.ceil(
+        ((subtotal + STRIPE_FIXED_FEE) / (1 - STRIPE_FEE_PERCENT)) * 100,
+      ) / 100;
+    const ccFee = Math.round((total - subtotal) * 100) / 100;
     return { total, donationAmount: n, serviceFee: SERVICE_FEE, ccFee };
   }
 
-  // Fee-inclusive total stored — back-calculate base.
-  // Check if total ≈ (roundedBase + 3) * 1.035 (CC covered path).
-  const baseIfCovered = n / (1 + CC_RATE) - SERVICE_FEE;
-  const roundedBase = Math.round(baseIfCovered);
-  const expectedTotal = Math.round((roundedBase + SERVICE_FEE) * (1 + CC_RATE) * 100) / 100;
-  if (Math.abs(n - expectedTotal) < 0.05 && roundedBase > 0) {
+  // Fee-inclusive total stored — try current gross-up formula first (new
+  // donors), then fall back to the legacy 3.5% formula (existing subs).
+  const baseFromGrossUp =
+    n * (1 - STRIPE_FEE_PERCENT) - STRIPE_FIXED_FEE - SERVICE_FEE;
+  const roundedGross = Math.round(baseFromGrossUp);
+  const expectedGross =
+    Math.ceil(
+      ((roundedGross + SERVICE_FEE + STRIPE_FIXED_FEE) /
+        (1 - STRIPE_FEE_PERCENT)) *
+        100,
+    ) / 100;
+  if (Math.abs(n - expectedGross) < 0.05 && roundedGross > 0) {
     return {
       total: n,
-      donationAmount: roundedBase,
+      donationAmount: roundedGross,
       serviceFee: SERVICE_FEE,
-      ccFee: Math.round((n - roundedBase - SERVICE_FEE) * 100) / 100,
+      ccFee: Math.round((n - roundedGross - SERVICE_FEE) * 100) / 100,
+    };
+  }
+
+  const baseLegacy = n / (1 + CC_RATE) - SERVICE_FEE;
+  const roundedLegacy = Math.round(baseLegacy);
+  const expectedLegacy =
+    Math.round((roundedLegacy + SERVICE_FEE) * (1 + CC_RATE) * 100) / 100;
+  if (Math.abs(n - expectedLegacy) < 0.05 && roundedLegacy > 0) {
+    return {
+      total: n,
+      donationAmount: roundedLegacy,
+      serviceFee: SERVICE_FEE,
+      ccFee: Math.round((n - roundedLegacy - SERVICE_FEE) * 100) / 100,
     };
   }
 

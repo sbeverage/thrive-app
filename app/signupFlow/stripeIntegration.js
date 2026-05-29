@@ -41,9 +41,11 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 
 /** Platform service fee (USD) — included in Stripe subscription total. */
 const SERVICE_FEE = 3.0;
-/** Applied to (donation + service fee) when "cover fees" is on — same value drives UI label + amount sent to Stripe. */
-const CREDIT_CARD_FEE_RATE = 0.035;
-const CREDIT_CARD_FEE_LABEL = `(${(CREDIT_CARD_FEE_RATE * 100).toFixed(1)}%)`;
+// Stripe nonprofit pricing: 2.2% + $0.30 per transaction. When "cover fees"
+// is on we gross up the donor's total so the charity still receives the full
+// donation + $3 platform fee after Stripe takes its cut.
+const STRIPE_FEE_PERCENT = 0.022;
+const STRIPE_FIXED_FEE = 0.3;
 
 // Apple Pay SVG asset
 const applePaySvgAsset = require("../../assets/logos/Apple-Pay.svg");
@@ -138,8 +140,15 @@ export default function StripeIntegration() {
   // only charge the user's extra donation. For all other flows, charge the full donation.
   const chargeBase = isCoworkingExtra ? baseAmount : totalMonthlyDonation;
   const donationSubtotal = chargeBase + SERVICE_FEE;
-  const creditCardFee = coverFees ? donationSubtotal * CREDIT_CARD_FEE_RATE : 0;
-  const totalAmountNumber = donationSubtotal + creditCardFee;
+  // Gross-up so the charity nets donation + $3 after Stripe's 2.2% + $0.30 cut.
+  // Math.ceil to the nearest cent guarantees the charity is never short.
+  const grossedTotal = coverFees
+    ? Math.ceil(
+        ((donationSubtotal + STRIPE_FIXED_FEE) / (1 - STRIPE_FEE_PERCENT)) * 100,
+      ) / 100
+    : donationSubtotal;
+  const creditCardFee = coverFees ? grossedTotal - donationSubtotal : 0;
+  const totalAmountNumber = grossedTotal;
   const totalAmount = totalAmountNumber.toFixed(2);
 
   // Animation values
