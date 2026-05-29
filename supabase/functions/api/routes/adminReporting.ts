@@ -311,27 +311,35 @@ export async function handleAdminReporting(
         }),
       );
 
-      // Calculate summary totals
+      // Only return beneficiaries with actual donations in the date range —
+      // an admin viewing payouts wants to see who needs to be paid, not the
+      // full list of every active charity at $0.
+      const beneficiariesWithPayouts = payoutData.filter(
+        (p) => p.donationCount > 0,
+      );
+
+      // Calculate summary totals (sums match the filtered table — empty rows
+      // would contribute zeros anyway, but compute from the filtered set for clarity).
       const summary = {
-        totalDonations: payoutData.reduce(
+        totalDonations: beneficiariesWithPayouts.reduce(
           (sum, p) => sum + p.totalDonations,
           0,
         ),
-        totalServiceFees: payoutData.reduce((sum, p) => sum + p.serviceFee, 0),
-        totalProcessingFees: payoutData.reduce(
+        totalServiceFees: beneficiariesWithPayouts.reduce((sum, p) => sum + p.serviceFee, 0),
+        totalProcessingFees: beneficiariesWithPayouts.reduce(
           (sum, p) => sum + p.processingFees,
           0,
         ),
-        totalNetAmount: payoutData.reduce((sum, p) => sum + p.netAmount, 0),
-        totalPlatformFees: payoutData.reduce(
+        totalNetAmount: beneficiariesWithPayouts.reduce((sum, p) => sum + p.netAmount, 0),
+        totalPlatformFees: beneficiariesWithPayouts.reduce(
           (sum, p) => sum + p.platformFee,
           0,
         ),
-        totalPayoutAmount: payoutData.reduce(
+        totalPayoutAmount: beneficiariesWithPayouts.reduce(
           (sum, p) => sum + p.payoutAmount,
           0,
         ),
-        totalDonationCount: payoutData.reduce(
+        totalDonationCount: beneficiariesWithPayouts.reduce(
           (sum, p) => sum + p.donationCount,
           0,
         ),
@@ -341,7 +349,7 @@ export async function handleAdminReporting(
         JSON.stringify({
           success: true,
           data: {
-            payouts: payoutData,
+            payouts: beneficiariesWithPayouts,
             summary: {
               totalDonations: parseFloat(summary.totalDonations.toFixed(2)),
               totalServiceFees: parseFloat(summary.totalServiceFees.toFixed(2)),
