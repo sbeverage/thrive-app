@@ -745,6 +745,179 @@ export async function handleAdminAnalytics(
     }
   }
 
+  // GET /admin/analytics/savings-overview
+  // Powers the Dashboard's Savings & Vendor Overview section: KPI cards
+  // (Monthly Savings / Total Savings / Total Vendors) plus four charts
+  // (Savings Trends line, top vendors by $ saved, savings by location,
+  // top vendors by redemption count).
+  if (method === "GET" && route === "/admin/analytics/savings-overview") {
+    try {
+      const now = new Date();
+
+      // Active vendors snapshot + id→name lookup.
+      const { data: vendors } = await supabase
+        .from("vendors")
+        .select("id, name, is_active");
+      const vendorNameById: Record<number, string> = {};
+      let totalVendors = 0;
+      for (const v of vendors || []) {
+        if (v.is_active) totalVendors += 1;
+        vendorNameById[v.id] = v.name;
+      }
+
+      // Donor city map for the by-location aggregation.
+      const { data: donorsForCity } = await supabase
+        .from("users")
+        .select("id, city, state")
+        .eq("role", "donor");
+      const userCity: Record<number, string> = {};
+      for (const d of donorsForCity || []) {
+        const city = (d.city || "").trim();
+        const state = (d.state || "").trim();
+        if (!city) continue;
+        userCity[d.id] = state ? `${city}, ${state}` : city;
+      }
+
+      // Pull every redemption — small enough to aggregate in JS.
+      const { data: redemptions } = await supabase
+        .from("redemptions")
+        .select(
+          "id, user_id, vendor_id, redeemed_at, total_bill, total_savings",
+        );
+
+      // Current month boundary (last 30 days, rolling).
+      const ms = (days: number) => days * 24 * 60 * 60 * 1000;
+      const thirtyDaysAgo = new Date(now.getTime() - ms(30)).toISOString();
+
+      // --- Monthly + Total savings ---
+      let monthlyCount = 0;
+      let monthlyTotal = 0;
+      let monthlyDonors = new Set<number>();
+      let allCount = 0;
+      let allTotal = 0;
+      for (const r of redemptions || []) {
+        allCount += 1;
+        const saved = parseFloat((r.total_savings ?? 0).toString());
+        if (!Number.isNaN(saved)) allTotal += saved;
+        if (r.redeemed_at && r.redeemed_at >= thirtyDaysAgo) {
+          monthlyCount += 1;
+          if (!Number.isNaN(saved)) monthlyTotal += saved;
+          if (r.user_id != null) monthlyDonors.add(r.user_id);
+        }
+      }
+      const monthlyAvgPerDonor =
+        monthlyDonors.size > 0 ? monthlyTotal / monthlyDonors.size : 0;
+
+      // --- Savings Trends (last 12 calendar months) ---
+      const months: string[] = [];
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        months.push(ym);
+      }
+      const monthIdx: Record<string, number> = Object.fromEntries(
+        months.map((m, i) => [m, i]),
+      );
+      const savingsByMonth = new Array(12).fill(0);
+      const countByMonth = new Array(12).fill(0);
+      for (const r of redemptions || []) {
+        if (!r.redeemed_at) continue;
+        const ym = r.redeemed_at.slice(0, 7);
+        const idx = monthIdx[ym];
+        if (idx === undefined) continue;
+        const saved = parseFloat((r.total_savings ?? 0).toString());
+        if (!Number.isNaN(saved)) savingsByMonth[idx] += saved;
+        countByMonth[idx] += 1;
+      }
+      const savingsTrends = months.map((m, i) => ({
+        month: m,
+        total: Math.round(savingsByMonth[i] * 100) / 100,
+        count: countByMonth[i],
+      }));
+
+      // --- Top vendors by $ saved ---
+      const dollarsByVendor: Record<number, number> = {};
+      const countsByVendor: Record<number, number> = {};
+      const cityTotals: Record<string, number> = {};
+      for (const r of redemptions || []) {
+        const saved = parseFloat((r.total_savings ?? 0).toString());
+        if (r.vendor_id != null) {
+          if (!Number.isNaN(saved)) {
+            dollarsByVendor[r.vendor_id] =
+              (dollarsByVendor[r.vendor_id] || 0) + saved;
+          }
+          countsByVendor[r.vendor_id] =
+            (countsByVendor[r.vendor_id] || 0) + 1;
+        }
+        const cityLabel = r.user_id != null ? userCity[r.user_id] : undefined;
+        if (cityLabel && !Number.isNaN(saved)) {
+          cityTotals[cityLabel] = (cityTotals[cityLabel] || 0) + saved;
+        }
+      }
+      const topVendorsByDollars = Object.entries(dollarsByVendor)
+        .map(([id, total]) => ({
+          vendorId: Number(id),
+          name: vendorNameById[Number(id)] || `Vendor ${id}`,
+          total: Math.round(total * 100) / 100,
+        }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 10);
+
+      const topVendorsByCount = Object.entries(countsByVendor)
+        .map(([id, count]) => ({
+          vendorId: Number(id),
+          name: vendorNameById[Number(id)] || `Vendor ${id}`,
+          count,
+        }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
+
+      const savingsByLocation = Object.entries(cityTotals)
+        .map(([city, total]) => ({
+          city,
+          total: Math.round(total * 100) / 100,
+        }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 10);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            totalVendors,
+            monthlySavings: {
+              count: monthlyCount,
+              total: Math.round(monthlyTotal * 100) / 100,
+              avgPerDonor: Math.round(monthlyAvgPerDonor * 100) / 100,
+              uniqueDonors: monthlyDonors.size,
+            },
+            totalSavings: {
+              count: allCount,
+              total: Math.round(allTotal * 100) / 100,
+            },
+            savingsTrends,
+            topVendorsByDollars,
+            savingsByLocation,
+            topVendorsByCount,
+          },
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        },
+      );
+    } catch (err: any) {
+      console.error("savings-overview error:", err);
+      return new Response(
+        JSON.stringify({ error: err?.message || "savings-overview failed" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        },
+      );
+    }
+  }
+
   // GET /admin/analytics/leaderboard/:type
   const leaderboardMatch = route.match(
     /^\/admin\/analytics\/leaderboard\/(\w+)$/,
