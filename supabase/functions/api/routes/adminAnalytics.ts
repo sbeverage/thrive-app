@@ -288,6 +288,208 @@ export async function handleAdminAnalytics(
     }
   }
 
+  // GET /admin/analytics/donor-charts
+  // Returns the four supporting Donor Overview charts:
+  //   - donorCountSeries: last 12 calendar months of { month, new, lost, net }
+  //   - donorSources:     bucketed counts by acquisition channel
+  //   - donorsByLocation: top cities by donor count
+  //   - growthByLocation: top cities by % growth (last 90d vs prior 90d)
+  if (method === "GET" && route === "/admin/analytics/donor-charts") {
+    try {
+      // ---- Donors snapshot (used by multiple charts) ----
+      const { data: donors, error: donorsError } = await supabase
+        .from("users")
+        .select(
+          "id, created_at, city, state, invite_type",
+        )
+        .eq("role", "donor");
+      if (donorsError) {
+        console.error("donor-charts: users query failed", donorsError);
+        return new Response(
+          JSON.stringify({ error: "Failed to load donors" }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 500,
+          },
+        );
+      }
+      const donorIds: number[] = (donors || []).map((d: any) => d.id);
+      const idsForQuery = donorIds.length ? donorIds : [0];
+
+      // ---- First-donation timestamp per donor ----
+      const { data: monthlyPayments } = await supabase
+        .from("monthly_donations")
+        .select("user_id, last_payment_date")
+        .in("user_id", idsForQuery)
+        .not("last_payment_date", "is", null);
+      const { data: oneTime } = await supabase
+        .from("one_time_gifts")
+        .select("user_id, created_at")
+        .in("user_id", idsForQuery)
+        .eq("status", "completed");
+      const firstDonationByUser = new Map<number, string>();
+      for (const row of monthlyPayments || []) {
+        const ts = `${row.last_payment_date}T00:00:00Z`;
+        const cur = firstDonationByUser.get(row.user_id);
+        if (!cur || ts < cur) firstDonationByUser.set(row.user_id, ts);
+      }
+      for (const row of oneTime || []) {
+        if (!row.created_at) continue;
+        const cur = firstDonationByUser.get(row.user_id);
+        if (!cur || row.created_at < cur)
+          firstDonationByUser.set(row.user_id, row.created_at);
+      }
+
+      // ---- Lost (cancelled/past_due/unpaid) sub-rows for last ~14 months ----
+      const fourteenMonthsAgo = new Date();
+      fourteenMonthsAgo.setMonth(fourteenMonthsAgo.getMonth() - 14);
+      const { data: lostRows } = await supabase
+        .from("monthly_donations")
+        .select("user_id, status, updated_at")
+        .in("status", ["cancelled", "past_due", "unpaid"])
+        .gte("updated_at", fourteenMonthsAgo.toISOString());
+
+      // ---- 1. donorCountSeries (last 12 calendar months) ----
+      // Bucket by YYYY-MM. Iterate firstDonationByUser and lostRows.
+      const now = new Date();
+      const months: string[] = [];
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        months.push(ym);
+      }
+      const monthIndex: Record<string, number> = Object.fromEntries(
+        months.map((m, i) => [m, i]),
+      );
+      const newByMonth = new Array(months.length).fill(0);
+      const lostByMonth = new Array(months.length).fill(0);
+      for (const ts of firstDonationByUser.values()) {
+        const ym = ts.slice(0, 7);
+        if (monthIndex[ym] !== undefined) newByMonth[monthIndex[ym]] += 1;
+      }
+      const lostUserMonth = new Set<string>(); // dedupe per user+month
+      for (const row of lostRows || []) {
+        if (!row.updated_at) continue;
+        const ym = row.updated_at.slice(0, 7);
+        if (monthIndex[ym] === undefined) continue;
+        const key = `${row.user_id}|${ym}`;
+        if (lostUserMonth.has(key)) continue;
+        lostUserMonth.add(key);
+        lostByMonth[monthIndex[ym]] += 1;
+      }
+      const donorCountSeries = months.map((m, i) => ({
+        month: m,
+        new: newByMonth[i],
+        lost: lostByMonth[i],
+        net: newByMonth[i] - lostByMonth[i],
+      }));
+
+      // ---- 2. donorSources (Admin Invited / Referred / Direct) ----
+      // Pull all referral records to know who came in via another donor.
+      const { data: referrals } = await supabase
+        .from("referrals")
+        .select("referred_user_id");
+      const referredUserIds = new Set<number>(
+        (referrals || [])
+          .map((r: any) => r.referred_user_id)
+          .filter((id: any) => id != null),
+      );
+      let adminInvited = 0;
+      let referredCount = 0;
+      let directCount = 0;
+      for (const d of donors || []) {
+        if (d.invite_type === "coworking" || d.invite_type === "standard") {
+          adminInvited += 1;
+        } else if (referredUserIds.has(d.id)) {
+          referredCount += 1;
+        } else {
+          directCount += 1;
+        }
+      }
+      const donorSources = [
+        { label: "Admin Invited", count: adminInvited },
+        { label: "Referred", count: referredCount },
+        { label: "Direct", count: directCount },
+      ];
+
+      // ---- 3. donorsByLocation (top 10 cities by donor count) ----
+      const cityCounts: Record<string, number> = {};
+      for (const d of donors || []) {
+        const city = (d.city || "").trim();
+        const state = (d.state || "").trim();
+        if (!city) continue;
+        const label = state ? `${city}, ${state}` : city;
+        cityCounts[label] = (cityCounts[label] || 0) + 1;
+      }
+      const donorsByLocation = Object.entries(cityCounts)
+        .map(([city, count]) => ({ city, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
+
+      // ---- 4. growthByLocation (% growth: last 90d vs prior 90d, top 10) ----
+      const ms = (days: number) => days * 24 * 60 * 60 * 1000;
+      const ninetyAgo = new Date(now.getTime() - ms(90)).toISOString();
+      const oneEightyAgo = new Date(now.getTime() - ms(180)).toISOString();
+      const cityRecent: Record<string, number> = {};
+      const cityPrior: Record<string, number> = {};
+      for (const d of donors || []) {
+        const city = (d.city || "").trim();
+        const state = (d.state || "").trim();
+        if (!city) continue;
+        const label = state ? `${city}, ${state}` : city;
+        if (!d.created_at) continue;
+        if (d.created_at >= ninetyAgo) {
+          cityRecent[label] = (cityRecent[label] || 0) + 1;
+        } else if (d.created_at >= oneEightyAgo) {
+          cityPrior[label] = (cityPrior[label] || 0) + 1;
+        }
+      }
+      const cities = new Set([
+        ...Object.keys(cityRecent),
+        ...Object.keys(cityPrior),
+      ]);
+      const growthByLocation = Array.from(cities)
+        .map((city) => {
+          const recent = cityRecent[city] || 0;
+          const prior = cityPrior[city] || 0;
+          const growthRate =
+            prior === 0
+              ? recent > 0
+                ? 100
+                : 0
+              : Math.round(((recent - prior) / prior) * 1000) / 10;
+          return { city, recent, prior, growthRate };
+        })
+        .sort((a, b) => b.growthRate - a.growthRate)
+        .slice(0, 10);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            donorCountSeries,
+            donorSources,
+            donorsByLocation,
+            growthByLocation,
+          },
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        },
+      );
+    } catch (err: any) {
+      console.error("donor-charts error:", err);
+      return new Response(
+        JSON.stringify({ error: err?.message || "donor-charts failed" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        },
+      );
+    }
+  }
+
   // GET /admin/analytics/leaderboard/:type
   const leaderboardMatch = route.match(
     /^\/admin\/analytics\/leaderboard\/(\w+)$/,
