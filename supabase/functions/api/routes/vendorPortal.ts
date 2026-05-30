@@ -485,5 +485,71 @@ export async function handleVendorPortalRoute(
     return handleVendorStats(supabase, vendor.id);
   }
 
+  if (method === "POST" && route === "/vendor/me/logo") {
+    return handleVendorLogoUpload(req, supabase, vendor.id);
+  }
+
   return json({ error: "Vendor portal route not found" }, 404);
+}
+
+// ============================================================================
+// POST /vendor/me/logo — multipart upload to the vendor-logos storage bucket.
+// Mirrors the admin /admin/vendors/:id/logo endpoint but scoped to the
+// authed vendor (no admin secret required).
+// ============================================================================
+
+const ACCEPTED_LOGO_TYPES = new Set(["image/jpeg", "image/jpg", "image/png"]);
+const MAX_LOGO_BYTES = 5 * 1024 * 1024; // 5 MB
+
+async function handleVendorLogoUpload(
+  req: Request, supabase: any, vendorId: number,
+): Promise<JSONResponse> {
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch (e: any) {
+    return json({ error: "Expected multipart/form-data body with a 'logo' file field" }, 400);
+  }
+  const file = formData.get("logo") as File | null;
+  if (!file || typeof (file as any).arrayBuffer !== "function") {
+    return json({ error: "No file uploaded" }, 400);
+  }
+  if (!ACCEPTED_LOGO_TYPES.has(file.type)) {
+    return json({ error: "Logo must be a JPG or PNG image" }, 400);
+  }
+  if (file.size > MAX_LOGO_BYTES) {
+    return json({ error: "Logo must be 5 MB or smaller" }, 400);
+  }
+
+  const arrayBuffer = await file.arrayBuffer();
+  const fileBuffer = new Uint8Array(arrayBuffer);
+
+  const ext = file.type === "image/png" ? "png" : "jpg";
+  const fileName = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}.${ext}`;
+  const filePath = `vendor-${vendorId}/${fileName}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("vendor-logos")
+    .upload(filePath, fileBuffer, { contentType: file.type, upsert: false });
+  if (uploadError) {
+    console.error("vendor logo upload error:", uploadError);
+    return json({ error: uploadError.message || "Could not upload logo" }, 500);
+  }
+
+  const { data: { publicUrl } } = supabase.storage.from("vendor-logos").getPublicUrl(filePath);
+
+  const { data: vendor, error: updateError } = await supabase
+    .from("vendors")
+    .update({ logo_url: publicUrl })
+    .eq("id", vendorId)
+    .select("*")
+    .single();
+  if (updateError) {
+    // Roll back the storage upload so we don't leak orphan files.
+    await supabase.storage.from("vendor-logos").remove([filePath]).catch(() => {});
+    console.error("vendor logo db update error:", updateError);
+    return json({ error: updateError.message || "Could not save logo" }, 500);
+  }
+
+  return json({ vendor, logo_url: publicUrl });
 }
