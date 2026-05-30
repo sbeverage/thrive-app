@@ -13,11 +13,16 @@ export async function handleAdminReporting(
   // last_payment_amount from Stripe. Idempotent — only touches rows missing data.
   if (method === "POST" && route === "/admin/reporting/backfill-payment-dates") {
     try {
+      // Pull every monthly subscription with a Stripe id so we can both
+      // (a) stamp last_payment_date/amount/processing_fee on the row when missing,
+      // and (b) upsert a transactions row for every paid invoice in Stripe's
+      // history. (b) catches subscriptions where the webhook didn't fire on the
+      // initial payment, which is why /admin/analytics endpoints that read from
+      // transactions were showing \$0 for our existing donors.
       const {data: rows, error: rowsError} = await supabase
         .from("monthly_donations")
-        .select("id, stripe_subscription_id, last_payment_date, processing_fee")
-        .not("stripe_subscription_id", "is", null)
-        .or("last_payment_date.is.null,processing_fee.is.null");
+        .select("id, user_id, beneficiary_id, stripe_subscription_id, last_payment_date, processing_fee")
+        .not("stripe_subscription_id", "is", null);
 
       if (rowsError) {
         console.error("backfill: row lookup failed", rowsError);
@@ -63,8 +68,55 @@ export async function handleAdminReporting(
         }
       };
 
+      let transactionsUpserted = 0;
       for (const row of rows || []) {
         try {
+          // First: pull every paid invoice for this subscription so we can
+          // upsert a transactions row for each (catches historical payments
+          // the webhook didn't log). Stripe paginates 100 at a time; for
+          // current scale a single page is plenty.
+          const invListUrl =
+            `${stripe.baseUrl}/invoices?subscription=${encodeURIComponent(row.stripe_subscription_id)}&status=paid&limit=100`;
+          const invListRes = await fetch(invListUrl, {
+            headers: { Authorization: `Bearer ${stripe.secretKey}` },
+          });
+          let paidInvoices: any[] = [];
+          if (invListRes.ok) {
+            const list = await invListRes.json();
+            paidInvoices = Array.isArray(list?.data) ? list.data : [];
+          }
+
+          // Upsert a transactions row for every paid invoice. reference_id
+          // = invoice.id keeps this idempotent — matches the webhook's onConflict
+          // key so re-running the backfill never creates duplicates.
+          for (const inv of paidInvoices) {
+            const invPaidAt =
+              inv.status_transitions?.paid_at ?? inv.created ?? null;
+            const invAmountCents = inv.amount_paid ?? null;
+            if (!invPaidAt || invAmountCents == null) continue;
+            const txnRow = {
+              user_id: row.user_id,
+              type: "monthly_donation",
+              amount: invAmountCents / 100,
+              description: `Monthly donation to beneficiary ${row.beneficiary_id ?? "?"}`,
+              reference_id: inv.id,
+              reference_type: "donation",
+              donation_id: row.id,
+              beneficiary_id: row.beneficiary_id,
+              status: "completed",
+              created_at: new Date(invPaidAt * 1000).toISOString(),
+            };
+            const { error: txnError } = await supabase
+              .from("transactions")
+              .upsert([txnRow], {
+                onConflict: "reference_id",
+                ignoreDuplicates: true,
+              });
+            if (!txnError) transactionsUpserted += 1;
+          }
+
+          // Then update the monthly_donations row from the most-recent paid invoice
+          // (which is what the rest of the admin dashboard reads for "last_payment_*").
           const url =
             `${stripe.baseUrl}/subscriptions/${encodeURIComponent(row.stripe_subscription_id)}` +
             "?expand[]=latest_invoice";
@@ -149,6 +201,7 @@ export async function handleAdminReporting(
         JSON.stringify({
           success: true,
           scanned: results.length,
+          transactionsUpserted,
           updated: updatedCount,
           results,
         }),
