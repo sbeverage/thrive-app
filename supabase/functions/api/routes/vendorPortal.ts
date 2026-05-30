@@ -461,6 +461,13 @@ export async function handleVendorPortalRoute(
     return handleVendorResubmit(supabase, userId);
   }
 
+  // Logo upload is allowed BEFORE the vendor row exists — first upload
+  // implicitly creates an empty pending vendor so the user can drop a logo
+  // before filling in the rest of step 1.
+  if (method === "POST" && route === "/vendor/me/logo") {
+    return handleVendorLogoUpload(req, supabase, userId, vendor);
+  }
+
   if (!vendor) return json({ error: "Vendor profile not found" }, 404);
 
   if (route === "/vendor/me/discounts") {
@@ -485,10 +492,6 @@ export async function handleVendorPortalRoute(
     return handleVendorStats(supabase, vendor.id);
   }
 
-  if (method === "POST" && route === "/vendor/me/logo") {
-    return handleVendorLogoUpload(req, supabase, vendor.id);
-  }
-
   return json({ error: "Vendor portal route not found" }, 404);
 }
 
@@ -502,7 +505,7 @@ const ACCEPTED_LOGO_TYPES = new Set(["image/jpeg", "image/jpg", "image/png"]);
 const MAX_LOGO_BYTES = 5 * 1024 * 1024; // 5 MB
 
 async function handleVendorLogoUpload(
-  req: Request, supabase: any, vendorId: number,
+  req: Request, supabase: any, userId: number, existingVendor: any | null,
 ): Promise<JSONResponse> {
   let formData: FormData;
   try {
@@ -521,12 +524,33 @@ async function handleVendorLogoUpload(
     return json({ error: "Logo must be 5 MB or smaller" }, 400);
   }
 
+  // No vendor row yet? Provision an empty pending one so the upload has a
+  // home. The user's subsequent Continue click will fill in the real fields.
+  let vendor = existingVendor;
+  if (!vendor) {
+    const { data: created, error: insertError } = await supabase
+      .from("vendors")
+      .insert({
+        name: "",
+        auth_user_id: userId,
+        created_by_user_id: userId,
+        signup_status: "pending",
+      })
+      .select("*")
+      .single();
+    if (insertError) {
+      console.error("auto-provision vendor for logo error:", insertError);
+      return json({ error: insertError.message || "Could not create vendor" }, 500);
+    }
+    vendor = created;
+  }
+
   const arrayBuffer = await file.arrayBuffer();
   const fileBuffer = new Uint8Array(arrayBuffer);
 
   const ext = file.type === "image/png" ? "png" : "jpg";
   const fileName = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}.${ext}`;
-  const filePath = `vendor-${vendorId}/${fileName}`;
+  const filePath = `vendor-${vendor.id}/${fileName}`;
 
   const { error: uploadError } = await supabase.storage
     .from("vendor-logos")
@@ -538,10 +562,10 @@ async function handleVendorLogoUpload(
 
   const { data: { publicUrl } } = supabase.storage.from("vendor-logos").getPublicUrl(filePath);
 
-  const { data: vendor, error: updateError } = await supabase
+  const { data: updated, error: updateError } = await supabase
     .from("vendors")
     .update({ logo_url: publicUrl })
-    .eq("id", vendorId)
+    .eq("id", vendor.id)
     .select("*")
     .single();
   if (updateError) {
@@ -551,5 +575,5 @@ async function handleVendorLogoUpload(
     return json({ error: updateError.message || "Could not save logo" }, 500);
   }
 
-  return json({ vendor, logo_url: publicUrl });
+  return json({ vendor: updated, logo_url: publicUrl });
 }
