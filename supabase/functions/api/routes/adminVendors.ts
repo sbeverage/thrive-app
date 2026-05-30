@@ -461,27 +461,67 @@ export async function handleAdminVendors(
     });
   }
 
-  // DELETE /admin/vendors/:id
+  // DELETE /admin/vendors/:id — fully wipes the vendor:
+  //   • storage files under vendor-logos/vendor-<id>/
+  //   • the linked auth user (if this was a self-signup vendor)
+  //   • the vendors row (FK cascade handles discounts → redemptions /
+  //     discount_code_history, plus vendor_views and vendor_favorites)
   const deleteVendorMatch = route.match(/^\/admin\/vendors\/(\d+)$/);
   if (method === "DELETE" && deleteVendorMatch) {
     const vendorId = deleteVendorMatch[1];
 
-    const {error} = await supabase.from("vendors").delete().eq("id", vendorId);
+    // Snapshot the vendor row so we can find its auth user before deleting.
+    const { data: vendor } = await supabase
+      .from("vendors")
+      .select("id, auth_user_id")
+      .eq("id", vendorId)
+      .maybeSingle();
 
+    // 1. Storage cleanup — list every file in the vendor's folder then remove.
+    try {
+      const { data: files } = await supabase.storage
+        .from("vendor-logos")
+        .list(`vendor-${vendorId}`);
+      if (files && files.length > 0) {
+        const paths = files.map((f: any) => `vendor-${vendorId}/${f.name}`);
+        const { error: removeError } = await supabase.storage
+          .from("vendor-logos")
+          .remove(paths);
+        if (removeError) {
+          console.warn("vendor logo storage cleanup error:", removeError);
+        }
+      }
+    } catch (e) {
+      console.warn("vendor storage list/remove error:", e);
+    }
+
+    // 2. Delete the vendors row — cascades to discounts (→ redemptions +
+    //    discount_code_history), vendor_views, vendor_favorites.
+    const { error } = await supabase.from("vendors").delete().eq("id", vendorId);
     if (error) {
       console.error("❌ Admin delete vendor error:", error);
-      return new Response(JSON.stringify({error: error.message}), {
-        headers: {"Content-Type": "application/json"},
+      return new Response(JSON.stringify({ error: error.message }), {
+        headers: { "Content-Type": "application/json" },
         status: 500,
       });
     }
 
+    // 3. Remove the linked auth user. Other FK columns referencing users.id
+    //    use ON DELETE SET NULL, so this is safe and the user can no longer
+    //    log in to the portal. Only applies to self-signup vendors.
+    if (vendor?.auth_user_id) {
+      const { error: userError } = await supabase
+        .from("users")
+        .delete()
+        .eq("id", vendor.auth_user_id);
+      if (userError) {
+        console.warn("vendor linked user delete error (non-fatal):", userError);
+      }
+    }
+
     return new Response(
-      JSON.stringify({message: "Vendor deleted successfully"}),
-      {
-        headers: {"Content-Type": "application/json"},
-        status: 200,
-      },
+      JSON.stringify({ message: "Vendor and all associated data deleted" }),
+      { headers: { "Content-Type": "application/json" }, status: 200 },
     );
   }
 
