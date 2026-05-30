@@ -85,11 +85,20 @@ export default function DiscountsScreen() {
     }
   }, [filters.location]);
 
-  // Load favorites from storage on mount
+  // Load favorites — AsyncStorage first for instant UI, then reconcile with
+  // the server so they sync across devices. Server is authoritative for
+  // logged-in users; logged-out users fall back to local-only.
   useEffect(() => {
     AsyncStorage.getItem('@thrive_favorites').then(stored => {
       if (stored) setFavorites(new Set(JSON.parse(stored)));
     });
+    API.get('/vendors/me/favorites')
+      .then((res) => {
+        const ids = new Set((res?.data?.vendors || []).map(v => String(v.id)));
+        setFavorites(ids);
+        AsyncStorage.setItem('@thrive_favorites', JSON.stringify([...ids]));
+      })
+      .catch(() => {}); // not logged in → keep AsyncStorage state
   }, []);
 
   // Geocode vendor addresses that are missing real coordinates
@@ -152,6 +161,9 @@ export default function DiscountsScreen() {
       AsyncStorage.setItem('@thrive_favorites', JSON.stringify([...next]));
       return next;
     });
+    // Mirror to server so the vendor portal can track real "saved by donors"
+    // counts. Logged-out users get a silent 401 — local state still updated.
+    API.post(`/vendors/${vendorId}/favorite`).catch(() => {});
   };
 
 

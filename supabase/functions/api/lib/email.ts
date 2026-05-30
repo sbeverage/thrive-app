@@ -1041,3 +1041,106 @@ If you did not request this, you can ignore this email.`;
     console.error("❌ Error sending password reset email:", error);
   }
 }
+
+// ============================================================================
+// Vendor Portal transactional emails (submission, approval, rejection, rotation)
+// ============================================================================
+
+type VendorEmailKind = "submitted" | "approved" | "rejected" | "rotation_reminder";
+
+function vendorPortalUrl(): string {
+  return Deno.env.get("VENDOR_PORTAL_URL") || "https://thrive-vendor-portal.vercel.app";
+}
+
+function vendorEmailContent(kind: VendorEmailKind, name: string, businessName: string, extras: Record<string, string> = {}) {
+  const portal = vendorPortalUrl();
+  switch (kind) {
+    case "submitted":
+      return {
+        subject: `THRIVE Initiative — We received your application`,
+        title: "Application received",
+        body: `Thanks for submitting <strong>${businessName}</strong> to the THRIVE Initiative. Our team reviews new vendors within 1–2 business days. You'll get an email the moment you're approved.`,
+        cta: { href: `${portal}/pending`, label: "View status" },
+      };
+    case "approved":
+      return {
+        subject: `${businessName} is approved on THRIVE!`,
+        title: "You're approved 🎉",
+        body: `Great news — <strong>${businessName}</strong> is now live in the THRIVE app. You can create discounts and start showing up for donors right away.`,
+        cta: { href: `${portal}/discounts`, label: "Create your first discount" },
+      };
+    case "rejected":
+      return {
+        subject: `THRIVE Initiative — Changes needed on your application`,
+        title: "Changes needed before we can list you",
+        body: `Our team reviewed <strong>${businessName}</strong> and asked for some changes:<br><br><em>"${extras.reason || "Please review your profile and resubmit."}"</em><br><br>Update your profile in the portal and resubmit for review.`,
+        cta: { href: `${portal}/pending`, label: "Edit & resubmit" },
+      };
+    case "rotation_reminder":
+      return {
+        subject: `Time to rotate your THRIVE discount codes`,
+        title: "Monthly code rotation reminder",
+        body: `It's the start of a new month. To keep your codes unique and reduce sharing, consider rotating the codes on your active discounts at <strong>${businessName}</strong>.`,
+        cta: { href: `${portal}/discounts`, label: "Rotate codes" },
+      };
+  }
+}
+
+export async function sendVendorEmail({
+  to,
+  name,
+  businessName,
+  kind,
+  reason,
+}: {
+  to: string;
+  name: string;
+  businessName: string;
+  kind: VendorEmailKind;
+  reason?: string;
+}): Promise<void> {
+  try {
+    if (!to) return;
+    const emailService = Deno.env.get("EMAIL_SERVICE") || "resend";
+    const fromEmail = buildResendVerificationFromHeader();
+    const { subject, title, body, cta } = vendorEmailContent(kind, name, businessName, { reason: reason || "" });
+
+    const emailHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${subject}</title></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.6;color:#324E58;background:#F5F5FA;margin:0;padding:24px;">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;box-shadow:0 4px 16px rgba(0,0,0,0.06);">
+    <div style="text-align:center;margin-bottom:24px;"><div style="font-size:22px;font-weight:700;letter-spacing:0.5px;color:#324E58;">THRIVE</div><div style="font-size:11px;color:#8C8C8C;letter-spacing:1.5px;">VENDOR PORTAL</div></div>
+    <h2 style="font-size:22px;font-weight:700;margin:0 0 16px;color:#324E58;">${title}</h2>
+    <p style="font-size:15px;color:#555;margin:0 0 24px;">Hi ${name || "there"},</p>
+    <p style="font-size:15px;color:#555;margin:0 0 24px;">${body}</p>
+    <div style="text-align:center;margin:32px 0;">
+      <a href="${cta.href}" style="display:inline-block;background:#DB8633;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;">${cta.label}</a>
+    </div>
+    <p style="font-size:12px;color:#8C8C8C;text-align:center;margin-top:32px;">THRIVE Initiative · Atlanta, GA</p>
+  </div>
+</body></html>`;
+
+    const emailText = `${title}\n\nHi ${name || "there"},\n\n${body.replace(/<[^>]+>/g, "")}\n\n${cta.label}: ${cta.href}\n\n— THRIVE Initiative`;
+
+    if (emailService === "resend") {
+      const resendApiKey = Deno.env.get("RESEND_API_KEY");
+      if (!resendApiKey) {
+        console.warn(`⚠️ RESEND_API_KEY not set — skipping vendor email (${kind}) to ${to}`);
+        return;
+      }
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${resendApiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ from: fromEmail, to: [to], subject, html: emailHtml, text: emailText }),
+      });
+      if (!res.ok) {
+        console.error(`❌ Resend vendor email error (${kind}, ${to}):`, await res.text());
+      } else {
+        console.log(`✅ Vendor email sent (${kind}) to ${to}`);
+      }
+    } else {
+      console.log(`📧 Vendor email fallback (${kind}) for ${to}: ${subject}`);
+    }
+  } catch (error) {
+    console.error(`❌ Error sending vendor email (${kind}):`, error);
+  }
+}

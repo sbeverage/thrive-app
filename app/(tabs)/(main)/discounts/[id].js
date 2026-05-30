@@ -57,6 +57,10 @@ export default function VendorDetails() {
           return dVendorId === vId;
         });
         setVendorDiscounts(vendorDiscountList);
+
+        // Fire-and-forget profile-view tracking. Powers the vendor portal's
+        // "Profile views" stats. Failures are silent — analytics never block UX.
+        API.post(`/vendors/${foundVendor.id}/view`).catch(() => {});
       }
     }
   }, [vendors, discounts, vendorId]);

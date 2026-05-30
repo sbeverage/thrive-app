@@ -1,5 +1,6 @@
 import { corsHeaders } from "../lib/cors.ts";
 import { handleAdminApprovals } from "./adminApprovals.ts";
+import { handleAdminCron } from "./adminCron.ts";
 
 type RouteHandler = (
   req: Request,
@@ -101,6 +102,11 @@ export async function handleAdminRoute(
   // Pending vendor-portal submissions awaiting admin review.
   if (route.startsWith("/admin/approvals")) {
     return await handleAdminApprovals(req, supabase, route, method);
+  }
+
+  // Scheduled / cron-triggered admin tasks (e.g., monthly rotation reminder).
+  if (route.startsWith("/admin/cron")) {
+    return await handleAdminCron(req, supabase, route, method);
   }
 
   // Vendors routes under /admin/vendors

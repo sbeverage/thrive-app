@@ -20,6 +20,7 @@
 import { verify as verifyJWT } from "https://deno.land/x/djwt@v2.9/mod.ts";
 import { corsHeaders } from "../lib/cors.ts";
 import { getAppAuthHeader } from "../lib/jwt-app.ts";
+import { sendVendorEmail } from "../lib/email.ts";
 
 type JSONResponse = Response;
 
@@ -175,6 +176,22 @@ async function handleVendorResubmit(supabase: any, userId: number): Promise<JSON
     console.error("vendor/resubmit error:", error);
     return json({ error: error.message || "Could not submit" }, 500);
   }
+
+  // Confirmation email — fire-and-forget so a failing email never blocks submit.
+  const { data: owner } = await supabase
+    .from("users")
+    .select("email, first_name, last_name")
+    .eq("id", userId)
+    .maybeSingle();
+  if (owner?.email) {
+    sendVendorEmail({
+      to: owner.email,
+      name: [owner.first_name, owner.last_name].filter(Boolean).join(" "),
+      businessName: vendor.name,
+      kind: "submitted",
+    }).catch((e) => console.error("submitted email failed:", e));
+  }
+
   return json({ vendor });
 }
 

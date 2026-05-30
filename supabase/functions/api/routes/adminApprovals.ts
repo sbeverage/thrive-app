@@ -12,6 +12,7 @@
 // if/when a self-serve beneficiary signup is added.
 
 import { corsHeaders } from "../lib/cors.ts";
+import { sendVendorEmail } from "../lib/email.ts";
 
 const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: jsonHeaders });
@@ -122,6 +123,24 @@ export async function handleAdminApprovals(
       .select("*")
       .single();
     if (error) return json({ success: false, error: error.message }, 500);
+
+    // Notify the vendor (fire-and-forget — never let email failure block admin).
+    if (vendor?.auth_user_id) {
+      const { data: ownerUser } = await supabase
+        .from("users")
+        .select("email, first_name, last_name")
+        .eq("id", vendor.auth_user_id)
+        .maybeSingle();
+      if (ownerUser?.email) {
+        await sendVendorEmail({
+          to: ownerUser.email,
+          name: [ownerUser.first_name, ownerUser.last_name].filter(Boolean).join(" "),
+          businessName: vendor.name,
+          kind: "approved",
+        }).catch((e) => console.error("approve email failed:", e));
+      }
+    }
+
     return json({ success: true, data: vendor });
   }
 
@@ -145,6 +164,24 @@ export async function handleAdminApprovals(
       .select("*")
       .single();
     if (error) return json({ success: false, error: error.message }, 500);
+
+    if (vendor?.auth_user_id) {
+      const { data: ownerUser } = await supabase
+        .from("users")
+        .select("email, first_name, last_name")
+        .eq("id", vendor.auth_user_id)
+        .maybeSingle();
+      if (ownerUser?.email) {
+        await sendVendorEmail({
+          to: ownerUser.email,
+          name: [ownerUser.first_name, ownerUser.last_name].filter(Boolean).join(" "),
+          businessName: vendor.name,
+          kind: "rejected",
+          reason,
+        }).catch((e) => console.error("reject email failed:", e));
+      }
+    }
+
     return json({ success: true, data: vendor });
   }
 
