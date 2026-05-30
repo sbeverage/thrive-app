@@ -510,18 +510,58 @@ export async function handleAdminAnalytics(
         charityNameById[c.id] = c.name;
       }
 
-      // The platform-fee carve-out: every monthly donation includes a $3 service
-      // fee on top of the donor's chosen amount. The Dashboard surfaces "donation"
-      // numbers (what charities actually receive), so subtract $3 from each
-      // monthly transaction. One-time gifts already store donation-only amounts
-      // (gift.amount is the donor's chosen amount, fees tracked separately).
-      // Processing fees (Stripe 2.2% + $0.30) aren't subtracted here — they vary
-      // per charge and aren't tracked historically; see the Reporting page for
-      // fee-accurate numbers.
+      // The Dashboard surfaces "donation" numbers (the amount the donor chose),
+      // not the gross they paid. Monthly subscriptions store the GROSS in
+      // monthly_donations.last_payment_amount (donation + $3 service fee + any
+      // cc cover the donor opted into). One-time gifts already store the
+      // donation amount directly.
+      //
+      // Reverse-engineer the donor's chosen amount from the gross by matching
+      // it against the three formulas the app has shipped:
+      //   (a) no fee cover:    gross = donation + 3
+      //   (b) legacy 3.5%:     gross = (donation + 3) * 1.035
+      //   (c) new gross-up:    gross = ceil((donation + 3 + 0.30) / 0.978)
+      // Same heuristic used by app/(tabs)/menu/transactionDetails.js so admin
+      // and donor receipts agree on the donation amount.
       const SERVICE_FEE = 3.0;
+      const STRIPE_FEE_PERCENT = 0.022;
+      const STRIPE_FIXED_FEE = 0.30;
+      const LEGACY_CC_RATE = 0.035;
+      const inferMonthlyDonation = (gross: number): number => {
+        const g = Math.round(gross * 100) / 100;
+        if (g <= 0) return 0;
+        // (a): donation = gross - 3, if it's a whole-dollar amount.
+        const aDonation = Math.round((g - SERVICE_FEE) * 100) / 100;
+        if (
+          aDonation > 0 &&
+          Math.abs(aDonation - Math.round(aDonation)) < 0.005
+        ) {
+          return Math.round(aDonation);
+        }
+        // (b): legacy 3.5% cover.
+        const bRounded = Math.round(g / (1 + LEGACY_CC_RATE) - SERVICE_FEE);
+        const bExpected =
+          Math.round(
+            (bRounded + SERVICE_FEE) * (1 + LEGACY_CC_RATE) * 100,
+          ) / 100;
+        if (bRounded > 0 && Math.abs(g - bExpected) < 0.05) return bRounded;
+        // (c): new gross-up.
+        const cRounded = Math.round(
+          g * (1 - STRIPE_FEE_PERCENT) - SERVICE_FEE - STRIPE_FIXED_FEE,
+        );
+        const cExpected =
+          Math.ceil(
+            ((cRounded + SERVICE_FEE + STRIPE_FIXED_FEE) /
+              (1 - STRIPE_FEE_PERCENT)) *
+              100,
+          ) / 100;
+        if (cRounded > 0 && Math.abs(g - cExpected) < 0.05) return cRounded;
+        // Fallback: assume gross = donation + service fee only.
+        return Math.max(0, Math.round(g - SERVICE_FEE));
+      };
       const donationAmount = (txnType: string, amount: number) =>
         txnType === "monthly_donation"
-          ? Math.max(0, amount - SERVICE_FEE)
+          ? inferMonthlyDonation(amount)
           : amount;
 
       // --- Active monthly subs for the Monthly Donations card ---
@@ -536,9 +576,9 @@ export async function handleAdminAnalytics(
           (s.last_payment_amount ?? s.amount ?? 0).toString(),
         );
         if (Number.isNaN(gross)) continue;
-        // Subtract the $3 platform fee so this card reflects what the charity
-        // actually receives each month from this donor.
-        monthlyRecurringTotal += Math.max(0, gross - SERVICE_FEE);
+        // Reverse-engineer the donor's chosen amount from the gross so this
+        // card reflects "what was donated" rather than "what was charged".
+        monthlyRecurringTotal += inferMonthlyDonation(gross);
       }
       const monthlyRecurringAvg =
         activeSubCount > 0 ? monthlyRecurringTotal / activeSubCount : 0;
