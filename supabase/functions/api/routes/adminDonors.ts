@@ -20,6 +20,221 @@ export async function handleAdminDonors(
   deps: AdminDonorsDeps,
 ) {
   const { sendInvitationEmail } = deps;
+
+  // GET /admin/donors/highlights
+  // Returns the four donor-health KPIs powering the Donors page top strip:
+  //   - atRisk: count of past_due/unpaid donors + monthly $ at risk
+  //   - topDonor: name + lifetime donation total for the highest giver
+  //   - avgLifetimeValue: avg lifetime donation $ across donors who have given
+  //   - retentionRate: % of last month's paying donors who are still paying this month
+  //   - newThisMonth: count of donors with first donation in last 30 days + growth rate vs prior month
+  if (method === "GET" && route === "/admin/donors/highlights") {
+    try {
+      const SERVICE_FEE = 3.0;
+      const now = new Date();
+      const ms = (days: number) => days * 24 * 60 * 60 * 1000;
+      const thirtyAgo = new Date(now.getTime() - ms(30)).toISOString();
+      const sixtyAgo = new Date(now.getTime() - ms(60)).toISOString();
+
+      // ---- Donor universe ----
+      const { data: donors } = await supabase
+        .from("users")
+        .select("id, first_name, last_name, email")
+        .eq("role", "donor");
+      const donorIds = (donors || []).map((d: any) => d.id);
+      const donorNameById: Record<number, string> = {};
+      for (const d of donors || []) {
+        const name = `${d.first_name || ""} ${d.last_name || ""}`.trim();
+        donorNameById[d.id] = name || (d.email || "").split("@")[0];
+      }
+
+      // ---- monthly_donations snapshot ----
+      const { data: subs } = await supabase
+        .from("monthly_donations")
+        .select(
+          "user_id, status, last_payment_amount, amount, last_payment_date, updated_at",
+        )
+        .in("user_id", donorIds.length ? donorIds : [0]);
+
+      // Same inference helper used by donation-overview to recover the donor's
+      // chosen donation amount from a gross monthly charge.
+      const STRIPE_FEE_PERCENT = 0.022;
+      const STRIPE_FIXED_FEE = 0.30;
+      const LEGACY_CC_RATE = 0.035;
+      const inferDonation = (gross: number): number => {
+        const g = Math.round(gross * 100) / 100;
+        if (g <= 0) return 0;
+        const a = Math.round((g - SERVICE_FEE) * 100) / 100;
+        if (a > 0 && Math.abs(a - Math.round(a)) < 0.005) return Math.round(a);
+        const bR = Math.round(g / (1 + LEGACY_CC_RATE) - SERVICE_FEE);
+        const bE =
+          Math.round((bR + SERVICE_FEE) * (1 + LEGACY_CC_RATE) * 100) / 100;
+        if (bR > 0 && Math.abs(g - bE) < 0.05) return bR;
+        const cR = Math.round(
+          g * (1 - STRIPE_FEE_PERCENT) - SERVICE_FEE - STRIPE_FIXED_FEE,
+        );
+        const cE =
+          Math.ceil(
+            ((cR + SERVICE_FEE + STRIPE_FIXED_FEE) / (1 - STRIPE_FEE_PERCENT)) *
+              100,
+          ) / 100;
+        if (cR > 0 && Math.abs(g - cE) < 0.05) return cR;
+        return Math.max(0, Math.round(g - SERVICE_FEE));
+      };
+
+      // ---- At-Risk ----
+      const atRiskUsers = new Set<number>();
+      let monthlyAtRisk = 0;
+      for (const s of subs || []) {
+        const st = String(s.status || "").toLowerCase();
+        if (st === "past_due" || st === "unpaid") {
+          atRiskUsers.add(s.user_id);
+          const gross = parseFloat(
+            (s.last_payment_amount ?? s.amount ?? 0).toString(),
+          );
+          if (!Number.isNaN(gross)) monthlyAtRisk += inferDonation(gross);
+        }
+      }
+
+      // ---- Top Donor + Avg Lifetime Value (from transactions) ----
+      const { data: txns } = await supabase
+        .from("transactions")
+        .select("user_id, type, amount")
+        .eq("status", "completed");
+      const lifetimeByUser: Record<number, number> = {};
+      for (const t of txns || []) {
+        const amt = parseFloat((t.amount ?? 0).toString());
+        if (Number.isNaN(amt)) continue;
+        const donation =
+          t.type === "monthly_donation" ? inferDonation(amt) : amt;
+        lifetimeByUser[t.user_id] =
+          (lifetimeByUser[t.user_id] || 0) + donation;
+      }
+      let topDonorId: number | null = null;
+      let topDonorTotal = 0;
+      let lifetimeSum = 0;
+      let donorWithGivingCount = 0;
+      for (const [uid, total] of Object.entries(lifetimeByUser)) {
+        const t = total as number;
+        if (t > 0) {
+          lifetimeSum += t;
+          donorWithGivingCount += 1;
+          if (t > topDonorTotal) {
+            topDonorTotal = t;
+            topDonorId = Number(uid);
+          }
+        }
+      }
+      const avgLifetimeValue =
+        donorWithGivingCount > 0 ? lifetimeSum / donorWithGivingCount : 0;
+
+      // ---- Retention Rate ----
+      // "Last month active" = had a payment 30-60 days ago.
+      // "This month active" = has an active/trialing sub AND payment in last 30d.
+      const lastMonthActive = new Set<number>();
+      const thisMonthActive = new Set<number>();
+      const ACTIVE = new Set(["active", "trialing"]);
+      const thirtyDate = thirtyAgo.split("T")[0];
+      const sixtyDate = sixtyAgo.split("T")[0];
+      for (const s of subs || []) {
+        const st = String(s.status || "").toLowerCase();
+        if (s.last_payment_date) {
+          const lpd = s.last_payment_date as string;
+          if (lpd >= sixtyDate && lpd < thirtyDate) {
+            lastMonthActive.add(s.user_id);
+          }
+          if (lpd >= thirtyDate && ACTIVE.has(st)) {
+            thisMonthActive.add(s.user_id);
+          }
+        }
+      }
+      let retained = 0;
+      for (const uid of lastMonthActive) {
+        if (thisMonthActive.has(uid)) retained += 1;
+      }
+      const retentionRate =
+        lastMonthActive.size > 0
+          ? Math.round((retained / lastMonthActive.size) * 1000) / 10
+          : null;
+
+      // ---- New This Month + growth vs prior month ----
+      const { data: monthlyPayments } = await supabase
+        .from("monthly_donations")
+        .select("user_id, last_payment_date")
+        .in("user_id", donorIds.length ? donorIds : [0])
+        .not("last_payment_date", "is", null);
+      const { data: oneTime } = await supabase
+        .from("one_time_gifts")
+        .select("user_id, created_at")
+        .in("user_id", donorIds.length ? donorIds : [0])
+        .eq("status", "completed");
+      const firstByUser = new Map<number, string>();
+      for (const r of monthlyPayments || []) {
+        const ts = `${r.last_payment_date}T00:00:00Z`;
+        const cur = firstByUser.get(r.user_id);
+        if (!cur || ts < cur) firstByUser.set(r.user_id, ts);
+      }
+      for (const r of oneTime || []) {
+        if (!r.created_at) continue;
+        const cur = firstByUser.get(r.user_id);
+        if (!cur || r.created_at < cur)
+          firstByUser.set(r.user_id, r.created_at);
+      }
+      let newThisMonth = 0;
+      let newLastMonth = 0;
+      for (const ts of firstByUser.values()) {
+        if (ts >= thirtyAgo) newThisMonth += 1;
+        else if (ts >= sixtyAgo) newLastMonth += 1;
+      }
+      const growthRate =
+        newLastMonth === 0
+          ? newThisMonth > 0
+            ? 100
+            : 0
+          : Math.round(
+              ((newThisMonth - newLastMonth) / newLastMonth) * 1000,
+            ) / 10;
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            atRisk: {
+              count: atRiskUsers.size,
+              monthlyAtRisk: Math.round(monthlyAtRisk * 100) / 100,
+            },
+            topDonor:
+              topDonorId !== null
+                ? {
+                    donorId: topDonorId,
+                    name: donorNameById[topDonorId] || `Donor ${topDonorId}`,
+                    lifetimeTotal: Math.round(topDonorTotal * 100) / 100,
+                  }
+                : null,
+            avgLifetimeValue: Math.round(avgLifetimeValue * 100) / 100,
+            donorWithGivingCount,
+            retentionRate, // percent; null if no prior-month base
+            lastMonthActiveCount: lastMonthActive.size,
+            newThisMonth: { count: newThisMonth, growthRate },
+          },
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        },
+      );
+    } catch (err: any) {
+      console.error("donors/highlights error:", err);
+      return new Response(
+        JSON.stringify({ error: err?.message || "highlights failed" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        },
+      );
+    }
+  }
+
   // GET /admin/donors - List all donors (users with role 'donor')
   if (method === "GET" && route === "/admin/donors") {
     try {
