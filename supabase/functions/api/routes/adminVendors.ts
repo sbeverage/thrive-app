@@ -1,9 +1,132 @@
+import { corsHeaders } from "../lib/cors.ts";
+
 export async function handleAdminVendors(
   req: Request,
   supabase: any,
   route: string,
   method: string,
 ) {
+  // GET /admin/vendors/highlights
+  // Returns four founder-eye KPIs for the Vendors page top strip:
+  //   - active:              total active vendors + how many have a live discount
+  //   - withoutActiveDiscount: count of active vendors with no current discount offer
+  //   - topBySavings:        { name, totalSavings } vendor driving the most \$ saved
+  //   - topByRedemptions:    { name, count } vendor with the most discount redemptions
+  if (method === "GET" && route === "/admin/vendors/highlights") {
+    try {
+      // ---- All vendors snapshot ----
+      const { data: vendors } = await supabase
+        .from("vendors")
+        .select("id, name, is_active");
+      const vendorNameById: Record<number, string> = {};
+      let activeCount = 0;
+      for (const v of vendors || []) {
+        vendorNameById[v.id] = v.name;
+        if (v.is_active) activeCount += 1;
+      }
+      const activeVendorIds = new Set<number>(
+        (vendors || []).filter((v: any) => v.is_active).map((v: any) => v.id),
+      );
+
+      // ---- Discounts: figure out which active vendors have a live discount ----
+      const today = new Date().toISOString().split("T")[0];
+      const { data: discounts } = await supabase
+        .from("discounts")
+        .select("vendor_id, is_active, end_date");
+      const vendorsWithLiveDiscount = new Set<number>();
+      for (const d of discounts || []) {
+        if (!d.vendor_id) continue;
+        if (!d.is_active) continue;
+        if (d.end_date && d.end_date < today) continue;
+        vendorsWithLiveDiscount.add(d.vendor_id);
+      }
+      let withoutActiveDiscount = 0;
+      for (const vid of activeVendorIds) {
+        if (!vendorsWithLiveDiscount.has(vid)) withoutActiveDiscount += 1;
+      }
+      // Intersection: active vendors that also have a live discount (vs. dormant).
+      let withLiveDiscount = 0;
+      for (const vid of vendorsWithLiveDiscount) {
+        if (activeVendorIds.has(vid)) withLiveDiscount += 1;
+      }
+
+      // ---- Redemptions: top vendor by \$ saved + by count ----
+      const { data: redemptions } = await supabase
+        .from("redemptions")
+        .select("vendor_id, total_savings");
+      const savingsByVendor: Record<number, number> = {};
+      const countsByVendor: Record<number, number> = {};
+      for (const r of redemptions || []) {
+        if (!r.vendor_id) continue;
+        countsByVendor[r.vendor_id] = (countsByVendor[r.vendor_id] || 0) + 1;
+        const saved = parseFloat((r.total_savings ?? 0).toString());
+        if (!Number.isNaN(saved)) {
+          savingsByVendor[r.vendor_id] =
+            (savingsByVendor[r.vendor_id] || 0) + saved;
+        }
+      }
+      let topSavingsId: number | null = null;
+      let topSavings = 0;
+      for (const [id, total] of Object.entries(savingsByVendor)) {
+        if ((total as number) > topSavings) {
+          topSavings = total as number;
+          topSavingsId = Number(id);
+        }
+      }
+      let topCountId: number | null = null;
+      let topCount = 0;
+      for (const [id, count] of Object.entries(countsByVendor)) {
+        if ((count as number) > topCount) {
+          topCount = count as number;
+          topCountId = Number(id);
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            active: {
+              count: activeCount,
+              withLiveDiscount,
+            },
+            withoutActiveDiscount,
+            topBySavings:
+              topSavingsId !== null
+                ? {
+                    vendorId: topSavingsId,
+                    name:
+                      vendorNameById[topSavingsId] || `Vendor ${topSavingsId}`,
+                    totalSavings: Math.round(topSavings * 100) / 100,
+                  }
+                : null,
+            topByRedemptions:
+              topCountId !== null
+                ? {
+                    vendorId: topCountId,
+                    name: vendorNameById[topCountId] || `Vendor ${topCountId}`,
+                    count: topCount,
+                  }
+                : null,
+          },
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        },
+      );
+    } catch (err: any) {
+      console.error("vendors/highlights error:", err);
+      return new Response(
+        JSON.stringify({ error: err?.message || "highlights failed" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        },
+      );
+    }
+  }
+
   // GET /admin/vendors
   if (method === "GET" && route === "/admin/vendors") {
     const url = new URL(req.url);
