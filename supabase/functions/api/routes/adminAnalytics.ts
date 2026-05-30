@@ -490,6 +490,200 @@ export async function handleAdminAnalytics(
     }
   }
 
+  // GET /admin/analytics/donation-overview
+  // Powers the Dashboard's Donation & Beneficiary Overview section: KPI cards
+  // (Monthly Donations / Total Donations / Total Beneficiaries) plus four charts
+  // (Donation Trends line, Most Selected Beneficiary, Donations by Location,
+  // Most Total Donations by Beneficiary).
+  if (method === "GET" && route === "/admin/analytics/donation-overview") {
+    try {
+      const now = new Date();
+
+      // --- Active beneficiaries snapshot ---
+      const { data: charities } = await supabase
+        .from("charities")
+        .select("id, name, is_active");
+      const charityNameById: Record<number, string> = {};
+      let totalBeneficiaries = 0;
+      for (const c of charities || []) {
+        if (c.is_active) totalBeneficiaries += 1;
+        charityNameById[c.id] = c.name;
+      }
+
+      // --- Active monthly subs for the Monthly Donations card ---
+      const { data: activeSubs } = await supabase
+        .from("monthly_donations")
+        .select("amount, last_payment_amount, status")
+        .in("status", ["active", "trialing"]);
+      let monthlyRecurringTotal = 0;
+      const activeSubCount = (activeSubs || []).length;
+      for (const s of activeSubs || []) {
+        const amt = parseFloat(
+          (s.last_payment_amount ?? s.amount ?? 0).toString(),
+        );
+        if (!Number.isNaN(amt)) monthlyRecurringTotal += amt;
+      }
+      const monthlyRecurringAvg =
+        activeSubCount > 0 ? monthlyRecurringTotal / activeSubCount : 0;
+
+      // --- Lifetime totals from transactions (the canonical source) ---
+      // type='monthly_donation' for each invoice paid; 'one_time_gift' for each gift.
+      const { data: txns } = await supabase
+        .from("transactions")
+        .select("user_id, type, amount, beneficiary_id, created_at, status")
+        .eq("status", "completed");
+      let lifetimeRecurring = 0;
+      let lifetimeOneTime = 0;
+      for (const t of txns || []) {
+        const amt = parseFloat((t.amount ?? 0).toString());
+        if (Number.isNaN(amt)) continue;
+        if (t.type === "monthly_donation") lifetimeRecurring += amt;
+        else if (t.type === "one_time_gift") lifetimeOneTime += amt;
+      }
+      const lifetimeTotal = lifetimeRecurring + lifetimeOneTime;
+      const pct = (n: number) =>
+        lifetimeTotal > 0
+          ? Math.round((n / lifetimeTotal) * 1000) / 10
+          : 0;
+
+      // --- Donation Trends (last 12 calendar months) ---
+      const months: string[] = [];
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        months.push(ym);
+      }
+      const monthIdx: Record<string, number> = Object.fromEntries(
+        months.map((m, i) => [m, i]),
+      );
+      const recurringByMonth = new Array(12).fill(0);
+      const oneTimeByMonth = new Array(12).fill(0);
+      for (const t of txns || []) {
+        if (!t.created_at) continue;
+        const ym = t.created_at.slice(0, 7);
+        const idx = monthIdx[ym];
+        if (idx === undefined) continue;
+        const amt = parseFloat((t.amount ?? 0).toString());
+        if (Number.isNaN(amt)) continue;
+        if (t.type === "monthly_donation") recurringByMonth[idx] += amt;
+        else if (t.type === "one_time_gift") oneTimeByMonth[idx] += amt;
+      }
+      const donationTrends = months.map((m, i) => ({
+        month: m,
+        recurring: Math.round(recurringByMonth[i] * 100) / 100,
+        oneTime: Math.round(oneTimeByMonth[i] * 100) / 100,
+        total:
+          Math.round((recurringByMonth[i] + oneTimeByMonth[i]) * 100) / 100,
+      }));
+
+      // --- Most Selected Beneficiary (counts of users.preferences.preferredCharity) ---
+      const { data: donorsForSelect } = await supabase
+        .from("users")
+        .select("id, preferences, city, state")
+        .eq("role", "donor");
+      const selectionCount: Record<number, number> = {};
+      for (const d of donorsForSelect || []) {
+        const prefId =
+          d.preferences?.preferredCharity ?? d.preferences?.beneficiary ?? null;
+        const idNum = prefId ? parseInt(prefId, 10) : NaN;
+        if (Number.isNaN(idNum)) continue;
+        selectionCount[idNum] = (selectionCount[idNum] || 0) + 1;
+      }
+      const mostSelectedBeneficiaries = Object.entries(selectionCount)
+        .map(([id, count]) => ({
+          beneficiaryId: Number(id),
+          name: charityNameById[Number(id)] || `Beneficiary ${id}`,
+          count,
+        }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
+
+      // --- Donations by Location (sum of donor donations grouped by city) ---
+      const userCity: Record<number, string> = {};
+      for (const d of donorsForSelect || []) {
+        const city = (d.city || "").trim();
+        const state = (d.state || "").trim();
+        if (!city) continue;
+        userCity[d.id] = state ? `${city}, ${state}` : city;
+      }
+      const cityTotals: Record<string, number> = {};
+      for (const t of txns || []) {
+        const label = userCity[t.user_id];
+        if (!label) continue;
+        const amt = parseFloat((t.amount ?? 0).toString());
+        if (Number.isNaN(amt)) continue;
+        cityTotals[label] = (cityTotals[label] || 0) + amt;
+      }
+      const donationsByLocation = Object.entries(cityTotals)
+        .map(([city, total]) => ({
+          city,
+          total: Math.round(total * 100) / 100,
+        }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 10);
+
+      // --- Top Beneficiaries by Donation $ Received ---
+      const beneficiaryTotals: Record<number, number> = {};
+      for (const t of txns || []) {
+        if (!t.beneficiary_id) continue;
+        const amt = parseFloat((t.amount ?? 0).toString());
+        if (Number.isNaN(amt)) continue;
+        beneficiaryTotals[t.beneficiary_id] =
+          (beneficiaryTotals[t.beneficiary_id] || 0) + amt;
+      }
+      const topBeneficiariesByDonations = Object.entries(beneficiaryTotals)
+        .map(([id, total]) => ({
+          beneficiaryId: Number(id),
+          name: charityNameById[Number(id)] || `Beneficiary ${id}`,
+          total: Math.round(total * 100) / 100,
+        }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 10);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            totalBeneficiaries,
+            monthlyRecurring: {
+              total: Math.round(monthlyRecurringTotal * 100) / 100,
+              avg: Math.round(monthlyRecurringAvg * 100) / 100,
+              activeSubCount,
+            },
+            donations: {
+              lifetimeTotal: Math.round(lifetimeTotal * 100) / 100,
+              recurring: {
+                total: Math.round(lifetimeRecurring * 100) / 100,
+                pct: pct(lifetimeRecurring),
+              },
+              oneTime: {
+                total: Math.round(lifetimeOneTime * 100) / 100,
+                pct: pct(lifetimeOneTime),
+              },
+            },
+            donationTrends,
+            mostSelectedBeneficiaries,
+            donationsByLocation,
+            topBeneficiariesByDonations,
+          },
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        },
+      );
+    } catch (err: any) {
+      console.error("donation-overview error:", err);
+      return new Response(
+        JSON.stringify({ error: err?.message || "donation-overview failed" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        },
+      );
+    }
+  }
+
   // GET /admin/analytics/leaderboard/:type
   const leaderboardMatch = route.match(
     /^\/admin\/analytics\/leaderboard\/(\w+)$/,
