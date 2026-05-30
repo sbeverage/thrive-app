@@ -510,6 +510,20 @@ export async function handleAdminAnalytics(
         charityNameById[c.id] = c.name;
       }
 
+      // The platform-fee carve-out: every monthly donation includes a $3 service
+      // fee on top of the donor's chosen amount. The Dashboard surfaces "donation"
+      // numbers (what charities actually receive), so subtract $3 from each
+      // monthly transaction. One-time gifts already store donation-only amounts
+      // (gift.amount is the donor's chosen amount, fees tracked separately).
+      // Processing fees (Stripe 2.2% + $0.30) aren't subtracted here — they vary
+      // per charge and aren't tracked historically; see the Reporting page for
+      // fee-accurate numbers.
+      const SERVICE_FEE = 3.0;
+      const donationAmount = (txnType: string, amount: number) =>
+        txnType === "monthly_donation"
+          ? Math.max(0, amount - SERVICE_FEE)
+          : amount;
+
       // --- Active monthly subs for the Monthly Donations card ---
       const { data: activeSubs } = await supabase
         .from("monthly_donations")
@@ -518,10 +532,13 @@ export async function handleAdminAnalytics(
       let monthlyRecurringTotal = 0;
       const activeSubCount = (activeSubs || []).length;
       for (const s of activeSubs || []) {
-        const amt = parseFloat(
+        const gross = parseFloat(
           (s.last_payment_amount ?? s.amount ?? 0).toString(),
         );
-        if (!Number.isNaN(amt)) monthlyRecurringTotal += amt;
+        if (Number.isNaN(gross)) continue;
+        // Subtract the $3 platform fee so this card reflects what the charity
+        // actually receives each month from this donor.
+        monthlyRecurringTotal += Math.max(0, gross - SERVICE_FEE);
       }
       const monthlyRecurringAvg =
         activeSubCount > 0 ? monthlyRecurringTotal / activeSubCount : 0;
@@ -537,8 +554,9 @@ export async function handleAdminAnalytics(
       for (const t of txns || []) {
         const amt = parseFloat((t.amount ?? 0).toString());
         if (Number.isNaN(amt)) continue;
-        if (t.type === "monthly_donation") lifetimeRecurring += amt;
-        else if (t.type === "one_time_gift") lifetimeOneTime += amt;
+        const donation = donationAmount(t.type, amt);
+        if (t.type === "monthly_donation") lifetimeRecurring += donation;
+        else if (t.type === "one_time_gift") lifetimeOneTime += donation;
       }
       const lifetimeTotal = lifetimeRecurring + lifetimeOneTime;
       const pct = (n: number) =>
@@ -565,8 +583,9 @@ export async function handleAdminAnalytics(
         if (idx === undefined) continue;
         const amt = parseFloat((t.amount ?? 0).toString());
         if (Number.isNaN(amt)) continue;
-        if (t.type === "monthly_donation") recurringByMonth[idx] += amt;
-        else if (t.type === "one_time_gift") oneTimeByMonth[idx] += amt;
+        const donation = donationAmount(t.type, amt);
+        if (t.type === "monthly_donation") recurringByMonth[idx] += donation;
+        else if (t.type === "one_time_gift") oneTimeByMonth[idx] += donation;
       }
       const donationTrends = months.map((m, i) => ({
         month: m,
@@ -612,7 +631,8 @@ export async function handleAdminAnalytics(
         if (!label) continue;
         const amt = parseFloat((t.amount ?? 0).toString());
         if (Number.isNaN(amt)) continue;
-        cityTotals[label] = (cityTotals[label] || 0) + amt;
+        cityTotals[label] =
+          (cityTotals[label] || 0) + donationAmount(t.type, amt);
       }
       const donationsByLocation = Object.entries(cityTotals)
         .map(([city, total]) => ({
@@ -629,7 +649,8 @@ export async function handleAdminAnalytics(
         const amt = parseFloat((t.amount ?? 0).toString());
         if (Number.isNaN(amt)) continue;
         beneficiaryTotals[t.beneficiary_id] =
-          (beneficiaryTotals[t.beneficiary_id] || 0) + amt;
+          (beneficiaryTotals[t.beneficiary_id] || 0) +
+          donationAmount(t.type, amt);
       }
       const topBeneficiariesByDonations = Object.entries(beneficiaryTotals)
         .map(([id, total]) => ({
