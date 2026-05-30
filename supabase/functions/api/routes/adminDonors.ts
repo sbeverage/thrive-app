@@ -98,17 +98,45 @@ export async function handleAdminDonors(
       // donor showed "Never" in the admin Donors tab.
       const userIds = (users || []).map((u: any) => u.id);
       const lastDonationByUser = new Map<number, string>();
+      // Subscription status per donor — derived from their most recently
+      // updated monthly_donations row. We surface this as a colored tag in
+      // the Donors table so past_due / cancelled donors are actionable.
+      const subscriptionStatusByUser = new Map<number, string>();
       if (userIds.length > 0) {
         const {data: monthlyRows} = await supabase
           .from("monthly_donations")
-          .select("user_id, last_payment_date")
-          .in("user_id", userIds)
-          .not("last_payment_date", "is", null);
+          .select("user_id, status, last_payment_date, updated_at")
+          .in("user_id", userIds);
+        // Choose one status per user: prefer active/trialing if any sub is
+        // currently paying; otherwise fall back to the most recently updated
+        // row (so past_due / cancelled / unpaid get surfaced).
+        const ACTIVE_STATUSES = new Set(["active", "trialing"]);
+        const rowsByUser = new Map<number, any[]>();
         for (const row of monthlyRows || []) {
-          const cur = lastDonationByUser.get(row.user_id);
-          if (!cur || row.last_payment_date > cur) {
-            lastDonationByUser.set(row.user_id, row.last_payment_date);
+          if (row.last_payment_date) {
+            const cur = lastDonationByUser.get(row.user_id);
+            if (!cur || row.last_payment_date > cur) {
+              lastDonationByUser.set(row.user_id, row.last_payment_date);
+            }
           }
+          if (!rowsByUser.has(row.user_id)) rowsByUser.set(row.user_id, []);
+          rowsByUser.get(row.user_id)!.push(row);
+        }
+        for (const [uid, rows] of rowsByUser.entries()) {
+          const active = rows.find((r: any) =>
+            ACTIVE_STATUSES.has(String(r.status).toLowerCase()),
+          );
+          if (active) {
+            subscriptionStatusByUser.set(uid, active.status);
+            continue;
+          }
+          // No active sub — surface the most recent terminal/problem status.
+          const sorted = [...rows].sort((a: any, b: any) => {
+            const aT = a.updated_at || "";
+            const bT = b.updated_at || "";
+            return aT > bT ? -1 : aT < bT ? 1 : 0;
+          });
+          subscriptionStatusByUser.set(uid, sorted[0].status || "no_subscription");
         }
         const {data: oneTimeRows} = await supabase
           .from("one_time_gifts")
@@ -154,6 +182,8 @@ export async function handleAdminDonors(
           total_donations: parseFloat(monthlyDonation) || 0,
           one_time_donation: parseFloat(oneTimeDonation) || 0,
           last_donation_date: lastDonationByUser.get(user.id) || null,
+          subscription_status:
+            subscriptionStatusByUser.get(user.id) || "no_subscription",
           address: {
             city: user.city || "",
             state: user.state || "",
