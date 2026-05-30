@@ -42,6 +42,7 @@ export async function handleAdminAnalytics(
         weekly: isoDaysAgo(7),
         monthly: isoDaysAgo(30),
         quarterly: isoDaysAgo(90),
+        yearly: isoDaysAgo(365),
       };
       const prev = {
         weeklyStart: isoDaysAgo(14),
@@ -50,6 +51,8 @@ export async function handleAdminAnalytics(
         monthlyEnd: cur.monthly,
         quarterlyStart: isoDaysAgo(180),
         quarterlyEnd: cur.quarterly,
+        yearlyStart: isoDaysAgo(730),
+        yearlyEnd: cur.yearly,
       };
       const ninetyDaysAgo = cur.quarterly;
 
@@ -168,9 +171,11 @@ export async function handleAdminAnalytics(
       const newWeekly = countNewBetween(cur.weekly);
       const newMonthly = countNewBetween(cur.monthly);
       const newQuarterly = countNewBetween(cur.quarterly);
+      const newYearly = countNewBetween(cur.yearly);
       const lostWeekly = countLostBetween(cur.weekly);
       const lostMonthly = countLostBetween(cur.monthly);
       const lostQuarterly = countLostBetween(cur.quarterly);
+      const lostYearly = countLostBetween(cur.yearly);
 
       // Previous windows (the period immediately before each current window).
       const prevNewWeekly = countNewBetween(prev.weeklyStart, prev.weeklyEnd);
@@ -179,6 +184,7 @@ export async function handleAdminAnalytics(
         prev.quarterlyStart,
         prev.quarterlyEnd,
       );
+      const prevNewYearly = countNewBetween(prev.yearlyStart, prev.yearlyEnd);
       const prevLostWeekly = countLostBetween(prev.weeklyStart, prev.weeklyEnd);
       const prevLostMonthly = countLostBetween(
         prev.monthlyStart,
@@ -187,6 +193,51 @@ export async function handleAdminAnalytics(
       const prevLostQuarterly = countLostBetween(
         prev.quarterlyStart,
         prev.quarterlyEnd,
+      );
+      const prevLostYearly = countLostBetween(
+        prev.yearlyStart,
+        prev.yearlyEnd,
+      );
+
+      // Platform fee revenue = count of completed monthly_donation transactions
+      // in the window × $3. (One-time gifts don't carry a platform fee.) Same
+      // donation-amount math used by donation-overview, just summed differently.
+      const SERVICE_FEE = 3.0;
+      const { data: platformTxns } = await supabase
+        .from("transactions")
+        .select("user_id, type, created_at")
+        .eq("status", "completed")
+        .eq("type", "monthly_donation")
+        .gte("created_at", prev.yearlyStart);
+      const countTxnsBetween = (sinceIso: string, untilIso?: string) => {
+        let n = 0;
+        for (const t of platformTxns || []) {
+          if (!t.created_at) continue;
+          if (t.created_at >= sinceIso && (!untilIso || t.created_at < untilIso)) {
+            n += 1;
+          }
+        }
+        return n;
+      };
+      const platformWeekly = countTxnsBetween(cur.weekly);
+      const platformMonthly = countTxnsBetween(cur.monthly);
+      const platformQuarterly = countTxnsBetween(cur.quarterly);
+      const platformYearly = countTxnsBetween(cur.yearly);
+      const prevPlatformWeekly = countTxnsBetween(
+        prev.weeklyStart,
+        prev.weeklyEnd,
+      );
+      const prevPlatformMonthly = countTxnsBetween(
+        prev.monthlyStart,
+        prev.monthlyEnd,
+      );
+      const prevPlatformQuarterly = countTxnsBetween(
+        prev.quarterlyStart,
+        prev.quarterlyEnd,
+      );
+      const prevPlatformYearly = countTxnsBetween(
+        prev.yearlyStart,
+        prev.yearlyEnd,
       );
 
       // 12-week sparkline series. Buckets are aligned to Monday-start weeks.
@@ -231,20 +282,36 @@ export async function handleAdminAnalytics(
         return Math.round((magnitude / starting) * 1000) / 10; // one decimal
       };
 
-      const buildBlock = (newC: number, lostC: number) => {
+      const buildBlock = (
+        newC: number,
+        lostC: number,
+        platformCount: number,
+      ) => {
         const net = newC - lostC;
         return {
           new: { count: newC, growthRate: rateForDelta(newC, newC) },
           lost: { count: lostC, lossRate: rateForDelta(lostC, -lostC) },
           net: { count: net, growthRate: rateForDelta(Math.abs(net), net) },
+          platformFee: {
+            count: platformCount,
+            total: Math.round(platformCount * SERVICE_FEE * 100) / 100,
+          },
         };
       };
 
       // Simple counts for the previous-period block (frontend computes delta).
-      const buildPrevBlock = (newC: number, lostC: number) => ({
+      const buildPrevBlock = (
+        newC: number,
+        lostC: number,
+        platformCount: number,
+      ) => ({
         new: { count: newC },
         lost: { count: lostC },
         net: { count: newC - lostC },
+        platformFee: {
+          count: platformCount,
+          total: Math.round(platformCount * SERVICE_FEE * 100) / 100,
+        },
       });
 
       return new Response(
@@ -254,21 +321,48 @@ export async function handleAdminAnalytics(
             totalActive,
             totalInactive,
             current: {
-              weekly: buildBlock(newWeekly, lostWeekly),
-              monthly: buildBlock(newMonthly, lostMonthly),
-              quarterly: buildBlock(newQuarterly, lostQuarterly),
+              weekly: buildBlock(newWeekly, lostWeekly, platformWeekly),
+              monthly: buildBlock(newMonthly, lostMonthly, platformMonthly),
+              quarterly: buildBlock(
+                newQuarterly,
+                lostQuarterly,
+                platformQuarterly,
+              ),
+              yearly: buildBlock(newYearly, lostYearly, platformYearly),
             },
             previous: {
-              weekly: buildPrevBlock(prevNewWeekly, prevLostWeekly),
-              monthly: buildPrevBlock(prevNewMonthly, prevLostMonthly),
-              quarterly: buildPrevBlock(prevNewQuarterly, prevLostQuarterly),
+              weekly: buildPrevBlock(
+                prevNewWeekly,
+                prevLostWeekly,
+                prevPlatformWeekly,
+              ),
+              monthly: buildPrevBlock(
+                prevNewMonthly,
+                prevLostMonthly,
+                prevPlatformMonthly,
+              ),
+              quarterly: buildPrevBlock(
+                prevNewQuarterly,
+                prevLostQuarterly,
+                prevPlatformQuarterly,
+              ),
+              yearly: buildPrevBlock(
+                prevNewYearly,
+                prevLostYearly,
+                prevPlatformYearly,
+              ),
             },
             weeklySeries,
             // Backwards-compat: also expose at the top level so older clients
             // (still reading data.weekly/monthly/quarterly) don't break.
-            weekly: buildBlock(newWeekly, lostWeekly),
-            monthly: buildBlock(newMonthly, lostMonthly),
-            quarterly: buildBlock(newQuarterly, lostQuarterly),
+            weekly: buildBlock(newWeekly, lostWeekly, platformWeekly),
+            monthly: buildBlock(newMonthly, lostMonthly, platformMonthly),
+            quarterly: buildBlock(
+              newQuarterly,
+              lostQuarterly,
+              platformQuarterly,
+            ),
+            yearly: buildBlock(newYearly, lostYearly, platformYearly),
           },
         }),
         {
