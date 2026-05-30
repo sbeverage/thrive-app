@@ -35,6 +35,7 @@ import { handleInvitationRoute } from "./routes/invitations.ts";
 import { handleUploadRoute } from "./routes/uploads.ts";
 import { handleReferralRoute } from "./routes/referrals.ts";
 import { handleVendorRoute } from "./routes/vendors.ts";
+import { handleVendorPortalRoute } from "./routes/vendorPortal.ts";
 import { handleDiscountRoute } from "./routes/discounts.ts";
 import { handleDataDeletionRoute } from "./routes/dataDeletion.ts";
 import { handleAuthRoute } from "./routes/auth.ts";
@@ -641,6 +642,11 @@ serve(async (req) => {
         sendAdminTempPasswordEmail,
         sendInvitationEmail,
       });
+    }
+    // Vendor Portal — authenticated, vendor-scoped routes (must come BEFORE
+    // the public /vendors prefix check since /vendor/* is its own prefix).
+    else if (route.startsWith("/vendor/")) {
+      response = await handleVendorPortalRoute(req, supabase, route, method);
     }
     // Vendor routes (public API)
     else if (route.startsWith("/vendors")) {
