@@ -492,7 +492,84 @@ export async function handleVendorPortalRoute(
     return handleVendorStats(supabase, vendor.id);
   }
 
+  if (method === "POST" && route === "/vendor/me/generate-description") {
+    return handleGenerateDescription(req, vendor);
+  }
+
   return json({ error: "Vendor portal route not found" }, 404);
+}
+
+// ============================================================================
+// POST /vendor/me/generate-description — Gemini Flash writes a 1-2 sentence
+// donor-facing description from whatever signals we already have on the
+// vendor (or anything the client passes in the body). Returns { description }.
+// Soft-fails: returns empty description with a 503 if GEMINI_API_KEY is unset
+// so the UI can fall back to manual entry.
+// ============================================================================
+
+async function handleGenerateDescription(req: Request, vendor: any): Promise<JSONResponse> {
+  const apiKey = Deno.env.get("GEMINI_API_KEY");
+  if (!apiKey) {
+    return json({ error: "AI description generation is not configured (missing GEMINI_API_KEY)" }, 503);
+  }
+
+  const body = await req.json().catch(() => ({}));
+  const name = (body.name ?? vendor.name ?? "").toString().trim();
+  const category = (body.category ?? vendor.category ?? "").toString().trim();
+  const city = (body.city ?? vendor.address?.city ?? "").toString().trim();
+  const state = (body.state ?? vendor.address?.state ?? "").toString().trim();
+  const website = (body.website ?? vendor.website ?? "").toString().trim();
+
+  if (!name) return json({ error: "Business name is required to generate a description" }, 400);
+
+  const location = [city, state].filter(Boolean).join(", ");
+  const prompt = `Write a warm, concise customer-facing description for a business listing in an app. Constraints:
+- 1-2 sentences, maximum 200 characters total
+- Tone: friendly, inviting, professional
+- Do NOT invent specific menu items, prices, hours, or services not mentioned below
+- Avoid clichés like "your one-stop shop" or "look no further"
+- Output ONLY the description text — no quotes, no preamble, no markdown
+
+Business: ${name}
+Category: ${category || "a local business"}
+${location ? `Location: ${location}` : ""}
+${website ? `Website: ${website}` : ""}`;
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 120, temperature: 0.7 },
+        }),
+      },
+    );
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("Gemini API error:", res.status, errText);
+      return json({ error: "AI generation failed" }, 502);
+    }
+
+    const data = await res.json();
+    let description = (
+      data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ""
+    ).toString().trim();
+
+    // Strip wrapping quotes Gemini sometimes adds despite the instruction.
+    description = description.replace(/^["'`]+|["'`]+$/g, "").trim();
+
+    if (!description) {
+      return json({ error: "AI returned an empty description" }, 502);
+    }
+    return json({ description });
+  } catch (e: any) {
+    console.error("AI description fetch error:", e);
+    return json({ error: e?.message || "AI generation failed" }, 500);
+  }
 }
 
 // ============================================================================
