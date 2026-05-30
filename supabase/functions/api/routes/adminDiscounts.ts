@@ -1,9 +1,130 @@
+import { corsHeaders } from "../lib/cors.ts";
+
 export async function handleAdminDiscounts(
   req: Request,
   supabase: any,
   route: string,
   method: string,
 ) {
+  // GET /admin/discounts/highlights
+  // Returns three founder-eye KPIs for the Discounts page top strip:
+  //   - activeDiscounts:    { count, vendorCount } — live discounts + distinct vendors offering them
+  //   - redemptionsMonth:   { count, growthRate } — redemptions in last 30 days + % change vs prior month
+  //   - topPerforming:      { title, vendorName, totalSavings } — discount with the most $ saved lifetime
+  if (method === "GET" && route === "/admin/discounts/highlights") {
+    try {
+      const now = new Date();
+      const today = now.toISOString().split("T")[0];
+      const ms = (days: number) => days * 24 * 60 * 60 * 1000;
+      const thirtyAgo = new Date(now.getTime() - ms(30)).toISOString();
+      const sixtyAgo = new Date(now.getTime() - ms(60)).toISOString();
+
+      // ---- Active discounts + vendor name lookup ----
+      // "Active" mirrors the admin list filter: is_active = true AND
+      // (end_date is null OR end_date >= today).
+      const { data: discounts } = await supabase
+        .from("discounts")
+        .select("id, title, is_active, end_date, vendor_id");
+      let activeCount = 0;
+      const activeVendorIds = new Set<number>();
+      const discountTitleById: Record<number, string> = {};
+      const discountVendorById: Record<number, number | null> = {};
+      for (const d of discounts || []) {
+        discountTitleById[d.id] = d.title || `Discount ${d.id}`;
+        discountVendorById[d.id] = d.vendor_id ?? null;
+        if (!d.is_active) continue;
+        if (d.end_date && d.end_date < today) continue;
+        activeCount += 1;
+        if (d.vendor_id != null) activeVendorIds.add(d.vendor_id);
+      }
+
+      const { data: vendors } = await supabase
+        .from("vendors")
+        .select("id, name");
+      const vendorNameById: Record<number, string> = {};
+      for (const v of vendors || []) vendorNameById[v.id] = v.name;
+
+      // ---- Redemptions this month + growth vs prior month ----
+      const { data: redemptions } = await supabase
+        .from("redemptions")
+        .select("discount_id, redeemed_at, total_savings");
+      let monthCount = 0;
+      let priorMonthCount = 0;
+      const savingsByDiscount: Record<number, number> = {};
+      for (const r of redemptions || []) {
+        if (!r.redeemed_at) continue;
+        if (r.redeemed_at >= thirtyAgo) monthCount += 1;
+        else if (r.redeemed_at >= sixtyAgo) priorMonthCount += 1;
+        if (r.discount_id != null) {
+          const saved = parseFloat((r.total_savings ?? 0).toString());
+          if (!Number.isNaN(saved)) {
+            savingsByDiscount[r.discount_id] =
+              (savingsByDiscount[r.discount_id] || 0) + saved;
+          }
+        }
+      }
+      const growthRate =
+        priorMonthCount === 0
+          ? monthCount > 0
+            ? 100
+            : 0
+          : Math.round(((monthCount - priorMonthCount) / priorMonthCount) * 1000) /
+            10;
+
+      // ---- Top performing discount by lifetime $ saved ----
+      let topId: number | null = null;
+      let topSavings = 0;
+      for (const [id, total] of Object.entries(savingsByDiscount)) {
+        if ((total as number) > topSavings) {
+          topSavings = total as number;
+          topId = Number(id);
+        }
+      }
+      const topPerforming =
+        topId !== null
+          ? {
+              discountId: topId,
+              title: discountTitleById[topId] || `Discount ${topId}`,
+              vendorName:
+                discountVendorById[topId] != null
+                  ? vendorNameById[discountVendorById[topId]!] || null
+                  : null,
+              totalSavings: Math.round(topSavings * 100) / 100,
+            }
+          : null;
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            activeDiscounts: {
+              count: activeCount,
+              vendorCount: activeVendorIds.size,
+            },
+            redemptionsMonth: {
+              count: monthCount,
+              growthRate,
+            },
+            topPerforming,
+          },
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        },
+      );
+    } catch (err: any) {
+      console.error("discounts/highlights error:", err);
+      return new Response(
+        JSON.stringify({ error: err?.message || "highlights failed" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        },
+      );
+    }
+  }
+
   // GET /admin/discounts
   if (method === "GET" && route === "/admin/discounts") {
     const url = new URL(req.url);
