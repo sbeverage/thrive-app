@@ -1,5 +1,6 @@
 import { geocodeAddress } from "../lib/geocoding.ts";
 import { formatCharityResponse } from "../lib/charities.ts";
+import { corsHeaders } from "../lib/cors.ts";
 
 export async function handleAdminCharities(
   req: Request,
@@ -7,6 +8,151 @@ export async function handleAdminCharities(
   route: string,
   method: string,
 ) {
+  // GET /admin/charities/highlights
+  // Returns the four health KPIs for the Beneficiaries page top strip:
+  //   - active:           total active beneficiaries + how many have ever received a donation
+  //   - awaitingBankInfo: count of active beneficiaries missing bank account number
+  //   - topByDonations:   { name, lifetimeTotal } highest-receiving beneficiary
+  //   - mostSelected:     { name, count } charity most often chosen as primary by donors
+  if (method === "GET" && route === "/admin/charities/highlights") {
+    try {
+      const SERVICE_FEE = 3.0;
+      const STRIPE_FEE_PERCENT = 0.022;
+      const STRIPE_FIXED_FEE = 0.30;
+      const LEGACY_CC_RATE = 0.035;
+      // Same gross→donation inference used by donation-overview + donor highlights.
+      const inferDonation = (gross: number): number => {
+        const g = Math.round(gross * 100) / 100;
+        if (g <= 0) return 0;
+        const a = Math.round((g - SERVICE_FEE) * 100) / 100;
+        if (a > 0 && Math.abs(a - Math.round(a)) < 0.005) return Math.round(a);
+        const bR = Math.round(g / (1 + LEGACY_CC_RATE) - SERVICE_FEE);
+        const bE =
+          Math.round((bR + SERVICE_FEE) * (1 + LEGACY_CC_RATE) * 100) / 100;
+        if (bR > 0 && Math.abs(g - bE) < 0.05) return bR;
+        const cR = Math.round(
+          g * (1 - STRIPE_FEE_PERCENT) - SERVICE_FEE - STRIPE_FIXED_FEE,
+        );
+        const cE =
+          Math.ceil(
+            ((cR + SERVICE_FEE + STRIPE_FIXED_FEE) / (1 - STRIPE_FEE_PERCENT)) *
+              100,
+          ) / 100;
+        if (cR > 0 && Math.abs(g - cE) < 0.05) return cR;
+        return Math.max(0, Math.round(g - SERVICE_FEE));
+      };
+
+      // ---- All beneficiaries snapshot ----
+      const { data: charities } = await supabase
+        .from("charities")
+        .select("id, name, is_active, bank_account_number");
+      const charityNameById: Record<number, string> = {};
+      let activeCount = 0;
+      let awaitingBankInfo = 0;
+      for (const c of charities || []) {
+        charityNameById[c.id] = c.name;
+        if (c.is_active) {
+          activeCount += 1;
+          const bank = (c.bank_account_number || "").toString().trim();
+          if (!bank) awaitingBankInfo += 1;
+        }
+      }
+
+      // ---- Lifetime $ received per beneficiary ----
+      const { data: txns } = await supabase
+        .from("transactions")
+        .select("type, amount, beneficiary_id")
+        .eq("status", "completed");
+      const lifetimeByBeneficiary: Record<number, number> = {};
+      const beneficiariesWithDonations = new Set<number>();
+      for (const t of txns || []) {
+        if (!t.beneficiary_id) continue;
+        const amt = parseFloat((t.amount ?? 0).toString());
+        if (Number.isNaN(amt)) continue;
+        const donation =
+          t.type === "monthly_donation" ? inferDonation(amt) : amt;
+        lifetimeByBeneficiary[t.beneficiary_id] =
+          (lifetimeByBeneficiary[t.beneficiary_id] || 0) + donation;
+        beneficiariesWithDonations.add(t.beneficiary_id);
+      }
+      let topId: number | null = null;
+      let topTotal = 0;
+      for (const [id, total] of Object.entries(lifetimeByBeneficiary)) {
+        const t = total as number;
+        if (t > topTotal) {
+          topTotal = t;
+          topId = Number(id);
+        }
+      }
+
+      // ---- Most-selected-as-primary count per beneficiary ----
+      const { data: donors } = await supabase
+        .from("users")
+        .select("id, preferences")
+        .eq("role", "donor");
+      const selectionCount: Record<number, number> = {};
+      for (const d of donors || []) {
+        const prefId =
+          d.preferences?.preferredCharity ?? d.preferences?.beneficiary ?? null;
+        const idNum = prefId ? parseInt(prefId, 10) : NaN;
+        if (Number.isNaN(idNum)) continue;
+        selectionCount[idNum] = (selectionCount[idNum] || 0) + 1;
+      }
+      let mostSelectedId: number | null = null;
+      let mostSelectedCount = 0;
+      for (const [id, count] of Object.entries(selectionCount)) {
+        if ((count as number) > mostSelectedCount) {
+          mostSelectedCount = count as number;
+          mostSelectedId = Number(id);
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            active: {
+              count: activeCount,
+              receivingCount: beneficiariesWithDonations.size,
+            },
+            awaitingBankInfo,
+            topByDonations:
+              topId !== null
+                ? {
+                    beneficiaryId: topId,
+                    name: charityNameById[topId] || `Beneficiary ${topId}`,
+                    lifetimeTotal: Math.round(topTotal * 100) / 100,
+                  }
+                : null,
+            mostSelected:
+              mostSelectedId !== null
+                ? {
+                    beneficiaryId: mostSelectedId,
+                    name:
+                      charityNameById[mostSelectedId] ||
+                      `Beneficiary ${mostSelectedId}`,
+                    count: mostSelectedCount,
+                  }
+                : null,
+          },
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        },
+      );
+    } catch (err: any) {
+      console.error("charities/highlights error:", err);
+      return new Response(
+        JSON.stringify({ error: err?.message || "highlights failed" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        },
+      );
+    }
+  }
+
   // GET /admin/charities - List all charities
   if (method === "GET" && route === "/admin/charities") {
     try {
