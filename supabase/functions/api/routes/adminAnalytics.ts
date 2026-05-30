@@ -1457,12 +1457,13 @@ export async function handleAdminAnalytics(
         startDate.setDate(now.getDate() - 30);
     }
 
-    // Get users by location
-    const {data: users, error: usersError} = await supabase
+    // ---- Donors: snapshot from users table (not just signups in period) ----
+    // Donor/vendor/beneficiary counts are CURRENT totals; the period filter
+    // only narrows the donation $ totals below.
+    const {data: donorUsers, error: usersError} = await supabase
       .from("users")
-      .select("id, city, state, country, role, created_at")
-      .gte("created_at", startDate.toISOString());
-
+      .select("id, city, state, country")
+      .eq("role", "donor");
     if (usersError) {
       console.error(
         "Error fetching users for geographic analytics:",
@@ -1477,37 +1478,85 @@ export async function handleAdminAnalytics(
       );
     }
 
-    // Get donations for the period
-    const {data: donations} = await supabase
-      .from("donations")
-      .select("donor_id, amount, charity_id")
-      .eq("status", "active")
-      .gte("created_at", startDate.toISOString());
+    // ---- Vendors + Beneficiaries live in their own tables, not users ----
+    // (the previous version counted users.role='vendorAdmin' / 'charityAdmin',
+    //  which never matches any rows and is why those columns showed 0).
+    const {data: vendorRows} = await supabase
+      .from("vendors")
+      .select("address, is_active")
+      .eq("is_active", true);
+    const {data: charityRows} = await supabase
+      .from("charities")
+      .select("address, is_active")
+      .eq("is_active", true);
 
-    // Aggregate by location
-    const locationStats: Record<string, any> = {};
+    // ---- Donations: sum from transactions, joined to donor city via user_id ----
+    // (previous version queried a 'donations' table that isn't the canonical
+    //  source — actual donation activity lives in transactions.)
+    const {data: txns} = await supabase
+      .from("transactions")
+      .select("user_id, type, amount, created_at")
+      .eq("status", "completed")
+      .gte("created_at", startDate.toISOString());
+    // Same fee-aware donation amount used by donation-overview.
+    const SERVICE_FEE = 3.0;
+    const STRIPE_FEE_PERCENT = 0.022;
+    const STRIPE_FIXED_FEE = 0.30;
+    const LEGACY_CC_RATE = 0.035;
+    const inferDonation = (gross: number): number => {
+      const g = Math.round(gross * 100) / 100;
+      if (g <= 0) return 0;
+      const a = Math.round((g - SERVICE_FEE) * 100) / 100;
+      if (a > 0 && Math.abs(a - Math.round(a)) < 0.005) return Math.round(a);
+      const bR = Math.round(g / (1 + LEGACY_CC_RATE) - SERVICE_FEE);
+      const bE =
+        Math.round((bR + SERVICE_FEE) * (1 + LEGACY_CC_RATE) * 100) / 100;
+      if (bR > 0 && Math.abs(g - bE) < 0.05) return bR;
+      const cR = Math.round(
+        g * (1 - STRIPE_FEE_PERCENT) - SERVICE_FEE - STRIPE_FIXED_FEE,
+      );
+      const cE =
+        Math.ceil(
+          ((cR + SERVICE_FEE + STRIPE_FIXED_FEE) / (1 - STRIPE_FEE_PERCENT)) *
+            100,
+        ) / 100;
+      if (cR > 0 && Math.abs(g - cE) < 0.05) return cR;
+      return Math.max(0, Math.round(g - SERVICE_FEE));
+    };
+    const userLocation: Record<
+      number,
+      { city: string; state: string; country: string }
+    > = {};
+    for (const u of donorUsers || []) {
+      userLocation[u.id] = {
+        city: u.city || "Unknown",
+        state: u.state || "Unknown",
+        country: u.country || "Unknown",
+      };
+    }
+
+    // ---- Aggregate everything by country / state / city ----
     const countryStats: Record<string, any> = {};
     const stateStats: Record<string, any> = {};
     const cityStats: Record<string, any> = {};
 
-    users?.forEach((user: any) => {
-      const country = user.country || "Unknown";
+    const ensureBuckets = (country: string, state: string, city: string) => {
       if (!countryStats[country]) {
-        countryStats[country] = {donors: 0, vendors: 0, beneficiaries: 0};
+        countryStats[country] = {
+          donors: 0,
+          vendors: 0,
+          beneficiaries: 0,
+          totalDonations: 0,
+        };
       }
-      if (user.role === "donor") countryStats[country].donors++;
-      if (user.role === "vendorAdmin") countryStats[country].vendors++;
-      if (user.role === "charityAdmin") countryStats[country].beneficiaries++;
-
-      const state = user.state || "Unknown";
       if (!stateStats[state]) {
-        stateStats[state] = {donors: 0, vendors: 0, beneficiaries: 0};
+        stateStats[state] = {
+          donors: 0,
+          vendors: 0,
+          beneficiaries: 0,
+          totalDonations: 0,
+        };
       }
-      if (user.role === "donor") stateStats[state].donors++;
-      if (user.role === "vendorAdmin") stateStats[state].vendors++;
-      if (user.role === "charityAdmin") stateStats[state].beneficiaries++;
-
-      const city = user.city || "Unknown";
       const cityKey = `${city}, ${state}`;
       if (!cityStats[cityKey]) {
         cityStats[cityKey] = {
@@ -1516,54 +1565,71 @@ export async function handleAdminAnalytics(
           donors: 0,
           vendors: 0,
           beneficiaries: 0,
+          totalDonations: 0,
         };
       }
-      if (user.role === "donor") cityStats[cityKey].donors++;
-      if (user.role === "vendorAdmin") cityStats[cityKey].vendors++;
-      if (user.role === "charityAdmin") cityStats[cityKey].beneficiaries++;
-    });
+      return cityKey;
+    };
 
-    // Calculate donation totals by location
-    const donationByDonor: Record<number, number> = {};
-    donations?.forEach((donation: any) => {
-      if (!donationByDonor[donation.donor_id]) {
-        donationByDonor[donation.donor_id] = 0;
-      }
-      donationByDonor[donation.donor_id] += parseFloat(donation.amount || 0);
-    });
-
-    // Get donor locations for donations
-    const donorIds = Object.keys(donationByDonor).map((id) => parseInt(id));
-    if (donorIds.length > 0) {
-      const {data: donors} = await supabase
-        .from("users")
-        .select("id, city, state, country")
-        .in("id", donorIds);
-
-      if (donors) {
-        donors.forEach((donor: any) => {
-          const state = donor.state || "Unknown";
-          if (!stateStats[state]) {
-            stateStats[state] = {
-              donors: 0,
-              vendors: 0,
-              beneficiaries: 0,
-              totalDonations: 0,
-            };
-          }
-          stateStats[state].totalDonations =
-            (stateStats[state].totalDonations || 0) +
-            (donationByDonor[donor.id] || 0);
-        });
-      }
+    for (const u of donorUsers || []) {
+      const country = u.country || "Unknown";
+      const state = u.state || "Unknown";
+      const city = u.city || "Unknown";
+      const cityKey = ensureBuckets(country, state, city);
+      countryStats[country].donors += 1;
+      stateStats[state].donors += 1;
+      cityStats[cityKey].donors += 1;
     }
+    for (const v of vendorRows || []) {
+      const addr = v.address || {};
+      const country = addr.country || "Unknown";
+      const state = addr.state || "Unknown";
+      const city = addr.city || "Unknown";
+      if (city === "Unknown" && state === "Unknown") continue;
+      const cityKey = ensureBuckets(country, state, city);
+      countryStats[country].vendors += 1;
+      stateStats[state].vendors += 1;
+      cityStats[cityKey].vendors += 1;
+    }
+    for (const c of charityRows || []) {
+      const addr = c.address || {};
+      const country = addr.country || "Unknown";
+      const state = addr.state || "Unknown";
+      const city = addr.city || "Unknown";
+      if (city === "Unknown" && state === "Unknown") continue;
+      const cityKey = ensureBuckets(country, state, city);
+      countryStats[country].beneficiaries += 1;
+      stateStats[state].beneficiaries += 1;
+      cityStats[cityKey].beneficiaries += 1;
+    }
+    for (const t of txns || []) {
+      const loc = userLocation[t.user_id];
+      if (!loc) continue;
+      const amt = parseFloat((t.amount ?? 0).toString());
+      if (Number.isNaN(amt)) continue;
+      const donation =
+        t.type === "monthly_donation" ? inferDonation(amt) : amt;
+      const cityKey = ensureBuckets(loc.country, loc.state, loc.city);
+      countryStats[loc.country].totalDonations += donation;
+      stateStats[loc.state].totalDonations += donation;
+      cityStats[cityKey].totalDonations += donation;
+    }
+
+    const fmt = (n: number) =>
+      n >= 1_000_000
+        ? `$${(n / 1_000_000).toFixed(1)}M`
+        : n >= 10_000
+          ? `$${(n / 1_000).toFixed(1)}K`
+          : `$${Math.round(n).toLocaleString()}`;
 
     // Format top countries
     const topCountries = Object.entries(countryStats)
-      .map(([name, stats]) => ({
+      .map(([name, stats]: any) => ({
         name,
-        ...stats,
-        totalDonations: "$0",
+        donors: stats.donors,
+        vendors: stats.vendors,
+        beneficiaries: stats.beneficiaries,
+        totalDonations: fmt(stats.totalDonations),
       }))
       .sort(
         (a, b) =>
@@ -1576,12 +1642,12 @@ export async function handleAdminAnalytics(
 
     // Format top states
     const topStates = Object.entries(stateStats)
-      .map(([name, stats]) => ({
+      .map(([name, stats]: any) => ({
         name,
-        ...stats,
-        totalDonations: stats.totalDonations
-          ? `$${stats.totalDonations.toFixed(2)}`
-          : "$0",
+        donors: stats.donors,
+        vendors: stats.vendors,
+        beneficiaries: stats.beneficiaries,
+        totalDonations: fmt(stats.totalDonations),
       }))
       .sort(
         (a, b) =>
@@ -1600,7 +1666,7 @@ export async function handleAdminAnalytics(
         donors: stats.donors,
         vendors: stats.vendors,
         beneficiaries: stats.beneficiaries,
-        donations: "$0",
+        donations: fmt(stats.totalDonations),
       }))
       .sort(
         (a, b) =>
