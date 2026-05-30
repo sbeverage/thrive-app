@@ -199,43 +199,50 @@ export async function handleAdminAnalytics(
         prev.yearlyEnd,
       );
 
-      // Platform fee revenue = count of completed monthly_donation transactions
-      // in the window × $3. (One-time gifts don't carry a platform fee.) Same
-      // donation-amount math used by donation-overview, just summed differently.
+      // Platform fee revenue = count of paid monthly donations in the window × $3.
+      // Uses monthly_donations.last_payment_date as the canonical source — matches
+      // what the Reporting page reads, so the two pages reconcile exactly.
+      // (transactions table can lag for legacy invoices where the webhook didn't
+      // log a row; monthly_donations is always stamped via subscribe/sync/backfill.)
+      //
+      // Caveat: monthly_donations only stores the MOST RECENT payment per sub, so
+      // for windows longer than a month this under-counts repeat payments. For
+      // current scale (everyone within their first or second invoice) this is exact.
       const SERVICE_FEE = 3.0;
-      const { data: platformTxns } = await supabase
-        .from("transactions")
-        .select("user_id, type, created_at")
-        .eq("status", "completed")
-        .eq("type", "monthly_donation")
-        .gte("created_at", prev.yearlyStart);
-      const countTxnsBetween = (sinceIso: string, untilIso?: string) => {
+      const yearlyDateStart = prev.yearlyStart.split("T")[0];
+      const { data: paidMonthly } = await supabase
+        .from("monthly_donations")
+        .select("user_id, last_payment_date")
+        .not("last_payment_date", "is", null)
+        .gte("last_payment_date", yearlyDateStart);
+      const countPaidBetween = (sinceIso: string, untilIso?: string) => {
+        const sinceDate = sinceIso.split("T")[0];
+        const untilDate = untilIso ? untilIso.split("T")[0] : undefined;
         let n = 0;
-        for (const t of platformTxns || []) {
-          if (!t.created_at) continue;
-          if (t.created_at >= sinceIso && (!untilIso || t.created_at < untilIso)) {
-            n += 1;
-          }
+        for (const r of paidMonthly || []) {
+          const lpd = r.last_payment_date as string;
+          if (!lpd) continue;
+          if (lpd >= sinceDate && (!untilDate || lpd < untilDate)) n += 1;
         }
         return n;
       };
-      const platformWeekly = countTxnsBetween(cur.weekly);
-      const platformMonthly = countTxnsBetween(cur.monthly);
-      const platformQuarterly = countTxnsBetween(cur.quarterly);
-      const platformYearly = countTxnsBetween(cur.yearly);
-      const prevPlatformWeekly = countTxnsBetween(
+      const platformWeekly = countPaidBetween(cur.weekly);
+      const platformMonthly = countPaidBetween(cur.monthly);
+      const platformQuarterly = countPaidBetween(cur.quarterly);
+      const platformYearly = countPaidBetween(cur.yearly);
+      const prevPlatformWeekly = countPaidBetween(
         prev.weeklyStart,
         prev.weeklyEnd,
       );
-      const prevPlatformMonthly = countTxnsBetween(
+      const prevPlatformMonthly = countPaidBetween(
         prev.monthlyStart,
         prev.monthlyEnd,
       );
-      const prevPlatformQuarterly = countTxnsBetween(
+      const prevPlatformQuarterly = countPaidBetween(
         prev.quarterlyStart,
         prev.quarterlyEnd,
       );
-      const prevPlatformYearly = countTxnsBetween(
+      const prevPlatformYearly = countPaidBetween(
         prev.yearlyStart,
         prev.yearlyEnd,
       );
@@ -1490,14 +1497,44 @@ export async function handleAdminAnalytics(
       .select("address, is_active")
       .eq("is_active", true);
 
-    // ---- Donations: sum from transactions, joined to donor city via user_id ----
-    // (previous version queried a 'donations' table that isn't the canonical
-    //  source — actual donation activity lives in transactions.)
-    const {data: txns} = await supabase
-      .from("transactions")
-      .select("user_id, type, amount, created_at")
+    // ---- Donations: sum from monthly_donations + one_time_gifts, joined to
+    // donor city via user_id. Uses the same source as Reporting + Dashboard
+    // so the dollar figures reconcile across pages. (transactions table can
+    // lag for legacy invoices; monthly_donations is always stamped.)
+    const startDateOnly = startDate.toISOString().split("T")[0];
+    const startIso = startDate.toISOString();
+    const {data: monthlyRecent} = await supabase
+      .from("monthly_donations")
+      .select("user_id, last_payment_date, last_payment_amount")
+      .not("last_payment_date", "is", null)
+      .gte("last_payment_date", startDateOnly);
+    const {data: oneTimeRecent} = await supabase
+      .from("one_time_gifts")
+      .select("user_id, created_at, amount, net_amount")
       .eq("status", "completed")
-      .gte("created_at", startDate.toISOString());
+      .gte("created_at", startIso);
+    // Shape into a unified list { user_id, type, amount } for the aggregation
+    // loop below — matches the old `txns` interface so the rest of the code
+    // doesn't need to change.
+    const txns: Array<{ user_id: number; type: string; amount: number }> = [];
+    for (const r of monthlyRecent || []) {
+      const amt = parseFloat((r.last_payment_amount ?? 0).toString());
+      if (Number.isNaN(amt)) continue;
+      txns.push({
+        user_id: r.user_id,
+        type: "monthly_donation",
+        amount: amt,
+      });
+    }
+    for (const r of oneTimeRecent || []) {
+      const amt = parseFloat((r.amount ?? r.net_amount ?? 0).toString());
+      if (Number.isNaN(amt)) continue;
+      txns.push({
+        user_id: r.user_id,
+        type: "one_time_gift",
+        amount: amt,
+      });
+    }
     // Same fee-aware donation amount used by donation-overview.
     const SERVICE_FEE = 3.0;
     const STRIPE_FEE_PERCENT = 0.022;
