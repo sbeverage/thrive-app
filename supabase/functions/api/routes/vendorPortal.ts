@@ -500,17 +500,17 @@ export async function handleVendorPortalRoute(
 }
 
 // ============================================================================
-// POST /vendor/me/generate-description — Gemini Flash writes a 1-2 sentence
-// donor-facing description from whatever signals we already have on the
-// vendor (or anything the client passes in the body). Returns { description }.
-// Soft-fails: returns empty description with a 503 if GEMINI_API_KEY is unset
-// so the UI can fall back to manual entry.
+// POST /vendor/me/generate-description — Anthropic Claude Haiku writes a 1-2
+// sentence donor-facing description from whatever signals we already have on
+// the vendor (or anything the client passes in the body). Returns
+// { description }. Soft-fails: returns 503 if ANTHROPIC_API_KEY is unset so
+// the UI can fall back to manual entry.
 // ============================================================================
 
 async function handleGenerateDescription(req: Request, vendor: any): Promise<JSONResponse> {
-  const apiKey = Deno.env.get("GEMINI_API_KEY");
+  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
   if (!apiKey) {
-    return json({ error: "AI description generation is not configured (missing GEMINI_API_KEY)" }, 503);
+    return json({ error: "AI description generation is not configured (missing ANTHROPIC_API_KEY)" }, 503);
   }
 
   const body = await req.json().catch(() => ({}));
@@ -523,10 +523,12 @@ async function handleGenerateDescription(req: Request, vendor: any): Promise<JSO
   if (!name) return json({ error: "Business name is required to generate a description" }, 400);
 
   const location = [city, state].filter(Boolean).join(", ");
-  const prompt = `Write a warm, concise customer-facing description for a business listing in an app. Constraints:
-- 1-2 sentences, maximum 200 characters total
+  const prompt = `Write a warm, concise customer-facing description for a business listing in an app.
+
+Constraints:
+- 1 to 2 sentences, maximum 200 characters total
 - Tone: friendly, inviting, professional
-- Do NOT invent specific menu items, prices, hours, or services not mentioned below
+- Do NOT invent specific menu items, prices, hours, or services that aren't mentioned below
 - Avoid clichés like "your one-stop shop" or "look no further"
 - Output ONLY the description text — no quotes, no preamble, no markdown
 
@@ -536,30 +538,31 @@ ${location ? `Location: ${location}` : ""}
 ${website ? `Website: ${website}` : ""}`;
 
   try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 120, temperature: 0.7 },
-        }),
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
       },
-    );
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 200,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("Gemini API error:", res.status, errText);
+      console.error("Anthropic API error:", res.status, errText);
       return json({ error: "AI generation failed" }, 502);
     }
 
     const data = await res.json();
-    let description = (
-      data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ""
-    ).toString().trim();
+    const block = (data?.content || []).find((b: any) => b.type === "text");
+    let description = (block?.text || "").toString().trim();
 
-    // Strip wrapping quotes Gemini sometimes adds despite the instruction.
+    // Strip wrapping quotes if the model added any despite the instruction.
     description = description.replace(/^["'`]+|["'`]+$/g, "").trim();
 
     if (!description) {
