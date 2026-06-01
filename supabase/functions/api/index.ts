@@ -451,6 +451,7 @@ serve(async (req) => {
       "/auth/delete-user", // Public for testing - should be secured in production
       "/discounts",
       "/vendors",
+      "/vendor/verify-email",
       "/charities",
       "/donations", // GET /donations is public (browse all donations)
       "/invitations/beneficiary", // Allow unauthenticated beneficiary requests

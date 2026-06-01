@@ -191,22 +191,85 @@ async function handleVendorResubmit(supabase: any, userId: number): Promise<JSON
     return json({ error: error.message || "Could not submit" }, 500);
   }
 
-  // Confirmation email — fire-and-forget so a failing email never blocks submit.
+  // Confirmation + verification emails — fire-and-forget so a failing email
+  // never blocks submit. If the user hasn't verified their email yet, mint a
+  // fresh verification token now and send the verify-email message alongside
+  // the "we got your submission" confirmation.
   const { data: owner } = await supabase
     .from("users")
-    .select("email, first_name, last_name")
+    .select("id, email, first_name, last_name, is_verified")
     .eq("id", userId)
     .maybeSingle();
+
   if (owner?.email) {
+    const fullName = [owner.first_name, owner.last_name].filter(Boolean).join(" ");
+
     sendVendorEmail({
       to: owner.email,
-      name: [owner.first_name, owner.last_name].filter(Boolean).join(" "),
+      name: fullName,
       businessName: vendor.name,
       kind: "submitted",
     }).catch((e) => console.error("submitted email failed:", e));
+
+    if (!owner.is_verified) {
+      // Generate a fresh 40-char hex token. The frontend will surface this in
+      // the verify-email link in the email body.
+      const tokenArray = new Uint8Array(20);
+      crypto.getRandomValues(tokenArray);
+      const verificationToken = Array.from(tokenArray, (b) =>
+        b.toString(16).padStart(2, "0"),
+      ).join("");
+      await supabase
+        .from("users")
+        .update({ verification_token: verificationToken })
+        .eq("id", owner.id);
+
+      const portalBase = Deno.env.get("VENDOR_PORTAL_URL") || "https://thrive-vendor-portal.vercel.app";
+      const verifyUrl = `${portalBase}/verify?token=${verificationToken}`;
+
+      sendVendorEmail({
+        to: owner.email,
+        name: fullName,
+        businessName: vendor.name,
+        kind: "verify_email",
+        verifyUrl,
+      }).catch((e) => console.error("verify-email failed:", e));
+    }
   }
 
   return json({ vendor });
+}
+
+// ============================================================================
+// POST /vendor/verify-email — public. Accepts { token } from the email link
+// and flips users.is_verified to true.
+// ============================================================================
+
+async function handleVerifyEmail(req: Request, supabase: any): Promise<JSONResponse> {
+  const body = await req.json().catch(() => ({}));
+  const token = (body.token || "").toString().trim();
+  if (!token) return json({ error: "Token is required" }, 400);
+
+  const { data: user, error } = await supabase
+    .from("users")
+    .select("id, email, is_verified")
+    .eq("verification_token", token)
+    .maybeSingle();
+
+  if (error) return json({ error: error.message }, 500);
+  if (!user) return json({ error: "Invalid or expired verification link" }, 404);
+
+  if (user.is_verified) {
+    return json({ ok: true, alreadyVerified: true, email: user.email });
+  }
+
+  const { error: updateError } = await supabase
+    .from("users")
+    .update({ is_verified: true, verification_token: null })
+    .eq("id", user.id);
+  if (updateError) return json({ error: updateError.message }, 500);
+
+  return json({ ok: true, email: user.email });
 }
 
 // ============================================================================
@@ -452,6 +515,12 @@ export async function handleVendorPortalRoute(
   route: string,
   method: string,
 ): Promise<JSONResponse> {
+  // Public email-verification confirmation — no JWT needed (the token in the
+  // body is itself the auth). Must be handled before the JWT check below.
+  if (method === "POST" && route === "/vendor/verify-email") {
+    return handleVerifyEmail(req, supabase);
+  }
+
   const userId = await getUserIdFromJwt(req);
   if (!userId) return json({ error: "Authentication required" }, 401);
 

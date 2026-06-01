@@ -1046,7 +1046,7 @@ If you did not request this, you can ignore this email.`;
 // Vendor Portal transactional emails (submission, approval, rejection, rotation)
 // ============================================================================
 
-type VendorEmailKind = "submitted" | "approved" | "rejected" | "rotation_reminder";
+type VendorEmailKind = "submitted" | "approved" | "rejected" | "rotation_reminder" | "verify_email";
 
 function vendorPortalUrl(): string {
   return Deno.env.get("VENDOR_PORTAL_URL") || "https://thrive-vendor-portal.vercel.app";
@@ -1064,10 +1064,17 @@ function vendorEmailContent(kind: VendorEmailKind, name: string, businessName: s
       };
     case "approved":
       return {
-        subject: `${businessName} is approved on THRIVE!`,
-        title: "You're approved 🎉",
-        body: `Great news — <strong>${businessName}</strong> is now live in the THRIVE app. You can create discounts and start showing up for donors right away.`,
-        cta: { href: `${portal}/discounts`, label: "Create your first discount" },
+        subject: `🎉 Welcome to THRIVE — ${businessName} is now live!`,
+        title: `Congratulations — you're in! 🎉`,
+        body: `<p>Welcome to the THRIVE Initiative family! <strong>${businessName}</strong> is now live in the THRIVE app, and donors can find you, save you, and start using your discounts today.</p>
+<p>What's next:</p>
+<ul style="padding-left:20px;margin:12px 0;">
+  <li><strong>Watch your stats</strong> — the dashboard tracks profile views, saves, redemptions, and savings delivered to your customers.</li>
+  <li><strong>Add more discounts</strong> — vendors with multiple active offers see meaningfully higher engagement.</li>
+  <li><strong>Refresh your code monthly</strong> — we'll email you a reminder on the 1st of each month.</li>
+</ul>
+<p>Thank you for partnering with THRIVE to make giving back something every donor can do every day.</p>`,
+        cta: { href: `${portal}/dashboard`, label: "Open your dashboard" },
       };
     case "rejected":
       return {
@@ -1083,6 +1090,13 @@ function vendorEmailContent(kind: VendorEmailKind, name: string, businessName: s
         body: `It's the start of a new month. To keep your codes unique and reduce sharing, consider rotating the codes on your active discounts at <strong>${businessName}</strong>.`,
         cta: { href: `${portal}/discounts`, label: "Rotate codes" },
       };
+    case "verify_email":
+      return {
+        subject: `Verify your email for THRIVE Vendor Portal`,
+        title: "Verify your email",
+        body: `Thanks for submitting <strong>${businessName}</strong>! Click the button below to confirm this is your email address. This helps us reach you about your approval status, code rotations, and important updates.`,
+        cta: { href: extras.verifyUrl || `${portal}`, label: "Verify email" },
+      };
   }
 }
 
@@ -1092,18 +1106,23 @@ export async function sendVendorEmail({
   businessName,
   kind,
   reason,
+  verifyUrl,
 }: {
   to: string;
   name: string;
   businessName: string;
   kind: VendorEmailKind;
   reason?: string;
+  verifyUrl?: string;
 }): Promise<void> {
   try {
     if (!to) return;
     const emailService = Deno.env.get("EMAIL_SERVICE") || "resend";
     const fromEmail = buildResendVerificationFromHeader();
-    const { subject, title, body, cta } = vendorEmailContent(kind, name, businessName, { reason: reason || "" });
+    const { subject, title, body, cta } = vendorEmailContent(kind, name, businessName, {
+      reason: reason || "",
+      verifyUrl: verifyUrl || "",
+    });
 
     const emailHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${subject}</title></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.6;color:#324E58;background:#F5F5FA;margin:0;padding:24px;">
@@ -1111,7 +1130,7 @@ export async function sendVendorEmail({
     <div style="text-align:center;margin-bottom:24px;"><div style="font-size:22px;font-weight:700;letter-spacing:0.5px;color:#324E58;">THRIVE</div><div style="font-size:11px;color:#8C8C8C;letter-spacing:1.5px;">VENDOR PORTAL</div></div>
     <h2 style="font-size:22px;font-weight:700;margin:0 0 16px;color:#324E58;">${title}</h2>
     <p style="font-size:15px;color:#555;margin:0 0 24px;">Hi ${name || "there"},</p>
-    <p style="font-size:15px;color:#555;margin:0 0 24px;">${body}</p>
+    <div style="font-size:15px;color:#555;margin:0 0 24px;line-height:1.6;">${body}</div>
     <div style="text-align:center;margin:32px 0;">
       <a href="${cta.href}" style="display:inline-block;background:#DB8633;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;">${cta.label}</a>
     </div>
