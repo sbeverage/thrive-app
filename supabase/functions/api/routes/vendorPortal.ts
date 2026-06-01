@@ -162,6 +162,20 @@ async function handleVendorResubmit(supabase: any, userId: number): Promise<JSON
   if (existing.signup_status === "approved") {
     return json({ error: "Already approved — no need to resubmit" }, 400);
   }
+
+  // Require at least one discount before admin review — vendors with empty
+  // discount lists aren't useful to donors. UI gates this too; this is the
+  // backend safety net for direct API calls.
+  const { count: discountCount } = await supabase
+    .from("discounts")
+    .select("id", { count: "exact", head: true })
+    .eq("vendor_id", existing.id);
+  if (!discountCount || discountCount < 1) {
+    return json({
+      error: "Add at least one discount before submitting for review.",
+    }, 400);
+  }
+
   const { data: vendor, error } = await supabase
     .from("vendors")
     .update({
