@@ -16,7 +16,9 @@ export async function handleDiscountRoute(
       const url = new URL(req.url);
       const { category, search } = Object.fromEntries(url.searchParams);
 
-      // Build query
+      // Build query — pull signup_status so we can filter to approved-only
+      // vendors after the join. Supabase's foreign-key joins don't accept a
+      // .eq() on the embedded resource, so we filter in memory below.
       let query = supabase
         .from("discounts")
         .select(
@@ -33,7 +35,8 @@ export async function handleDiscountRoute(
             social_links,
             logo_url,
             address,
-            hours
+            hours,
+            signup_status
           )
         `,
         )
@@ -58,7 +61,7 @@ export async function handleDiscountRoute(
       // Order by created_at DESC
       query = query.order("created_at", { ascending: false });
 
-      const { data: discounts, error } = await query;
+      const { data: rawDiscounts, error } = await query;
 
       if (error) {
         console.error("Error fetching discounts:", error);
@@ -70,6 +73,12 @@ export async function handleDiscountRoute(
           },
         );
       }
+
+      // Hide discounts whose owning vendor isn't approved yet — keeps the
+      // donor app in sync with /vendors which is also approved-only.
+      const discounts = (rawDiscounts || []).filter(
+        (d: any) => d.vendor && d.vendor.signup_status === "approved",
+      );
 
       // Try to get user ID from JWT token (optional - discounts are public)
       let userId: number | null = null;
