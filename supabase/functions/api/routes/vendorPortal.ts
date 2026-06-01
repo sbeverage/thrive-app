@@ -61,6 +61,18 @@ async function loadVendorForUser(supabase: any, userId: number) {
   return data;
 }
 
+// /vendor/me responses include is_verified from the users row so the portal
+// can surface a "verify your email" banner alongside the other status states.
+async function vendorWithVerification(supabase: any, vendor: any, userId: number) {
+  if (!vendor) return vendor;
+  const { data: user } = await supabase
+    .from("users")
+    .select("is_verified")
+    .eq("id", userId)
+    .maybeSingle();
+  return { ...vendor, is_verified: !!user?.is_verified };
+}
+
 // ============================================================================
 // POST /vendor/signup
 // Creates the vendor row owned by the current user. Idempotent — if a row
@@ -238,6 +250,48 @@ async function handleVendorResubmit(supabase: any, userId: number): Promise<JSON
   }
 
   return json({ vendor });
+}
+
+// ============================================================================
+// POST /vendor/me/resend-verification — auth'd. Mints a new token + email.
+// ============================================================================
+
+async function handleResendVerification(
+  supabase: any, userId: number, vendor: any | null,
+): Promise<JSONResponse> {
+  const { data: user } = await supabase
+    .from("users")
+    .select("id, email, first_name, last_name, is_verified")
+    .eq("id", userId)
+    .maybeSingle();
+  if (!user?.email) return json({ error: "Email not on file" }, 400);
+  if (user.is_verified) return json({ ok: true, alreadyVerified: true });
+
+  const tokenArray = new Uint8Array(20);
+  crypto.getRandomValues(tokenArray);
+  const verificationToken = Array.from(tokenArray, (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+
+  const { error: updateError } = await supabase
+    .from("users")
+    .update({ verification_token: verificationToken })
+    .eq("id", user.id);
+  if (updateError) return json({ error: updateError.message }, 500);
+
+  const portalBase = Deno.env.get("VENDOR_PORTAL_URL") || "https://thrive-vendor-portal.vercel.app";
+  const verifyUrl = `${portalBase}/verify?token=${verificationToken}`;
+  const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ");
+
+  await sendVendorEmail({
+    to: user.email,
+    name: fullName,
+    businessName: vendor?.name || "your business",
+    kind: "verify_email",
+    verifyUrl,
+  }).catch((e) => console.error("resend verify-email failed:", e));
+
+  return json({ ok: true });
 }
 
 // ============================================================================
@@ -535,13 +589,17 @@ export async function handleVendorPortalRoute(
   if (route === "/vendor/me") {
     if (method === "GET") {
       if (!vendor) return json({ error: "Vendor profile not found" }, 404);
-      return json({ vendor });
+      return json({ vendor: await vendorWithVerification(supabase, vendor, userId) });
     }
     if (method === "PUT") return handleVendorMePut(req, supabase, userId);
   }
 
   if (method === "POST" && route === "/vendor/me/resubmit") {
     return handleVendorResubmit(supabase, userId);
+  }
+
+  if (method === "POST" && route === "/vendor/me/resend-verification") {
+    return handleResendVerification(supabase, userId, vendor);
   }
 
   // Logo upload is allowed BEFORE the vendor row exists — first upload
