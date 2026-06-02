@@ -121,7 +121,12 @@ export function extractMonthlySubscriptionPaymentSecrets(response) {
 }
 
 function buildApplePayCartItems(amountStr, { isSubscription = true, label } = {}) {
-  const lineLabel = label || "Monthly donation (incl. fees)";
+  // Apple App Review (Guideline 4.9) requires the merchant name to appear
+  // on the Apple Pay payment sheet — including in the line-item label.
+  const defaultLabel = isSubscription
+    ? "THRIVE Initiative — Monthly donation (incl. fees)"
+    : "THRIVE Initiative — Donation";
+  const lineLabel = label || defaultLabel;
   if (isSubscription) {
     return [
       {
