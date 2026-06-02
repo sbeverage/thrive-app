@@ -92,11 +92,13 @@ export default function DiscountsScreen() {
     AsyncStorage.getItem('@thrive_favorites').then(stored => {
       if (stored) setFavorites(new Set(JSON.parse(stored)));
     });
-    API.get('/vendors/me/favorites')
-      .then((res) => {
-        const ids = new Set((res?.data?.vendors || []).map(v => String(v.id)));
-        setFavorites(ids);
-        AsyncStorage.setItem('@thrive_favorites', JSON.stringify([...ids]));
+    API.getMyFavoriteVendors()
+      .then((data) => {
+        const ids = new Set((data?.vendors || []).map(v => String(v.id)));
+        if (ids.size > 0) {
+          setFavorites(ids);
+          AsyncStorage.setItem('@thrive_favorites', JSON.stringify([...ids]));
+        }
       })
       .catch(() => {}); // not logged in → keep AsyncStorage state
   }, []);
@@ -163,7 +165,7 @@ export default function DiscountsScreen() {
     });
     // Mirror to server so the vendor portal can track real "saved by donors"
     // counts. Logged-out users get a silent 401 — local state still updated.
-    API.post(`/vendors/${vendorId}/favorite`).catch(() => {});
+    API.toggleVendorFavorite(vendorId);
   };
 
 

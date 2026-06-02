@@ -60,7 +60,7 @@ export default function VendorDetails() {
 
         // Fire-and-forget profile-view tracking. Powers the vendor portal's
         // "Profile views" stats. Failures are silent — analytics never block UX.
-        API.post(`/vendors/${foundVendor.id}/view`).catch(() => {});
+        API.trackVendorView(foundVendor.id);
       }
     }
   }, [vendors, discounts, vendorId]);

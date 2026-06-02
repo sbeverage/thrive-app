@@ -305,6 +305,40 @@ api.interceptors.response.use(
 
 // API Methods
 const API = {
+  // ===== VENDOR FAVORITES & VIEWS =====
+  // (Used by the discounts screen to sync the user's saved vendors with the
+  // server and track profile views for the vendor portal stats.)
+
+  /** GET /vendors/me/favorites — list vendors this donor has saved. */
+  getMyFavoriteVendors: async () => {
+    try {
+      const response = await api.get('/vendors/me/favorites');
+      return response.data;
+    } catch (error) {
+      // Anonymous or signed-out donors get a 401 — silent.
+      return { vendors: [] };
+    }
+  },
+
+  /** POST /vendors/:id/favorite — toggle the donor's save on a vendor. */
+  toggleVendorFavorite: async (vendorId) => {
+    try {
+      const response = await api.post(`/vendors/${vendorId}/favorite`);
+      return response.data;
+    } catch (error) {
+      return null;
+    }
+  },
+
+  /** POST /vendors/:id/view — fire-and-forget profile view tracking. */
+  trackVendorView: async (vendorId) => {
+    try {
+      await api.post(`/vendors/${vendorId}/view`);
+    } catch (error) {
+      // Analytics — never surface to the user.
+    }
+  },
+
   // ===== AUTHENTICATION =====
 
   /**
