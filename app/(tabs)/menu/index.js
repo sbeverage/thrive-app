@@ -1,16 +1,69 @@
 // File: app/(tabs)/menu.js
 
-import React, { useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Image } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Image, Alert, ActivityIndicator } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Entypo, Feather, FontAwesome, MaterialIcons } from '@expo/vector-icons';
+import { Entypo, Feather, FontAwesome, MaterialIcons, AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from '../../context/UserContext';
+import API from '../../lib/api';
 
 export default function MenuScreen() {
   const router = useRouter();
   const { user, loadUserData, logout } = useUser();
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+
+  // Account deletion lives on the Menu screen (in addition to My Profile)
+  // so reviewers and users can find it in a single tap — required by App
+  // Store Review Guideline 5.1.1(v).
+  const performDeleteAccount = async () => {
+    const email = (user?.email || '').trim();
+    if (!email) {
+      Alert.alert('Cannot delete account', 'No email is associated with this session. Please log in again.');
+      return;
+    }
+    setIsDeletingAccount(true);
+    try {
+      await API.deleteUser(email);
+      await AsyncStorage.removeItem('userTransactions');
+      await logout();
+      router.replace('/');
+    } catch (error) {
+      console.error('Delete account failed:', error);
+      Alert.alert(
+        'Delete failed',
+        error?.message || 'We could not delete your account. Please try again or contact support.',
+      );
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete account?',
+      'This permanently removes your THRIVE account and all associated data. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Are you absolutely sure?',
+              'Your account will be deleted from our servers.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Yes, delete my account', style: 'destructive', onPress: performDeleteAccount },
+              ],
+            );
+          },
+        },
+      ],
+    );
+  };
   
   // Load user data when screen is focused
   useFocusEffect(
@@ -115,6 +168,21 @@ export default function MenuScreen() {
       >
         <Text style={styles.logoutText}>Logout</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.deleteAccountButton}
+        onPress={handleDeleteAccount}
+        disabled={isDeletingAccount}
+      >
+        {isDeletingAccount ? (
+          <ActivityIndicator size="small" color="#EF4444" style={{ marginRight: 8 }} />
+        ) : (
+          <AntDesign name="delete" size={18} color="#EF4444" style={{ marginRight: 8 }} />
+        )}
+        <Text style={styles.deleteAccountText}>
+          {isDeletingAccount ? 'Deleting account…' : 'Delete Account'}
+        </Text>
+      </TouchableOpacity>
         </View>
     </ScrollView>
     </SafeAreaView>
@@ -191,4 +259,21 @@ const styles = StyleSheet.create({
     minWidth: 120,
   },
   logoutText: { color: '#DB8633', fontWeight: '700', fontSize: 16 },
+  deleteAccountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 20,
+    marginTop: 8,
+    marginBottom: 32,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FEF2F2',
+    alignSelf: 'center',
+    minWidth: 160,
+  },
+  deleteAccountText: { color: '#EF4444', fontWeight: '600', fontSize: 14 },
 });

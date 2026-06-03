@@ -142,7 +142,7 @@ export const LocationProvider = ({ children }) => {
 
   const checkLocationPermission = async () => {
     if (hasAskedForPermission) return;
-    
+
     try {
       const hasPermission = await requestLocationPermission();
       if (hasPermission) {
@@ -155,12 +155,23 @@ export const LocationProvider = ({ children }) => {
           setLocationAddress({ city, state, zipCode, country, street });
         }
       } else {
-        // Show user-friendly permission request
-        showLocationPermissionAlert();
+        // App Store Review 5.1.1(iv): do NOT re-ask after the user denies the
+        // system permission. Just record the denial and move on. Screens that
+        // depend on location surface their own inline "Enable in Settings"
+        // CTA when the user actively engages a location-dependent feature.
+        setLocationPermission('denied');
+        setHasAskedForPermission(true);
+        try {
+          await AsyncStorage.setItem(LOCATION_PERMISSION_ASKED_KEY, 'true');
+        } catch (e) {
+          console.warn('Could not persist location-permission preference:', e);
+        }
       }
     } catch (error) {
       console.error('Error checking location permission:', error);
-      showLocationPermissionAlert();
+      // Treat unexpected errors the same as a denial — never beg the user.
+      setLocationPermission('denied');
+      setHasAskedForPermission(true);
     }
   };
 
