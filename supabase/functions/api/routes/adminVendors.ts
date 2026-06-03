@@ -164,10 +164,38 @@ export async function handleAdminVendors(
       });
     }
 
+    // For self-signup vendors, fetch the signup email + name from the users
+    // table so the admin list shows the real account email (not the public
+    // contact email the vendor entered separately on the wizard's contact step).
+    const authUserIds = (vendors || [])
+      .map((v: any) => v.auth_user_id)
+      .filter(Boolean);
+    let userById = new Map<number, any>();
+    if (authUserIds.length > 0) {
+      const {data: users} = await supabase
+        .from("users")
+        .select("id, email, first_name, last_name")
+        .in("id", authUserIds);
+      for (const u of users || []) userById.set(u.id, u);
+    }
+
+    const enrichedVendors = (vendors || []).map((v: any) => {
+      const u = v.auth_user_id ? userById.get(v.auth_user_id) : null;
+      return {
+        ...v,
+        // Account email — what the vendor logs in with. Falls back to the
+        // public contact email for legacy admin-created vendors.
+        account_email: u?.email || v.email || null,
+        account_owner_name: u
+          ? [u.first_name, u.last_name].filter(Boolean).join(" ") || null
+          : null,
+      };
+    });
+
     return new Response(
       JSON.stringify({
         success: true,
-        data: vendors || [],
+        data: enrichedVendors,
         pagination: {
           page,
           limit,
