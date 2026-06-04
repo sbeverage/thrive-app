@@ -43,17 +43,21 @@ export default function MenuScreen() {
 
   const handleDeleteAccount = () => {
     Alert.alert(
-      'Delete account?',
-      'This permanently removes your THRIVE account and all associated data. This cannot be undone.',
+      'Delete your THRIVE account?',
+      "This will permanently delete:\n\n" +
+      "• Your account and profile\n" +
+      "• Your saved vendors and redemption history\n" +
+      "• Your donation records\n\n" +
+      "We'll also cancel any active monthly donation so you won't be charged again. This happens immediately and cannot be undone.",
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Continue',
           style: 'destructive',
           onPress: () => {
             Alert.alert(
               'Are you absolutely sure?',
-              'Your account will be deleted from our servers.',
+              "Tap 'Yes, delete my account' to permanently remove everything. This cannot be undone.",
               [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Yes, delete my account', style: 'destructive', onPress: performDeleteAccount },
