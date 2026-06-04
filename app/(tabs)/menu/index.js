@@ -76,6 +76,9 @@ export default function MenuScreen() {
     { section: 'Account', data: [
       { title: 'My Profile', icon: 'user', page: 'menu/profile' },
       { title: 'Friends', icon: 'users', page: 'menu/friends' },
+      // Surface deletion as a regular menu row — App Store reviewers expect to
+      // find it inline in the Account section, not as a button at the bottom.
+      { title: 'Delete Account', icon: 'trash-2', action: 'deleteAccount', danger: true },
     ]},
     { section: 'Donations & Savings', data: [
       { title: 'Savings Tracker', icon: 'trending-up', page: 'menu/transactionHistory' },
@@ -144,16 +147,31 @@ export default function MenuScreen() {
               key={i}
               style={styles.row}
               onPress={() => {
-                if (item.page) {
+                if (item.action === 'deleteAccount') {
+                  handleDeleteAccount();
+                } else if (item.page) {
                   // Handle routes that already start with / (like /(tabs)/...)
                   const route = item.page.startsWith('/') ? item.page : `/${item.page}`;
                   router.push(route);
                 }
               }}
+              disabled={item.action === 'deleteAccount' && isDeletingAccount}
             >
-              <Feather name={item.icon} size={20} color="#324E58" style={styles.icon} />
-              <Text style={styles.rowText}>{item.title}</Text>
-              <Feather name="chevron-right" size={18} color="#ccc" style={{ marginLeft: 'auto' }} />
+              <Feather
+                name={item.icon}
+                size={20}
+                color={item.danger ? '#EF4444' : '#324E58'}
+                style={styles.icon}
+              />
+              <Text style={[styles.rowText, item.danger && { color: '#EF4444', fontWeight: '600' }]}>
+                {item.action === 'deleteAccount' && isDeletingAccount ? 'Deleting account…' : item.title}
+              </Text>
+              <Feather
+                name="chevron-right"
+                size={18}
+                color={item.danger ? '#FCA5A5' : '#ccc'}
+                style={{ marginLeft: 'auto' }}
+              />
             </TouchableOpacity>
           ))}
         </View>
