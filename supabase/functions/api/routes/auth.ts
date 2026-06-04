@@ -13,6 +13,10 @@ import {
   verifyGoogleToken,
   verifyFacebookToken,
 } from "../lib/social-auth.ts";
+import {
+  exchangeAppleAuthorizationCode,
+  revokeAppleRefreshToken,
+} from "../lib/apple-revoke.ts";
 
 export type AuthRouteDeps = {
   createReferralRecord: (
@@ -2192,9 +2196,10 @@ export async function handleAuthRoute(
       console.log(`🗑️ Attempting to delete user: ${email}`);
 
       // Get user to check if exists and get profile picture URL + Stripe customer
+      // + Sign in with Apple refresh token (for token revocation per 5.1.1(v)).
       const {data: users, error: userError} = await supabase
         .from("users")
-        .select("id, email, profile_picture_url, stripe_customer_id")
+        .select("id, email, profile_picture_url, stripe_customer_id, apple_refresh_token")
         .eq("email", email)
         .limit(1);
 
@@ -2266,6 +2271,23 @@ export async function handleAuthRoute(
           "⚠️ Stripe cleanup during account delete failed (continuing):",
           stripeErr,
         );
+      }
+
+      // Revoke Sign in with Apple refresh token if we have one on file.
+      // App Store Review Guideline 5.1.1(v) requires apps that support SIWA
+      // to revoke the user's Apple token at account deletion. Best-effort —
+      // logs and continues if it fails (account deletion still happens).
+      if (user.apple_refresh_token) {
+        try {
+          const revoked = await revokeAppleRefreshToken(user.apple_refresh_token);
+          if (revoked) {
+            console.log(`✅ Revoked Apple refresh token for user ${user.id}`);
+          } else {
+            console.warn(`⚠️ Apple revoke returned false for user ${user.id}`);
+          }
+        } catch (e) {
+          console.warn("⚠️ Apple revoke threw during account delete:", e);
+        }
       }
 
       // Delete profile picture from Supabase Storage if it exists
@@ -3234,6 +3256,10 @@ export async function handleAuthRoute(
       // Verify OAuth token based on provider
       let verifiedUser: {sub?: string; id?: string; email?: string} | null =
         null;
+      // Captured from Apple's token-exchange endpoint on first sign-in; written
+      // to users.apple_refresh_token after the user is upserted so we can call
+      // /auth/revoke when the user later deletes their account.
+      let appleRefreshTokenForStorage: string | null = null;
 
       if (provider === "apple") {
         if (!identityToken) {
@@ -3254,6 +3280,14 @@ export async function handleAuthRoute(
               status: 401,
             },
           );
+        }
+        // If Apple sent an authorization code (only on the very first sign-in
+        // for a given user), exchange it for a refresh token so we can revoke
+        // the session later when the user deletes their account. Stored on
+        // the users row a few lines below. Soft-fails if SIWA secrets aren't
+        // configured — the sign-in itself still succeeds.
+        if (authorizationCode) {
+          appleRefreshTokenForStorage = await exchangeAppleAuthorizationCode(authorizationCode);
         }
       } else if (provider === "google") {
         if (!idToken) {
@@ -3424,6 +3458,12 @@ export async function handleAuthRoute(
           }
         }
 
+        // Persist the Apple refresh token at user creation so we can revoke
+        // it during account deletion (App Store Review 5.1.1(v)).
+        if (provider === "apple" && appleRefreshTokenForStorage) {
+          userData.apple_refresh_token = appleRefreshTokenForStorage;
+        }
+
         const {data: newUser, error: createError} = await supabase
           .from("users")
           .insert([userData])
@@ -3459,11 +3499,15 @@ export async function handleAuthRoute(
           }
         }
       } else {
-        // Update last login
-        await supabase
-          .from("users")
-          .update({updated_at: new Date().toISOString()})
-          .eq("id", user.id);
+        // Existing user — update last login and, if we just exchanged a
+        // fresh Apple refresh token, persist it for later revocation.
+        const updateFields: Record<string, unknown> = {
+          updated_at: new Date().toISOString(),
+        };
+        if (provider === "apple" && appleRefreshTokenForStorage) {
+          updateFields.apple_refresh_token = appleRefreshTokenForStorage;
+        }
+        await supabase.from("users").update(updateFields).eq("id", user.id);
       }
 
       // Generate JWT token
