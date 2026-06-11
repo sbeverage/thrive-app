@@ -6,7 +6,7 @@ import { corsHeaders } from "../lib/cors.ts";
 import { bcryptHash, bcryptCompare } from "../lib/password.ts";
 import { capitalizeName } from "../lib/strings.ts";
 import { geocodeAddress } from "../lib/geocoding.ts";
-import { getAppAuthHeader } from "../lib/jwt-app.ts";
+import { getAppAuthHeader, getJwtPayload } from "../lib/jwt-app.ts";
 import { createOrGetStripeCustomer, getStripeClient } from "../lib/stripe.ts";
 import {
   verifyAppleToken,
