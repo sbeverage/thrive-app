@@ -346,6 +346,26 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
     return out;
   };
 
+  // Navigate forward in the signup wizard using whichever beneficiary is
+  // already selected. Used by the "Continue" button rendered on an already-
+  // selected card so a donor who hit Back can finish their flow without
+  // having to re-select the same charity.
+  const advanceFromSelected = () => {
+    const beneficiaryId = selectedBeneficiary?.id;
+    if (!beneficiaryId || !isSignupFlow) return;
+    if (routeParams?.flow === 'coworking') {
+      router.push({
+        pathname: '/signupFlow/coworkingDonationPrompt',
+        params: { sponsorAmount: String(routeParams?.sponsorAmount ?? '15') },
+      });
+    } else {
+      router.push({
+        pathname: '/signupFlow/donationAmount',
+        params: { beneficiaryId: String(beneficiaryId) },
+      });
+    }
+  };
+
   const handleConfirmBeneficiary = async () => {
     if (!pendingBeneficiary) return;
     setConfirmModalVisible(false);
@@ -788,18 +808,31 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                               isSelected && styles.viewDetailsButtonAloneText,
                             ]}>Details</Text>
                           </TouchableOpacity>
-                          {!isSelected && (
-                          <TouchableOpacity 
-                            style={styles.changeToThisButton}
-                            onPress={(e) => {
-                              e.stopPropagation();
-                              setPendingBeneficiary(b);
-                              setConfirmModalVisible(true);
-                            }}
-                          >
-                            <Text style={styles.changeToThisButtonText}>Select</Text>
-                          </TouchableOpacity>
-                          )}
+                          {!isSelected ? (
+                            <TouchableOpacity
+                              style={styles.changeToThisButton}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                setPendingBeneficiary(b);
+                                setConfirmModalVisible(true);
+                              }}
+                            >
+                              <Text style={styles.changeToThisButtonText}>Select</Text>
+                            </TouchableOpacity>
+                          ) : isSignupFlow ? (
+                            // Charity is already selected and we're mid-signup
+                            // — let the user continue forward instead of dead-
+                            // ending them when they come back via Back.
+                            <TouchableOpacity
+                              style={styles.changeToThisButton}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                advanceFromSelected();
+                              }}
+                            >
+                              <Text style={styles.changeToThisButtonText}>Continue</Text>
+                            </TouchableOpacity>
+                          ) : null}
                         </View>
                       </View>
                     </TouchableOpacity>
@@ -871,7 +904,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                           ]}>Details</Text>
                         </TouchableOpacity>
 
-                        {!isSelected && (
+                        {!isSelected ? (
                           <TouchableOpacity
                             style={styles.changeToThisButton}
                             onPress={(e) => {
@@ -882,7 +915,21 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                           >
                             <Text style={styles.changeToThisButtonText}>Select</Text>
                           </TouchableOpacity>
-                        )}
+                        ) : isSignupFlow ? (
+                          // Same Continue-out-of-back-button-trap fix as the
+                          // first list above — signup users who return to this
+                          // screen with a charity already selected need a way
+                          // to move forward without re-selecting.
+                          <TouchableOpacity
+                            style={styles.changeToThisButton}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              advanceFromSelected();
+                            }}
+                          >
+                            <Text style={styles.changeToThisButtonText}>Continue</Text>
+                          </TouchableOpacity>
+                        ) : null}
                       </View>
                     </View>
                   </TouchableOpacity>
