@@ -2373,6 +2373,69 @@ export async function handleAuthRoute(
     }
   }
 
+  // POST /auth/push-token — register/refresh the donor app's Expo push token.
+  // Called from the app after the user grants notification permission and
+  // again whenever the token rotates (Expo can rotate per app reinstall).
+  if (method === "POST" && route === "/auth/push-token") {
+    try {
+      const authHeader = getAppAuthHeader(req);
+      const payload: any = await getJwtPayload(authHeader);
+      const userId = payload?.id || payload?.userId;
+      if (!userId) {
+        return new Response(
+          JSON.stringify({ message: "Authentication required" }),
+          { headers: { "Content-Type": "application/json" }, status: 401 },
+        );
+      }
+
+      const body = await req.json().catch(() => ({}));
+      const token = (body.token ?? body.expoPushToken ?? "").toString().trim();
+      // null clears the token (used at sign-out / permission revocation).
+      if (!token) {
+        await supabase
+          .from("users")
+          .update({ expo_push_token: null, push_token_updated_at: null })
+          .eq("id", userId);
+        return new Response(JSON.stringify({ success: true, cleared: true }), {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
+        });
+      }
+
+      if (!/^ExponentPushToken\[.+\]$|^ExpoPushToken\[.+\]$/.test(token)) {
+        return new Response(
+          JSON.stringify({ message: "Invalid Expo push token format" }),
+          { headers: { "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+
+      const { error: updateError } = await supabase
+        .from("users")
+        .update({
+          expo_push_token: token,
+          push_token_updated_at: new Date().toISOString(),
+        })
+        .eq("id", userId);
+      if (updateError) {
+        console.error("push-token save error:", updateError);
+        return new Response(
+          JSON.stringify({ message: "Could not save push token" }),
+          { headers: { "Content-Type": "application/json" }, status: 500 },
+        );
+      }
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      });
+    } catch (e) {
+      console.error("push-token route error:", e);
+      return new Response(
+        JSON.stringify({ message: "Server error" }),
+        { headers: { "Content-Type": "application/json" }, status: 500 },
+      );
+    }
+  }
+
   // POST /auth/profile-picture (file upload - requires authentication)
   if (method === "POST" && route === "/auth/profile-picture") {
     try {

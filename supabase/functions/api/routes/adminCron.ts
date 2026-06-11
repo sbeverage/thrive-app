@@ -5,6 +5,7 @@
 
 import { corsHeaders } from "../lib/cors.ts";
 import { sendVendorEmail } from "../lib/email.ts";
+import { sendPushBatch } from "../lib/push.ts";
 
 const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: jsonHeaders });
@@ -86,6 +87,69 @@ async function handleRotationReminder(supabase: any): Promise<Response> {
   return json({ sent: reminders.length, reminders });
 }
 
+// POST /admin/cron/expiring-discount-reminder
+// Finds discounts whose end_date is in the [now+2d, now+4d] window (i.e.,
+// roughly 3 days from now — wide enough that a daily cron fire never misses
+// the right day) and pushes a heads-up to every donor who's favorited the
+// owning vendor. Idempotency note: we don't dedupe sends; the cron should
+// be scheduled to run once per day so each discount gets at most one push.
+async function handleExpiringDiscountReminder(supabase: any): Promise<Response> {
+  const now = Date.now();
+  const start = new Date(now + 2 * 86_400_000).toISOString().split("T")[0];
+  const end = new Date(now + 4 * 86_400_000).toISOString().split("T")[0];
+
+  const { data: discounts, error } = await supabase
+    .from("discounts")
+    .select("id, title, vendor_id, end_date, is_active, vendor:vendors!vendor_id(id,name,signup_status)")
+    .neq("is_active", false)
+    .gte("end_date", start)
+    .lte("end_date", end);
+  if (error) return json({ error: error.message }, 500);
+  if (!discounts || discounts.length === 0) return json({ sent: 0, discounts: 0 });
+
+  // Skip discounts whose vendor isn't approved (shouldn't be visible to donors).
+  const liveDiscounts = discounts.filter(
+    (d: any) => d.vendor && d.vendor.signup_status === "approved",
+  );
+  if (liveDiscounts.length === 0) return json({ sent: 0, discounts: 0 });
+
+  let totalSent = 0;
+  for (const d of liveDiscounts) {
+    const { data: favs } = await supabase
+      .from("vendor_favorites")
+      .select("user_id")
+      .eq("vendor_id", d.vendor_id);
+    const userIds = (favs || []).map((f: any) => f.user_id).filter(Boolean);
+    if (userIds.length === 0) continue;
+
+    const { data: users } = await supabase
+      .from("users")
+      .select("id, expo_push_token")
+      .in("id", userIds)
+      .not("expo_push_token", "is", null);
+    const tokens = (users || [])
+      .map((u: any) => u.expo_push_token)
+      .filter((t: string) => !!t);
+    if (tokens.length === 0) continue;
+
+    const messages = tokens.map((to: string) => ({
+      to,
+      title: `${d.vendor.name} — discount expiring soon`,
+      body: `${d.title} ends ${d.end_date}. Tap to use it before it's gone.`,
+      data: {
+        path: `/(tabs)/(main)/discounts/${d.id}`,
+        type: "favorite_expiring_discount",
+        vendor_id: d.vendor_id,
+        discount_id: d.id,
+      },
+    }));
+    await sendPushBatch(messages);
+    totalSent += tokens.length;
+  }
+
+  return json({ sent: totalSent, discounts: liveDiscounts.length });
+}
+
 export async function handleAdminCron(
   _req: Request,
   supabase: any,
@@ -94,6 +158,9 @@ export async function handleAdminCron(
 ): Promise<Response> {
   if (method === "POST" && route === "/admin/cron/vendor-rotation-reminder") {
     return handleRotationReminder(supabase);
+  }
+  if (method === "POST" && route === "/admin/cron/expiring-discount-reminder") {
+    return handleExpiringDiscountReminder(supabase);
   }
   return json({ error: "Cron route not found" }, 404);
 }

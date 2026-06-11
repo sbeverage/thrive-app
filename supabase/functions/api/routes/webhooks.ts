@@ -1,4 +1,5 @@
 import { getStripeClient } from "../lib/stripe.ts";
+import { sendPushToUser } from "../lib/push.ts";
 
 /** Injected from index.ts to avoid circular imports with referral helpers. */
 export type UpdateReferralStatusFn = (
@@ -357,6 +358,26 @@ export async function handleWebhookRoute(
                 donation.id,
               );
 
+              // Push a "Your donation went through" notification so the donor
+              // sees the giving loop close. Fire-and-forget — webhook must
+              // 200 even if the push fails.
+              try {
+                const { data: beneficiary } = await supabase
+                  .from("charities")
+                  .select("name")
+                  .eq("id", donation.beneficiary_id)
+                  .maybeSingle();
+                const charityName = beneficiary?.name || "your chosen charity";
+                const amountStr = `$${amount.toFixed(2).replace(/\.00$/, "")}`;
+                sendPushToUser(supabase, donation.user_id, {
+                  title: "Thanks for thriving 💝",
+                  body: `Your ${amountStr} monthly donation just went to ${charityName}.`,
+                  data: { path: "/menu/donationSummary", type: "donation_success" },
+                }).catch((e) => console.warn("donation success push failed:", e));
+              } catch (pushErr) {
+                console.warn("donation success push setup failed:", pushErr);
+              }
+
               // First successful subscription payment → mark referral paid and run milestone RPC once
               const {data: referralRow} = await supabase
                 .from("referrals")
@@ -387,7 +408,7 @@ export async function handleWebhookRoute(
           if (subscriptionId) {
             const {data: donation} = await supabase
               .from("monthly_donations")
-              .select("id")
+              .select("id, user_id")
               .eq("stripe_subscription_id", subscriptionId)
               .single();
 
@@ -400,6 +421,14 @@ export async function handleWebhookRoute(
                 .eq("id", donation.id);
 
               console.log("❌ Monthly donation payment failed:", donation.id);
+
+              // Retention-critical push: a failed charge is the most common
+              // churn vector. Get them back into Manage Cards ASAP.
+              sendPushToUser(supabase, donation.user_id, {
+                title: "Your THRIVE payment didn't go through",
+                body: "Tap to update your card so we can keep your donation going.",
+                data: { path: "/menu/manageCards", type: "payment_failed" },
+              }).catch((e) => console.warn("payment failed push failed:", e));
             }
           }
           break;

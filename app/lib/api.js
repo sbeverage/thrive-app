@@ -1356,6 +1356,21 @@ const API = {
   },
 
   /**
+   * Register (or clear) the user's Expo push token with the backend.
+   * Call with `null` to clear (e.g. on sign-out).
+   */
+  registerPushToken: async (token) => {
+    try {
+      const response = await api.post('/api/auth/push-token', { token });
+      return response.data;
+    } catch (error) {
+      // Don't surface failures to the user — push registration is best-effort.
+      console.warn('registerPushToken error:', error?.message || error);
+      return null;
+    }
+  },
+
+  /**
    * Delete user account (for testing purposes)
    */
   deleteUser: async (email) => {

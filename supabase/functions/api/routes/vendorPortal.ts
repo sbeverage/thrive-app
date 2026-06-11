@@ -21,6 +21,7 @@ import { verify as verifyJWT } from "https://deno.land/x/djwt@v2.9/mod.ts";
 import { corsHeaders } from "../lib/cors.ts";
 import { getAppAuthHeader } from "../lib/jwt-app.ts";
 import { sendVendorEmail } from "../lib/email.ts";
+import { sendPushBatch } from "../lib/push.ts";
 
 type JSONResponse = Response;
 
@@ -369,7 +370,57 @@ async function handleDiscountCreate(req: Request, supabase: any, vendorId: numbe
     .select("*")
     .single();
   if (error) return json({ error: error.message }, 500);
+
+  // Push notification to donors who favorited this vendor — "Your favorite
+  // vendor just added a new discount." Skips pending/rejected vendors so
+  // donors don't get pushed before the vendor is actually live in the app.
+  notifyFavoritersOfNewDiscount(supabase, vendorId, discount).catch((e) =>
+    console.warn("favorite-vendor new-discount push failed:", e),
+  );
+
   return json({ discount }, 201);
+}
+
+/** Push "new discount from favorited vendor" to everyone who saved this vendor. */
+async function notifyFavoritersOfNewDiscount(supabase: any, vendorId: number, discount: any) {
+  const { data: vendor } = await supabase
+    .from("vendors")
+    .select("name, signup_status")
+    .eq("id", vendorId)
+    .maybeSingle();
+  if (!vendor || vendor.signup_status !== "approved") return;
+
+  const { data: favs } = await supabase
+    .from("vendor_favorites")
+    .select("user_id")
+    .eq("vendor_id", vendorId);
+  const userIds = (favs || []).map((f: any) => f.user_id).filter(Boolean);
+  if (userIds.length === 0) return;
+
+  const { data: users } = await supabase
+    .from("users")
+    .select("id, expo_push_token")
+    .in("id", userIds)
+    .not("expo_push_token", "is", null);
+  const tokens = (users || [])
+    .map((u: any) => u.expo_push_token)
+    .filter((t: string) => !!t);
+  if (tokens.length === 0) return;
+
+  const title = `${vendor.name} just added a new discount`;
+  const body = discount?.title || "Tap to see the latest offer from a place you love.";
+  const messages = tokens.map((to: string) => ({
+    to,
+    title,
+    body,
+    data: {
+      path: `/(tabs)/(main)/discounts/${discount.id}`,
+      type: "favorite_new_discount",
+      vendor_id: vendorId,
+      discount_id: discount.id,
+    },
+  }));
+  await sendPushBatch(messages);
 }
 
 async function handleDiscountUpdate(

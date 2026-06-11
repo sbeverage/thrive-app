@@ -11,6 +11,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import API from '../lib/api';
 import { pickFirstNonEmptyString } from './BeneficiaryContext';
 import { extractIsVerifiedFromApiProfile } from '../utils/extractIsVerifiedFromApiProfile';
+import { registerForPushNotificationsAsync, clearPushTokenOnServer } from '../utils/pushNotifications';
 
 const UserContext = createContext();
 
@@ -686,6 +687,10 @@ export const UserProvider = ({ children }) => {
         setUser(mergedUser);
         await AsyncStorage.setItem('userData', JSON.stringify(mergedUser));
 
+        // Best-effort: request push permission + register token. Silently
+        // no-ops if user declines or runs in a simulator.
+        registerForPushNotificationsAsync().catch(() => {});
+
         console.log('✅ User data synced with backend');
         return mergedUser;
       } else {
@@ -703,6 +708,9 @@ export const UserProvider = ({ children }) => {
    */
   const logout = async () => {
     try {
+      // Clear push token on the server first so a logged-out device stops
+      // receiving notifications for the previous account. Fire-and-forget.
+      clearPushTokenOnServer().catch(() => {});
       await API.logout();
       await AsyncStorage.multiRemove(SESSION_RESET_KEYS);
       setUser({ ...LOGGED_OUT_USER_STATE });

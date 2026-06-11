@@ -13,6 +13,7 @@ import { DiscountFilterProvider } from './context/DiscountFilterContext';
 import React, { useEffect } from 'react';
 import { Linking, View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import {
   STRIPE_PUBLISHABLE_KEY,
@@ -168,6 +169,39 @@ function Layout() {
       return () => {};
     }
   }, [router]);
+
+  // Notification tap handler — when a user taps a push, route them to the
+  // screen indicated by `data.url` (or `data.path`). Common targets:
+  //   "/menu/donationSummary"  — monthly donation receipt
+  //   "/menu/manageCards"      — payment failed (update card)
+  //   "/(tabs)/discounts"      — new discount from favorited vendor
+  const handleNotificationTap = React.useCallback((response) => {
+    const data = response?.notification?.request?.content?.data || {};
+    const path = (data.path || data.url || '').toString();
+    if (!path) return;
+    try {
+      // Strip optional scheme + host so we always route within the app.
+      const cleaned = path.replace(/^thrive:\/\//, '').replace(/^https?:\/\/[^/]+/, '');
+      const target = cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
+      router.push(target);
+    } catch (e) {
+      console.warn('Notification tap routing failed:', e);
+    }
+  }, [router]);
+
+  // Hook handles the cold-start case (app launched from a tapped notification).
+  const lastNotificationResponse = Notifications.useLastNotificationResponse();
+  useEffect(() => {
+    if (lastNotificationResponse) {
+      handleNotificationTap(lastNotificationResponse);
+    }
+  }, [lastNotificationResponse, handleNotificationTap]);
+
+  // Foreground / background taps come through this listener.
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(handleNotificationTap);
+    return () => sub.remove();
+  }, [handleNotificationTap]);
 
   return (
     <ErrorBoundary>
