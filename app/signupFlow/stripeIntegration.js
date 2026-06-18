@@ -33,7 +33,6 @@ import {
   checkNativeWalletSupported,
   presentMonthlySubscriptionPaymentSheet,
   presentSignupWalletCheckout,
-  isStripeExpoGoHost,
 } from "../utils/monthlySubscriptionPaymentSheet";
 import { resolveCheckoutBeneficiaryId } from "../utils/resolveCheckoutBeneficiaryId";
 import { persistSignupFlowCheckpointFromParams } from "../utils/signupFlowCheckpoint";
@@ -291,33 +290,6 @@ export default function StripeIntegration() {
       }
 
       setPaymentLoading(useNativeWallet ? "wallet" : "card");
-
-      // ⚠️ TESTING ONLY — remove before production submission.
-      // Stripe React Native SDK doesn't run inside Expo Go, so when we
-      // detect Expo Go we short-circuit to a dev-only backend endpoint
-      // that creates the same DB rows without a real Stripe charge.
-      if (isStripeExpoGoHost()) {
-        try {
-          await API.devMockSubscribe({
-            amount: subscriptionChargeAmount,
-            beneficiary_id: beneficiaryIdForPayload,
-            held_for_donor_choice: holdingForChoice === true,
-          });
-          Alert.alert(
-            'Dev: payment skipped',
-            'Stripe Payment Sheet only runs in TestFlight builds, so this used a mock subscription. Continuing.',
-          );
-          await finishSubscriptionAfterSuccessfulPayment(donationAmountForProfile);
-        } catch (e) {
-          Alert.alert(
-            'Dev mock failed',
-            e?.message || 'Could not create mock subscription. See logs.',
-          );
-        } finally {
-          setPaymentLoading(null);
-        }
-        return;
-      }
 
       const response = await API.createMonthlySubscription({
         amount: subscriptionChargeAmount,

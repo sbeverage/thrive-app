@@ -234,39 +234,6 @@ export default function VerifyEmailScreen() {
               </View>
             )}
 
-            {/* ⚠️ TESTING ONLY — remove before production submission.
-                Marks user verified server-side so Expo Go testing can advance
-                without the email deep link (which opens production TestFlight). */}
-            <TouchableOpacity
-              style={{
-                marginTop: 14,
-                paddingVertical: 10,
-                paddingHorizontal: 16,
-                borderRadius: 8,
-                borderWidth: 1,
-                borderColor: '#FFB05A',
-                backgroundColor: 'rgba(255, 176, 90, 0.08)',
-                alignItems: 'center',
-              }}
-              onPress={async () => {
-                try {
-                  setIsLoading(true);
-                  await API.devSkipVerification();
-                  await markAsVerified();
-                  await loadUserData?.();
-                  goPastEmailVerification();
-                } catch (e) {
-                  console.warn('Skip verification failed:', e?.message || e);
-                } finally {
-                  setIsLoading(false);
-                }
-              }}
-            >
-              <Text style={{ color: '#B05E10', fontSize: 13, fontWeight: '700' }}>
-                ⚠️ Skip for testing (dev only)
-              </Text>
-            </TouchableOpacity>
-
           </View>
         </View>
       </ScrollView>
