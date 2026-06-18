@@ -1047,7 +1047,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
           <View style={styles.confirmModalBox}>
             <Text style={styles.modalText}>
               {pendingBeneficiary?._saveMySpot
-                ? "Set aside your monthly donation with THRIVE while you decide on a cause? You can pick anytime — we'll direct everything you've given there."
+                ? "You're starting your monthly gift today. We'll hold it with THRIVE until you pick a cause — anytime within 6 months. After that, your gift stays with THRIVE Initiative."
                 : pendingBeneficiary?.is_thrive
                 ? "Set THRIVE Initiative as your cause? Your monthly donation will go directly toward growing the platform and reaching more donors and cities."
                 : `Are you sure you want "${pendingBeneficiary?.name}" to be your new beneficiary?`}
