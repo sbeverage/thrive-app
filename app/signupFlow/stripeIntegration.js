@@ -53,7 +53,7 @@ const applePaySvgAsset = require("../../assets/logos/Apple-Pay.svg");
 export default function StripeIntegration() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { selectedBeneficiary } = useBeneficiary();
+  const { selectedBeneficiary, holdingForChoice } = useBeneficiary();
   const [applePaySvg, setApplePaySvg] = useState(null);
   /** Which payment action is in progress — spinners only on that button */
   const [paymentLoading, setPaymentLoading] = useState(null);
@@ -296,6 +296,9 @@ export default function StripeIntegration() {
         beneficiary_id: beneficiaryIdForPayload,
         role: "donor",
         currency: "USD",
+        // "Save my spot" intent flows through to the backend so prior held
+        // charges can later be released to the donor's eventual cause pick.
+        held_for_donor_choice: holdingForChoice === true,
       });
 
       // 409 only when a paid subscription already exists (active / trialing).

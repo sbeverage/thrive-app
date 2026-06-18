@@ -309,6 +309,44 @@ const API = {
   // (Used by the discounts screen to sync the user's saved vendors with the
   // server and track profile views for the vendor portal stats.)
 
+  // ===== THRIVE-AS-CHARITY / HELD DONATIONS =====
+  // (Used by the BeneficiaryScreen Support-THRIVE panel and the home-tab
+  // "Saving your spot" banner. Backend endpoints in routes/donations.ts.)
+
+  /** GET /donations/monthly/held-balance — current unreleased held total + flag. */
+  getHeldBalance: async () => {
+    try {
+      const response = await api.get('/api/donations/monthly/held-balance');
+      return response.data; // { balance, transaction_count, subscription_held }
+    } catch (error) {
+      // Logged-out or no subscription → quietly return zero state.
+      return { balance: 0, transaction_count: 0, subscription_held: false };
+    }
+  },
+
+  /**
+   * POST /donations/monthly/redirect — donor switches from THRIVE-held to a
+   * real cause. Backend updates their subscription, releases prior held
+   * transactions, returns the total released amount.
+   */
+  redirectHeldDonations: async (newBeneficiaryId) => {
+    const response = await api.post('/api/donations/monthly/redirect', {
+      beneficiary_id: newBeneficiaryId,
+    });
+    return response.data;
+  },
+
+  /** GET /charities?includeThrive=true — lets the app find the THRIVE row id. */
+  getThriveCharity: async () => {
+    try {
+      const response = await api.get('/api/charities?includeThrive=true');
+      const list = response.data?.charities || response.data?.data || [];
+      return list.find((c) => c.isThrive === true || c.is_thrive === true) || null;
+    } catch (error) {
+      return null;
+    }
+  },
+
   /** GET /vendors/me/favorites — list vendors this donor has saved. */
   getMyFavoriteVendors: async () => {
     try {

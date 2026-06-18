@@ -18,6 +18,7 @@ import { useDiscount } from '../../context/DiscountContext';
 import API from '../../lib/api';
 import { readSignupFlowPending } from '../../utils/signupFlowCheckpoint';
 import InviteFriendsModal from '../../../components/InviteFriendsModal';
+import HeldFundsBanner from '../../components/HeldFundsBanner';
 import {
   REFERRAL_TIERS,
   milestonesForDisplay,
@@ -390,6 +391,11 @@ export default function MainHome() {
               extraDonationAmount={user.extraDonationAmount}
             />
           </View>
+
+          {/* "Saving your spot" banner — only renders when the donor is in
+              held-mode (picked Save-my-spot on signup) or has prior held
+              charges that haven't been redirected to a real cause yet. */}
+          <HeldFundsBanner />
 
           {/* My Beneficiary Section */}
           <View style={styles.sectionHeaderRow}>

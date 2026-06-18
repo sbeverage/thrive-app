@@ -30,9 +30,15 @@ export function resolveBeneficiaryHeroImageSource(beneficiary) {
 // 1. Create the context
 const BeneficiaryContext = createContext();
 
+const HOLDING_FOR_CHOICE_KEY = 'thrive_holding_for_choice';
+
 // 2. Provider to wrap your app
 export const BeneficiaryProvider = ({ children }) => {
   const [selectedBeneficiary, setSelectedBeneficiary] = useState(null);
+  // "Save my spot" intent — true when the donor picked THRIVE while undecided
+  // about a cause. Used by the subscribe call (pass held_for_donor_choice=true)
+  // and the home tab banner. Cleared when they pick a real cause via redirect.
+  const [holdingForChoice, setHoldingForChoiceState] = useState(false);
 
   // Load saved beneficiary on app start
   useEffect(() => {
@@ -46,12 +52,27 @@ export const BeneficiaryProvider = ({ children }) => {
         } else {
           console.log('⚠️ No beneficiary found in storage');
         }
+        const held = await AsyncStorage.getItem(HOLDING_FOR_CHOICE_KEY);
+        if (held === 'true') setHoldingForChoiceState(true);
       } catch (error) {
         console.error('❌ Error loading saved beneficiary:', error);
       }
     };
 
     loadSavedBeneficiary();
+  }, []);
+
+  const setHoldingForChoice = useCallback(async (flag) => {
+    setHoldingForChoiceState(!!flag);
+    try {
+      if (flag) {
+        await AsyncStorage.setItem(HOLDING_FOR_CHOICE_KEY, 'true');
+      } else {
+        await AsyncStorage.removeItem(HOLDING_FOR_CHOICE_KEY);
+      }
+    } catch (e) {
+      console.warn('Could not persist holdingForChoice flag:', e);
+    }
   }, []);
 
   // Stable references — avoids useFocusEffect / useEffect re-firing every parent render
@@ -123,7 +144,13 @@ export const BeneficiaryProvider = ({ children }) => {
   }, []);
 
   return (
-    <BeneficiaryContext.Provider value={{ selectedBeneficiary, setSelectedBeneficiary: saveBeneficiary, reloadBeneficiary }}>
+    <BeneficiaryContext.Provider value={{
+      selectedBeneficiary,
+      setSelectedBeneficiary: saveBeneficiary,
+      reloadBeneficiary,
+      holdingForChoice,
+      setHoldingForChoice,
+    }}>
       {children}
     </BeneficiaryContext.Provider>
   );

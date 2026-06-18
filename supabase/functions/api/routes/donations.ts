@@ -541,6 +541,12 @@ export async function handleDonationRoute(
     try {
       const body = await req.json();
       const {beneficiary_id, amount, currency = "USD"} = body;
+      // "Save my spot" intent — donor picked THRIVE because they haven't
+      // chosen a cause yet. We tag the subscription so we can prompt them
+      // to choose later and release prior held transactions when they do.
+      // Sanity: only meaningful when the chosen beneficiary IS THRIVE itself;
+      // otherwise we silently ignore the flag.
+      const heldForDonorChoiceRaw = body.held_for_donor_choice === true || body.heldForDonorChoice === true;
 
       if (!beneficiary_id || !amount) {
         return new Response(
@@ -730,6 +736,18 @@ export async function handleDonationRoute(
       const nextPaymentDate = new Date();
       nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
 
+      // Only set held_for_donor_choice when the chosen beneficiary is the
+      // THRIVE Initiative row — otherwise the flag would be meaningless.
+      let heldForDonorChoice = false;
+      if (heldForDonorChoiceRaw) {
+        const { data: chosenCharity } = await supabase
+          .from("charities")
+          .select("id, is_thrive")
+          .eq("id", beneficiary_id)
+          .maybeSingle();
+        heldForDonorChoice = !!chosenCharity?.is_thrive;
+      }
+
       // Save to database
       const {data: monthlyDonation, error: dbError} = await supabase
         .from("monthly_donations")
@@ -743,6 +761,7 @@ export async function handleDonationRoute(
             stripe_customer_id: customerId,
             status: subscription.status === "incomplete" ? "pending" : "active",
             next_payment_date: nextPaymentDate.toISOString().split("T")[0],
+            held_for_donor_choice: heldForDonorChoice,
           },
         ])
         .select()
@@ -851,6 +870,197 @@ export async function handleDonationRoute(
           headers: {"Content-Type": "application/json"},
           status: 500,
         },
+      );
+    }
+  }
+
+  // POST /donations/monthly/redirect — donor in "Save my spot" mode picks
+  // their real cause. Updates the active monthly_donation's beneficiary,
+  // clears the held flag, and releases every prior held transaction to the
+  // new cause via a single bookkeeping transaction. Donor preferences are
+  // also updated so the home screen reflects the new cause everywhere.
+  if (method === "POST" && route === "/donations/monthly/redirect") {
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 401,
+      });
+    }
+
+    try {
+      const body = await req.json();
+      const newBeneficiaryId = parseInt(body.beneficiary_id ?? body.beneficiaryId, 10);
+      if (!newBeneficiaryId) {
+        return new Response(
+          JSON.stringify({ error: "beneficiary_id is required" }),
+          { headers: { "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+
+      // Sanity — the new cause must NOT be THRIVE (that would be a no-op).
+      const { data: newCharity } = await supabase
+        .from("charities")
+        .select("id, name, is_thrive, is_active")
+        .eq("id", newBeneficiaryId)
+        .maybeSingle();
+      if (!newCharity || !newCharity.is_active) {
+        return new Response(
+          JSON.stringify({ error: "Charity not found or inactive" }),
+          { headers: { "Content-Type": "application/json" }, status: 404 },
+        );
+      }
+      if (newCharity.is_thrive) {
+        return new Response(
+          JSON.stringify({ error: "Already supporting THRIVE — pick a different cause to redirect held funds" }),
+          { headers: { "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+
+      // Find the donor's active monthly_donation that's currently held.
+      const { data: heldSub } = await supabase
+        .from("monthly_donations")
+        .select("id, beneficiary_id, held_for_donor_choice, status")
+        .eq("user_id", userId)
+        .eq("held_for_donor_choice", true)
+        .in("status", ["active", "trialing", "past_due", "incomplete", "pending"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      // Sum unreleased held transactions for this user. We do this regardless
+      // of whether the active sub is still in held mode — if a donor canceled
+      // their held sub and is making a fresh choice later, we still want to
+      // route the prior held charges to their pick.
+      const { data: heldTxns } = await supabase
+        .from("transactions")
+        .select("id, amount")
+        .eq("user_id", userId)
+        .eq("held_for_donor_choice", true)
+        .is("released_at", null);
+
+      const heldTotal = (heldTxns || []).reduce(
+        (sum: number, t: any) => sum + parseFloat(t.amount || 0),
+        0,
+      );
+      const heldTxnIds = (heldTxns || []).map((t: any) => t.id);
+
+      // Flip the active subscription to the new cause (if one exists).
+      if (heldSub) {
+        await supabase
+          .from("monthly_donations")
+          .update({
+            beneficiary_id: newBeneficiaryId,
+            held_for_donor_choice: false,
+          })
+          .eq("id", heldSub.id);
+      }
+
+      // Update user preferences so the home tab + admin reflect the new pick.
+      const { data: userRow } = await supabase
+        .from("users")
+        .select("preferences")
+        .eq("id", userId)
+        .maybeSingle();
+      const newPrefs = {
+        ...(userRow?.preferences || {}),
+        beneficiary: newBeneficiaryId,
+        preferredCharity: newBeneficiaryId,
+      };
+      await supabase.from("users").update({ preferences: newPrefs }).eq("id", userId);
+
+      // If there's anything to release, write the release transaction and
+      // mark every contributing transaction as released to the new cause.
+      let releaseTxnId: number | null = null;
+      if (heldTotal > 0 && heldTxnIds.length > 0) {
+        const { data: releaseTxn } = await supabase
+          .from("transactions")
+          .insert({
+            user_id: userId,
+            type: "held_release",
+            amount: heldTotal,
+            description: `Released held donations to ${newCharity.name}`,
+            beneficiary_id: newBeneficiaryId,
+            status: "completed",
+            reference_type: "donation",
+          })
+          .select("id")
+          .single();
+        releaseTxnId = releaseTxn?.id ?? null;
+
+        await supabase
+          .from("transactions")
+          .update({
+            released_at: new Date().toISOString(),
+            released_to_charity_id: newBeneficiaryId,
+          })
+          .in("id", heldTxnIds);
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          beneficiary: { id: newBeneficiaryId, name: newCharity.name },
+          released_amount: heldTotal,
+          released_transaction_count: heldTxnIds.length,
+          release_transaction_id: releaseTxnId,
+        }),
+        { headers: { "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (error: any) {
+      console.error("Error redirecting held donations:", error);
+      return new Response(
+        JSON.stringify({ error: error.message || "Could not redirect" }),
+        { headers: { "Content-Type": "application/json" }, status: 500 },
+      );
+    }
+  }
+
+  // GET /donations/monthly/held-balance — used by the home tab to show the
+  // "Saving your spot" banner when the donor has unreleased held transactions.
+  if (method === "GET" && route === "/donations/monthly/held-balance") {
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 401,
+      });
+    }
+    try {
+      const { data: heldTxns } = await supabase
+        .from("transactions")
+        .select("id, amount")
+        .eq("user_id", userId)
+        .eq("held_for_donor_choice", true)
+        .is("released_at", null);
+      const total = (heldTxns || []).reduce(
+        (s: number, t: any) => s + parseFloat(t.amount || 0),
+        0,
+      );
+
+      // Also expose whether the active subscription is in held mode, so the
+      // home tab can show the banner even before the first charge lands.
+      const { data: heldSub } = await supabase
+        .from("monthly_donations")
+        .select("id, amount, held_for_donor_choice")
+        .eq("user_id", userId)
+        .eq("held_for_donor_choice", true)
+        .in("status", ["active", "trialing", "past_due", "incomplete", "pending"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      return new Response(
+        JSON.stringify({
+          balance: Math.round(total * 100) / 100,
+          transaction_count: (heldTxns || []).length,
+          subscription_held: !!heldSub,
+        }),
+        { headers: { "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (error: any) {
+      console.error("Error fetching held balance:", error);
+      return new Response(
+        JSON.stringify({ error: error.message || "Could not fetch held balance" }),
+        { headers: { "Content-Type": "application/json" }, status: 500 },
       );
     }
   }

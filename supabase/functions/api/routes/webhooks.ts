@@ -327,7 +327,9 @@ export async function handleWebhookRoute(
                 .update(updatePayload)
                 .eq("id", donation.id);
 
-              // Create transaction record — upsert on stripe_invoice_id to be idempotent
+              // Create transaction record — upsert on stripe_invoice_id to be idempotent.
+              // Inherits the subscription's "Save my spot" flag so we can later
+              // release these specific charges to the donor's chosen cause.
               await supabase.from("transactions").upsert(
                 [
                   {
@@ -340,6 +342,7 @@ export async function handleWebhookRoute(
                     donation_id: donation.id,
                     beneficiary_id: donation.beneficiary_id,
                     status: "completed",
+                    held_for_donor_choice: !!donation.held_for_donor_choice,
                   },
                 ],
                 { onConflict: "reference_id", ignoreDuplicates: true },

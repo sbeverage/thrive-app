@@ -29,6 +29,15 @@ export async function handleCharityRoute(
         query = query.eq("is_active", true);
       }
 
+      // Exclude the THRIVE Initiative row from the regular cause list — it
+      // appears in the dedicated "Support THRIVE" panel on the signup screen
+      // instead of competing with third-party charities. Callers that need it
+      // (e.g. admin reporting) can hit /charities/:id directly.
+      const includeThrive = url.searchParams.get("includeThrive") === "true";
+      if (!includeThrive) {
+        query = query.or("is_thrive.is.null,is_thrive.eq.false");
+      }
+
       const {data: charities, error} = await query.order("name", {
         ascending: true,
       });

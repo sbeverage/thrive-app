@@ -30,6 +30,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { IMAGE_ASSETS } from '../../../utils/assetConstants';
 import { beneficiaryLocationMatches } from '../../../utils/beneficiaryLocationMatch';
 import { readSignupFlowPending } from '../../../utils/signupFlowCheckpoint';
+import SupportThrivePanel from '../../../components/SupportThrivePanel';
 
 function normStr(s) {
   return s != null ? String(s).trim().toLowerCase() : '';
@@ -39,7 +40,8 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
   const router = useRouter();
   const localParams = useLocalSearchParams();
   const routeParams = signupParams || localParams;
-  const { selectedBeneficiary, setSelectedBeneficiary } = useBeneficiary();
+  const { selectedBeneficiary, setSelectedBeneficiary, setHoldingForChoice, holdingForChoice } = useBeneficiary();
+  const [thriveCharity, setThriveCharity] = useState(null);
   const { filters, updateFilters, hasActiveFilters } = useBeneficiaryFilter();
   const { location: userLocation, locationAddress, locationPermission, checkLocationPermission, refreshLocation, isLoadingLocation } = useLocation();
 
@@ -135,6 +137,13 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
     try {
       setLoadingBeneficiaries(true);
       const data = await API.getCharities();
+      // Fetch THRIVE separately so it appears in the Support-THRIVE panel
+      // (only on signup) instead of mixed into the regular cause list.
+      if (isSignupFlow) {
+        API.getThriveCharity().then((c) => {
+          if (c) setThriveCharity(c);
+        }).catch(() => {});
+      }
 
       // Handle different response formats
       let charitiesArray = null;
@@ -369,10 +378,32 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
   const handleConfirmBeneficiary = async () => {
     if (!pendingBeneficiary) return;
     setConfirmModalVisible(false);
+    // _saveMySpot is set by the Support-THRIVE panel's "Set aside" CTA so we
+    // know whether to pass held_for_donor_choice through. Any other pick
+    // (including "Help THRIVE grow") clears the held flag.
+    const willBeHeld = !!pendingBeneficiary._saveMySpot;
+    setHoldingForChoice(willBeHeld);
+
+    // Outside signup, if the donor is already in held-mode and is picking a
+    // real cause (not THRIVE), use the redirect endpoint — it updates their
+    // active subscription's beneficiary AND releases prior held charges to
+    // the new cause in one shot.
+    const isLeavingHeldMode =
+      !isSignupFlow && !willBeHeld && !pendingBeneficiary.is_thrive && holdingForChoice;
+
     try {
-      await API.saveProfile({ beneficiary: pendingBeneficiary.id });
+      if (isLeavingHeldMode) {
+        const result = await API.redirectHeldDonations(pendingBeneficiary.id);
+        if ((result?.released_amount ?? 0) > 0) {
+          setSuccessMessage(
+            `Done! $${Number(result.released_amount).toFixed(2)} you'd set aside is now headed to ${pendingBeneficiary.name}.`,
+          );
+        }
+      } else {
+        await API.saveProfile({ beneficiary: pendingBeneficiary.id });
+      }
     } catch (e) {
-      console.warn('⚠️ Could not persist beneficiary to server:', e.message);
+      console.warn('⚠️ Could not persist beneficiary change:', e.message);
     }
     setSelectedBeneficiary(pendingBeneficiary);
     if (isSignupFlow) {
@@ -738,6 +769,23 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
               </TouchableOpacity>
             </View>
 
+            {isSignupFlow && (
+              <SupportThrivePanel
+                thriveCharity={thriveCharity}
+                isLoading={loadingBeneficiaries}
+                onPickGrow={(c) => {
+                  setHoldingForChoice(false);
+                  setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url } });
+                  setConfirmModalVisible(true);
+                }}
+                onPickHold={(c) => {
+                  setHoldingForChoice(true);
+                  setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url }, _saveMySpot: true });
+                  setConfirmModalVisible(true);
+                }}
+              />
+            )}
+
             {loadingBeneficiaries ? (
               <View style={{ padding: 40, alignItems: 'center' }}>
                 <Text style={{ color: '#666', fontSize: 16 }}>Loading beneficiaries...</Text>
@@ -957,11 +1005,18 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
         )}
       </View>
 
-      {/* Confirmation Modal */}
+      {/* Confirmation Modal — copy adapts to which of the three pick paths
+          the donor took (Save my spot vs Help THRIVE grow vs regular cause). */}
       <Modal visible={confirmModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.confirmModalBox}>
-            <Text style={styles.modalText}>Are you sure you want "{pendingBeneficiary?.name}" to be your new beneficiary?</Text>
+            <Text style={styles.modalText}>
+              {pendingBeneficiary?._saveMySpot
+                ? "Set aside your monthly donation with THRIVE while you decide on a cause? You can pick anytime — we'll direct everything you've given there."
+                : pendingBeneficiary?.is_thrive
+                ? "Set THRIVE Initiative as your cause? Your monthly donation will go directly toward growing the platform and reaching more donors and cities."
+                : `Are you sure you want "${pendingBeneficiary?.name}" to be your new beneficiary?`}
+            </Text>
             <View style={styles.modalActions}>
               <TouchableOpacity onPress={handleConfirmBeneficiary} style={styles.confirmBtn}>
                 <Text style={styles.confirmBtnText}>Yes</Text>
