@@ -33,6 +33,9 @@ export function formatCharityResponse(charity: any) {
     mutual: charity.mutual || 0,
     isActive: charity.is_active !== false,
     verificationStatus: charity.verification_status !== false, // Default to true if null
+    // Used by the donor app to find the THRIVE Initiative row for the
+    // Support-THRIVE panel + held-funds flow.
+    isThrive: !!charity.is_thrive,
     // Impact metrics - return as camelCase (now supports full sentences, not just numbers)
     livesImpacted: charity.lives_impacted || null,
     programsActive: charity.programs_active || null,
