@@ -1050,7 +1050,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                 ? 'Start Now, Pick Later.'
                 : pendingBeneficiary?.is_thrive
                 ? 'Give to THRIVE Initiative'
-                : 'Confirm Your Beneficiary'}
+                : 'Confirm Your New Beneficiary'}
             </Text>
             <Text style={styles.modalText}>
               {pendingBeneficiary?._saveMySpot
