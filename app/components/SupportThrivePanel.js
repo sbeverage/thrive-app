@@ -17,10 +17,6 @@ export default function SupportThrivePanel({ thriveCharity, isLoading, onPickGro
         <View style={styles.headerLine} />
       </View>
 
-      <Text style={styles.intro}>
-        Set aside your monthly gift while you decide on a cause, or support our platform so we can keep growing into more cities to make a larger impact. Either way, you're giving to a registered 501(c)(3).
-      </Text>
-
       <View style={styles.cardsRow}>
         <TouchableOpacity
           style={[styles.card, styles.cardGrow]}
@@ -29,17 +25,15 @@ export default function SupportThrivePanel({ thriveCharity, isLoading, onPickGro
           disabled={!thriveCharity || isLoading}
         >
           <View style={[styles.iconCircle, styles.iconGrow]}>
-            <Feather name="trending-up" size={22} color="#fff" />
+            <Feather name="trending-up" size={20} color="#fff" />
           </View>
-          <Text style={styles.cardTitle}>Help THRIVE grow</Text>
-          <Text style={styles.cardBody}>
-            Support the platform that makes monthly giving easy. Help us reach more donors, more local businesses, and more cities.
-          </Text>
+          <Text style={styles.cardTitle}>Help us grow</Text>
+          <Text style={styles.cardBody}>Support THRIVE Initiative.</Text>
           <View style={[styles.cardCta, styles.cardCtaGrow]}>
             {isLoading ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
-              <Text style={styles.cardCtaGrowText}>Give to THRIVE →</Text>
+              <Text style={styles.cardCtaGrowText}>Give to THRIVE</Text>
             )}
           </View>
         </TouchableOpacity>
@@ -51,21 +45,21 @@ export default function SupportThrivePanel({ thriveCharity, isLoading, onPickGro
           disabled={!thriveCharity || isLoading}
         >
           <View style={[styles.iconCircle, styles.iconHold]}>
-            <Ionicons name="bookmark-outline" size={22} color="#fff" />
+            <Ionicons name="bookmark-outline" size={20} color="#fff" />
           </View>
           <Text style={styles.cardTitle}>Save my spot</Text>
-          <Text style={styles.cardBody}>
-            Donate now while you decide on a cause. Pick one anytime — we'll direct everything you've given there.
-          </Text>
+          <Text style={styles.cardBody}>Pick a cause later.</Text>
           <View style={[styles.cardCta, styles.cardCtaHold]}>
             {isLoading ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
-              <Text style={styles.cardCtaHoldText}>Set aside →</Text>
+              <Text style={styles.cardCtaHoldText}>Set aside</Text>
             )}
           </View>
         </TouchableOpacity>
       </View>
+
+      <Text style={styles.footnote}>Both go to a registered 501(c)(3).</Text>
 
     </View>
   );
@@ -94,25 +88,25 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     marginHorizontal: 10,
   },
-  intro: {
-    fontSize: 13,
-    color: '#5A6470',
-    lineHeight: 18,
-    marginBottom: 14,
-    textAlign: 'center',
-  },
   cardsRow: {
     flexDirection: 'row',
     gap: 10,
-    marginBottom: 18,
+    marginBottom: 8,
   },
   card: {
     flex: 1,
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    minHeight: 200,
+    minHeight: 150,
     justifyContent: 'space-between',
+  },
+  footnote: {
+    textAlign: 'center',
+    fontSize: 11,
+    color: '#8C8C8C',
+    fontStyle: 'italic',
+    marginTop: 4,
   },
   cardGrow: {
     backgroundColor: 'rgba(219, 134, 51, 0.06)',
@@ -123,12 +117,12 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(50, 78, 88, 0.25)',
   },
   iconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   iconGrow: { backgroundColor: '#DB8633' },
   iconHold: { backgroundColor: '#324E58' },
@@ -141,8 +135,8 @@ const styles = StyleSheet.create({
   cardBody: {
     fontSize: 12,
     color: '#5A6470',
-    lineHeight: 17,
-    marginBottom: 12,
+    lineHeight: 16,
+    marginBottom: 10,
   },
   cardCta: {
     paddingVertical: 8,
