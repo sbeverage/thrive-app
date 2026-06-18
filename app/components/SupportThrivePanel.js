@@ -1,66 +1,52 @@
-// Two side-by-side cards shown at the top of the BeneficiaryScreen during
-// signup. Lets the donor either commit to supporting THRIVE Initiative
-// directly ("Help THRIVE grow") OR set aside their gift while they decide
-// on a cause ("Save my spot"). Both routes legally donate to THRIVE — the
-// distinction is intent + downstream UI behavior.
+// Single-card panel shown at the end of the BeneficiaryScreen + empty-search
+// state during signup. Treats THRIVE Initiative as one entity with two
+// intents (Give now vs Save my spot). Minimal copy, two stacked CTAs.
 
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { Feather, Ionicons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 
 export default function SupportThrivePanel({ thriveCharity, isLoading, onPickGrow, onPickHold }) {
+  const disabled = !thriveCharity || isLoading;
+
   return (
     <View style={styles.wrapper}>
-      <View style={styles.headerRow}>
-        <View style={styles.headerLine} />
-        <Text style={styles.headerLabel}>NOT SURE WHO TO GIVE TO?</Text>
-        <View style={styles.headerLine} />
-      </View>
+      <View style={styles.card}>
+        <View style={styles.headerRow}>
+          <Feather name="heart" size={16} color="#DB8633" />
+          <Text style={styles.header}>NOT SURE WHO TO GIVE TO?</Text>
+        </View>
 
-      <View style={styles.cardsRow}>
+        <Text style={styles.body}>
+          Support THRIVE Initiative, a 501(c)(3), or save your spot while you decide on a cause.
+        </Text>
+
         <TouchableOpacity
-          style={[styles.card, styles.cardGrow]}
+          style={[styles.btn, styles.primaryBtn, disabled && styles.disabledBtn]}
           activeOpacity={0.85}
           onPress={() => thriveCharity && onPickGrow?.(thriveCharity)}
-          disabled={!thriveCharity || isLoading}
+          disabled={disabled}
         >
-          <View style={[styles.iconCircle, styles.iconGrow]}>
-            <Feather name="trending-up" size={20} color="#fff" />
-          </View>
-          <Text style={styles.cardTitle}>Help us grow</Text>
-          <Text style={styles.cardBody}>Support THRIVE Initiative.</Text>
-          <View style={[styles.cardCta, styles.cardCtaGrow]}>
-            {isLoading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.cardCtaGrowText}>Give to THRIVE</Text>
-            )}
-          </View>
+          {isLoading ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text style={styles.primaryBtnText}>Give to THRIVE</Text>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.card, styles.cardHold]}
+          style={[styles.btn, styles.secondaryBtn, disabled && styles.disabledBtn]}
           activeOpacity={0.85}
           onPress={() => thriveCharity && onPickHold?.(thriveCharity)}
-          disabled={!thriveCharity || isLoading}
+          disabled={disabled}
         >
-          <View style={[styles.iconCircle, styles.iconHold]}>
-            <Ionicons name="bookmark-outline" size={20} color="#fff" />
-          </View>
-          <Text style={styles.cardTitle}>Save my spot</Text>
-          <Text style={styles.cardBody}>Pick a cause later.</Text>
-          <View style={[styles.cardCta, styles.cardCtaHold]}>
-            {isLoading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.cardCtaHoldText}>Set aside</Text>
-            )}
-          </View>
+          {isLoading ? (
+            <ActivityIndicator color="#324E58" size="small" />
+          ) : (
+            <Text style={styles.secondaryBtnText}>Save my spot for later</Text>
+          )}
         </TouchableOpacity>
       </View>
-
-      <Text style={styles.footnote}>Both go to a registered 501(c)(3).</Text>
-
     </View>
   );
 }
@@ -68,101 +54,66 @@ export default function SupportThrivePanel({ thriveCharity, isLoading, onPickGro
 const styles = StyleSheet.create({
   wrapper: {
     paddingHorizontal: 16,
-    paddingTop: 4,
+    paddingTop: 12,
     paddingBottom: 16,
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#E8E0D4',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
     marginBottom: 10,
   },
-  headerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E0E0E5',
-  },
-  headerLabel: {
+  header: {
     fontSize: 11,
-    color: '#8C8C8C',
     fontWeight: '700',
-    letterSpacing: 1.2,
-    marginHorizontal: 10,
-  },
-  cardsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 8,
-  },
-  card: {
-    flex: 1,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    minHeight: 150,
-    justifyContent: 'space-between',
-  },
-  footnote: {
-    textAlign: 'center',
-    fontSize: 11,
     color: '#8C8C8C',
-    fontStyle: 'italic',
-    marginTop: 4,
+    letterSpacing: 1.4,
   },
-  cardGrow: {
-    backgroundColor: 'rgba(219, 134, 51, 0.06)',
-    borderColor: 'rgba(219, 134, 51, 0.35)',
+  body: {
+    fontSize: 14,
+    color: '#324E58',
+    lineHeight: 20,
+    marginBottom: 16,
   },
-  cardHold: {
-    backgroundColor: 'rgba(50, 78, 88, 0.05)',
-    borderColor: 'rgba(50, 78, 88, 0.25)',
-  },
-  iconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+  btn: {
+    paddingVertical: 13,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
-  },
-  iconGrow: { backgroundColor: '#DB8633' },
-  iconHold: { backgroundColor: '#324E58' },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#324E58',
-    marginBottom: 6,
-  },
-  cardBody: {
-    fontSize: 12,
-    color: '#5A6470',
-    lineHeight: 16,
     marginBottom: 10,
   },
-  cardCta: {
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    alignItems: 'center',
+  primaryBtn: {
+    backgroundColor: '#DB8633',
   },
-  cardCtaGrow: { backgroundColor: '#DB8633' },
-  cardCtaHold: { backgroundColor: '#324E58' },
-  cardCtaGrowText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  cardCtaHoldText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E0E0E5',
-  },
-  dividerLabel: {
-    fontSize: 11,
-    color: '#8C8C8C',
+  primaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
     fontWeight: '700',
-    letterSpacing: 1.2,
-    marginHorizontal: 10,
+  },
+  secondaryBtn: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: '#324E58',
+    marginBottom: 0,
+  },
+  secondaryBtnText: {
+    color: '#324E58',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  disabledBtn: {
+    opacity: 0.5,
   },
 });
