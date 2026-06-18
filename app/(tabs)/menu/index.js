@@ -80,9 +80,6 @@ export default function MenuScreen() {
     { section: 'Account', data: [
       { title: 'My Profile', icon: 'user', page: 'menu/profile' },
       { title: 'Friends', icon: 'users', page: 'menu/friends' },
-      // Surface deletion as a regular menu row — App Store reviewers expect to
-      // find it inline in the Account section, not as a button at the bottom.
-      { title: 'Delete Account', icon: 'trash-2', action: 'deleteAccount', danger: true },
     ]},
     { section: 'Donations & Savings', data: [
       { title: 'Savings Tracker', icon: 'trending-up', page: 'menu/transactionHistory' },
