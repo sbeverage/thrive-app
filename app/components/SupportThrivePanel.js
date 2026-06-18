@@ -1,6 +1,8 @@
 // Single-card panel shown at the end of the BeneficiaryScreen + empty-search
 // state during signup. Treats THRIVE Initiative as one entity with two
-// intents (Give now vs Save my spot). Minimal copy, two stacked CTAs.
+// intents. The secondary button is intentionally two-line so the mechanism
+// is self-explanatory at a glance — donors otherwise read "Save my spot"
+// and don't realize their money is still being donated.
 
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
@@ -18,7 +20,7 @@ export default function SupportThrivePanel({ thriveCharity, isLoading, onPickGro
         </View>
 
         <Text style={styles.body}>
-          Support THRIVE Initiative, a 501(c)(3), or save your spot while you decide on a cause.
+          Support THRIVE Initiative, a 501(c)(3), or start giving now and choose a cause anytime.
         </Text>
 
         <TouchableOpacity
@@ -43,7 +45,12 @@ export default function SupportThrivePanel({ thriveCharity, isLoading, onPickGro
           {isLoading ? (
             <ActivityIndicator color="#324E58" size="small" />
           ) : (
-            <Text style={styles.secondaryBtnText}>Save my spot for later</Text>
+            <View style={styles.secondaryBtnTextWrap}>
+              <Text style={styles.secondaryBtnText}>Start now — decide later</Text>
+              <Text style={styles.secondaryBtnSubtext}>
+                We'll route your gifts to the cause you pick
+              </Text>
+            </View>
           )}
         </TouchableOpacity>
       </View>
@@ -89,6 +96,7 @@ const styles = StyleSheet.create({
   },
   btn: {
     paddingVertical: 13,
+    paddingHorizontal: 12,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -107,11 +115,22 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#324E58',
     marginBottom: 0,
+    paddingVertical: 10,
+  },
+  secondaryBtnTextWrap: {
+    alignItems: 'center',
   },
   secondaryBtnText: {
     color: '#324E58',
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  secondaryBtnSubtext: {
+    color: '#5A6470',
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
+    textAlign: 'center',
   },
   disabledBtn: {
     opacity: 0.5,
