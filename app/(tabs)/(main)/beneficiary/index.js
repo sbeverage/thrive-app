@@ -31,6 +31,7 @@ import { IMAGE_ASSETS } from '../../../utils/assetConstants';
 import { beneficiaryLocationMatches } from '../../../utils/beneficiaryLocationMatch';
 import { readSignupFlowPending } from '../../../utils/signupFlowCheckpoint';
 import SupportThrivePanel from '../../../components/SupportThrivePanel';
+import { cityStateFromLocation } from '../../../utils/cityStateFromLocation';
 
 function normStr(s) {
   return s != null ? String(s).trim().toLowerCase() : '';
@@ -816,7 +817,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                         {!isSignupFlow && (
                           <View style={styles.beneficiaryLocation}>
                             <Ionicons name="location" size={14} color="#8E9BAE" />
-                            <Text style={styles.beneficiaryLocationText}>{b.location} • {b.distance}</Text>
+                            <Text style={styles.beneficiaryLocationText}>{cityStateFromLocation(b.location)} • {b.distance}</Text>
                           </View>
                         )}
                         
@@ -911,7 +912,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                       {!isSignupFlow && (
                         <View style={styles.beneficiaryLocation}>
                           <Ionicons name="location" size={14} color="#8E9BAE" />
-                          <Text style={styles.beneficiaryLocationText}>{b.location} • {b.distance}</Text>
+                          <Text style={styles.beneficiaryLocationText}>{cityStateFromLocation(b.location)} • {b.distance}</Text>
                         </View>
                       )}
                       
