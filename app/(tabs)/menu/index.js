@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
   icon: { marginRight: 15 },
   logoutButton: {
     marginHorizontal: 20,
-    marginTop: 12,
+    marginTop: 6,
     marginBottom: 8,
     paddingVertical: 10,
     paddingHorizontal: 14,
