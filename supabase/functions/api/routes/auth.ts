@@ -2373,6 +2373,49 @@ export async function handleAuthRoute(
     }
   }
 
+  // ============================================================================
+  // TEMPORARY / TESTING-ONLY: POST /auth/dev-skip-verification
+  // Marks the authed user as verified without an email confirmation. Used so
+  // Stephanie can test new app features in Expo Go without the verify link
+  // (which deep-links into the production TestFlight build, not Expo Go).
+  // REMOVE THIS BEFORE THE NEXT APP STORE SUBMISSION.
+  // ============================================================================
+  if (method === "POST" && route === "/auth/dev-skip-verification") {
+    try {
+      const authHeader = getAppAuthHeader(req);
+      const payload: any = await getJwtPayload(authHeader);
+      const userId = payload?.id || payload?.userId;
+      if (!userId) {
+        return new Response(
+          JSON.stringify({ message: "Authentication required" }),
+          { headers: { "Content-Type": "application/json" }, status: 401 },
+        );
+      }
+      const { error } = await supabase
+        .from("users")
+        .update({ is_verified: true, verification_token: null })
+        .eq("id", userId);
+      if (error) {
+        console.error("dev-skip-verification error:", error);
+        return new Response(
+          JSON.stringify({ message: "Could not mark verified" }),
+          { headers: { "Content-Type": "application/json" }, status: 500 },
+        );
+      }
+      console.log("⚠️ [DEV] Skipped email verification for user", userId);
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      });
+    } catch (e) {
+      console.error("dev-skip-verification threw:", e);
+      return new Response(JSON.stringify({ message: "Server error" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 500,
+      });
+    }
+  }
+
   // POST /auth/push-token — register/refresh the donor app's Expo push token.
   // Called from the app after the user grants notification permission and
   // again whenever the token rotates (Expo can rotate per app reinstall).

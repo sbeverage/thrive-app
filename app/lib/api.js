@@ -313,6 +313,21 @@ const API = {
   // (Used by the BeneficiaryScreen Support-THRIVE panel and the home-tab
   // "Saving your spot" banner. Backend endpoints in routes/donations.ts.)
 
+  /**
+   * TEMP / TESTING-ONLY: marks the current user as email-verified without
+   * clicking the email link. REMOVE before production submission. Paired
+   * with the "Skip for testing" button on verifyEmail.js.
+   */
+  devSkipVerification: async () => {
+    try {
+      const response = await api.post('/api/auth/dev-skip-verification');
+      return response.data;
+    } catch (error) {
+      console.warn('devSkipVerification failed:', error?.message || error);
+      throw error;
+    }
+  },
+
   /** GET /donations/monthly/held-balance — current unreleased held total + flag. */
   getHeldBalance: async () => {
     try {
