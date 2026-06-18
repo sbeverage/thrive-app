@@ -769,23 +769,6 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
               </TouchableOpacity>
             </View>
 
-            {isSignupFlow && (
-              <SupportThrivePanel
-                thriveCharity={thriveCharity}
-                isLoading={loadingBeneficiaries}
-                onPickGrow={(c) => {
-                  setHoldingForChoice(false);
-                  setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url } });
-                  setConfirmModalVisible(true);
-                }}
-                onPickHold={(c) => {
-                  setHoldingForChoice(true);
-                  setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url }, _saveMySpot: true });
-                  setConfirmModalVisible(true);
-                }}
-              />
-            )}
-
             {loadingBeneficiaries ? (
               <View style={{ padding: 40, alignItems: 'center' }}>
                 <Text style={{ color: '#666', fontSize: 16 }}>Loading beneficiaries...</Text>

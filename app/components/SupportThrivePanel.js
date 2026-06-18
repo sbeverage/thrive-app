@@ -13,12 +13,12 @@ export default function SupportThrivePanel({ thriveCharity, isLoading, onPickGro
     <View style={styles.wrapper}>
       <View style={styles.headerRow}>
         <View style={styles.headerLine} />
-        <Text style={styles.headerLabel}>SUPPORT THRIVE INITIATIVE</Text>
+        <Text style={styles.headerLabel}>NOT SURE WHO TO GIVE TO?</Text>
         <View style={styles.headerLine} />
       </View>
 
       <Text style={styles.intro}>
-        Want to support the platform itself, or set aside your monthly gift while you decide on a cause? Either way, you're giving to a registered 501(c)(3).
+        Set aside your monthly gift while you decide on a cause, or support our platform so we can keep growing into more cities to make a larger impact. Either way, you're giving to a registered 501(c)(3).
       </Text>
 
       <View style={styles.cardsRow}>
@@ -67,11 +67,6 @@ export default function SupportThrivePanel({ thriveCharity, isLoading, onPickGro
         </TouchableOpacity>
       </View>
 
-      <View style={styles.dividerRow}>
-        <View style={styles.dividerLine} />
-        <Text style={styles.dividerLabel}>OR PICK A CAUSE</Text>
-        <View style={styles.dividerLine} />
-      </View>
     </View>
   );
 }
