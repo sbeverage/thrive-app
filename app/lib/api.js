@@ -314,6 +314,26 @@ const API = {
   // "Saving your spot" banner. Backend endpoints in routes/donations.ts.)
 
   /**
+   * TEMP / TESTING-ONLY: bypasses Stripe (which doesn't run in Expo Go) by
+   * creating a real monthly_donation + a mock 'charged' transaction directly
+   * via the backend. Lets us test the held-funds + redirect flow in Expo Go.
+   * REMOVE before production submission.
+   */
+  devMockSubscribe: async ({ amount, beneficiary_id, held_for_donor_choice = false }) => {
+    try {
+      const response = await api.post('/api/donations/monthly/dev-mock-subscribe', {
+        amount,
+        beneficiary_id,
+        held_for_donor_choice,
+      });
+      return response.data;
+    } catch (error) {
+      console.warn('devMockSubscribe failed:', error?.message || error);
+      throw error;
+    }
+  },
+
+  /**
    * TEMP / TESTING-ONLY: marks the current user as email-verified without
    * clicking the email link. REMOVE before production submission. Paired
    * with the "Skip for testing" button on verifyEmail.js.
