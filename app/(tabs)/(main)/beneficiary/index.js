@@ -755,9 +755,19 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                 <View style={styles.sectionSubtitleRow}>
                   <Feather name="map-pin" size={13} color="#8E9BAE" />
                   <Text style={styles.sectionSubtitle}>
-                    {locationPermission === 'granted'
-                      ? `${locationDisplay || 'Current Location'} (${displayedBeneficiaryCount})`
-                      : `${locationDisplay ? `${locationDisplay} ` : ''}(${displayedBeneficiaryCount})`}
+                    {(() => {
+                      // The donor's filter pick takes priority — if they
+                      // chose "Alpharetta, GA" in the filter view, the
+                      // subtitle should reflect that, not their GPS city.
+                      const filterLoc = filters?.location && String(filters.location).trim();
+                      if (filterLoc) {
+                        return `${filterLoc} (${displayedBeneficiaryCount})`;
+                      }
+                      if (locationPermission === 'granted') {
+                        return `${locationDisplay || 'Current Location'} (${displayedBeneficiaryCount})`;
+                      }
+                      return `${locationDisplay ? `${locationDisplay} ` : ''}(${displayedBeneficiaryCount})`;
+                    })()}
                   </Text>
                 </View>
               </View>
