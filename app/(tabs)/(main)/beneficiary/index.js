@@ -966,6 +966,27 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                   </TouchableOpacity>
                   );
                 })}
+
+                {/* End-of-list Support-THRIVE panel: shown only during signup
+                    so donors who have browsed the cause cards still have a
+                    landing pad. Outside signup, the home-tab banner handles
+                    nudging held-mode donors to choose. */}
+                {isSignupFlow && (
+                  <SupportThrivePanel
+                    thriveCharity={thriveCharity}
+                    isLoading={false}
+                    onPickGrow={(c) => {
+                      setHoldingForChoice(false);
+                      setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url } });
+                      setConfirmModalVisible(true);
+                    }}
+                    onPickHold={(c) => {
+                      setHoldingForChoice(true);
+                      setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url }, _saveMySpot: true });
+                      setConfirmModalVisible(true);
+                    }}
+                  />
+                )}
               </>
             ) : (
               <View>
@@ -982,6 +1003,26 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                     }
                   />
                 </View>
+
+                {/* When the search comes up empty during signup, the panel
+                    sits below the "Request a charity" card as a second path
+                    forward so the donor never hits a dead end. */}
+                {isSignupFlow && (
+                  <SupportThrivePanel
+                    thriveCharity={thriveCharity}
+                    isLoading={false}
+                    onPickGrow={(c) => {
+                      setHoldingForChoice(false);
+                      setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url } });
+                      setConfirmModalVisible(true);
+                    }}
+                    onPickHold={(c) => {
+                      setHoldingForChoice(true);
+                      setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url }, _saveMySpot: true });
+                      setConfirmModalVisible(true);
+                    }}
+                  />
+                )}
               </View>
             )}
           </ScrollView>
