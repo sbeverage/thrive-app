@@ -1045,12 +1045,19 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
       <Modal visible={confirmModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.confirmModalBox}>
+            <Text style={styles.modalTitle}>
+              {pendingBeneficiary?._saveMySpot
+                ? 'Start Now, Pick Later.'
+                : pendingBeneficiary?.is_thrive
+                ? 'Give to THRIVE Initiative'
+                : 'Confirm Your Beneficiary'}
+            </Text>
             <Text style={styles.modalText}>
               {pendingBeneficiary?._saveMySpot
-                ? "You're starting your monthly gift today. We'll hold it with THRIVE until you pick a cause — anytime within 6 months. After that, your gift stays with THRIVE Initiative."
+                ? "You're starting your monthly gift today. No rush — we'll hold it with THRIVE until you find a cause you love to give to."
                 : pendingBeneficiary?.is_thrive
-                ? "Set THRIVE Initiative as your cause? Your monthly donation will go directly toward growing the platform and reaching more donors and cities."
-                : `Are you sure you want "${pendingBeneficiary?.name}" to be your new beneficiary?`}
+                ? 'Your monthly donation will go directly toward growing the platform and reaching more donors and cities.'
+                : `Set "${pendingBeneficiary?.name}" as your monthly beneficiary?`}
             </Text>
             <View style={styles.modalActions}>
               <TouchableOpacity onPress={handleConfirmBeneficiary} style={styles.confirmBtn}>
@@ -1482,11 +1489,19 @@ const styles = StyleSheet.create({
     width: '85%',
     alignItems: 'center',
   },
-  modalText: {
-    fontSize: 16,
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
     color: '#324E58',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  modalText: {
+    fontSize: 14,
+    color: '#5A6470',
     marginBottom: 20,
     textAlign: 'center',
+    lineHeight: 20,
   },
   modalActions: {
     flexDirection: 'row',
