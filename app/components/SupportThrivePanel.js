@@ -18,7 +18,7 @@ export default function SupportThrivePanel({ thriveCharity, isLoading, onPickGro
     <View style={styles.wrapper}>
       <Text style={styles.headline}>Need more time to decide?</Text>
       <Text style={styles.body}>
-        No pressure — start your monthly gift now and pick a cause anytime.
+        Your monthly gift will be held with THRIVE until you pick a cause — anytime within 6 months. After that, it stays with us.
       </Text>
 
       <TouchableOpacity
