@@ -896,19 +896,23 @@ export async function sendPasswordResetEmail({
   to,
   name,
   resetToken,
+  portal = "donor",
 }: {
   to: string;
   name: string;
   resetToken: string;
+  portal?: "donor" | "vendor";
 }): Promise<void> {
   try {
     const emailService = Deno.env.get("EMAIL_SERVICE") || "resend";
-    const appName = "THRIVE Initiative";
+    const appName = portal === "vendor" ? "THRIVE Vendor Portal" : "THRIVE Initiative";
     const fromEmail = Deno.env.get("EMAIL_FROM") || "noreply@yourapp.com";
-    const appUrl =
-      Deno.env.get("APP_BASE_URL") || "https://thrive-web-jet.vercel.app";
+    const baseUrl =
+      portal === "vendor"
+        ? vendorPortalUrl()
+        : Deno.env.get("APP_BASE_URL") || "https://thrive-web-jet.vercel.app";
 
-    const resetLink = `${appUrl}/reset-password?token=${resetToken}&email=${encodeURIComponent(to)}`;
+    const resetLink = `${baseUrl}/reset-password?token=${resetToken}&email=${encodeURIComponent(to)}`;
     const emailSubject = `${appName} Password Reset`;
     const emailHtml = `
 <!DOCTYPE html>

@@ -39,6 +39,7 @@ export type AuthRouteDeps = {
     to: string;
     name: string;
     resetToken: string;
+    portal?: "donor" | "vendor";
   }) => Promise<void>;
 };
 
@@ -1787,7 +1788,7 @@ export async function handleAuthRoute(
   if (method === "POST" && route === "/auth/forgot-password") {
     try {
       const body = await req.json();
-      const {email} = body;
+      const {email, portal: portalInput} = body;
 
       // Get user by email
       const {data: user, error: userError} = await supabase
@@ -1816,6 +1817,17 @@ export async function handleAuthRoute(
           })
           .eq("id", user.id);
 
+        // Pick the portal the reset link should land on. Caller's explicit
+        // `portal` wins (vendor portal sends "vendor"); otherwise infer from
+        // the user's role so vendors who hit the donor app's forgot screen
+        // still get a working link.
+        const portal: "donor" | "vendor" =
+          portalInput === "vendor" || portalInput === "donor"
+            ? portalInput
+            : user.role === "vendorAdmin"
+              ? "vendor"
+              : "donor";
+
         // Send reset email using configured email service
         const recipientName =
           `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
@@ -1824,6 +1836,7 @@ export async function handleAuthRoute(
           to: email,
           name: recipientName,
           resetToken,
+          portal,
         }).catch((emailError) => {
           console.error("❌ Error sending password reset email:", emailError);
         });
