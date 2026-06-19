@@ -1790,11 +1790,11 @@ export async function handleAuthRoute(
       const body = await req.json();
       const {email, portal: portalInput} = body;
 
-      // Get user by email
+      // Get user by email (case-insensitive — mixed-case legacy rows still match)
       const {data: user, error: userError} = await supabase
         .from("users")
         .select("*")
-        .eq("email", email)
+        .ilike("email", email)
         .single();
 
       // Don't reveal if user exists or not (security best practice)
@@ -1833,7 +1833,7 @@ export async function handleAuthRoute(
           `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
           user.email.split("@")[0];
         sendPasswordResetEmail({
-          to: email,
+          to: user.email,
           name: recipientName,
           resetToken,
           portal,
@@ -1870,11 +1870,11 @@ export async function handleAuthRoute(
       const body = await req.json();
       const {token, email, newPassword} = body;
 
-      // Get user by email and token
+      // Email comparison is case-insensitive so mixed-case legacy rows still match.
       const {data: user, error: userError} = await supabase
         .from("users")
         .select("*")
-        .eq("email", email)
+        .ilike("email", email)
         .eq("password_reset_token", token)
         .single();
 
