@@ -38,7 +38,6 @@ function formatVendor(vendor: any) {
     description: vendor.description,
     website: vendor.website,
     phone: vendor.phone,
-    email: vendor.email,
     socialLinks: vendor.social_links || {},
     logoUrl: vendor.logo_url,
     address: vendor.address || null,

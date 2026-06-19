@@ -96,7 +96,6 @@ async function handleVendorSignup(req: Request, supabase: any, userId: number): 
     logo_url: body.logo_url ?? null,
     website: body.website ?? null,
     phone: body.phone ?? null,
-    email: body.email ?? null,
     social_links: body.social_links ?? null,
     address: body.address ?? null,
     hours: body.hours ?? null,
@@ -135,7 +134,7 @@ async function handleVendorMePut(req: Request, supabase: any, userId: number): P
   // Whitelist — never let a vendor flip their own status or audit columns.
   const updates: Record<string, unknown> = {};
   const editable = [
-    "name", "category", "description", "logo_url", "website", "phone", "email",
+    "name", "category", "description", "logo_url", "website", "phone",
     "social_links", "address", "hours",
   ];
   for (const key of editable) {

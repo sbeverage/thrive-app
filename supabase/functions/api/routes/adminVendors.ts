@@ -183,9 +183,7 @@ export async function handleAdminVendors(
       const u = v.auth_user_id ? userById.get(v.auth_user_id) : null;
       return {
         ...v,
-        // Account email — what the vendor logs in with. Falls back to the
-        // public contact email for legacy admin-created vendors.
-        account_email: u?.email || v.email || null,
+        account_email: u?.email || null,
         account_owner_name: u
           ? [u.first_name, u.last_name].filter(Boolean).join(" ") || null
           : null,
@@ -320,7 +318,6 @@ export async function handleAdminVendors(
       description,
       website,
       phone,
-      email,
       socialLinks,
       address,
       hours,
@@ -352,7 +349,6 @@ export async function handleAdminVendors(
           description: description || null,
           website: website || null,
           phone: phone || null,
-          email: email || null,
           social_links: socialLinks || null,
           address: address || null,
           hours: hours || null,
@@ -418,7 +414,6 @@ export async function handleAdminVendors(
       description,
       website,
       phone,
-      email,
       socialLinks,
       address,
       hours,
@@ -449,7 +444,6 @@ export async function handleAdminVendors(
     if (description !== undefined) updateObj.description = description || null;
     if (website !== undefined) updateObj.website = website || null;
     if (phone !== undefined) updateObj.phone = phone || null;
-    if (email !== undefined) updateObj.email = email || null;
     if (socialLinks !== undefined) updateObj.social_links = socialLinks || null;
     if (address !== undefined) updateObj.address = address || null;
     if (hours !== undefined) updateObj.hours = hours || null;
