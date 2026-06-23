@@ -42,17 +42,17 @@ export default function ExplainerDonate() {
     try {
       if (params?.flow === 'coworking') {
         router.push({
-          pathname: '/signupFlow/beneficiarySignupCause',
+          pathname: '/signupFlow/discountTeaser',
           params: { flow: 'coworking', sponsorAmount: params?.sponsorAmount || '15' }
         });
       } else {
-        router.push('/signupFlow/beneficiarySignupCause');
+        router.push('/signupFlow/discountTeaser');
       }
     } catch (error) {
-      console.error('Error navigating to Choose Your Cause:', error);
+      console.error('Error navigating to Discount Teaser:', error);
       Alert.alert(
         'Something went wrong',
-        'Unable to open the cause selection. Please try again.',
+        'Unable to open the next step. Please try again.',
         [{ text: 'OK' }]
       );
     }
