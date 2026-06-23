@@ -117,8 +117,18 @@ export default function SignupScreen() {
         });
       }
 
-      // Check if user needs to complete profile first
-      if (response.user?.needsProfileSetup) {
+      // Check if user needs to complete profile first.
+      //
+      // Apple App Store guideline 4 / Sign in with Apple HIG: we must not
+      // ask SiwA users for name or email after authenticating. Apple's
+      // framework provides these on the first signin if the user opts to
+      // share them, and that's the only time we get them — subsequent
+      // signins return null name by design. Either way the user owns the
+      // choice. SiwA users skip /signupProfile entirely; they can edit
+      // their name later from the in-app Profile screen.
+      const apple = socialData.provider === 'apple';
+
+      if (response.user?.needsProfileSetup && !apple) {
         router.push({
           pathname: '/signupProfile',
           params: { email: response.user.email || socialData.email },

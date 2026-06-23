@@ -242,8 +242,13 @@ export default function LoginScreen() {
       // Sync verification status
       await syncVerificationFromLogin(response);
 
-      // If existing user never completed profile setup, send them there
-      if (response.user?.needsProfileSetup) {
+      // If existing user never completed profile setup, send them there.
+      // Exception: Sign in with Apple users must NOT be asked for name/email
+      // post-authentication (App Store guideline 4 / SiwA HIG). Apple supplies
+      // those fields via Authentication Services on first signin; afterwards
+      // the user owns the choice. They can edit their name from Profile.
+      const apple = socialData.provider === 'apple';
+      if (response.user?.needsProfileSetup && !apple) {
         router.push({
           pathname: "/signupProfile",
           params: { email: response.user.email || socialData.email },

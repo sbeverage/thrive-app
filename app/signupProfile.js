@@ -172,22 +172,20 @@ export default function SignupProfile() {
       Alert.alert('Required Field', 'Please enter your first name.');
       return;
     }
-    
+
     if (!lastName.trim()) {
       Alert.alert('Required Field', 'Please enter your last name.');
       return;
     }
-    
-    if (!phoneNational.trim()) {
-      Alert.alert('Required Field', 'Please enter your phone number.');
-      return;
-    }
 
-    // Validate phone number is valid using the ref
-    const isValid = phoneInputRef.current?.isValidNumber(phoneNational);
-    if (!isValid) {
-      Alert.alert('Invalid Phone Number', 'Please enter a valid phone number.');
-      return;
+    // Phone is optional per App Store guideline 5.1.1(v) — only validate the
+    // format if the user actually entered something.
+    if (phoneNational.trim()) {
+      const isValid = phoneInputRef.current?.isValidNumber(phoneNational);
+      if (!isValid) {
+        Alert.alert('Invalid Phone Number', 'Please enter a valid phone number, or leave it blank.');
+        return;
+      }
     }
 
     try {
@@ -356,14 +354,9 @@ export default function SignupProfile() {
       </View>
       <View style={styles.inputGroup}>
         <Text style={styles.inputLabel}>
-          Phone Number <Text style={styles.requiredAsterisk}>*</Text>
+          Phone Number <Text style={styles.optionalHint}>(optional)</Text>
         </Text>
-        <View
-          style={[
-            styles.phoneFieldWrap,
-            !phoneNational.trim() && styles.inputRequired,
-          ]}
-        >
+        <View style={styles.phoneFieldWrap}>
           <PhoneInput
             ref={phoneInputRef}
             defaultCode="US"
@@ -521,6 +514,11 @@ const styles = StyleSheet.create({
   requiredAsterisk: {
     color: '#DC2626',
     fontWeight: '700',
+  },
+  optionalHint: {
+    color: '#9CA3AF',
+    fontWeight: '500',
+    fontSize: 13,
   },
   input: {
     height: 48,
