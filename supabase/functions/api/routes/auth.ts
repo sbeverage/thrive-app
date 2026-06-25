@@ -1946,6 +1946,95 @@ export async function handleAuthRoute(
     }
   }
 
+  // POST /auth/change-password — authenticated user swaps their password.
+  // Used by the vendor portal's Profile screen so admin-provisioned vendors
+  // can replace their temp password.
+  if (method === "POST" && route === "/auth/change-password") {
+    try {
+      const authHeader = getAppAuthHeader(req);
+      const tokenPayload: any = await getJwtPayload(authHeader);
+      const userId = tokenPayload?.id || tokenPayload?.userId;
+      if (!userId) {
+        return new Response(
+          JSON.stringify({message: "Authentication required"}),
+          {headers: {"Content-Type": "application/json"}, status: 401},
+        );
+      }
+
+      const body = await req.json().catch(() => ({}));
+      const currentPassword = String(body.currentPassword || "");
+      const newPassword = String(body.newPassword || "");
+
+      if (!currentPassword || !newPassword) {
+        return new Response(
+          JSON.stringify({message: "Current and new password are both required."}),
+          {headers: {"Content-Type": "application/json"}, status: 400},
+        );
+      }
+      if (newPassword.length < 8) {
+        return new Response(
+          JSON.stringify({message: "New password must be at least 8 characters."}),
+          {headers: {"Content-Type": "application/json"}, status: 400},
+        );
+      }
+      if (newPassword === currentPassword) {
+        return new Response(
+          JSON.stringify({message: "New password must be different from the current password."}),
+          {headers: {"Content-Type": "application/json"}, status: 400},
+        );
+      }
+
+      const {data: user, error: userError} = await supabase
+        .from("users")
+        .select("id, password_hash")
+        .eq("id", userId)
+        .single();
+      if (userError || !user) {
+        return new Response(
+          JSON.stringify({message: "User not found"}),
+          {headers: {"Content-Type": "application/json"}, status: 404},
+        );
+      }
+
+      const matches = await bcryptCompare(currentPassword, user.password_hash || "");
+      if (!matches) {
+        return new Response(
+          JSON.stringify({message: "Current password is incorrect."}),
+          {headers: {"Content-Type": "application/json"}, status: 401},
+        );
+      }
+
+      const newHash = await bcryptHash(newPassword);
+      const {error: updateErr} = await supabase
+        .from("users")
+        .update({
+          password_hash: newHash,
+          // Clear any outstanding reset token so a stale email can't reuse it.
+          password_reset_token: null,
+          password_reset_expires: null,
+        })
+        .eq("id", userId);
+      if (updateErr) {
+        console.error("❌ Change Password update error:", updateErr);
+        return new Response(
+          JSON.stringify({message: "Could not update password. Please try again."}),
+          {headers: {"Content-Type": "application/json"}, status: 500},
+        );
+      }
+
+      return new Response(
+        JSON.stringify({success: true, message: "Password updated."}),
+        {headers: {"Content-Type": "application/json"}, status: 200},
+      );
+    } catch (error: any) {
+      console.error("❌ Change Password Error:", error);
+      return new Response(
+        JSON.stringify({message: "Server error. Please try again later."}),
+        {headers: {"Content-Type": "application/json"}, status: 500},
+      );
+    }
+  }
+
   // POST /auth/resend-verification
   if (method === "POST" && route === "/auth/resend-verification") {
     try {

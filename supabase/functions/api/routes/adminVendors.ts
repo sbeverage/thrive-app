@@ -1,4 +1,17 @@
 import { corsHeaders } from "../lib/cors.ts";
+import { bcryptHash } from "../lib/password.ts";
+
+// Generates a readable temp password admins can hand to a vendor. Avoids
+// ambiguous characters (0/O, 1/l/I) so support tickets aren't "I think
+// that was a zero?". 10 chars from a 60-char alphabet = ~58 bits of entropy.
+function generateTempPassword(): string {
+  const alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint8Array(10);
+  crypto.getRandomValues(bytes);
+  let out = "";
+  for (const b of bytes) out += alphabet[b % alphabet.length];
+  return out;
+}
 
 export async function handleAdminVendors(
   req: Request,
@@ -421,6 +434,16 @@ export async function handleAdminVendors(
       logo_url,
       status,
       is_enabled,
+      // Primary contact + login email live on the linked users row, not the
+      // vendors table. The admin UI sends these alongside vendor fields, and
+      // we route them to users.* below.
+      email,
+      firstName,
+      first_name,
+      lastName,
+      last_name,
+      contactName,
+      contact_name,
     } = body;
 
     // Handle logo URL - accept both camelCase and snake_case
@@ -477,10 +500,74 @@ export async function handleAdminVendors(
       });
     }
 
-    return new Response(JSON.stringify({success: true, data: updatedVendor}), {
-      headers: {"Content-Type": "application/json"},
-      status: 200,
-    });
+    // Apply primary-contact + login-email updates to the linked user row.
+    // These fields don't live on the vendors table, so for vendors without
+    // a portal account yet we surface a warning instead of dropping silently.
+    const userUpdates: Record<string, any> = {};
+    if (email !== undefined && typeof email === "string" && email.trim()) {
+      userUpdates.email = email.trim().toLowerCase();
+    }
+    const resolvedFirst = firstName ?? first_name;
+    const resolvedLast = lastName ?? last_name;
+    const resolvedContact = contactName ?? contact_name;
+    if (resolvedFirst !== undefined) userUpdates.first_name = resolvedFirst || null;
+    if (resolvedLast !== undefined) userUpdates.last_name = resolvedLast || null;
+    // If only a single "contactName" came in (no separate first/last), split
+    // it on the first whitespace. Don't overwrite anything we already set
+    // above from explicit firstName/lastName fields.
+    if (
+      resolvedContact !== undefined &&
+      userUpdates.first_name === undefined &&
+      userUpdates.last_name === undefined
+    ) {
+      const trimmed = String(resolvedContact || "").trim();
+      if (trimmed) {
+        const parts = trimmed.split(/\s+/);
+        userUpdates.first_name = parts.shift() || null;
+        userUpdates.last_name = parts.length ? parts.join(" ") : null;
+      } else {
+        userUpdates.first_name = null;
+        userUpdates.last_name = null;
+      }
+    }
+
+    let userWarning: string | null = null;
+    if (Object.keys(userUpdates).length > 0) {
+      if (!updatedVendor.auth_user_id) {
+        userWarning =
+          "Contact name and email weren't saved — this vendor doesn't have a portal account yet. Create one via POST /admin/vendors/:id/create-account first.";
+      } else {
+        // Don't let an email update collide with another existing user.
+        if (userUpdates.email) {
+          const {data: collision} = await supabase
+            .from("users")
+            .select("id")
+            .ilike("email", userUpdates.email)
+            .neq("id", updatedVendor.auth_user_id)
+            .limit(1);
+          if (collision && collision.length > 0) {
+            userWarning = `Email ${userUpdates.email} is already in use by another user — the vendor's email was NOT changed.`;
+            delete userUpdates.email;
+          }
+        }
+        if (Object.keys(userUpdates).length > 0) {
+          const {error: userUpdateErr} = await supabase
+            .from("users")
+            .update(userUpdates)
+            .eq("id", updatedVendor.auth_user_id);
+          if (userUpdateErr) {
+            console.error("vendor PUT — linked user update error:", userUpdateErr);
+            userWarning =
+              "Vendor saved, but the contact info on the linked account couldn't be updated.";
+          }
+        }
+      }
+    }
+
+    return new Response(
+      JSON.stringify({success: true, data: updatedVendor, warning: userWarning}),
+      {headers: {"Content-Type": "application/json"}, status: 200},
+    );
   }
 
   // DELETE /admin/vendors/:id — fully wipes the vendor:
@@ -545,6 +632,124 @@ export async function handleAdminVendors(
       JSON.stringify({ message: "Vendor and all associated data deleted" }),
       { headers: { "Content-Type": "application/json" }, status: 200 },
     );
+  }
+
+  // POST /admin/vendors/:id/create-account
+  // For vendors created by an admin (no auth_user_id yet), provisions a
+  // vendorAdmin user, links it to the vendor row, returns the email + a
+  // single-use temp password. The admin shares it with the vendor out-of-band;
+  // the vendor changes it via the portal's Profile screen on first login.
+  const createAccountMatch = route.match(/^\/admin\/vendors\/(\d+)\/create-account$/);
+  if (method === "POST" && createAccountMatch) {
+    try {
+      const vendorId = parseInt(createAccountMatch[1], 10);
+      const body = await req.json().catch(() => ({}));
+      const rawEmail = String(body.email || "").trim().toLowerCase();
+      const firstName = String(body.firstName || body.first_name || "").trim();
+      const lastName = String(body.lastName || body.last_name || "").trim();
+
+      if (!rawEmail || !rawEmail.includes("@")) {
+        return new Response(
+          JSON.stringify({error: "A valid email is required to create the account"}),
+          {headers: {"Content-Type": "application/json"}, status: 400},
+        );
+      }
+
+      // 1. Vendor must exist and not already be linked to a user.
+      const {data: vendor, error: vendorErr} = await supabase
+        .from("vendors")
+        .select("id, name, auth_user_id")
+        .eq("id", vendorId)
+        .single();
+      if (vendorErr || !vendor) {
+        return new Response(JSON.stringify({error: "Vendor not found"}), {
+          headers: {"Content-Type": "application/json"},
+          status: 404,
+        });
+      }
+      if (vendor.auth_user_id) {
+        return new Response(
+          JSON.stringify({
+            error: "Vendor already has a portal account",
+            existingUserId: vendor.auth_user_id,
+          }),
+          {headers: {"Content-Type": "application/json"}, status: 409},
+        );
+      }
+
+      // 2. Email must not already be in use by another user (case-insensitive).
+      const {data: existingByEmail} = await supabase
+        .from("users")
+        .select("id, email, role")
+        .ilike("email", rawEmail)
+        .limit(1);
+      if (existingByEmail && existingByEmail.length > 0) {
+        return new Response(
+          JSON.stringify({
+            error: `A user already exists at ${rawEmail}. Link the vendor to that user instead, or use a different email.`,
+            existingUserId: existingByEmail[0].id,
+          }),
+          {headers: {"Content-Type": "application/json"}, status: 409},
+        );
+      }
+
+      // 3. Provision the user with a fresh temp password.
+      const tempPassword = generateTempPassword();
+      const passwordHash = await bcryptHash(tempPassword);
+      const {data: newUser, error: userInsertErr} = await supabase
+        .from("users")
+        .insert({
+          email: rawEmail,
+          password_hash: passwordHash,
+          role: "vendorAdmin",
+          first_name: firstName || null,
+          last_name: lastName || null,
+          is_verified: true, // admin-vouched accounts skip email verification
+          account_status: "active",
+        })
+        .select("id, email, role, first_name, last_name")
+        .single();
+      if (userInsertErr || !newUser) {
+        console.error("create-account user insert error:", userInsertErr);
+        return new Response(
+          JSON.stringify({error: userInsertErr?.message || "Failed to create user"}),
+          {headers: {"Content-Type": "application/json"}, status: 500},
+        );
+      }
+
+      // 4. Link vendor → user.
+      const {error: linkErr} = await supabase
+        .from("vendors")
+        .update({auth_user_id: newUser.id})
+        .eq("id", vendorId);
+      if (linkErr) {
+        console.error("create-account vendor link error:", linkErr);
+        // Best-effort rollback so we don't leave an orphan user.
+        await supabase.from("users").delete().eq("id", newUser.id);
+        return new Response(
+          JSON.stringify({error: "Failed to link account to vendor"}),
+          {headers: {"Content-Type": "application/json"}, status: 500},
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message:
+            "Portal account created. Share the temp password with the vendor — they can change it from Profile after signing in.",
+          vendor: {id: vendor.id, name: vendor.name},
+          user: newUser,
+          tempPassword,
+        }),
+        {headers: {"Content-Type": "application/json"}, status: 201},
+      );
+    } catch (error: any) {
+      console.error("create-account error:", error);
+      return new Response(
+        JSON.stringify({error: error.message || "Server error"}),
+        {headers: {"Content-Type": "application/json"}, status: 500},
+      );
+    }
   }
 
   return new Response(JSON.stringify({error: "Vendor route not found"}), {

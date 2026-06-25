@@ -169,9 +169,9 @@ export default function ExplainerDonate() {
 
             <View style={styles.benefitCard}>
               <View style={styles.benefitIcon}>
-                <Image 
-                  source={require('../../assets/icons/star.png')} 
-                  style={{ width: 24, height: 24, tintColor: '#DB8633' }} 
+                <Image
+                  source={require('../../assets/icons/discounts.png')}
+                  style={{ width: 24, height: 24, tintColor: '#DB8633' }}
                 />
               </View>
               <View style={styles.benefitText}>
@@ -184,9 +184,9 @@ export default function ExplainerDonate() {
 
             <View style={styles.benefitCard}>
               <View style={styles.benefitIcon}>
-                <Image 
-                  source={require('../../assets/icons/check-circle.png')} 
-                  style={{ width: 24, height: 24, tintColor: '#DB8633' }} 
+                <Image
+                  source={require('../../assets/icons/calendar.png')}
+                  style={{ width: 24, height: 24, tintColor: '#DB8633' }}
                 />
               </View>
               <View style={styles.benefitText}>
@@ -220,7 +220,7 @@ export default function ExplainerDonate() {
           <Text style={styles.buttonIndicatorText}>Next Step</Text>
         </View> */}
         <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
-          <Text style={styles.continueButtonText}>Choose Your Cause →</Text>
+          <Text style={styles.continueButtonText}>Show Me the Discounts →</Text>
         </TouchableOpacity>
       </View>
 

@@ -24,6 +24,32 @@ export function resolveBeneficiaryHeroImageSource(beneficiary) {
   );
   if (uri) return { uri };
   if (beneficiary.image !== undefined && beneficiary.image !== null) return beneficiary.image;
+  // Charity is donor-suggested and pending verification — no real image
+  // exists yet. Fall back to the in-app placeholder so the card never
+  // renders a blank tile after an app reload or context rehydrate.
+  if (beneficiary.isPendingVerification || beneficiary.is_pending_verification) {
+    return require('../../assets/images/pending-charity.png');
+  }
+  return null;
+}
+
+/**
+ * Small circular logo source — for compact spots like search-result avatars
+ * or modal headers. Same fallback logic as the hero resolver, but uses the
+ * dedicated logo placeholder for pending charities.
+ */
+export function resolveBeneficiaryLogoSource(beneficiary) {
+  if (!beneficiary) return null;
+  const uri = pickFirstNonEmptyString(
+    beneficiary.logoUrl,
+    beneficiary.logo_url,
+    beneficiary.imageUrl,
+    beneficiary.image_url,
+  );
+  if (uri) return { uri };
+  if (beneficiary.isPendingVerification || beneficiary.is_pending_verification) {
+    return require('../../assets/images/pending-charity-logo.png');
+  }
   return null;
 }
 

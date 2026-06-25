@@ -26,6 +26,7 @@ import MapView, { Marker, Circle } from 'react-native-maps';
 import { getCurrentLocation, getDefaultRegion, calculateDistance, formatDistance } from '../../../utils/locationService';
 import API from '../../../lib/api';
 import SuggestCard from '../../../../components/SuggestCard';
+import { Asset } from 'expo-asset';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { IMAGE_ASSETS } from '../../../utils/assetConstants';
 import { beneficiaryLocationMatches } from '../../../utils/beneficiaryLocationMatch';
@@ -33,9 +34,43 @@ import { readSignupFlowPending } from '../../../utils/signupFlowCheckpoint';
 import SupportThrivePanel from '../../../components/SupportThrivePanel';
 import { cityStateFromLocation } from '../../../utils/cityStateFromLocation';
 
+// Warm the piggy + pending-charity placeholders so they don't lazily decode
+// after the rest of the hero/card list has painted. Fire-and-forget; failure
+// is non-fatal. (Must come AFTER all imports for the bundler to be happy.)
+Asset.fromModule(require('../../../../assets/images/piggy-peek.png'))
+  .downloadAsync()
+  .catch(() => {});
+Asset.fromModule(require('../../../../assets/images/pending-charity-logo.png'))
+  .downloadAsync()
+  .catch(() => {});
+Asset.fromModule(require('../../../../assets/images/pending-charity.png'))
+  .downloadAsync()
+  .catch(() => {});
+
 function normStr(s) {
   return s != null ? String(s).trim().toLowerCase() : '';
 }
+
+// Single bullet row inside the branded "Add this charity?" modal. Pulled out
+// so the JSX stays readable. Defined as a const arrow to sidestep any
+// function-hoisting quirks Hermes can hit when this module gets HMR'd.
+const SuggestBullet = ({ text }) => (
+  <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 }}>
+    <View
+      style={{
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: '#DB8633',
+        marginTop: 7,
+        marginRight: 10,
+      }}
+    />
+    <Text style={{ flex: 1, fontSize: 13, color: '#5A6470', lineHeight: 18 }}>
+      {text}
+    </Text>
+  </View>
+);
 
 export default function BeneficiaryScreen({ isSignupFlow = false, signupParams = null } = {}) {
   const router = useRouter();
@@ -80,6 +115,15 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
   const [pendingBeneficiary, setPendingBeneficiary] = useState(null);
   const [favorites, setFavorites] = useState([]);
+  // Results from the IRS 501(c)(3) registry (via our ProPublica proxy). The
+  // donor sees them inline below the local-DB matches so they never have
+  // to search twice. Only populated during the signup flow.
+  const [registryResults, setRegistryResults] = useState([]);
+  const [registryLoading, setRegistryLoading] = useState(false);
+  // The registry result currently being confirmed (drives the branded
+  // "Add this charity?" modal). null when the modal is closed.
+  const [suggestConfirmFor, setSuggestConfirmFor] = useState(null);
+  const [suggestSubmitting, setSuggestSubmitting] = useState(false);
   const beneficiarySectionRef = useRef(null);
   
   // Load favorites from AsyncStorage on mount
@@ -266,6 +310,46 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
     }
   }, [userLocation]);
 
+  // Search the IRS 501(c)(3) registry as the donor types (signup flow only).
+  // Debounced so we're not hammering ProPublica on every keystroke. Results
+  // are rendered as a second section below the local matches so the donor
+  // doesn't have to search twice for a charity that isn't onboarded yet.
+  const lastRegistryQueryRef = useRef('');
+  useEffect(() => {
+    if (!isSignupFlow) {
+      setRegistryResults([]);
+      setRegistryLoading(false);
+      return undefined;
+    }
+    const q = searchText.trim();
+    if (q.length < 3) {
+      setRegistryResults([]);
+      setRegistryLoading(false);
+      return undefined;
+    }
+    const t = setTimeout(async () => {
+      lastRegistryQueryRef.current = q;
+      setRegistryLoading(true);
+      try {
+        const results = await API.searchCharities(q);
+        if (lastRegistryQueryRef.current !== q) return;
+        // Drop anything already in our DB — they're rendered as normal
+        // (live) charity cards via filteredBeneficiaries, no need to
+        // duplicate them down in the registry section.
+        const novel = (results || []).filter((r) => !r.existingCharityId);
+        setRegistryResults(novel.slice(0, 8));
+      } catch (e) {
+        if (lastRegistryQueryRef.current === q) {
+          console.warn('Registry search failed:', e?.message || e);
+          setRegistryResults([]);
+        }
+      } finally {
+        if (lastRegistryQueryRef.current === q) setRegistryLoading(false);
+      }
+    }, 320);
+    return () => clearTimeout(t);
+  }, [searchText, isSignupFlow]);
+
   const filteredBeneficiaries = beneficiaries.filter(b => {
     // Search text filter
     const matchesSearch =
@@ -360,6 +444,40 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
   // already selected. Used by the "Continue" button rendered on an already-
   // selected card so a donor who hit Back can finish their flow without
   // having to re-select the same charity.
+  // Tapping a registry card opens the branded "Add this charity?" modal
+  // (state below). Submission goes through API.suggestCharity → pending
+  // charity row → existing confirm-selection flow.
+  const handleSuggestRegistryResult = (item) => {
+    setSuggestConfirmFor(item);
+  };
+
+  const handleConfirmSuggestRegistry = async () => {
+    if (!suggestConfirmFor || suggestSubmitting) return;
+    setSuggestSubmitting(true);
+    try {
+      const item = suggestConfirmFor;
+      const created = await API.suggestCharity({
+        ein: item.ein,
+        name: item.name,
+        city: item.city,
+        state: item.state,
+        ntee_code: item.ntee_code,
+      });
+      setSuggestConfirmFor(null);
+      setPendingBeneficiary({
+        ...created,
+        image: created.imageUrl
+          ? { uri: created.imageUrl }
+          : require('../../../../assets/images/pending-charity.png'),
+      });
+      setConfirmModalVisible(true);
+    } catch (e) {
+      Alert.alert('Could not save', e?.message || 'Please try again.');
+    } finally {
+      setSuggestSubmitting(false);
+    }
+  };
+
   const advanceFromSelected = () => {
     const beneficiaryId = selectedBeneficiary?.id;
     if (!beneficiaryId || !isSignupFlow) return;
@@ -540,20 +658,129 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
     setSearchText('');
   };
 
+  // IRS-registry results section — rendered after the local cards so the
+  // donor never has to search twice. Only visible during signup, and only
+  // when the typed query is long enough to have triggered a registry search.
+  const renderRegistrySection = () => {
+    if (!isSignupFlow) return null;
+    if (searchText.trim().length < 3) return null;
+    if (!registryLoading && registryResults.length === 0) return null;
+
+    return (
+      <View style={styles.registrySection}>
+        <View style={styles.registrySectionHeader}>
+          <View style={styles.registrySectionDivider} />
+          <Text style={styles.registrySectionLabel}>Not on THRIVE yet</Text>
+          <View style={styles.registrySectionDivider} />
+        </View>
+        <Text style={styles.registrySectionSubtitle}>
+          From the IRS 501(c)(3) registry. We'll verify before they go live.
+        </Text>
+
+        {registryLoading ? (
+          <View style={{ paddingVertical: 18, alignItems: 'center' }}>
+            <Text style={{ color: '#8E9BAE', fontSize: 13 }}>
+              Searching the registry…
+            </Text>
+          </View>
+        ) : (
+          registryResults.map((item) => {
+            const location = [item.city, item.state].filter(Boolean).join(', ');
+            return (
+              <TouchableOpacity
+                key={item.ein}
+                style={styles.registryCard}
+                onPress={() => handleSuggestRegistryResult(item)}
+                activeOpacity={0.85}
+              >
+                <Image
+                  source={require('../../../../assets/images/pending-charity-logo.png')}
+                  style={styles.registryCardImage}
+                />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.registryCardName} numberOfLines={2}>
+                    {item.name}
+                  </Text>
+                  <View style={styles.registryCardMetaRow}>
+                    {item.suggestedCategory ? (
+                      <>
+                        <Text style={styles.registryCardCategory}>
+                          {item.suggestedCategory}
+                        </Text>
+                        <View style={styles.registryCardMetaDot} />
+                      </>
+                    ) : null}
+                    {location ? (
+                      <Text style={styles.registryCardLocation}>{location}</Text>
+                    ) : null}
+                  </View>
+                  <Text style={styles.registryCardEin}>EIN {item.ein}</Text>
+                </View>
+                <View style={styles.registryCardCta}>
+                  <Feather name="plus" size={14} color="#fff" />
+                  <Text style={styles.registryCardCtaText}>Add</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })
+        )}
+      </View>
+    );
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
       <LinearGradient
         colors={['#2C3E50', '#4CA1AF']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={styles.miniBrandHeader}
+        style={[
+          styles.miniBrandHeader,
+          isSignupFlow && styles.signupBrandHeader,
+        ]}
       >
-        <Image
-          source={{ uri: IMAGE_ASSETS.INITIATIVE_LOGO_NO_WEB_WHITE }}
-          style={styles.miniBrandLogo}
-          resizeMode="contain"
-        />
+        {/* Signup-only back button — sends the user back to the discount
+            teaser. Explicit replace (not router.back) because BeneficiaryScreen
+            also lives under /(tabs); router.back() can pop into the wrong
+            stack depending on how the user arrived. */}
+        {isSignupFlow && (
+          <TouchableOpacity
+            style={styles.signupBackButton}
+            onPress={() => router.replace('/signupFlow/discountTeaser')}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Image
+              source={require('../../../../assets/icons/arrow-left.png')}
+              style={{ width: 22, height: 22, tintColor: '#fff' }}
+            />
+          </TouchableOpacity>
+        )}
+
+        {isSignupFlow ? (
+          <>
+            <Text style={styles.signupHeaderTitle}>Select a Beneficiary</Text>
+            <Text style={styles.signupHeaderSubtitle}>Pick a cause and make a real impact</Text>
+          </>
+        ) : (
+          <Image
+            source={{ uri: IMAGE_ASSETS.INITIATIVE_LOGO_NO_WEB_WHITE }}
+            style={styles.miniBrandLogo}
+            resizeMode="contain"
+          />
+        )}
       </LinearGradient>
+
+      {/* Signup-only: piggy floats above the search card, same trick as the
+          discount teaser. Keeps the brand mascot visible during onboarding. */}
+      {isSignupFlow && (
+        <View style={styles.signupPiggyOverlay} pointerEvents="none">
+          <Image
+            source={require('../../../../assets/images/piggy-peek.png')}
+            style={styles.signupHeaderPiggy}
+            resizeMode="contain"
+          />
+        </View>
+      )}
 
       {/* Header with Search and Toggle */}
       <View style={styles.header}>
@@ -978,6 +1205,10 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                   );
                 })}
 
+                {/* Inline IRS-registry results — blends seamlessly under the
+                    local matches so the donor only ever searches once. */}
+                {renderRegistrySection()}
+
                 {/* End-of-list Support-THRIVE panel: shown only during signup
                     so donors who have browsed the cause cards still have a
                     landing pad. Outside signup, the home-tab banner handles
@@ -1001,23 +1232,41 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
               </>
             ) : (
               <View>
+                {/* Soften the "no results" header — during signup the donor
+                    almost always has a follow-up (registry suggestion or
+                    pick-later panel below), so a giant "No results found"
+                    feels punitive. */}
                 <View style={[styles.emptyState, { paddingTop: 24 }]}>
-                  <Text style={styles.emptyTitle}>No results found</Text>
-                  <Text style={styles.emptySubtitle}>
-                    {searchText ? `No beneficiaries found for "${searchText}"` : 'Try adjusting your search or filters'}
-                  </Text>
-                  <SuggestCard
-                    type="charity"
-                    searchQuery={searchText}
-                    onSubmit={({ name, website }) =>
-                      API.submitBeneficiaryRequest({ company_name: name, website })
-                    }
-                  />
+                  {isSignupFlow ? (
+                    <Text style={styles.emptySubtitle}>
+                      {searchText
+                        ? `We haven't onboarded "${searchText}" yet — but you can add them below.`
+                        : 'Try a different search to find your cause.'}
+                    </Text>
+                  ) : (
+                    <>
+                      <Text style={styles.emptyTitle}>No results found</Text>
+                      <Text style={styles.emptySubtitle}>
+                        {searchText ? `No beneficiaries found for "${searchText}"` : 'Try adjusting your search or filters'}
+                      </Text>
+                      <SuggestCard
+                        type="charity"
+                        searchQuery={searchText}
+                        onSubmit={({ name, website }) =>
+                          API.submitBeneficiaryRequest({ company_name: name, website })
+                        }
+                      />
+                    </>
+                  )}
                 </View>
 
+                {/* Inline IRS-registry results — shown immediately under the
+                    "no results" header so the donor's next step is obvious. */}
+                {renderRegistrySection()}
+
                 {/* When the search comes up empty during signup, the panel
-                    sits below the "Request a charity" card as a second path
-                    forward so the donor never hits a dead end. */}
+                    sits below the registry results as a second path forward
+                    so the donor never hits a dead end. */}
                 {isSignupFlow && (
                   <SupportThrivePanel
                     thriveCharity={thriveCharity}
@@ -1042,6 +1291,55 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
 
       {/* Confirmation Modal — copy adapts to which of the three pick paths
           the donor took (Save my spot vs Help THRIVE grow vs regular cause). */}
+      {/* Branded confirmation for registry suggestions. Uses the same modal
+          chrome as the regular "Confirm Your Beneficiary" prompt so it feels
+          like part of the app instead of a native iOS Alert. */}
+      <Modal
+        visible={!!suggestConfirmFor}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !suggestSubmitting && setSuggestConfirmFor(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.suggestModalBox}>
+            <View style={styles.suggestModalIcon}>
+              <Image
+                source={require('../../../../assets/images/pending-charity-logo.png')}
+                style={{ width: 60, height: 60, borderRadius: 30 }}
+              />
+            </View>
+            <Text style={styles.modalTitle}>Add {suggestConfirmFor?.name}?</Text>
+            <Text style={styles.modalText}>
+              We'll verify this 501(c)(3) within 5 business days. Until they're
+              approved:
+            </Text>
+            <View style={styles.suggestBulletList}>
+              <SuggestBullet text="Your monthly donations are held safely" />
+              <SuggestBullet text="You'll be notified the moment they're live" />
+              <SuggestBullet text="If we can't verify, we'll email so you can pick another cause" />
+            </View>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                onPress={handleConfirmSuggestRegistry}
+                style={[styles.confirmBtn, suggestSubmitting && { opacity: 0.7 }]}
+                disabled={suggestSubmitting}
+              >
+                <Text style={styles.confirmBtnText}>
+                  {suggestSubmitting ? 'Saving…' : 'Pick this charity'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => !suggestSubmitting && setSuggestConfirmFor(null)}
+                style={styles.cancelBtn}
+                disabled={suggestSubmitting}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={confirmModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.confirmModalBox}>
@@ -1102,6 +1400,194 @@ const styles = StyleSheet.create({
     height: 60,
     opacity: 0.98,
     marginTop: -20,
+  },
+  // Signup-flow variant: blue header is taller (room for title + subtitle +
+  // piggy overlay), matching the discount-teaser hero in app/signupFlow.
+  signupBrandHeader: {
+    height: 180,
+    paddingTop: 36,
+    paddingBottom: 80,
+    paddingHorizontal: 24,
+  },
+  signupHeaderTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#fff',
+    textAlign: 'center',
+    lineHeight: 28,
+  },
+  signupHeaderSubtitle: {
+    marginTop: 4,
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.92)',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  signupBackButton: {
+    position: 'absolute',
+    top: 18,
+    left: 16,
+    zIndex: 50,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+    borderRadius: 18,
+    padding: 6,
+  },
+  // ─── IRS-registry inline section ───
+  registrySection: {
+    marginTop: 18,
+    marginHorizontal: 20,
+    marginBottom: 16,
+  },
+  registrySectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  registrySectionDivider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  registrySectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#92400E',
+    letterSpacing: 1.2,
+    marginHorizontal: 10,
+    textTransform: 'uppercase',
+  },
+  registrySectionSubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 12,
+    lineHeight: 17,
+    paddingHorizontal: 12,
+  },
+  registryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#FFE6CC',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  registryCardImage: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#FFF5EB',
+    marginRight: 12,
+    resizeMode: 'cover',
+  },
+  registryCardName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1C4F7D',
+    marginBottom: 2,
+  },
+  registryCardMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  registryCardCategory: {
+    fontSize: 11,
+    color: '#92400E',
+    fontWeight: '600',
+  },
+  registryCardMetaDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 3,
+    backgroundColor: '#CBD5E1',
+    marginHorizontal: 6,
+  },
+  registryCardLocation: {
+    fontSize: 11,
+    color: '#8E9BAE',
+  },
+  registryCardEin: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  registryCardCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DB8633',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    marginLeft: 10,
+  },
+  registryCardCtaText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  // Empty-state CTA card that opens the IRS-registry search modal. Same
+  // visual rhythm as the live discounts page's "Suggest" cards.
+  searchRegistryCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF5EB',
+    borderColor: '#FFE6CC',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginTop: 18,
+    marginHorizontal: 4,
+    gap: 12,
+    shadowColor: '#DB8633',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  searchRegistryIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#FFE6CC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchRegistryTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400E',
+    marginBottom: 2,
+  },
+  searchRegistrySubtitle: {
+    fontSize: 12,
+    color: '#6B7280',
+    lineHeight: 16,
+  },
+  signupPiggyOverlay: {
+    position: 'absolute',
+    top: 63,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 30,
+    elevation: 8,
+  },
+  signupHeaderPiggy: {
+    width: 130,
+    height: 100,
   },
   header: {
     marginHorizontal: 16,
@@ -1396,7 +1882,7 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     flex: 1,
-    paddingHorizontal: 2,
+    paddingHorizontal: 28,
     paddingTop: 60,
     alignItems: 'center',
   },
@@ -1488,6 +1974,36 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     width: '85%',
     alignItems: 'center',
+  },
+  // Same chrome as confirmModalBox but a bit taller (icon + bullets).
+  suggestModalBox: {
+    backgroundColor: 'white',
+    padding: 24,
+    paddingTop: 18,
+    borderRadius: 16,
+    width: '88%',
+    alignItems: 'stretch',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  suggestModalIcon: {
+    alignSelf: 'center',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#FFF5EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#FFE6CC',
+  },
+  suggestBulletList: {
+    marginTop: 4,
+    marginBottom: 20,
   },
   modalTitle: {
     fontSize: 18,

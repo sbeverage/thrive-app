@@ -1,198 +1,125 @@
-import React, { useEffect, useRef, useState } from 'react';
+// Preview of the real Discounts page, used inside the signup flow before the
+// donor has picked a cause. Layout mirrors app/(tabs)/(main)/discounts/index.js
+// pixel-for-pixel; the only difference is the top brand header swaps the
+// THRIVE logo for the piggy image + a "Discounts Waiting For You" headline,
+// and tapping a card does nothing (cards have a translucent lock overlay).
+// Heart taps work and persist to AsyncStorage so favorites roll over once
+// signup completes.
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   Image,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Dimensions,
   Animated,
   Easing,
+  Dimensions,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { AntDesign, Feather } from '@expo/vector-icons';
+import { Feather, AntDesign } from '@expo/vector-icons';
+import { Asset } from 'expo-asset';
 import API from '../lib/api';
 import { persistSignupFlowCheckpointFromParams } from '../utils/signupFlowCheckpoint';
 import { useLocation } from '../context/LocationContext';
+import { useDiscountFilter } from '../context/DiscountFilterContext';
 import { calculateDistance } from '../utils/locationService';
 
-const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+// Preload the piggy artwork at module load so it's decoded into memory by
+// the time the screen mounts. Without this, RN's Image lazily decodes the
+// bundled asset on first paint and the piggy pops in a beat after the rest
+// of the hero. Fire-and-forget — failure here is non-fatal.
+Asset.fromModule(require('../../assets/images/piggy-peek.png'))
+  .downloadAsync()
+  .catch(() => {});
 
 // Curate which vendors appear in the teaser. Names are matched
-// case-insensitively against vendor.name on each discount. Edit these to
-// hand-pick the storefront without redeploying any DB changes.
+// case-insensitively against vendor.name. Edit to hand-pick the storefront
+// without touching the DB.
 const EXCLUDE_VENDOR_NAMES = ['HEW Fitness'];
 const FEATURED_VENDOR_NAMES = ['Valor Coffee'];
 
-// Approx height of one card row (padding + logo + marginBottom). Used to
-// derive per-card scroll-driven transforms (revolving-door tilt at the top).
-const CARD_SLOT = 92;
+const FAVORITES_KEY = '@thrive_favorites';
 
-function vendorNameOf(d) {
-  return (d.vendor?.name || d.vendorName || d.vendor_name || '').trim().toLowerCase();
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// Approximate destination for the coin animation — roughly the center of
+// the piggy in the hero. An eyeballed center is fine for the visual effect.
+const PIGGY_TARGET_X = SCREEN_WIDTH / 2 - 12;
+const PIGGY_TARGET_Y = 150;
+
+function nameOf(v) {
+  return (v?.name || '').trim().toLowerCase();
 }
 
-function vendorCoords(d) {
-  const addr = d.vendor?.address || {};
+function vendorCoords(v) {
+  const addr = v?.address || {};
   const lat = Number(addr.latitude);
   const lng = Number(addr.longitude);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   return { lat, lng };
 }
 
-// Sort discounts for the teaser. Ordering rules:
-//   1. Featured vendors always first (controlled curation).
-//   2. Then: nearest-first if we have the user's location.
-//   3. Otherwise: highest-value discount first (% off > $ off > BOGO/free).
-// Excluded vendors are dropped entirely.
-function sortDiscountsForTeaser(allDiscounts, userLocation) {
-  const excluded = new Set(EXCLUDE_VENDOR_NAMES.map((n) => n.toLowerCase()));
-  const featured = new Set(FEATURED_VENDOR_NAMES.map((n) => n.toLowerCase()));
-
-  const active = (allDiscounts || []).filter((d) => {
-    const status = (d.status || '').toLowerCase();
-    if (status && status !== 'active') return false;
-    if (d.is_active === false) return false;
-    if (excluded.has(vendorNameOf(d))) return false;
-    return true;
+function getDiscountTextForVendor(vendorId, discounts) {
+  const list = (discounts || []).filter((d) => {
+    const vid = String(d.vendorId ?? d.vendor_id ?? d.vendor?.id ?? '');
+    return vid === String(vendorId);
   });
-
-  const valueScore = (d) => {
-    const type = (d.discountType || d.discount_type || '').toLowerCase();
-    if (type === 'percentage') {
-      const pct =
-        Number(d.discountPercentage ?? d.discount_percentage ?? d.discountValue ?? d.discount_value ?? 0) || 0;
-      return 1000 + pct;
-    }
-    if (type === 'fixed') {
-      const amt =
-        Number(d.discountAmount ?? d.discount_amount ?? d.discountValue ?? d.discount_value ?? 0) || 0;
-      return 500 + amt;
-    }
-    if (type === 'bogo') return 400;
-    if (type === 'free') return 300;
-    return 100;
-  };
-
-  const annotated = active.map((d) => {
-    let distanceMi = null;
-    const coords = vendorCoords(d);
-    if (userLocation && coords) {
-      const dist = calculateDistance(
-        userLocation.latitude,
-        userLocation.longitude,
-        coords.lat,
-        coords.lng,
-      );
-      if (Number.isFinite(dist)) distanceMi = dist;
-    }
-    return { ...d, _distanceMi: distanceMi };
-  });
-
-  return annotated
-    .sort((a, b) => {
-      const aFeatured = featured.has(vendorNameOf(a));
-      const bFeatured = featured.has(vendorNameOf(b));
-      if (aFeatured !== bFeatured) return aFeatured ? -1 : 1;
-
-      const aHasDist = a._distanceMi != null;
-      const bHasDist = b._distanceMi != null;
-      if (aHasDist && bHasDist) return a._distanceMi - b._distanceMi;
-      if (aHasDist) return -1;
-      if (bHasDist) return 1;
-
-      return valueScore(b) - valueScore(a);
-    })
-    .slice(0, 12);
-}
-
-function formatDistance(mi) {
-  if (mi == null) return null;
-  if (mi < 0.1) return '<0.1 mi';
-  if (mi < 10) return `${mi.toFixed(1)} mi`;
-  return `${Math.round(mi)} mi`;
-}
-
-function formatDiscountHeadline(d) {
-  const type = (d.discountType || d.discount_type || '').toLowerCase();
-  if (type === 'percentage') {
-    const pct = d.discountPercentage ?? d.discount_percentage ?? d.discountValue ?? d.discount_value;
-    if (pct != null) return `${pct}% off`;
-  }
-  if (type === 'fixed') {
-    const amt = d.discountAmount ?? d.discount_amount ?? d.discountValue ?? d.discount_value;
-    if (amt != null) return `$${amt} off`;
-  }
-  if (type === 'bogo') return 'BOGO';
-  if (type === 'free') return 'Free item';
-  return 'Member perk';
-}
-
-function getVendorName(d) {
-  return (
-    d.vendor?.name ||
-    d.vendorName ||
-    d.vendor_name ||
-    d.business_name ||
-    d.title ||
-    'Local favorite'
-  );
-}
-
-function getVendorLogo(d) {
-  return (
-    d.vendor?.logoUrl ||
-    d.vendor?.logo_url ||
-    d.logo_url ||
-    d.logoUrl ||
-    d.image_url ||
-    null
-  );
-}
-
-function getVendorCategory(d) {
-  return d.vendor?.category || d.category || null;
+  if (list.length === 0) return 'Discounts available';
+  if (list.length === 1) return '1 discount available';
+  return `${list.length} discounts available`;
 }
 
 export default function DiscountTeaser() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { location: userLocation } = useLocation();
-  const [rawDiscounts, setRawDiscounts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  // Hold up to 12 entrance anims so cards always animate in if the API
-  // returns fewer.
-  const cardAnims = useRef(
-    Array.from({ length: 12 }, () => new Animated.Value(0)),
-  ).current;
-  const headerAnim = useRef(new Animated.Value(0)).current;
-  // Tracks user's scroll position so cards can react as they exit the top.
-  const scrollY = useRef(new Animated.Value(0)).current;
+  const { location: userLocation, locationAddress, locationPermission } = useLocation();
+  const { filters, updateFilters, hasActiveFilters } = useDiscountFilter();
 
-  // Sort whenever discounts or location updates. Memoized so the list isn't
-  // re-shuffled on every render.
-  const discounts = React.useMemo(
-    () => sortDiscountsForTeaser(rawDiscounts, userLocation),
-    [rawDiscounts, userLocation],
-  );
+  const [vendors, setVendors] = useState([]);
+  const [discounts, setDiscounts] = useState([]);
+  const [favorites, setFavorites] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Coins that are mid-air from a heart tap to the piggy. Each entry has its
+  // own Animated.Value (0→1) driving the flight. Cleaned up on landing.
+  const [flyingCoins, setFlyingCoins] = useState([]);
+  const coinIdRef = useRef(0);
+
+  // Quick bounce on the saved-counter pill when favorites change.
+  const pillScale = useRef(new Animated.Value(1)).current;
+  // Small piggy bounce when a coin arrives.
+  const piggyBounce = useRef(new Animated.Value(1)).current;
 
   const paramsSnapshot = JSON.stringify(params ?? {});
   useEffect(() => {
     persistSignupFlowCheckpointFromParams('/signupFlow/discountTeaser', params);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- checkpoint when serialized route params change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paramsSnapshot]);
 
+  // Load vendors + discounts in parallel
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await API.getDiscounts();
-        const raw = Array.isArray(data) ? data : data?.discounts || [];
-        if (!cancelled) setRawDiscounts(raw);
+        const [vRes, dRes] = await Promise.all([
+          API.getVendors().catch(() => null),
+          API.getDiscounts().catch(() => null),
+        ]);
+        const vList = Array.isArray(vRes) ? vRes : vRes?.vendors || vRes?.data || [];
+        const dList = Array.isArray(dRes) ? dRes : dRes?.discounts || dRes?.data || [];
+        if (!cancelled) {
+          setVendors(vList);
+          setDiscounts(dList);
+        }
       } catch (err) {
-        console.warn('discountTeaser: failed to load discounts', err);
+        console.warn('discountTeaser: failed to load data', err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -202,31 +129,164 @@ export default function DiscountTeaser() {
     };
   }, []);
 
+  // Favorites persist to AsyncStorage so they roll over post-signup
   useEffect(() => {
-    Animated.timing(headerAnim, {
-      toValue: 1,
-      duration: 480,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [headerAnim]);
+    AsyncStorage.getItem(FAVORITES_KEY)
+      .then((stored) => {
+        if (!stored) return;
+        try {
+          setFavorites(new Set(JSON.parse(stored)));
+        } catch {
+          /* non-fatal */
+        }
+      })
+      .catch(() => {});
+  }, []);
 
-  useEffect(() => {
-    if (loading || discounts.length === 0) return;
-    // Bottom-up stagger: the lowest visible card lands first, and each card
-    // above it follows. Reads as "rising into place" instead of dropping in.
-    Animated.stagger(
-      90,
-      [...cardAnims.slice(0, discounts.length)].reverse().map((a) =>
-        Animated.spring(a, {
-          toValue: 1,
-          friction: 9,
-          tension: 70,
+  // Spawn a coin at (fromX, fromY) and arc it to the piggy. On landing,
+  // remove the coin and bounce the piggy briefly. fromX/Y are in window
+  // coordinates (provided by GestureResponderEvent.nativeEvent.pageX/Y).
+  const spawnCoin = useCallback((fromX, fromY) => {
+    coinIdRef.current += 1;
+    const id = coinIdRef.current;
+    const anim = new Animated.Value(0);
+    setFlyingCoins((prev) => [...prev, { id, fromX, fromY, anim }]);
+    Animated.timing(anim, {
+      toValue: 1,
+      duration: 700,
+      easing: Easing.bezier(0.5, 0, 0.6, 1),
+      useNativeDriver: true,
+    }).start(() => {
+      setFlyingCoins((prev) => prev.filter((c) => c.id !== id));
+      // Piggy bounce when coin lands
+      Animated.sequence([
+        Animated.timing(piggyBounce, {
+          toValue: 1.12,
+          duration: 110,
           useNativeDriver: true,
         }),
-      ),
-    ).start();
-  }, [loading, discounts.length, cardAnims]);
+        Animated.spring(piggyBounce, {
+          toValue: 1,
+          friction: 4,
+          tension: 80,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+  }, [piggyBounce]);
+
+  const toggleFavorite = useCallback(
+    (vendorId, tapX, tapY) => {
+      const id = String(vendorId);
+      setFavorites((prev) => {
+        const next = new Set(prev);
+        const wasFavorited = next.has(id);
+        if (wasFavorited) {
+          next.delete(id);
+        } else {
+          next.add(id);
+          if (tapX != null && tapY != null) spawnCoin(tapX, tapY);
+        }
+        AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify([...next])).catch(
+          () => {},
+        );
+        return next;
+      });
+    },
+    [spawnCoin],
+  );
+
+  // Bounce the saved-counter pill whenever favorites size changes.
+  useEffect(() => {
+    if (favorites.size === 0) return;
+    Animated.sequence([
+      Animated.timing(pillScale, {
+        toValue: 1.18,
+        duration: 120,
+        useNativeDriver: true,
+      }),
+      Animated.spring(pillScale, {
+        toValue: 1,
+        friction: 4,
+        tension: 80,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [favorites.size, pillScale]);
+
+  // Annotate + base-sort (featured → nearest → name)
+  const processed = useMemo(() => {
+    const excluded = new Set(EXCLUDE_VENDOR_NAMES.map((n) => n.toLowerCase()));
+    const featured = new Set(FEATURED_VENDOR_NAMES.map((n) => n.toLowerCase()));
+
+    const approved = (vendors || []).filter((v) => {
+      if (excluded.has(nameOf(v))) return false;
+      const status = (v.signup_status || v.signupStatus || 'approved').toLowerCase();
+      if (status && status !== 'approved') return false;
+      return true;
+    });
+
+    return approved
+      .map((v) => {
+        let distance = null;
+        const c = vendorCoords(v);
+        if (userLocation && c) {
+          const d = calculateDistance(
+            userLocation.latitude,
+            userLocation.longitude,
+            c.lat,
+            c.lng,
+          );
+          if (Number.isFinite(d)) distance = d;
+        }
+        return {
+          ...v,
+          _distance: distance,
+          _discountText: getDiscountTextForVendor(v.id, discounts),
+          _isFeatured: featured.has(nameOf(v)),
+        };
+      })
+      .sort((a, b) => {
+        if (a._isFeatured !== b._isFeatured) return a._isFeatured ? -1 : 1;
+        if (a._distance != null && b._distance != null) return a._distance - b._distance;
+        if (a._distance != null) return -1;
+        if (b._distance != null) return 1;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+  }, [vendors, discounts, userLocation]);
+
+  // Apply search + category + favorites filters (same logic the live page uses)
+  const visible = useMemo(() => {
+    let list = processed;
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter((v) => (v.name || '').toLowerCase().includes(q));
+    }
+    if (filters.category) {
+      const c = filters.category.toLowerCase();
+      list = list.filter((v) => (v.category || '').toLowerCase() === c);
+    }
+    if (filters.showFavorites) {
+      list = list.filter((v) => favorites.has(String(v.id)));
+    }
+    return list;
+  }, [processed, searchQuery, filters.category, filters.showFavorites, favorites]);
+
+  // Counts per category — drives which tag pills show (mirrors live page).
+  const categoryCounts = useMemo(() => {
+    const counts = {};
+    for (const v of processed) {
+      const c = v.category;
+      if (c) counts[c] = (counts[c] || 0) + 1;
+    }
+    return counts;
+  }, [processed]);
+
+  const locationDisplay =
+    [locationAddress?.city, locationAddress?.state].filter(Boolean).join(', ') ||
+    (locationPermission === 'denied'
+      ? 'Location not available'
+      : 'Detecting location...');
 
   const handleContinue = () => {
     if (params?.flow === 'coworking') {
@@ -239,454 +299,568 @@ export default function DiscountTeaser() {
     }
   };
 
+  const milestoneHit = favorites.size >= 3;
+
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
-      {/* Blue gradient top — matches the donation explainer screen so the
-          two consecutive signup screens read as a pair. */}
-      <View style={styles.gradientAbsoluteBg} pointerEvents="none">
-        <LinearGradient
-          colors={['#2C3E50', '#4CA1AF']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.gradientBg}
+    <View style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
+      {/* Brand header */}
+      <LinearGradient
+        colors={['#2C3E50', '#4CA1AF']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.brandHeader}
+      >
+        {/* Explicit route — router.back() can fail when the user landed
+            here via router.replace from beneficiarySignupCause (no stack). */}
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.replace('/signupFlow/explainerDonate')}
+        >
+          <Image
+            source={require('../../assets/icons/arrow-left.png')}
+            style={{ width: 22, height: 22, tintColor: '#fff' }}
+          />
+        </TouchableOpacity>
+
+        <Text style={styles.headerTitle}>Discounts Waiting For You</Text>
+        <Text style={styles.headerSubtitle}>Favorite the stores you love</Text>
+
+        {/* Saved-counter pill — always rendered so the layout doesn't shift
+            when the first heart is added; bounces on every favorite change. */}
+        <Animated.View
+          style={[styles.savedPill, { transform: [{ scale: pillScale }] }]}
+        >
+          <AntDesign name="heart" size={12} color="#fff" />
+          <Text style={styles.savedPillText}>
+            {favorites.size} saved{milestoneHit ? ' 🎉' : ''}
+          </Text>
+        </Animated.View>
+      </LinearGradient>
+
+      {/* Piggy floats on its own layer above the search card. */}
+      <View style={styles.piggyOverlay} pointerEvents="none">
+        <Animated.Image
+          source={require('../../assets/images/piggy-peek.png')}
+          style={[
+            styles.headerPiggy,
+            { transform: [{ scale: piggyBounce }] },
+          ]}
+          resizeMode="contain"
         />
       </View>
 
-      {/* Back */}
-      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-        <Image
-          source={require('../../assets/icons/arrow-left.png')}
-          style={{ width: 24, height: 24, tintColor: '#fff' }}
-        />
-      </TouchableOpacity>
-
-      {/* Locked header — does NOT scroll with the card list */}
-      <Animated.View
-        style={[
-          styles.heroBlock,
-          styles.heroLocked,
-          {
-            opacity: headerAnim,
-            transform: [
-              {
-                translateY: headerAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [-12, 0],
-                }),
-              },
-            ],
-          },
-        ]}
-      >
-        <View style={styles.peekBadge}>
-          <Text style={styles.peekBadgeEmoji}>👀</Text>
-          <Text style={styles.peekBadgeText}>SNEAK PEEK</Text>
+      {/* White header card with search + tag pills (mirror live page) */}
+      <View style={styles.header}>
+        <View style={styles.searchRow}>
+          <Image
+            source={require('../../assets/icons/search-icon.png')}
+            style={{ width: 18, height: 18, tintColor: '#6d6e72', marginRight: 8 }}
+          />
+          <TextInput
+            placeholder="Search business"
+            placeholderTextColor="#6d6e72"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            style={styles.searchInput}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity
+              onPress={() => setSearchQuery('')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <AntDesign name="closecircle" size={16} color="#bbb" />
+            </TouchableOpacity>
+          )}
         </View>
-        <Text style={styles.heroTitle}>Discounts Waiting{'\n'}For You</Text>
-        <Text style={styles.heroSubtitle}>
-          Scroll through what's nearby —{'\n'}all unlock the moment you donate.
-        </Text>
-      </Animated.View>
 
-      {/* Only the cards scroll */}
-      <Animated.ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollListContent}
+        {Object.keys(categoryCounts).length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.tagsRow}
+            contentContainerStyle={{ paddingRight: 8 }}
+          >
+            <TouchableOpacity
+              style={[
+                styles.tag,
+                !filters.category && !filters.showFavorites && styles.tagActive,
+              ]}
+              onPress={() => updateFilters({ category: '', showFavorites: false })}
+            >
+              <Text
+                style={[
+                  styles.tagText,
+                  !filters.category && !filters.showFavorites && styles.tagTextActive,
+                ]}
+              >
+                All
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tag, filters.showFavorites && styles.tagActive]}
+              onPress={() =>
+                updateFilters({ showFavorites: !filters.showFavorites, category: '' })
+              }
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <Image
+                  source={require('../../assets/icons/heart.png')}
+                  style={{
+                    width: 13,
+                    height: 13,
+                    tintColor: filters.showFavorites ? '#D0861F' : '#666',
+                  }}
+                />
+                <Text
+                  style={[styles.tagText, filters.showFavorites && styles.tagTextActive]}
+                >
+                  Favorites
+                </Text>
+              </View>
+            </TouchableOpacity>
+            {Object.entries(categoryCounts).map(([cat]) => (
+              <TouchableOpacity
+                key={cat}
+                style={[styles.tag, filters.category === cat && styles.tagActive]}
+                onPress={() =>
+                  updateFilters({
+                    category: filters.category === cat ? '' : cat,
+                    showFavorites: false,
+                  })
+                }
+              >
+                <Text
+                  style={[
+                    styles.tagText,
+                    filters.category === cat && styles.tagTextActive,
+                  ]}
+                >
+                  {cat}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+      </View>
+
+      {/* Content list */}
+      <ScrollView
+        style={styles.listContainer}
+        contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true },
-        )}
-        scrollEventThrottle={16}
       >
-        <View style={styles.cardsContainer}>
-          {loading
-            ? [0, 1, 2, 3].map((i) => <SkeletonCard key={i} />)
-            : discounts.map((d, i) => {
-                // Each card's natural Y inside the scroll content. As scrollY
-                // approaches it, the card hits the top edge; once it passes,
-                // the card "bends back" through a revolving door and fades.
-                const naturalY = i * CARD_SLOT;
-                const rotateX = scrollY.interpolate({
-                  inputRange: [naturalY, naturalY + CARD_SLOT / 2, naturalY + CARD_SLOT],
-                  outputRange: ['0deg', '-30deg', '-75deg'],
-                  extrapolate: 'clamp',
-                });
-                const scrollOpacity = scrollY.interpolate({
-                  inputRange: [naturalY, naturalY + CARD_SLOT / 2, naturalY + CARD_SLOT],
-                  outputRange: [1, 0.55, 0],
-                  extrapolate: 'clamp',
-                });
-                const scrollScale = scrollY.interpolate({
-                  inputRange: [naturalY, naturalY + CARD_SLOT],
-                  outputRange: [1, 0.86],
-                  extrapolate: 'clamp',
-                });
-                return (
-                  <Animated.View
-                    key={d.id || i}
-                    style={{
-                      opacity: cardAnims[i] || 1,
-                      transform: [
-                        {
-                          translateY:
-                            cardAnims[i]?.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [40, 0],
-                            }) || 0,
-                        },
-                      ],
-                    }}
-                  >
-                    <Animated.View
-                      style={{
-                        opacity: scrollOpacity,
-                        transform: [
-                          { perspective: 800 },
-                          { rotateX },
-                          { scale: scrollScale },
-                        ],
-                      }}
-                    >
-                      <TeaserCard discount={d} />
-                    </Animated.View>
-                  </Animated.View>
-                );
-              })}
+        <View style={styles.sectionHeader}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.sectionTitle}>Discounts Near You</Text>
+            <View style={styles.sectionSubtitleRow}>
+              <Feather name="map-pin" size={13} color="#8E9BAE" />
+              <Text style={styles.sectionSubtitle}>
+                {locationDisplay} ({visible.length})
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)/discounts/filter')}
+            style={[styles.filterBtn, hasActiveFilters() && styles.filterBtnActive]}
+          >
+            <Feather
+              name="filter"
+              size={15}
+              color={hasActiveFilters() ? '#fff' : '#DB8633'}
+            />
+            <Text
+              style={[
+                styles.filterBtnText,
+                hasActiveFilters() && styles.filterBtnTextActive,
+              ]}
+            >
+              Filter
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {!loading && discounts.length > 0 && (
-          <View style={styles.moreTease}>
-            <Text style={styles.moreTeaseText}>+ many more once you join</Text>
-          </View>
-        )}
-      </Animated.ScrollView>
+        {loading
+          ? [0, 1, 2, 3].map((i) => <SkeletonCard key={i} />)
+          : visible.length === 0
+            ? <EmptyState filters={filters} />
+            : visible.map((v) => (
+                <LockedVoucherCard
+                  key={v.id}
+                  vendor={v}
+                  isFavorited={favorites.has(String(v.id))}
+                  onToggleFavorite={(tapX, tapY) =>
+                    toggleFavorite(v.id, tapX, tapY)
+                  }
+                />
+              ))}
+      </ScrollView>
 
-      {/* Sticky CTA */}
-      <View style={styles.stickyButtonContainer}>
-        <TouchableOpacity style={styles.continueButton} onPress={handleContinue} activeOpacity={0.9}>
-          <Text style={styles.continueButtonText}>Pick Your Cause →</Text>
+      {/* Flying coins — absolutely positioned, each arcs from the tap point
+          to the piggy's approximate center. pointerEvents=none so they never
+          intercept further taps mid-flight. */}
+      {flyingCoins.map((c) => {
+        const dx = PIGGY_TARGET_X - c.fromX;
+        const dy = PIGGY_TARGET_Y - c.fromY;
+        const translateX = c.anim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0, dx],
+        });
+        // Arc the Y so it lifts a touch before falling into the piggy.
+        const translateY = c.anim.interpolate({
+          inputRange: [0, 0.5, 1],
+          outputRange: [0, dy - 40, dy],
+        });
+        const scale = c.anim.interpolate({
+          inputRange: [0, 0.4, 1],
+          outputRange: [0.6, 1.05, 0.7],
+        });
+        const opacity = c.anim.interpolate({
+          inputRange: [0, 0.85, 1],
+          outputRange: [1, 1, 0],
+        });
+        return (
+          <Animated.View
+            key={c.id}
+            pointerEvents="none"
+            style={[
+              styles.flyingCoin,
+              {
+                left: c.fromX - 14,
+                top: c.fromY - 14,
+                opacity,
+                transform: [{ translateX }, { translateY }, { scale }],
+              },
+            ]}
+          >
+            <View style={styles.coinCircle}>
+              <Text style={styles.coinDollar}>$</Text>
+            </View>
+          </Animated.View>
+        );
+      })}
+
+      {/* Sticky CTA — copy upgrades once they've favorited 3+ vendors */}
+      <View style={styles.stickyCTA}>
+        <TouchableOpacity
+          style={[styles.continueButton, milestoneHit && styles.continueButtonHot]}
+          onPress={handleContinue}
+          activeOpacity={0.9}
+        >
+          <Text style={styles.continueButtonText}>
+            {milestoneHit
+              ? '🔥 Pick a cause to save them →'
+              : 'Pick Your Cause →'}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-function TeaserCard({ discount }) {
-  const headline = formatDiscountHeadline(discount);
-  const vendorName = getVendorName(discount);
-  const category = getVendorCategory(discount);
-  const logo = getVendorLogo(discount);
-  const distanceLabel = formatDistance(discount._distanceMi);
+function LockedVoucherCard({ vendor, isFavorited, onToggleFavorite }) {
+  const logo =
+    vendor.logoUrl || vendor.logo_url || vendor.imageUrl || vendor.image_url || null;
+  const discountText = vendor._discountText || 'Discounts available';
+  const category = vendor.category || (vendor.tags && vendor.tags[0]) || null;
 
   return (
-    <View style={styles.card}>
-      <View style={styles.cardLeft}>
-        {logo ? (
-          <Image source={{ uri: logo }} style={styles.cardLogo} resizeMode="cover" />
-        ) : (
-          <View style={[styles.cardLogo, styles.cardLogoPlaceholder]}>
-            <AntDesign name="tagso" size={24} color="#DB8633" />
+    <View style={voucherStyles.cardWrapper}>
+      <View style={voucherStyles.card}>
+        {/* Left Section */}
+        <View style={voucherStyles.leftSide}>
+          <View style={voucherStyles.logoWrap}>
+            <Image
+              source={
+                logo
+                  ? { uri: logo }
+                  : require('../../assets/images/logos/starbucks.png')
+              }
+              style={voucherStyles.logo}
+              defaultSource={require('../../assets/images/logos/starbucks.png')}
+            />
+            {/* Translucent gray veil over the logo — fades the artwork so it
+                reads as "locked" while the rest of the card stays normal. */}
+            <View pointerEvents="none" style={voucherStyles.logoGrayVeil} />
+            {/* Lock badge anchored to the logo */}
+            <View style={voucherStyles.lockBadge}>
+              <Feather name="lock" size={10} color="#DB8633" />
+            </View>
           </View>
-        )}
-        {/* Lock badge anchored to the logo — signals "gated" without copy. */}
-        <View style={styles.lockBadge}>
-          <Feather name="lock" size={11} color="#DB8633" />
-        </View>
-      </View>
-      <View style={styles.cardCenter}>
-        <Text style={styles.cardVendor} numberOfLines={1}>
-          {vendorName}
-        </Text>
-        <View style={styles.cardMetaRow}>
-          {category ? (
-            <Text style={styles.cardCategory} numberOfLines={1}>
-              {category}
+          <View style={voucherStyles.textContainer}>
+            <Text style={voucherStyles.brand} numberOfLines={1}>
+              {vendor.name}
             </Text>
-          ) : null}
-          {distanceLabel ? (
-            <>
-              {category ? <View style={styles.cardMetaDot} /> : null}
-              <Feather name="map-pin" size={11} color="#6B7280" />
-              <Text style={styles.cardDistance}>{distanceLabel}</Text>
-            </>
-          ) : null}
+            {category ? (
+              <Text style={voucherStyles.categoryLabel} numberOfLines={1}>
+                {category}
+              </Text>
+            ) : null}
+            <Text style={voucherStyles.discountBadge}>{discountText}</Text>
+          </View>
+        </View>
+
+        {/* Notched divider */}
+        <View style={voucherStyles.dividerContainer}>
+          <View style={voucherStyles.notchTop} />
+          <View style={voucherStyles.dottedLine} />
+          <View style={voucherStyles.notchBottom} />
+        </View>
+
+        {/* Right Section — heart only */}
+        <View style={voucherStyles.rightSide}>
+          <TouchableOpacity
+            onPress={(e) => {
+              const { pageX, pageY } = e.nativeEvent;
+              onToggleFavorite(pageX, pageY);
+            }}
+            hitSlop={{ top: 8, bottom: 4, left: 8, right: 8 }}
+          >
+            {isFavorited ? (
+              <AntDesign name="heart" size={22} color="#DB8633" />
+            ) : (
+              <Image
+                source={require('../../assets/icons/heart.png')}
+                style={{ width: 22, height: 22, tintColor: '#DB8633' }}
+              />
+            )}
+          </TouchableOpacity>
         </View>
       </View>
-      <View style={styles.cardRight}>
-        <LinearGradient
-          colors={['#DB8633', '#F4A95C']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.cardBadge}
-        >
-          <Text style={styles.cardBadgeText} numberOfLines={1}>
-            {headline}
-          </Text>
-        </LinearGradient>
-      </View>
+
     </View>
   );
 }
 
 function SkeletonCard() {
   return (
-    <View style={[styles.card, { opacity: 0.5 }]}>
-      <View style={[styles.cardLogo, styles.cardLogoPlaceholder]} />
-      <View style={styles.cardCenter}>
-        <View style={styles.skeletonLine} />
-        <View style={[styles.skeletonLine, { width: '50%', marginTop: 6 }]} />
+    <View style={voucherStyles.cardWrapper}>
+      <View style={[voucherStyles.card, { opacity: 0.5 }]}>
+        <View style={voucherStyles.leftSide}>
+          <View style={[voucherStyles.logo, { backgroundColor: '#E5E7EB' }]} />
+          <View style={voucherStyles.textContainer}>
+            <View style={voucherStyles.skeletonLine} />
+            <View
+              style={[voucherStyles.skeletonLine, { width: '50%', marginTop: 6 }]}
+            />
+          </View>
+        </View>
       </View>
-      <View style={[styles.cardBadge, { backgroundColor: '#E5E7EB' }]} />
+    </View>
+  );
+}
+
+function EmptyState({ filters }) {
+  const isFavoritesEmpty = filters?.showFavorites;
+  return (
+    <View style={styles.emptyState}>
+      <Text style={styles.emptyTitle}>
+        {isFavoritesEmpty ? 'No favorites yet' : 'No discounts match'}
+      </Text>
+      <Text style={styles.emptySubtitle}>
+        {isFavoritesEmpty
+          ? 'Tap the heart on any card to save your favorite stores. They\'ll be waiting for you after signup.'
+          : 'Try clearing your filters to see more options.'}
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  gradientAbsoluteBg: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: SCREEN_HEIGHT * 0.38,
-    zIndex: 0,
-    overflow: 'hidden',
+  // ─── Brand header (mirrors miniBrandHeader from live page, taller) ───
+  brandHeader: {
+    paddingTop: 44,
+    paddingBottom: 80,
+    paddingHorizontal: 24,
+    marginBottom: -22,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  gradientBg: {
-    width: SCREEN_WIDTH,
-    height: '100%',
-    borderBottomLeftRadius: 40,
-    borderBottomRightRadius: 40,
-  },
-  scrollView: { flex: 1 },
   backButton: {
     position: 'absolute',
-    top: 20,
-    left: 20,
-    zIndex: 100,
-    backgroundColor: 'rgba(0,0,0,0.15)',
-    borderRadius: 20,
+    top: 18,
+    left: 16,
+    zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+    borderRadius: 18,
     padding: 6,
   },
-  contentSection: {
+  // Wrapper sits over the brand header; alignItems centers the piggy
+  // horizontally, and the `top` value tunes how much of the piggy hangs over
+  // the search card. Tweak `top` if the empirical placement looks off.
+  piggyOverlay: {
+    position: 'absolute',
+    top: 101,
+    left: 0,
+    right: 0,
     alignItems: 'center',
-    paddingTop: 70,
-    paddingBottom: 160,
-    zIndex: 5,
+    zIndex: 30,
+    elevation: 8,
   },
-  scrollListContent: {
-    paddingTop: 8,
-    paddingBottom: 140, // leave room for sticky CTA so the last card isn't hidden
-    alignItems: 'center',
+  headerPiggy: {
+    width: 130,
+    height: 100,
   },
-  heroBlock: {
-    width: '90%',
-    maxWidth: 360,
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  heroLocked: {
-    paddingTop: 70, // clears the back button overlay
-    paddingBottom: 12,
-    alignSelf: 'center',
-    zIndex: 5,
-    marginBottom: 0,
-  },
-  peekBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginBottom: 14,
-  },
-  peekBadgeEmoji: { fontSize: 14, marginRight: 6 },
-  peekBadgeText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-  },
-  heroTitle: {
-    fontSize: 30,
+  headerTitle: {
+    fontSize: 22,
     fontWeight: '800',
     color: '#fff',
     textAlign: 'center',
-    lineHeight: 36,
-    marginBottom: 12,
   },
-  heroSubtitle: {
-    fontSize: 15,
+  headerSubtitle: {
+    marginTop: 4,
+    marginBottom: 0,
+    fontSize: 13,
     color: 'rgba(255,255,255,0.92)',
     textAlign: 'center',
-    lineHeight: 21,
+    fontWeight: '500',
   },
-  cardsContainer: {
-    width: '92%',
-    maxWidth: 380,
-    alignSelf: 'center',
-  },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
+
+  // ─── Header card (copied from live discounts page) ───
+  header: {
     backgroundColor: '#fff',
+    marginHorizontal: 16,
     borderRadius: 18,
-    padding: 14,
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 15,
+    zIndex: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
-    shadowRadius: 12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
     elevation: 4,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
   },
-  cardLeft: { marginRight: 14, position: 'relative' },
-  cardLogo: {
-    width: 52,
-    height: 52,
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5fa',
     borderRadius: 12,
-    backgroundColor: '#F8FAFC',
-  },
-  lockBadge: {
-    position: 'absolute',
-    bottom: -4,
-    right: -4,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#FFE6CC',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  cardLogoPlaceholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#FFE6CC',
-    backgroundColor: '#FFF5EB',
+    borderColor: '#e1e1e5',
+    paddingHorizontal: 15,
+    marginBottom: 12,
+    height: 48,
   },
-  cardCenter: { flex: 1, minWidth: 0 },
-  cardVendor: {
+  searchInput: {
+    flex: 1,
     fontSize: 16,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginBottom: 2,
+    color: '#324E58',
+    height: 46,
+    lineHeight: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 0,
   },
-  cardMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
+  tagsRow: {
+    marginBottom: 4,
+    marginTop: 4,
   },
-  cardCategory: {
-    fontSize: 12,
-    color: '#6B7280',
-    textTransform: 'capitalize',
-  },
-  cardMetaDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 3,
-    backgroundColor: '#CBD5E1',
-    marginHorizontal: 6,
-  },
-  cardDistance: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginLeft: 3,
-    fontWeight: '500',
-  },
-  cardLockRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  cardLockText: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    marginLeft: 4,
-    fontWeight: '500',
-  },
-  cardRight: { marginLeft: 10 },
-  cardBadge: {
-    paddingHorizontal: 12,
+  tag: {
     paddingVertical: 8,
-    borderRadius: 999,
-    minWidth: 74,
-    alignItems: 'center',
+    paddingHorizontal: 16,
+    backgroundColor: '#f2f2f2',
+    borderRadius: 20,
+    marginRight: 10,
   },
-  cardBadgeText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '800',
+  tagActive: {
+    backgroundColor: '#FFF5EB',
+    borderColor: '#D0861F',
+    borderWidth: 1,
   },
-  moreTease: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 6,
-    marginBottom: 10,
-  },
-  moreTeaseDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 5,
-    backgroundColor: '#CBD5E1',
-    marginHorizontal: 3,
-  },
-  moreTeaseText: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontStyle: 'italic',
-    marginLeft: 10,
+  tagText: {
+    fontSize: 14,
+    color: '#666',
     fontWeight: '500',
   },
-  skeletonLine: {
-    height: 12,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 6,
-    width: '70%',
-  },
-  statRow: {
-    width: '92%',
-    maxWidth: 380,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: '#FFF5EB',
-    borderRadius: 16,
-    paddingVertical: 14,
-    marginTop: 14,
-    borderWidth: 1,
-    borderColor: '#FFE6CC',
-  },
-  statCell: { flex: 1, alignItems: 'center' },
-  statDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: '#FFE6CC',
-  },
-  statNumber: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#DB8633',
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: 11,
-    color: '#92400E',
+  tagTextActive: {
+    fontSize: 14,
+    color: '#D0861F',
     fontWeight: '600',
   },
-  stickyButtonContainer: {
+
+  // ─── List ───
+  listContainer: {
+    flex: 1,
+    backgroundColor: '#f5f5fa',
+  },
+  listContent: {
+    paddingBottom: 130,
+  },
+  sectionHeader: {
+    paddingHorizontal: 25,
+    paddingTop: 20,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#324E58',
+    marginBottom: 4,
+  },
+  sectionSubtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#666',
+  },
+  filterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#DB8633',
+    backgroundColor: '#FFF5EB',
+  },
+  filterBtnActive: {
+    backgroundColor: '#DB8633',
+  },
+  filterBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#DB8633',
+  },
+  filterBtnTextActive: {
+    color: '#fff',
+  },
+
+  // ─── Empty state ───
+  emptyState: {
+    paddingHorizontal: 32,
+    paddingTop: 40,
+    alignItems: 'center',
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#324E58',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+
+  // ─── Sticky CTA ───
+  stickyCTA: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     backgroundColor: '#fff',
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 24,
     borderTopWidth: 1,
@@ -696,31 +870,207 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 5,
-    zIndex: 1000,
-    alignItems: 'center',
-  },
-  stickyHelper: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 8,
-    fontWeight: '500',
   },
   continueButton: {
     backgroundColor: '#DB8633',
     paddingVertical: 16,
-    paddingHorizontal: 32,
     borderRadius: 14,
     alignItems: 'center',
-    width: '100%',
     shadowColor: '#DB8633',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 10,
     elevation: 4,
   },
+  // Reward state — slightly hotter shadow when the milestone is hit.
+  continueButtonHot: {
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+  },
   continueButtonText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
+  },
+
+  // ─── Saved-counter pill (lives in the hero) ───
+  savedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(219, 134, 51, 0.95)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    marginTop: 8,
+    marginBottom: 14,
+    alignSelf: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  savedPillText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+
+  // ─── Flying coin (heart → piggy) ───
+  flyingCoin: {
+    position: 'absolute',
+    zIndex: 60,
+    elevation: 12,
+  },
+  coinCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F4B53C',
+    borderWidth: 2,
+    borderColor: '#D89322',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  coinDollar: {
+    color: '#7C4A0E',
+    fontSize: 16,
+    fontWeight: '900',
+    lineHeight: 18,
+  },
+});
+
+// Voucher card styles — copied from components/VoucherCard.js so the visual
+// matches the live page exactly. Extra: logoWrap + lockBadge + lockedOverlay.
+const CARD_HEIGHT = 110;
+const NOTCH_SIZE = 12;
+const voucherStyles = StyleSheet.create({
+  cardWrapper: {
+    marginVertical: 10,
+    marginHorizontal: 20,
+    position: 'relative',
+  },
+  card: {
+    flexDirection: 'row',
+    backgroundColor: 'white',
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    height: CARD_HEIGHT,
+    overflow: 'hidden',
+  },
+  leftSide: {
+    flex: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  logoWrap: {
+    position: 'relative',
+    marginRight: 12,
+  },
+  logo: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    resizeMode: 'contain',
+    backgroundColor: '#F8FAFC',
+  },
+  lockBadge: {
+    position: 'absolute',
+    bottom: -3,
+    right: -3,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#FFE6CC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  textContainer: {
+    flex: 1,
+  },
+  brand: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1C4F7D',
+  },
+  categoryLabel: {
+    fontSize: 11,
+    color: '#8E9BAE',
+    textTransform: 'capitalize',
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  discountBadge: {
+    alignSelf: 'flex-start',
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#6B7280',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 6,
+  },
+  dividerContainer: {
+    width: 20,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  notchTop: {
+    width: NOTCH_SIZE * 2,
+    height: NOTCH_SIZE,
+    borderBottomLeftRadius: NOTCH_SIZE,
+    borderBottomRightRadius: NOTCH_SIZE,
+    backgroundColor: '#f5f5fa',
+    alignSelf: 'center',
+    marginTop: -NOTCH_SIZE / 2,
+  },
+  notchBottom: {
+    width: NOTCH_SIZE * 2,
+    height: NOTCH_SIZE,
+    borderTopLeftRadius: NOTCH_SIZE,
+    borderTopRightRadius: NOTCH_SIZE,
+    backgroundColor: '#f5f5fa',
+    alignSelf: 'center',
+    marginBottom: -NOTCH_SIZE / 2,
+  },
+  dottedLine: {
+    flex: 1,
+    borderLeftWidth: 1,
+    borderStyle: 'dotted',
+    borderColor: '#ccc',
+    width: 1,
+    marginVertical: 4,
+  },
+  rightSide: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFF7EB',
+  },
+  // Translucent gray veil sits over the logo image. pointerEvents=none on
+  // the View keeps it inert; borderRadius matches the logo to stay circular.
+  logoGrayVeil: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 20,
+    backgroundColor: 'rgba(243, 244, 246, 0.55)',
+  },
+  skeletonLine: {
+    height: 12,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 6,
+    width: '70%',
   },
 });

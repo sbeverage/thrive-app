@@ -36,6 +36,12 @@ export function formatCharityResponse(charity: any) {
     // Used by the donor app to find the THRIVE Initiative row for the
     // Support-THRIVE panel + held-funds flow.
     isThrive: !!charity.is_thrive,
+    // Donor-suggested charities awaiting team verification. The donor app
+    // renders these with a placeholder image and a "Pending verification"
+    // badge; held-funds flow treats them as not-yet-receiving.
+    isPendingVerification: !!charity.is_pending_verification,
+    verificationRejectedAt: charity.verification_rejected_at || null,
+    verificationRejectedReason: charity.verification_rejected_reason || null,
     // Impact metrics - return as camelCase (now supports full sentences, not just numbers)
     livesImpacted: charity.lives_impacted || null,
     programsActive: charity.programs_active || null,

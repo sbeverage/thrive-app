@@ -1,5 +1,34 @@
 import { getStripeClient } from "../lib/stripe.ts";
 import { formatCharityResponse } from "../lib/charities.ts";
+import { getAppAuthHeader, getJwtPayload } from "../lib/jwt-app.ts";
+
+// Map ProPublica NTEE category codes to the high-level categories we use on
+// the donor app. NTEE codes are letter+digit (e.g. "H31Z" = pediatric medical
+// research). We only match on the first letter for a coarse grouping; the
+// admin tweaks the category later during verification if needed.
+function nteeToCategory(nteeCode: string | null | undefined): string | null {
+  if (!nteeCode || typeof nteeCode !== "string") return null;
+  const major = nteeCode.charAt(0).toUpperCase();
+  switch (major) {
+    case "A": return "Arts & Culture";
+    case "B": return "Education";
+    case "C": case "D": return "Animal Welfare";
+    case "E": case "F": case "G": case "H": return "Disease Research";
+    case "I": return "Anti-Human Trafficking";
+    case "J": case "K": case "L": return "Low Income Families";
+    case "M": return "Disaster Relief";
+    case "N": return "Disabilities";
+    case "O": return "Education";
+    case "P": return "Low Income Families";
+    case "Q": return "Community";
+    case "R": case "S": case "T": case "U": return "Community";
+    case "V": case "W": return "Community";
+    case "X": return "Community";
+    case "Y": return "Veterans";
+    case "Z": return "Community";
+    default: return null;
+  }
+}
 
 export async function handleCharityRoute(
   req: Request,
@@ -366,6 +395,203 @@ export async function handleCharityRoute(
           headers: {"Content-Type": "application/json"},
           status: 500,
         },
+      );
+    }
+  }
+
+  // GET /charities/search?q=... — server-side proxy to ProPublica's
+  // Nonprofit Explorer. Returns only IRS-registered 501(c)(3)s with an EIN.
+  // No API key required. We strip the response to just the fields the donor
+  // app actually displays so we don't leak more than needed.
+  if (method === "GET" && route === "/charities/search") {
+    try {
+      const url = new URL(req.url);
+      const q = (url.searchParams.get("q") || "").trim();
+      if (!q || q.length < 2) {
+        return new Response(JSON.stringify({results: []}), {
+          headers: {"Content-Type": "application/json"},
+          status: 200,
+        });
+      }
+
+      const proPublicaUrl =
+        `https://projects.propublica.org/nonprofits/api/v2/search.json` +
+        `?q=${encodeURIComponent(q)}&c_code%5Bid%5D=3`;
+
+      const ppRes = await fetch(proPublicaUrl, {
+        headers: {Accept: "application/json"},
+      });
+      if (!ppRes.ok) {
+        console.error("❌ ProPublica search failed:", ppRes.status);
+        return new Response(
+          JSON.stringify({error: "Search is temporarily unavailable. Please try again."}),
+          {headers: {"Content-Type": "application/json"}, status: 502},
+        );
+      }
+      const ppData = await ppRes.json();
+      const orgs = Array.isArray(ppData?.organizations) ? ppData.organizations : [];
+
+      // Mark any results that are already in our DB so the client can show
+      // "Already on THRIVE" instead of an "Add this charity" CTA.
+      const eins = orgs
+        .map((o: any) => String(o?.ein || "").replace(/[^0-9]/g, ""))
+        .filter(Boolean);
+      const eligibleEins = Array.from(new Set(eins));
+
+      // EINs in our DB are stored with the canonical "XX-XXXXXXX" format.
+      // ProPublica returns them as digits only. We compare by stripping
+      // dashes on both sides.
+      let existingByEin: Record<string, any> = {};
+      if (eligibleEins.length > 0) {
+        const formatted = eligibleEins.map((e) => {
+          const padded = e.padStart(9, "0");
+          return `${padded.slice(0, 2)}-${padded.slice(2)}`;
+        });
+        const {data: existing} = await supabase
+          .from("charities")
+          .select("id, ein, name, is_active, is_pending_verification")
+          .in("ein", formatted);
+        for (const c of existing || []) {
+          existingByEin[String(c.ein || "").replace(/[^0-9]/g, "")] = c;
+        }
+      }
+
+      const results = orgs.slice(0, 25).map((o: any) => {
+        const einDigits = String(o?.ein || "").replace(/[^0-9]/g, "");
+        const padded = einDigits.padStart(9, "0");
+        const einFormatted = `${padded.slice(0, 2)}-${padded.slice(2)}`;
+        const dbMatch = existingByEin[einDigits];
+        return {
+          ein: einFormatted,
+          name: o.name || null,
+          city: o.city || null,
+          state: o.state || null,
+          ntee_code: o.ntee_code || null,
+          suggestedCategory: nteeToCategory(o.ntee_code),
+          existingCharityId: dbMatch?.id || null,
+          existingIsPending: !!dbMatch?.is_pending_verification,
+        };
+      });
+
+      return new Response(
+        JSON.stringify({results}),
+        {headers: {"Content-Type": "application/json"}, status: 200},
+      );
+    } catch (error) {
+      console.error("❌ /charities/search error:", error);
+      return new Response(
+        JSON.stringify({error: "Search failed. Please try again."}),
+        {headers: {"Content-Type": "application/json"}, status: 500},
+      );
+    }
+  }
+
+  // POST /charities/suggest — donor selects an org from ProPublica that
+  // doesn't exist in our DB yet. We create a pending row with the minimum
+  // fields we know; admin fills in the rest during verification. Dedups by
+  // EIN so two donors suggesting the same org reuse the existing pending row.
+  // Body: { ein, name, city, state, ntee_code? }
+  if (method === "POST" && route === "/charities/suggest") {
+    try {
+      const authHeader = getAppAuthHeader(req);
+      const tokenPayload: any = await getJwtPayload(authHeader);
+      const userId = tokenPayload?.id || tokenPayload?.userId;
+      if (!userId) {
+        return new Response(
+          JSON.stringify({error: "Authentication required"}),
+          {headers: {"Content-Type": "application/json"}, status: 401},
+        );
+      }
+
+      const body = await req.json().catch(() => ({}));
+      const rawEin = String(body.ein || "").replace(/[^0-9]/g, "");
+      const name = String(body.name || "").trim();
+      const city = body.city ? String(body.city).trim() : null;
+      const state = body.state ? String(body.state).trim().toUpperCase() : null;
+      const ntee = body.ntee_code ? String(body.ntee_code).trim().toUpperCase() : null;
+
+      if (rawEin.length !== 9 || !name) {
+        return new Response(
+          JSON.stringify({error: "A valid EIN and name are required."}),
+          {headers: {"Content-Type": "application/json"}, status: 400},
+        );
+      }
+
+      const einFormatted = `${rawEin.slice(0, 2)}-${rawEin.slice(2)}`;
+      const category = nteeToCategory(ntee);
+
+      // Dedup: if this EIN is already in the DB (live or pending), return it
+      // without creating a duplicate. Donor gets to select it normally.
+      const {data: existing} = await supabase
+        .from("charities")
+        .select("*")
+        .eq("ein", einFormatted)
+        .limit(1)
+        .maybeSingle();
+      if (existing) {
+        return new Response(
+          JSON.stringify({success: true, charity: formatCharityResponse(existing)}),
+          {headers: {"Content-Type": "application/json"}, status: 200},
+        );
+      }
+
+      // Cheap per-user rate limit so a donor can't spam suggestions.
+      // Cap at 10 pending suggestions in the last 24 hours per user.
+      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const {count: recentSuggestions} = await supabase
+        .from("charities")
+        .select("id", {count: "exact", head: true})
+        .eq("suggested_by_user_id", userId)
+        .gte("suggested_at", cutoff);
+      if ((recentSuggestions || 0) >= 10) {
+        return new Response(
+          JSON.stringify({
+            error:
+              "You've suggested a lot of charities today — give our team a chance to catch up.",
+          }),
+          {headers: {"Content-Type": "application/json"}, status: 429},
+        );
+      }
+
+      const insertPayload: Record<string, any> = {
+        name,
+        ein: einFormatted,
+        category,
+        type: "Pending",
+        description: "Pending verification by the THRIVE team.",
+        about: "This charity was suggested by a donor and is pending verification by the THRIVE team. Once approved, the full mission, impact, and contact details will appear here.",
+        location: [city, state].filter(Boolean).join(", ") || null,
+        is_active: false,
+        verification_status: false,
+        is_pending_verification: true,
+        suggested_by_user_id: userId,
+        suggestion_source: "propublica",
+        suggestion_source_id: einFormatted,
+        suggested_at: new Date().toISOString(),
+      };
+
+      const {data: created, error: insertErr} = await supabase
+        .from("charities")
+        .insert(insertPayload)
+        .select("*")
+        .single();
+      if (insertErr || !created) {
+        console.error("❌ /charities/suggest insert error:", insertErr);
+        return new Response(
+          JSON.stringify({error: "Could not save your suggestion. Please try again."}),
+          {headers: {"Content-Type": "application/json"}, status: 500},
+        );
+      }
+
+      return new Response(
+        JSON.stringify({success: true, charity: formatCharityResponse(created)}),
+        {headers: {"Content-Type": "application/json"}, status: 201},
+      );
+    } catch (error: any) {
+      console.error("❌ /charities/suggest error:", error);
+      return new Response(
+        JSON.stringify({error: error.message || "Server error"}),
+        {headers: {"Content-Type": "application/json"}, status: 500},
       );
     }
   }

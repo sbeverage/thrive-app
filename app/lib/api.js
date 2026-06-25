@@ -34,8 +34,16 @@ const PUBLIC_ENDPOINTS = [
   "/api/invitations/beneficiary",
 ];
 
+// Endpoints that LOOK public (prefix matches PUBLIC_ENDPOINTS) but actually
+// require the user's JWT — `isPublicEndpoint` checks these first and returns
+// false so the request interceptor attaches the donor's auth token.
+const PROTECTED_OVERRIDES = [
+  "/api/charities/suggest",
+];
+
 // Check if an endpoint is public
 const isPublicEndpoint = (url) => {
+  if (PROTECTED_OVERRIDES.some((p) => url.includes(p))) return false;
   return PUBLIC_ENDPOINTS.some((endpoint) => url.includes(endpoint));
 };
 
@@ -2282,6 +2290,41 @@ const API = {
    * Returns: { success: true, invitation: {...} }
    * Note: This endpoint works with or without authentication
    */
+  // Search the IRS 501(c)(3) registry via our ProPublica proxy. Returns
+  // [{ ein, name, city, state, ntee_code, suggestedCategory,
+  //    existingCharityId, existingIsPending }, ...]
+  searchCharities: async (query) => {
+    try {
+      const q = String(query || "").trim();
+      if (q.length < 2) return [];
+      const response = await api.get(
+        `/api/charities/search?q=${encodeURIComponent(q)}`,
+      );
+      const data = response?.data || {};
+      return Array.isArray(data?.results) ? data.results : [];
+    } catch (error) {
+      console.error("❌ API.searchCharities() failed:", error?.message || error);
+      return [];
+    }
+  },
+
+  // Donor picks a result from searchCharities() and we create (or reuse) a
+  // pending charity row. Returns the charity record so the UI can select it.
+  suggestCharity: async ({ ein, name, city, state, ntee_code }) => {
+    const response = await api.post("/api/charities/suggest", {
+      ein,
+      name,
+      city,
+      state,
+      ntee_code,
+    });
+    const data = response?.data || {};
+    if (!data?.success || !data?.charity) {
+      throw new Error(data?.error || "Could not save your suggestion.");
+    }
+    return data.charity;
+  },
+
   submitVendorRequest: async ({ name, website }) => {
     try {
       const rawUser = await AsyncStorage.getItem('userData');

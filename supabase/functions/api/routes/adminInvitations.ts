@@ -240,9 +240,24 @@ export async function handleAdminInvitations(
         .limit(1);
 
       if (existingUser && existingUser.length > 0) {
+        // The invitation flow is double-purposed in the admin UI: it both
+        // creates a new charityAdmin account AND triggers donor notifications
+        // for donors who requested this beneficiary. When the invitation's
+        // contact email belongs to an existing donor (common — the donor
+        // themselves entered their email as the charity contact), we can't
+        // create the user but we can still let the donor-notification step
+        // run. Returning success with a `skipped` flag unblocks the UI.
+        await supabase
+          .from("invitations")
+          .update({status: "sent"})
+          .eq("id", invitationId);
+
         return new Response(
           JSON.stringify({
-            error: `User with email ${invitation.email} already exists`,
+            success: true,
+            skipped: "user_exists",
+            message:
+              "User account already exists at this email — skipped account creation, but donor notifications can still be sent.",
             existingUserId: existingUser[0].id,
           }),
           {
@@ -250,7 +265,7 @@ export async function handleAdminInvitations(
               ...corsHeaders,
               "Content-Type": "application/json",
             },
-            status: 400,
+            status: 200,
           },
         );
       }
