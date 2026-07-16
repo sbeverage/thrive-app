@@ -1050,7 +1050,7 @@ If you did not request this, you can ignore this email.`;
 // Vendor Portal transactional emails (submission, approval, rejection, rotation)
 // ============================================================================
 
-type VendorEmailKind = "submitted" | "approved" | "rejected" | "rotation_reminder" | "verify_email";
+type VendorEmailKind = "submitted" | "approved" | "rejected" | "rotation_reminder" | "verify_email" | "portal_invite";
 
 function vendorPortalUrl(): string {
   return Deno.env.get("VENDOR_PORTAL_URL") || "https://thrive-vendor-portal.vercel.app";
@@ -1101,6 +1101,18 @@ function vendorEmailContent(kind: VendorEmailKind, name: string, businessName: s
         body: `Thanks for submitting <strong>${businessName}</strong>! Click the button below to confirm this is your email address. This helps us reach you about your approval status, code rotations, and important updates.`,
         cta: { href: extras.verifyUrl || `${portal}`, label: "Verify email" },
       };
+    case "portal_invite":
+      return {
+        subject: `Your THRIVE Vendor Portal login for ${businessName}`,
+        title: `Welcome to THRIVE, ${businessName}!`,
+        body: `<p>We've added <strong>${businessName}</strong> to the THRIVE Initiative and set up your vendor portal account. Sign in below to add discounts, upload your logo, and start reaching donors.</p>
+<div style="background:#F5F5FA;border:1px solid #E5E5EA;border-radius:8px;padding:16px;margin:16px 0;font-family:'SF Mono',Menlo,monospace;font-size:14px;">
+  <div style="margin-bottom:8px;"><span style="color:#8C8C8C;">Username:</span> <strong style="color:#324E58;">${extras.loginEmail || ""}</strong></div>
+  <div><span style="color:#8C8C8C;">Temporary password:</span> <strong style="color:#324E58;">${extras.tempPassword || ""}</strong></div>
+</div>
+<p style="font-size:13px;color:#8C8C8C;">You'll be asked to change this temporary password the first time you sign in. Please don't share it.</p>`,
+        cta: { href: `${portal}/login`, label: "Sign in to the portal" },
+      };
   }
 }
 
@@ -1111,6 +1123,8 @@ export async function sendVendorEmail({
   kind,
   reason,
   verifyUrl,
+  loginEmail,
+  tempPassword,
 }: {
   to: string;
   name: string;
@@ -1118,6 +1132,8 @@ export async function sendVendorEmail({
   kind: VendorEmailKind;
   reason?: string;
   verifyUrl?: string;
+  loginEmail?: string;
+  tempPassword?: string;
 }): Promise<void> {
   try {
     if (!to) return;
@@ -1126,6 +1142,8 @@ export async function sendVendorEmail({
     const { subject, title, body, cta } = vendorEmailContent(kind, name, businessName, {
       reason: reason || "",
       verifyUrl: verifyUrl || "",
+      loginEmail: loginEmail || "",
+      tempPassword: tempPassword || "",
     });
 
     const emailHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${subject}</title></head>

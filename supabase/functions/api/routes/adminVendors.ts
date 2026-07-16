@@ -1,5 +1,6 @@
 import { corsHeaders } from "../lib/cors.ts";
 import { bcryptHash } from "../lib/password.ts";
+import { sendVendorEmail } from "../lib/email.ts";
 
 // Generates a readable temp password admins can hand to a vendor. Avoids
 // ambiguous characters (0/O, 1/l/I) so support tickets aren't "I think
@@ -11,6 +12,95 @@ function generateTempPassword(): string {
   let out = "";
   for (const b of bytes) out += alphabet[b % alphabet.length];
   return out;
+}
+
+// Shared: provisions a vendorAdmin user + links it to the vendor row, and
+// sends the vendor an invite email with their username + temp password.
+// Used by POST /admin/vendors, PUT /admin/vendors/:id (when the admin
+// enters an email on a vendor that has no portal account yet), and
+// POST /admin/vendors/:id/create-account.
+// Returns { user, tempPassword } on success, or { error, status } on failure.
+async function provisionVendorPortalAccount(
+  supabase: any,
+  vendorId: number,
+  email: string,
+  firstName: string,
+  lastName: string,
+  businessName?: string,
+): Promise<
+  | { user: any; tempPassword: string }
+  | { error: string; status: number; existingUserId?: number }
+> {
+  const rawEmail = String(email || "").trim().toLowerCase();
+  if (!rawEmail || !rawEmail.includes("@")) {
+    return { error: "A valid email is required", status: 400 };
+  }
+
+  const { data: existingByEmail } = await supabase
+    .from("users")
+    .select("id, email, role")
+    .ilike("email", rawEmail)
+    .limit(1);
+  if (existingByEmail && existingByEmail.length > 0) {
+    return {
+      error: `A user already exists at ${rawEmail}. Link the vendor to that user instead, or use a different email.`,
+      status: 409,
+      existingUserId: existingByEmail[0].id,
+    };
+  }
+
+  const tempPassword = generateTempPassword();
+  const passwordHash = await bcryptHash(tempPassword);
+  const { data: newUser, error: userInsertErr } = await supabase
+    .from("users")
+    .insert({
+      email: rawEmail,
+      password_hash: passwordHash,
+      role: "vendorAdmin",
+      first_name: firstName || null,
+      last_name: lastName || null,
+      is_verified: true,
+      account_status: "active",
+    })
+    .select("id, email, role, first_name, last_name")
+    .single();
+  if (userInsertErr || !newUser) {
+    console.error("provisionVendorPortalAccount user insert error:", userInsertErr);
+    return { error: userInsertErr?.message || "Failed to create user", status: 500 };
+  }
+
+  const { error: linkErr } = await supabase
+    .from("vendors")
+    .update({ auth_user_id: newUser.id })
+    .eq("id", vendorId);
+  if (linkErr) {
+    console.error("provisionVendorPortalAccount vendor link error:", linkErr);
+    await supabase.from("users").delete().eq("id", newUser.id);
+    return { error: "Failed to link account to vendor", status: 500 };
+  }
+
+  // Fetch the vendor name for the email if the caller didn't pass it.
+  let resolvedBusinessName = businessName || "";
+  if (!resolvedBusinessName) {
+    const { data: v } = await supabase
+      .from("vendors")
+      .select("name")
+      .eq("id", vendorId)
+      .maybeSingle();
+    resolvedBusinessName = v?.name || "your business";
+  }
+
+  // Fire-and-forget — don't let an email failure roll back a good account.
+  sendVendorEmail({
+    to: rawEmail,
+    name: [firstName, lastName].filter(Boolean).join(" "),
+    businessName: resolvedBusinessName,
+    kind: "portal_invite",
+    loginEmail: rawEmail,
+    tempPassword,
+  }).catch((e) => console.error("portal_invite email failed:", e));
+
+  return { user: newUser, tempPassword };
 }
 
 export async function handleAdminVendors(
@@ -336,6 +426,13 @@ export async function handleAdminVendors(
       hours,
       logoUrl,
       logo_url,
+      email,
+      firstName,
+      first_name,
+      lastName,
+      last_name,
+      contactName,
+      contact_name,
     } = body;
 
     if (!name) {
@@ -366,6 +463,11 @@ export async function handleAdminVendors(
           address: address || null,
           hours: hours || null,
           logo_url: logoUrlValue || null,
+          // Admin-created vendors are pre-vetted — skip the pending queue so
+          // they appear on the donor app immediately (self-serve signups still
+          // stamp submitted_at via /vendor/me/resubmit and get reviewed).
+          signup_status: "approved",
+          approved_at: new Date().toISOString(),
         },
       ])
       .select()
@@ -379,10 +481,49 @@ export async function handleAdminVendors(
       });
     }
 
-    return new Response(JSON.stringify({success: true, data: newVendor}), {
-      headers: {"Content-Type": "application/json"},
-      status: 201,
-    });
+    // If the admin included an email at creation time, provision the vendor's
+    // portal account now — otherwise the field would be silently dropped
+    // (vendors.email column no longer exists; email lives on the linked users
+    // row via vendors.auth_user_id). Returns a temp password the admin shares
+    // with the vendor out-of-band.
+    let portalAccount: any = null;
+    let portalWarning: string | null = null;
+    if (email !== undefined && String(email || "").trim()) {
+      let resolvedFirst = String(firstName ?? first_name ?? "").trim();
+      let resolvedLast = String(lastName ?? last_name ?? "").trim();
+      const resolvedContact = String(contactName ?? contact_name ?? "").trim();
+      if (!resolvedFirst && !resolvedLast && resolvedContact) {
+        const parts = resolvedContact.split(/\s+/);
+        resolvedFirst = parts.shift() || "";
+        resolvedLast = parts.join(" ");
+      }
+      const provisioned = await provisionVendorPortalAccount(
+        supabase,
+        newVendor.id,
+        String(email),
+        resolvedFirst,
+        resolvedLast,
+        newVendor.name,
+      );
+      if ("user" in provisioned) {
+        portalAccount = { user: provisioned.user, tempPassword: provisioned.tempPassword };
+      } else {
+        portalWarning = provisioned.error;
+      }
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        data: newVendor,
+        portalAccount,
+        warning: portalWarning,
+      }),
+      {
+        headers: {"Content-Type": "application/json"},
+        status: 201,
+      },
+    );
   }
 
   // GET /admin/vendors/:id
@@ -532,10 +673,30 @@ export async function handleAdminVendors(
     }
 
     let userWarning: string | null = null;
+    let portalAccount: any = null;
     if (Object.keys(userUpdates).length > 0) {
       if (!updatedVendor.auth_user_id) {
-        userWarning =
-          "Contact name and email weren't saved — this vendor doesn't have a portal account yet. Create one via POST /admin/vendors/:id/create-account first.";
+        // No linked users row yet — auto-provision one when we have an email,
+        // so the admin's save actually persists instead of silently dropping.
+        if (userUpdates.email) {
+          const provisioned = await provisionVendorPortalAccount(
+            supabase,
+            updatedVendor.id,
+            userUpdates.email,
+            String(userUpdates.first_name || ""),
+            String(userUpdates.last_name || ""),
+            updatedVendor.name,
+          );
+          if ("user" in provisioned) {
+            portalAccount = { user: provisioned.user, tempPassword: provisioned.tempPassword };
+            updatedVendor.auth_user_id = provisioned.user.id;
+          } else {
+            userWarning = provisioned.error;
+          }
+        } else {
+          userWarning =
+            "Contact name wasn't saved — this vendor doesn't have a portal account yet. Add an email so the portal account can be created.";
+        }
       } else {
         // Don't let an email update collide with another existing user.
         if (userUpdates.email) {
@@ -565,7 +726,7 @@ export async function handleAdminVendors(
     }
 
     return new Response(
-      JSON.stringify({success: true, data: updatedVendor, warning: userWarning}),
+      JSON.stringify({success: true, data: updatedVendor, warning: userWarning, portalAccount}),
       {headers: {"Content-Type": "application/json"}, status: 200},
     );
   }
@@ -648,14 +809,7 @@ export async function handleAdminVendors(
       const firstName = String(body.firstName || body.first_name || "").trim();
       const lastName = String(body.lastName || body.last_name || "").trim();
 
-      if (!rawEmail || !rawEmail.includes("@")) {
-        return new Response(
-          JSON.stringify({error: "A valid email is required to create the account"}),
-          {headers: {"Content-Type": "application/json"}, status: 400},
-        );
-      }
-
-      // 1. Vendor must exist and not already be linked to a user.
+      // Vendor must exist and not already be linked to a user.
       const {data: vendor, error: vendorErr} = await supabase
         .from("vendors")
         .select("id, name, auth_user_id")
@@ -677,58 +831,21 @@ export async function handleAdminVendors(
         );
       }
 
-      // 2. Email must not already be in use by another user (case-insensitive).
-      const {data: existingByEmail} = await supabase
-        .from("users")
-        .select("id, email, role")
-        .ilike("email", rawEmail)
-        .limit(1);
-      if (existingByEmail && existingByEmail.length > 0) {
+      const provisioned = await provisionVendorPortalAccount(
+        supabase,
+        vendorId,
+        rawEmail,
+        firstName,
+        lastName,
+        vendor.name,
+      );
+      if (!("user" in provisioned)) {
         return new Response(
           JSON.stringify({
-            error: `A user already exists at ${rawEmail}. Link the vendor to that user instead, or use a different email.`,
-            existingUserId: existingByEmail[0].id,
+            error: provisioned.error,
+            existingUserId: provisioned.existingUserId,
           }),
-          {headers: {"Content-Type": "application/json"}, status: 409},
-        );
-      }
-
-      // 3. Provision the user with a fresh temp password.
-      const tempPassword = generateTempPassword();
-      const passwordHash = await bcryptHash(tempPassword);
-      const {data: newUser, error: userInsertErr} = await supabase
-        .from("users")
-        .insert({
-          email: rawEmail,
-          password_hash: passwordHash,
-          role: "vendorAdmin",
-          first_name: firstName || null,
-          last_name: lastName || null,
-          is_verified: true, // admin-vouched accounts skip email verification
-          account_status: "active",
-        })
-        .select("id, email, role, first_name, last_name")
-        .single();
-      if (userInsertErr || !newUser) {
-        console.error("create-account user insert error:", userInsertErr);
-        return new Response(
-          JSON.stringify({error: userInsertErr?.message || "Failed to create user"}),
-          {headers: {"Content-Type": "application/json"}, status: 500},
-        );
-      }
-
-      // 4. Link vendor → user.
-      const {error: linkErr} = await supabase
-        .from("vendors")
-        .update({auth_user_id: newUser.id})
-        .eq("id", vendorId);
-      if (linkErr) {
-        console.error("create-account vendor link error:", linkErr);
-        // Best-effort rollback so we don't leave an orphan user.
-        await supabase.from("users").delete().eq("id", newUser.id);
-        return new Response(
-          JSON.stringify({error: "Failed to link account to vendor"}),
-          {headers: {"Content-Type": "application/json"}, status: 500},
+          {headers: {"Content-Type": "application/json"}, status: provisioned.status},
         );
       }
 
@@ -738,8 +855,8 @@ export async function handleAdminVendors(
           message:
             "Portal account created. Share the temp password with the vendor — they can change it from Profile after signing in.",
           vendor: {id: vendor.id, name: vendor.name},
-          user: newUser,
-          tempPassword,
+          user: provisioned.user,
+          tempPassword: provisioned.tempPassword,
         }),
         {headers: {"Content-Type": "application/json"}, status: 201},
       );
