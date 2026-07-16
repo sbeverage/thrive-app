@@ -15,7 +15,7 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "buildNumber": "58",
+      "buildNumber": "59",
       "supportsTablet": true,
       "bundleIdentifier": "com.thriveinitiative.app",
       "googleServicesFile": "./GoogleService-Info.plist",

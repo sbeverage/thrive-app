@@ -183,12 +183,10 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
       setLoadingBeneficiaries(true);
       const data = await API.getCharities();
       // Fetch THRIVE separately so it appears in the Support-THRIVE panel
-      // (only on signup) instead of mixed into the regular cause list.
-      if (isSignupFlow) {
-        API.getThriveCharity().then((c) => {
-          if (c) setThriveCharity(c);
-        }).catch(() => {});
-      }
+      // instead of mixed into the regular cause list.
+      API.getThriveCharity().then((c) => {
+        if (c) setThriveCharity(c);
+      }).catch(() => {});
 
       // Handle different response formats
       let charitiesArray = null;
@@ -310,17 +308,12 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
     }
   }, [userLocation]);
 
-  // Search the IRS 501(c)(3) registry as the donor types (signup flow only).
-  // Debounced so we're not hammering ProPublica on every keystroke. Results
-  // are rendered as a second section below the local matches so the donor
-  // doesn't have to search twice for a charity that isn't onboarded yet.
+  // Search the IRS 501(c)(3) registry as the donor types. Debounced so we're
+  // not hammering ProPublica on every keystroke. Results are rendered as a
+  // second section below the local matches so the donor doesn't have to
+  // search twice for a charity that isn't onboarded yet.
   const lastRegistryQueryRef = useRef('');
   useEffect(() => {
-    if (!isSignupFlow) {
-      setRegistryResults([]);
-      setRegistryLoading(false);
-      return undefined;
-    }
     const q = searchText.trim();
     if (q.length < 3) {
       setRegistryResults([]);
@@ -348,7 +341,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
       }
     }, 320);
     return () => clearTimeout(t);
-  }, [searchText, isSignupFlow]);
+  }, [searchText]);
 
   const filteredBeneficiaries = beneficiaries.filter(b => {
     // Search text filter
@@ -659,10 +652,9 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
   };
 
   // IRS-registry results section — rendered after the local cards so the
-  // donor never has to search twice. Only visible during signup, and only
-  // when the typed query is long enough to have triggered a registry search.
+  // donor never has to search twice. Only shows once the typed query is
+  // long enough to have triggered a registry search.
   const renderRegistrySection = () => {
-    if (!isSignupFlow) return null;
     if (searchText.trim().length < 3) return null;
     if (!registryLoading && registryResults.length === 0) return null;
 
@@ -1209,26 +1201,24 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                     local matches so the donor only ever searches once. */}
                 {renderRegistrySection()}
 
-                {/* End-of-list Support-THRIVE panel: shown only during signup
-                    so donors who have browsed the cause cards still have a
-                    landing pad. Outside signup, the home-tab banner handles
-                    nudging held-mode donors to choose. */}
-                {isSignupFlow && (
-                  <SupportThrivePanel
-                    thriveCharity={thriveCharity}
-                    isLoading={false}
-                    onPickGrow={(c) => {
-                      setHoldingForChoice(false);
-                      setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url } });
-                      setConfirmModalVisible(true);
-                    }}
-                    onPickHold={(c) => {
-                      setHoldingForChoice(true);
-                      setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url }, _saveMySpot: true });
-                      setConfirmModalVisible(true);
-                    }}
-                  />
-                )}
+                {/* End-of-list Support-THRIVE panel — a landing pad for donors
+                    who scrolled the cause cards without picking one. Shown in
+                    both the signup flow and the home-tab beneficiary switcher
+                    so donors can pick THRIVE anywhere. */}
+                <SupportThrivePanel
+                  thriveCharity={thriveCharity}
+                  isLoading={false}
+                  onPickGrow={(c) => {
+                    setHoldingForChoice(false);
+                    setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url } });
+                    setConfirmModalVisible(true);
+                  }}
+                  onPickHold={(c) => {
+                    setHoldingForChoice(true);
+                    setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url }, _saveMySpot: true });
+                    setConfirmModalVisible(true);
+                  }}
+                />
               </>
             ) : (
               <View>
@@ -1264,25 +1254,23 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                     "no results" header so the donor's next step is obvious. */}
                 {renderRegistrySection()}
 
-                {/* When the search comes up empty during signup, the panel
-                    sits below the registry results as a second path forward
-                    so the donor never hits a dead end. */}
-                {isSignupFlow && (
-                  <SupportThrivePanel
-                    thriveCharity={thriveCharity}
-                    isLoading={false}
-                    onPickGrow={(c) => {
-                      setHoldingForChoice(false);
-                      setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url } });
-                      setConfirmModalVisible(true);
-                    }}
-                    onPickHold={(c) => {
-                      setHoldingForChoice(true);
-                      setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url }, _saveMySpot: true });
-                      setConfirmModalVisible(true);
-                    }}
-                  />
-                )}
+                {/* When the search comes up empty, the panel sits below the
+                    registry results as a second path forward so the donor
+                    never hits a dead end. */}
+                <SupportThrivePanel
+                  thriveCharity={thriveCharity}
+                  isLoading={false}
+                  onPickGrow={(c) => {
+                    setHoldingForChoice(false);
+                    setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url } });
+                    setConfirmModalVisible(true);
+                  }}
+                  onPickHold={(c) => {
+                    setHoldingForChoice(true);
+                    setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url }, _saveMySpot: true });
+                    setConfirmModalVisible(true);
+                  }}
+                />
               </View>
             )}
           </ScrollView>
