@@ -523,6 +523,31 @@ export default function VendorDetails() {
             ) : null;
           })()}
 
+          {/* Photo gallery — up to 5 4:3 tiles in a horizontal strip. The
+              tile enforces the aspect via a fixed height + cover resize so
+              vendors uploading mixed orientations still read as uniform.
+              Section hides entirely when there are no images so profiles
+              without a gallery still look clean. */}
+          {Array.isArray(vendor.imageUrls) && vendor.imageUrls.length > 0 && (
+            <View style={styles.gallerySection}>
+              <Text style={styles.sectionTitle}>Photos</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.galleryScrollContent}
+              >
+                {vendor.imageUrls.map((uri, i) => (
+                  <Image
+                    key={`${uri}_${i}`}
+                    source={{ uri }}
+                    style={styles.galleryTile}
+                    resizeMode="cover"
+                  />
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
           {/* Contact Information */}
           <View style={styles.contactSection}>
             <Text style={styles.sectionTitle}>Contact Information</Text>
@@ -606,20 +631,33 @@ export default function VendorDetails() {
             <View style={styles.hoursSection}>
               <Text style={styles.sectionTitle}>Business Hours</Text>
               {(() => {
-                const dayOrder = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-                const sortedHours = Object.entries(vendor.hours).sort(([dayA], [dayB]) => {
-                  const indexA = dayOrder.indexOf(dayA.toLowerCase());
-                  const indexB = dayOrder.indexOf(dayB.toLowerCase());
-                  if (indexA === -1) return 1;
-                  if (indexB === -1) return -1;
-                  return indexA - indexB;
+                // Vendors have historically been saved with two different key
+                // shapes for hours — full day names ("monday") from the old
+                // wizard, and 3-letter abbreviations ("mon") from newer entry
+                // paths. Match on the first three chars so both sort into the
+                // canonical Mon–Sun order.
+                const dayOrder = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+                const dayIndex = (raw) => {
+                  const key = String(raw || '').toLowerCase().trim().slice(0, 3);
+                  const i = dayOrder.indexOf(key);
+                  return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+                };
+                const sortedHours = Object.entries(vendor.hours).sort(
+                  ([a], [b]) => dayIndex(a) - dayIndex(b),
+                );
+                const dayLabel = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+                return sortedHours.map(([day, hours]) => {
+                  const idx = dayIndex(day);
+                  const label = idx === Number.MAX_SAFE_INTEGER
+                    ? day.charAt(0).toUpperCase() + day.slice(1)
+                    : dayLabel[idx];
+                  return (
+                    <View key={day} style={styles.hoursRow}>
+                      <Text style={styles.dayText}>{label}</Text>
+                      <Text style={styles.hoursText}>{hours}</Text>
+                    </View>
+                  );
                 });
-                return sortedHours.map(([day, hours]) => (
-                  <View key={day} style={styles.hoursRow}>
-                    <Text style={styles.dayText}>{day.charAt(0).toUpperCase() + day.slice(1)}</Text>
-                    <Text style={styles.hoursText}>{hours}</Text>
-                  </View>
-                ));
               })()}
             </View>
           )}
@@ -840,16 +878,20 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 18,
   },
+  // Coupon band typography — kept identical for both branches (amount vs
+  // fallback title) so the banner reads consistently whether the discount
+  // has a computed value like "10% off" or falls back to its title.
   bandAmount: {
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 20,
+    fontWeight: '800',
     color: '#fff',
     letterSpacing: 0.5,
   },
   bandTitle: {
-    fontSize: 17,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '800',
     color: '#fff',
+    letterSpacing: 0.5,
     flex: 1,
   },
   limitBadge: {
@@ -958,6 +1000,23 @@ const styles = StyleSheet.create({
     color: '#4B5563',
     lineHeight: 22,
     marginTop: 4,
+  },
+
+  // Photo Gallery
+  gallerySection: {
+    marginBottom: 32,
+  },
+  galleryScrollContent: {
+    paddingRight: 20,
+    paddingTop: 4,
+    paddingBottom: 4,
+  },
+  galleryTile: {
+    width: 220,
+    height: 165,   // 220 / 165 ≈ 4:3
+    borderRadius: 12,
+    marginRight: 12,
+    backgroundColor: '#EDF0F3',
   },
 
   // Contact Section
