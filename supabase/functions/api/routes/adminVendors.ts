@@ -1,10 +1,56 @@
 import { corsHeaders } from "../lib/cors.ts";
 import { bcryptHash } from "../lib/password.ts";
 import { sendVendorEmail } from "../lib/email.ts";
+import { normalizeHours } from "../lib/vendorHours.ts";
 
 // Generates a readable temp password admins can hand to a vendor. Avoids
 // ambiguous characters (0/O, 1/l/I) so support tickets aren't "I think
 // that was a zero?". 10 chars from a 60-char alphabet = ~58 bits of entropy.
+// Enriches a vendor row with fields the admin panel's VendorProfile form
+// expects at the top level (email, firstName, lastName, contactName) plus
+// the account_email + account_owner_name fields the list view already
+// uses. All read/write endpoints in this file return this shape so the
+// admin panel can rely on it on both save-response and refresh.
+//
+// contactName is sourced from vendors.contact_name (added in migration
+// 20260718000002) which persists regardless of whether a portal account
+// exists. Falls back to the linked users row's first/last when the vendor
+// column is empty — mostly for old rows that predate the column.
+async function enrichVendorForAdmin(supabase: any, vendor: any) {
+  if (!vendor) return vendor;
+  let user: any = null;
+  if (vendor.auth_user_id) {
+    const { data } = await supabase
+      .from('users')
+      .select('id, email, first_name, last_name')
+      .eq('id', vendor.auth_user_id)
+      .maybeSingle();
+    user = data;
+  }
+  const linkedFullName = user
+    ? [user.first_name, user.last_name].filter(Boolean).join(' ') || null
+    : null;
+  const contactName = vendor.contact_name || linkedFullName;
+  // Split contactName into first/last so form fields that bind to the split
+  // parts still get a value even if only the combined name is stored.
+  let firstName: string | null = user?.first_name || null;
+  let lastName: string | null = user?.last_name || null;
+  if (!firstName && !lastName && contactName) {
+    const parts = String(contactName).trim().split(/\s+/);
+    firstName = parts.shift() || null;
+    lastName = parts.length ? parts.join(' ') : null;
+  }
+  return {
+    ...vendor,
+    account_email: user?.email || null,
+    account_owner_name: linkedFullName,
+    email: user?.email || null,
+    firstName,
+    lastName,
+    contactName,
+  };
+}
+
 function generateTempPassword(): string {
   const alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const bytes = new Uint8Array(10);
@@ -282,14 +328,30 @@ export async function handleAdminVendors(
       for (const u of users || []) userById.set(u.id, u);
     }
 
+    // Shape matches enrichVendorForAdmin() — kept inline here because the
+    // list already batch-fetched users in one query above, and we want to
+    // avoid an N+1 for every vendor.
     const enrichedVendors = (vendors || []).map((v: any) => {
       const u = v.auth_user_id ? userById.get(v.auth_user_id) : null;
+      const linkedFullName = u
+        ? [u.first_name, u.last_name].filter(Boolean).join(" ") || null
+        : null;
+      const contactName = v.contact_name || linkedFullName;
+      let firstName: string | null = u?.first_name || null;
+      let lastName: string | null = u?.last_name || null;
+      if (!firstName && !lastName && contactName) {
+        const parts = String(contactName).trim().split(/\s+/);
+        firstName = parts.shift() || null;
+        lastName = parts.length ? parts.join(" ") : null;
+      }
       return {
         ...v,
         account_email: u?.email || null,
-        account_owner_name: u
-          ? [u.first_name, u.last_name].filter(Boolean).join(" ") || null
-          : null,
+        account_owner_name: linkedFullName,
+        email: u?.email || null,
+        firstName,
+        lastName,
+        contactName,
       };
     });
 
@@ -412,6 +474,141 @@ export async function handleAdminVendors(
     );
   }
 
+  // POST /admin/vendors/:id/images — append a photo to the vendor gallery.
+  // Max 5 images per vendor (enforced both here and via a CHECK constraint).
+  const vendorImagesUploadMatch = route.match(/^\/admin\/vendors\/(\d+)\/images$/);
+  if (method === "POST" && vendorImagesUploadMatch) {
+    const vendorId = vendorImagesUploadMatch[1];
+    const { data: vendor, error: vendorError } = await supabase
+      .from("vendors")
+      .select("id, image_urls")
+      .eq("id", vendorId)
+      .single();
+    if (vendorError || !vendor) {
+      return new Response(JSON.stringify({ error: "Vendor not found" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 404,
+      });
+    }
+    const existing: string[] = Array.isArray(vendor.image_urls) ? vendor.image_urls : [];
+    if (existing.length >= 5) {
+      return new Response(
+        JSON.stringify({ error: "This vendor already has 5 images. Remove one before adding another." }),
+        { headers: { "Content-Type": "application/json" }, status: 400 },
+      );
+    }
+
+    const formData = await req.formData();
+    const file = formData.get("image") as File;
+    if (!file) {
+      return new Response(JSON.stringify({ error: "No file uploaded" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 400,
+      });
+    }
+
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
+    const filePath = `vendor-${vendorId}/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("vendor-images")
+      .upload(filePath, buf, { contentType: file.type, upsert: false });
+    if (uploadError) {
+      console.error("❌ Error uploading vendor image:", uploadError);
+      return new Response(JSON.stringify({ error: "Failed to upload image" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 500,
+      });
+    }
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("vendor-images").getPublicUrl(filePath);
+
+    const nextArray = [...existing, publicUrl];
+    const { error: updateError } = await supabase
+      .from("vendors")
+      .update({ image_urls: nextArray, updated_at: new Date().toISOString() })
+      .eq("id", vendorId);
+    if (updateError) {
+      // Best-effort rollback of the storage upload so we don't leave orphans.
+      await supabase.storage.from("vendor-images").remove([filePath]).catch(() => {});
+      console.error("❌ Error updating vendor image_urls:", updateError);
+      return new Response(JSON.stringify({ error: "Failed to save image" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 500,
+      });
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, imageUrl: publicUrl, image_urls: nextArray }),
+      { headers: { "Content-Type": "application/json" }, status: 200 },
+    );
+  }
+
+  // DELETE /admin/vendors/:id/images — remove a photo. Body: { url }.
+  // Reorders / bulk-replaces go through PUT /admin/vendors/:id with an
+  // image_urls array instead.
+  if (method === "DELETE" && vendorImagesUploadMatch) {
+    const vendorId = vendorImagesUploadMatch[1];
+    const body = await req.json().catch(() => ({}));
+    const url = String(body.url || "").trim();
+    if (!url) {
+      return new Response(JSON.stringify({ error: "Missing `url` in request body" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 400,
+      });
+    }
+    const { data: vendor, error: vendorError } = await supabase
+      .from("vendors")
+      .select("id, image_urls")
+      .eq("id", vendorId)
+      .single();
+    if (vendorError || !vendor) {
+      return new Response(JSON.stringify({ error: "Vendor not found" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 404,
+      });
+    }
+    const existing: string[] = Array.isArray(vendor.image_urls) ? vendor.image_urls : [];
+    const nextArray = existing.filter((u) => u !== url);
+    if (nextArray.length === existing.length) {
+      return new Response(
+        JSON.stringify({ error: "That image isn't on this vendor" }),
+        { headers: { "Content-Type": "application/json" }, status: 404 },
+      );
+    }
+    const { error: updateError } = await supabase
+      .from("vendors")
+      .update({ image_urls: nextArray, updated_at: new Date().toISOString() })
+      .eq("id", vendorId);
+    if (updateError) {
+      console.error("❌ Error updating vendor image_urls:", updateError);
+      return new Response(JSON.stringify({ error: "Failed to remove image" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 500,
+      });
+    }
+
+    // Best-effort storage cleanup — extract the object path from the URL.
+    // Public Storage URLs look like:
+    //   https://<project>.supabase.co/storage/v1/object/public/vendor-images/vendor-42/1234_abc.jpg
+    // We slice off everything up to and including "/vendor-images/".
+    const marker = "/vendor-images/";
+    const idx = url.indexOf(marker);
+    if (idx !== -1) {
+      const path = url.slice(idx + marker.length);
+      await supabase.storage.from("vendor-images").remove([path]).catch(() => {});
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, image_urls: nextArray }),
+      { headers: { "Content-Type": "application/json" }, status: 200 },
+    );
+  }
+
   // POST /admin/vendors
   if (method === "POST" && route === "/admin/vendors") {
     const body = await req.json();
@@ -461,7 +658,7 @@ export async function handleAdminVendors(
           phone: phone || null,
           social_links: socialLinks || null,
           address: address || null,
-          hours: hours || null,
+          hours: hours ? normalizeHours(hours) : null,
           logo_url: logoUrlValue || null,
           // Admin-created vendors are pre-vetted — skip the pending queue so
           // they appear on the donor app immediately (self-serve signups still
@@ -512,10 +709,15 @@ export async function handleAdminVendors(
       }
     }
 
+    // If we auto-provisioned during create, the vendor now has auth_user_id
+    // set — refetch so the enriched shape includes the linked users row.
+    const newVendorForResponse = portalAccount
+      ? (await supabase.from("vendors").select("*").eq("id", newVendor.id).single()).data || newVendor
+      : newVendor;
     return new Response(
       JSON.stringify({
         success: true,
-        data: newVendor,
+        data: await enrichVendorForAdmin(supabase, newVendorForResponse),
         portalAccount,
         warning: portalWarning,
       }),
@@ -550,10 +752,10 @@ export async function handleAdminVendors(
       });
     }
 
-    return new Response(JSON.stringify({success: true, data: vendor}), {
-      headers: {"Content-Type": "application/json"},
-      status: 200,
-    });
+    return new Response(
+      JSON.stringify({success: true, data: await enrichVendorForAdmin(supabase, vendor)}),
+      { headers: {"Content-Type": "application/json"}, status: 200 },
+    );
   }
 
   // PUT /admin/vendors/:id
@@ -573,6 +775,7 @@ export async function handleAdminVendors(
       hours,
       logoUrl,
       logo_url,
+      image_urls,
       status,
       is_enabled,
       // Primary contact + login email live on the linked users row, not the
@@ -610,7 +813,41 @@ export async function handleAdminVendors(
     if (phone !== undefined) updateObj.phone = phone || null;
     if (socialLinks !== undefined) updateObj.social_links = socialLinks || null;
     if (address !== undefined) updateObj.address = address || null;
-    if (hours !== undefined) updateObj.hours = hours || null;
+    if (hours !== undefined) updateObj.hours = hours ? normalizeHours(hours) : null;
+    if (image_urls !== undefined) {
+      if (!Array.isArray(image_urls)) {
+        return new Response(
+          JSON.stringify({ error: "image_urls must be an array of URLs" }),
+          { headers: { "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+      if (image_urls.length > 5) {
+        return new Response(
+          JSON.stringify({ error: "A vendor can have at most 5 gallery images" }),
+          { headers: { "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+      updateObj.image_urls = image_urls;
+    }
+
+    // Contact name — persisted directly on the vendors row so it survives
+    // regardless of whether a portal account exists. Kept in sync with
+    // users.first_name/last_name below when the vendor IS linked to a user.
+    const resolvedContactUp = contactName ?? contact_name;
+    const resolvedFirstUp = firstName ?? first_name;
+    const resolvedLastUp = lastName ?? last_name;
+    let vendorContactName: string | undefined;
+    if (resolvedContactUp !== undefined) {
+      vendorContactName = String(resolvedContactUp || "").trim();
+    } else if (resolvedFirstUp !== undefined || resolvedLastUp !== undefined) {
+      vendorContactName = [
+        String(resolvedFirstUp ?? "").trim(),
+        String(resolvedLastUp ?? "").trim(),
+      ].filter(Boolean).join(" ");
+    }
+    if (vendorContactName !== undefined) {
+      updateObj.contact_name = vendorContactName || null;
+    }
     if (logoUrlValue !== undefined) updateObj.logo_url = logoUrlValue || null;
     // Active/inactive toggle - vendors table uses is_active (not status)
     if (status !== undefined) {
@@ -726,7 +963,12 @@ export async function handleAdminVendors(
     }
 
     return new Response(
-      JSON.stringify({success: true, data: updatedVendor, warning: userWarning, portalAccount}),
+      JSON.stringify({
+        success: true,
+        data: await enrichVendorForAdmin(supabase, updatedVendor),
+        warning: userWarning,
+        portalAccount,
+      }),
       {headers: {"Content-Type": "application/json"}, status: 200},
     );
   }
@@ -747,22 +989,25 @@ export async function handleAdminVendors(
       .eq("id", vendorId)
       .maybeSingle();
 
-    // 1. Storage cleanup — list every file in the vendor's folder then remove.
-    try {
-      const { data: files } = await supabase.storage
-        .from("vendor-logos")
-        .list(`vendor-${vendorId}`);
-      if (files && files.length > 0) {
-        const paths = files.map((f: any) => `vendor-${vendorId}/${f.name}`);
-        const { error: removeError } = await supabase.storage
-          .from("vendor-logos")
-          .remove(paths);
-        if (removeError) {
-          console.warn("vendor logo storage cleanup error:", removeError);
+    // 1. Storage cleanup — list every file in the vendor's folder across
+    //    both buckets (logo + gallery images) and remove.
+    for (const bucket of ["vendor-logos", "vendor-images"]) {
+      try {
+        const { data: files } = await supabase.storage
+          .from(bucket)
+          .list(`vendor-${vendorId}`);
+        if (files && files.length > 0) {
+          const paths = files.map((f: any) => `vendor-${vendorId}/${f.name}`);
+          const { error: removeError } = await supabase.storage
+            .from(bucket)
+            .remove(paths);
+          if (removeError) {
+            console.warn(`${bucket} cleanup error:`, removeError);
+          }
         }
+      } catch (e) {
+        console.warn(`${bucket} list/remove error:`, e);
       }
-    } catch (e) {
-      console.warn("vendor storage list/remove error:", e);
     }
 
     // 2. Delete the vendors row — cascades to discounts (→ redemptions +

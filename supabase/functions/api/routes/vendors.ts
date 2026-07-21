@@ -40,6 +40,7 @@ function formatVendor(vendor: any) {
     phone: vendor.phone,
     socialLinks: vendor.social_links || {},
     logoUrl: vendor.logo_url,
+    imageUrls: Array.isArray(vendor.image_urls) ? vendor.image_urls : [],
     address: vendor.address || null,
     hours: vendor.hours || null,
     createdAt: vendor.created_at,

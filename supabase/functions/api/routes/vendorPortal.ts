@@ -22,6 +22,7 @@ import { corsHeaders } from "../lib/cors.ts";
 import { getAppAuthHeader } from "../lib/jwt-app.ts";
 import { sendVendorEmail } from "../lib/email.ts";
 import { sendPushBatch } from "../lib/push.ts";
+import { normalizeHours } from "../lib/vendorHours.ts";
 
 type JSONResponse = Response;
 
@@ -98,7 +99,7 @@ async function handleVendorSignup(req: Request, supabase: any, userId: number): 
     phone: body.phone ?? null,
     social_links: body.social_links ?? null,
     address: body.address ?? null,
-    hours: body.hours ?? null,
+    hours: body.hours ? normalizeHours(body.hours) : null,
     auth_user_id: userId,
     created_by_user_id: userId,
     signup_status: "pending",
@@ -135,10 +136,24 @@ async function handleVendorMePut(req: Request, supabase: any, userId: number): P
   const updates: Record<string, unknown> = {};
   const editable = [
     "name", "category", "description", "logo_url", "website", "phone",
-    "social_links", "address", "hours",
+    "social_links", "address", "hours", "image_urls",
   ];
   for (const key of editable) {
-    if (key in body) updates[key] = body[key];
+    if (key in body) {
+      if (key === "hours" && body[key]) {
+        updates[key] = normalizeHours(body[key]);
+      } else if (key === "image_urls") {
+        if (!Array.isArray(body[key])) {
+          return json({ error: "image_urls must be an array of URLs" }, 400);
+        }
+        if (body[key].length > 5) {
+          return json({ error: "You can have at most 5 gallery images" }, 400);
+        }
+        updates[key] = body[key];
+      } else {
+        updates[key] = body[key];
+      }
+    }
   }
   if (Object.keys(updates).length === 0) return json({ vendor: existing });
 
@@ -661,6 +676,13 @@ export async function handleVendorPortalRoute(
 
   if (!vendor) return json({ error: "Vendor profile not found" }, 404);
 
+  // Gallery image add/remove — mirrors /admin/vendors/:id/images but scoped
+  // to the authed vendor. Max 5 images enforced here and by a DB CHECK.
+  if (route === "/vendor/me/images") {
+    if (method === "POST") return handleVendorImageUpload(req, supabase, vendor);
+    if (method === "DELETE") return handleVendorImageDelete(req, supabase, vendor);
+  }
+
   if (route === "/vendor/me/discounts") {
     if (method === "GET") return handleDiscountList(supabase, vendor.id);
     if (method === "POST") return handleDiscountCreate(req, supabase, vendor.id);
@@ -847,4 +869,104 @@ async function handleVendorLogoUpload(
   }
 
   return json({ vendor: updated, logo_url: publicUrl });
+}
+
+// ============================================================================
+// POST /vendor/me/images — append a gallery image (max 5)
+// DELETE /vendor/me/images — remove a gallery image, body: { url }
+// ============================================================================
+
+const ACCEPTED_IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8 MB
+
+async function handleVendorImageUpload(
+  req: Request, supabase: any, vendor: any,
+): Promise<JSONResponse> {
+  const existing: string[] = Array.isArray(vendor.image_urls) ? vendor.image_urls : [];
+  if (existing.length >= 5) {
+    return json({ error: "You already have 5 images. Remove one before adding another." }, 400);
+  }
+
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch {
+    return json({ error: "Expected multipart/form-data body with an 'image' file field" }, 400);
+  }
+  const file = formData.get("image") as File | null;
+  if (!file || typeof (file as any).arrayBuffer !== "function") {
+    return json({ error: "No file uploaded" }, 400);
+  }
+  if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
+    return json({ error: "Image must be JPG, PNG or WEBP" }, 400);
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    return json({ error: "Image must be 8 MB or smaller" }, 400);
+  }
+
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const ext = file.type === "image/png" ? "png"
+            : file.type === "image/webp" ? "webp"
+            : "jpg";
+  const fileName = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}.${ext}`;
+  const filePath = `vendor-${vendor.id}/${fileName}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("vendor-images")
+    .upload(filePath, buf, { contentType: file.type, upsert: false });
+  if (uploadError) {
+    console.error("vendor image upload error:", uploadError);
+    return json({ error: uploadError.message || "Could not upload image" }, 500);
+  }
+
+  const { data: { publicUrl } } = supabase.storage.from("vendor-images").getPublicUrl(filePath);
+  const nextArray = [...existing, publicUrl];
+
+  const { data: updated, error: updateError } = await supabase
+    .from("vendors")
+    .update({ image_urls: nextArray, updated_at: new Date().toISOString() })
+    .eq("id", vendor.id)
+    .select("*")
+    .single();
+  if (updateError) {
+    await supabase.storage.from("vendor-images").remove([filePath]).catch(() => {});
+    console.error("vendor image db update error:", updateError);
+    return json({ error: updateError.message || "Could not save image" }, 500);
+  }
+
+  return json({ vendor: updated, image_url: publicUrl, image_urls: updated.image_urls });
+}
+
+async function handleVendorImageDelete(
+  req: Request, supabase: any, vendor: any,
+): Promise<JSONResponse> {
+  const body = await req.json().catch(() => ({}));
+  const url = String(body.url || "").trim();
+  if (!url) return json({ error: "Missing `url` in request body" }, 400);
+
+  const existing: string[] = Array.isArray(vendor.image_urls) ? vendor.image_urls : [];
+  const nextArray = existing.filter((u) => u !== url);
+  if (nextArray.length === existing.length) {
+    return json({ error: "That image isn't on this vendor" }, 404);
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from("vendors")
+    .update({ image_urls: nextArray, updated_at: new Date().toISOString() })
+    .eq("id", vendor.id)
+    .select("*")
+    .single();
+  if (updateError) {
+    console.error("vendor image delete db error:", updateError);
+    return json({ error: updateError.message || "Could not remove image" }, 500);
+  }
+
+  const marker = "/vendor-images/";
+  const idx = url.indexOf(marker);
+  if (idx !== -1) {
+    const path = url.slice(idx + marker.length);
+    await supabase.storage.from("vendor-images").remove([path]).catch(() => {});
+  }
+
+  return json({ vendor: updated, image_urls: updated.image_urls });
 }

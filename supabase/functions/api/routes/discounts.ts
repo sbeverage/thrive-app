@@ -33,6 +33,7 @@ export async function handleDiscountRoute(
             phone,
             social_links,
             logo_url,
+            image_urls,
             address,
             hours,
             signup_status
@@ -238,6 +239,7 @@ export async function handleDiscountRoute(
             phone,
             social_links,
             logo_url,
+            image_urls,
             address,
             hours
           )
