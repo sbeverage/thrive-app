@@ -625,6 +625,94 @@ async function handleVendorStats(supabase: any, vendorId: number): Promise<JSONR
 }
 
 // ============================================================================
+// GET /vendor/me/redemptions
+// ----------------------------------------------------------------------------
+// Per-transaction redemption log so vendors can see exactly which discount
+// a donor redeemed, when, and (where they opted in) the bill / savings on
+// the transaction. Anonymises the donor to city/state only — full name
+// and email stay private.
+//
+// Query params:
+//   limit  (default 50, max 200)
+//   offset (default 0)
+// ============================================================================
+
+async function handleVendorRedemptions(
+  req: Request, supabase: any, vendorId: number,
+): Promise<JSONResponse> {
+  const url = new URL(req.url);
+  const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get("limit") || "50", 10)));
+  const offset = Math.max(0, parseInt(url.searchParams.get("offset") || "0", 10));
+
+  // Pull this vendor's discount IDs first so we can scope the redemption
+  // query cleanly. Any discount owned by another vendor is excluded even
+  // if it somehow shares a redemption_code.
+  const { data: discounts } = await supabase
+    .from("discounts")
+    .select("id, title, discount_type, discount_value, discount_percentage, discount_amount, discount_code")
+    .eq("vendor_id", vendorId);
+  const discountById = new Map<number, any>();
+  for (const d of discounts || []) discountById.set(d.id, d);
+  const discountIds = Array.from(discountById.keys());
+
+  if (discountIds.length === 0) {
+    return json({ redemptions: [], total: 0, limit, offset });
+  }
+
+  const { count: total } = await supabase
+    .from("redemptions")
+    .select("*", { count: "exact", head: true })
+    .in("discount_id", discountIds);
+
+  const { data: rows, error } = await supabase
+    .from("redemptions")
+    .select("id, discount_id, user_id, redemption_code, redeemed_at, total_bill, total_savings")
+    .in("discount_id", discountIds)
+    .order("redeemed_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+  if (error) return json({ error: error.message }, 500);
+
+  // Anonymised donor location — city / state only, joined via user_id.
+  const userIds = Array.from(new Set((rows || []).map((r: any) => r.user_id).filter(Boolean)));
+  const locByUser = new Map<number, { city: string | null; state: string | null }>();
+  if (userIds.length > 0) {
+    const { data: donors } = await supabase
+      .from("users")
+      .select("id, city, state")
+      .in("id", userIds);
+    for (const u of donors || []) locByUser.set(u.id, { city: u.city, state: u.state });
+  }
+
+  const enriched = (rows || []).map((r: any) => {
+    const d = discountById.get(r.discount_id);
+    const loc = locByUser.get(r.user_id) || {};
+    const savings = r.total_savings != null ? Number(r.total_savings) : null;
+    return {
+      id: r.id,
+      redeemed_at: r.redeemed_at,
+      discount: d ? {
+        id: d.id,
+        title: d.title,
+        type: d.discount_type,
+        value: d.discount_value ?? d.discount_percentage ?? d.discount_amount ?? null,
+      } : { id: r.discount_id, title: "(deleted discount)", type: null, value: null },
+      redemption_code: r.redemption_code || null,
+      total_bill: r.total_bill != null ? Number(r.total_bill) : null,
+      total_savings: savings,
+      donor_city: loc.city || null,
+      donor_state: loc.state || null,
+    };
+  });
+
+  return json({
+    redemptions: enriched,
+    total: total || 0,
+    limit,
+    offset,
+  });
+}
+
+// ============================================================================
 // Router entry point — called from index.ts for any /vendor/* route.
 // ============================================================================
 
@@ -703,6 +791,10 @@ export async function handleVendorPortalRoute(
 
   if (method === "GET" && route === "/vendor/me/stats") {
     return handleVendorStats(supabase, vendor.id);
+  }
+
+  if (method === "GET" && route === "/vendor/me/redemptions") {
+    return handleVendorRedemptions(req, supabase, vendor.id);
   }
 
   if (method === "POST" && route === "/vendor/me/generate-description") {
