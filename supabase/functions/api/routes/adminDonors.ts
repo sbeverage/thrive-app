@@ -1062,134 +1062,206 @@ export async function handleAdminDonors(
         );
       }
 
-      // Fetch payment methods (handle if table doesn't exist)
+      // ---- Pull the donor's Stripe customer ID once — used by the
+      //      payment-methods fetch below.
+      const { data: donorRow } = await supabase
+        .from("users")
+        .select("stripe_customer_id")
+        .eq("id", donorId)
+        .maybeSingle();
+      const stripeCustomerId = donorRow?.stripe_customer_id || null;
+
+      // ---- Payment methods (live from Stripe) ----
+      // Prior version queried a `payment_methods` table that doesn't exist
+      // in this project — payment methods live in Stripe. Fetch the
+      // customer's default PM + full list of cards so the admin sees exactly
+      // what the donor is being charged on.
       let paymentMethods: any[] = [];
-      try {
-        const {data: pmData, error: pmError} = await supabase
-          .from("payment_methods")
-          .select("*")
-          .eq("donor_id", donorId)
-          .order("is_default", {ascending: false});
-
-        if (!pmError && pmData) {
-          paymentMethods = pmData.map((pm: any) => ({
-            type: pm.type || "card",
-            brand: pm.brand || null,
-            last4: pm.last4 || null,
-            exp_month: pm.exp_month || null,
-            exp_year: pm.exp_year || null,
-            is_default: pm.is_default || false,
-          }));
+      if (stripeCustomerId) {
+        try {
+          const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+          if (stripeKey) {
+            const stripeBase = "https://api.stripe.com/v1";
+            const auth = { Authorization: `Bearer ${stripeKey}` };
+            const custRes = await fetch(`${stripeBase}/customers/${stripeCustomerId}`, { headers: auth });
+            let defaultPmId: string | null = null;
+            if (custRes.ok) {
+              const cust = await custRes.json();
+              defaultPmId = cust.invoice_settings?.default_payment_method || null;
+            }
+            const pmRes = await fetch(
+              `${stripeBase}/payment_methods?customer=${stripeCustomerId}&type=card`,
+              { headers: auth },
+            );
+            if (pmRes.ok) {
+              const pmJson = await pmRes.json();
+              paymentMethods = (pmJson.data || []).map((pm: any) => ({
+                type: pm.type === "card" ? "card" : pm.type,
+                brand: pm.card?.brand || null,
+                last4: pm.card?.last4 || null,
+                exp_month: pm.card?.exp_month || null,
+                exp_year: pm.card?.exp_year || null,
+                is_default: pm.id === defaultPmId,
+              }));
+            }
+          }
+        } catch (pmErr) {
+          console.log("⚠️ Stripe payment methods fetch failed:", pmErr);
         }
-      } catch (pmErr) {
-        console.log("⚠️ Payment methods table may not exist:", pmErr);
-        // Continue with empty array
       }
 
-      // Fetch monthly donation/subscription
+      // ---- Monthly donation (from monthly_donations) ----
+      // Reads the donor's active recurring row — status, amount, cadence,
+      // last + next charge dates. If none, tab shows the empty state.
       let monthlyDonation: any = null;
-      try {
-        const {data: mdData, error: mdError} = await supabase
-          .from("donor_subscriptions")
-          .select("*")
-          .eq("donor_id", donorId)
-          .eq("active", true)
-          .single();
-
-        if (!mdError && mdData) {
-          monthlyDonation = {
-            amount: mdData.amount || 0,
-            active: mdData.active || false,
-            start_date: mdData.start_date || null,
-            next_charge_date: mdData.next_charge_date || null,
-          };
-        }
-      } catch (mdErr) {
-        console.log("⚠️ Donor subscriptions table may not exist:", mdErr);
-      }
-
-      // Fetch current beneficiary
       let currentBeneficiary: any = null;
       try {
-        const {data: cbData, error: cbError} = await supabase
-          .from("donor_beneficiaries")
-          .select("*, beneficiaries(*)")
-          .eq("donor_id", donorId)
-          .eq("is_current", true)
-          .single();
+        const { data: mdData } = await supabase
+          .from("monthly_donations")
+          .select("id, status, amount, last_payment_amount, last_payment_date, next_payment_date, created_at, beneficiary_id, stripe_subscription_id")
+          .eq("user_id", donorId)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-        if (!cbError && cbData) {
-          currentBeneficiary = {
-            name: cbData.beneficiaries?.name || cbData.beneficiary_name || null,
-            category: cbData.beneficiaries?.category || "Charity",
-            amount: cbData.amount || cbData.monthly_amount || 0,
-            start_date: cbData.start_date || null,
+        if (mdData) {
+          const st = String(mdData.status || "").toLowerCase();
+          const isLive = st === "active" || st === "trialing" || st === "past_due";
+          monthlyDonation = {
+            amount: parseFloat((mdData.amount ?? 0).toString()) || 0,
+            active: isLive,
+            status: mdData.status || null,
+            start_date: mdData.created_at || null,
+            last_charge_date: mdData.last_payment_date || null,
+            last_charge_amount: mdData.last_payment_amount != null
+              ? parseFloat(mdData.last_payment_amount.toString())
+              : null,
+            next_charge_date: mdData.next_payment_date || null,
+            stripe_subscription_id: mdData.stripe_subscription_id || null,
           };
+
+          // Current beneficiary — pulled from the monthly_donations row
+          // (that's where the donor's chosen charity lives, not on the
+          // users row).
+          if (mdData.beneficiary_id) {
+            const { data: benef } = await supabase
+              .from("charities")
+              .select("id, name, category")
+              .eq("id", mdData.beneficiary_id)
+              .maybeSingle();
+            if (benef) {
+              currentBeneficiary = {
+                id: benef.id,
+                name: benef.name,
+                category: benef.category || "Charity",
+                amount: monthlyDonation.amount,
+                start_date: monthlyDonation.start_date,
+              };
+            }
+          }
         }
-      } catch (cbErr) {
-        console.log("⚠️ Donor beneficiaries table may not exist:", cbErr);
+      } catch (mdErr) {
+        console.log("⚠️ monthly_donations lookup failed:", mdErr);
       }
 
-      // Fetch donation history (past donations)
+      // ---- Donation history (from transactions + one_time_gifts) ----
+      // transactions holds every completed charge (monthly + one-time).
+      // Newest first, capped at 50.
       let donationHistory: any[] = [];
       try {
-        const {data: dhData, error: dhError} = await supabase
-          .from("donations")
-          .select("*, charities(name), beneficiaries(name)")
-          .eq("donor_id", donorId)
-          .order("created_at", {ascending: false})
+        const { data: txns } = await supabase
+          .from("transactions")
+          .select("id, user_id, type, amount, status, created_at, beneficiary_id, description")
+          .eq("user_id", donorId)
+          .eq("status", "completed")
+          .order("created_at", { ascending: false })
           .limit(50);
 
-        if (!dhError && dhData) {
-          donationHistory = dhData.map((donation: any) => ({
-            date: donation.created_at || donation.date || null,
-            amount: parseFloat(donation.amount || 0),
-            beneficiary_name:
-              donation.charities?.name ||
-              donation.beneficiaries?.name ||
-              donation.charity_name ||
-              "Unknown",
-            type:
-              donation.type || (donation.is_recurring ? "monthly" : "one_time"),
-          }));
+        const beneficiaryIds = Array.from(
+          new Set((txns || []).map((t: any) => t.beneficiary_id).filter(Boolean)),
+        );
+        const nameByBenefId = new Map<number, string>();
+        if (beneficiaryIds.length > 0) {
+          const { data: benefRows } = await supabase
+            .from("charities")
+            .select("id, name")
+            .in("id", beneficiaryIds);
+          for (const b of benefRows || []) nameByBenefId.set(b.id, b.name);
         }
+
+        donationHistory = (txns || []).map((t: any) => {
+          const rawAmount = parseFloat((t.amount ?? 0).toString()) || 0;
+          const isMonthly = t.type === "monthly_donation";
+          return {
+            id: t.id,
+            date: t.created_at || null,
+            amount: rawAmount,
+            beneficiary_name: t.beneficiary_id
+              ? (nameByBenefId.get(t.beneficiary_id) || "Beneficiary")
+              : (t.description || "One-time gift"),
+            type: isMonthly ? "monthly" : "one_time",
+          };
+        });
       } catch (dhErr) {
-        console.log("⚠️ Donations table may not exist:", dhErr);
+        console.log("⚠️ transactions lookup failed:", dhErr);
       }
 
-      // Fetch discount redemptions
+      // ---- Discount redemptions (from redemptions) ----
+      // Real table name is `redemptions` — the previous code queried
+      // `discount_redemptions` which doesn't exist. Joins to discounts +
+      // vendors so the tab shows what/where/when + savings.
       let discountRedemptions: any[] = [];
       let totalSavings = 0;
       try {
-        const {data: redData, error: redError} = await supabase
-          .from("discount_redemptions")
-          .select("*, discounts(name, discount_value), vendors(name, address)")
-          .eq("donor_id", donorId)
-          .order("redeemed_at", {ascending: false})
+        const { data: redData } = await supabase
+          .from("redemptions")
+          .select("id, discount_id, vendor_id, redeemed_at, total_bill, total_savings, redemption_code")
+          .eq("user_id", donorId)
+          .order("redeemed_at", { ascending: false })
           .limit(100);
 
-        if (!redError && redData) {
-          discountRedemptions = redData.map((redemption: any) => {
-            const savings =
-              redemption.savings ||
-              redemption.discount_amount ||
-              redemption.discounts?.discount_value ||
-              0;
-            totalSavings += parseFloat(savings);
-            return {
-              vendor_name:
-                redemption.vendors?.name || redemption.vendor_name || null,
-              discount_name:
-                redemption.discounts?.name || redemption.discount_name || null,
-              date: redemption.redeemed_at || redemption.date || null,
-              savings: parseFloat(savings),
-              location:
-                redemption.vendors?.address || redemption.location || null,
-            };
-          });
+        const discountIds = Array.from(new Set((redData || []).map((r: any) => r.discount_id).filter(Boolean)));
+        const vendorIds = Array.from(new Set((redData || []).map((r: any) => r.vendor_id).filter(Boolean)));
+
+        const discountById = new Map<number, any>();
+        if (discountIds.length > 0) {
+          const { data: dRows } = await supabase
+            .from("discounts")
+            .select("id, title, discount_type, discount_value, discount_percentage, discount_amount")
+            .in("id", discountIds);
+          for (const d of dRows || []) discountById.set(d.id, d);
         }
+        const vendorById = new Map<number, any>();
+        if (vendorIds.length > 0) {
+          const { data: vRows } = await supabase
+            .from("vendors")
+            .select("id, name, address")
+            .in("id", vendorIds);
+          for (const v of vRows || []) vendorById.set(v.id, v);
+        }
+
+        discountRedemptions = (redData || []).map((r: any) => {
+          const d = discountById.get(r.discount_id);
+          const v = vendorById.get(r.vendor_id);
+          const savings = r.total_savings != null
+            ? parseFloat(r.total_savings.toString())
+            : 0;
+          totalSavings += savings;
+          const addr = v?.address || {};
+          const location = [addr.city, addr.state].filter(Boolean).join(", ");
+          return {
+            vendor_name: v?.name || null,
+            discount_name: d?.title || null,
+            discount_type: d?.discount_type || null,
+            date: r.redeemed_at || null,
+            savings,
+            total_bill: r.total_bill != null ? parseFloat(r.total_bill.toString()) : null,
+            redemption_code: r.redemption_code || null,
+            location: location || null,
+          };
+        });
       } catch (redErr) {
-        console.log("⚠️ Discount redemptions table may not exist:", redErr);
+        console.log("⚠️ redemptions lookup failed:", redErr);
       }
 
       // Fetch leaderboard position (calculate rank based on points or donations)
