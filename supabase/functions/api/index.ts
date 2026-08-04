@@ -367,7 +367,20 @@ async function getReferrerFromToken(
   }
 }
 
-// One-time gift helper functions
+// Stripe processing-fee math for one-time gifts and monthly donations.
+//
+// Stripe standard rate: 2.9% of the CHARGE + $0.30 flat.
+//
+// When the donor covers fees the correct gross-up formula is:
+//   charge = (donation + 0.30) / (1 - 0.029)
+// Solving `charge = donation + (charge * 0.029 + 0.30)` — Stripe's fee is
+// calculated on the total charge (including the fee itself), so a naive
+// `donation + donation*0.029 + 0.30` undercharges the donor by ~2-5¢ per
+// transaction and leaves THRIVE eating the difference.
+const STRIPE_PERCENT_FEE = 0.029;
+const STRIPE_FLAT_FEE = 0.3;
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 function calculateProcessingFee(
   amount: number,
   userCoveredFees: boolean = false,
@@ -377,28 +390,26 @@ function calculateProcessingFee(
   totalAmount: number;
   netAmount: number;
 } {
-  // Stripe standard fees: 2.9% + $0.30
-  const percentageFee = amount * 0.029;
-  const flatFee = 0.3;
-  const totalFee = percentageFee + flatFee;
-
   if (userCoveredFees) {
-    // Add fee to the amount user pays
+    // Donor covers the full Stripe fee — solve so THRIVE receives exactly
+    // the base donation after Stripe takes its cut of the total charge.
+    const totalAmount = round2((amount + STRIPE_FLAT_FEE) / (1 - STRIPE_PERCENT_FEE));
+    const fee = round2(totalAmount - amount);
     return {
       originalAmount: amount,
-      fee: totalFee,
-      totalAmount: amount + totalFee,
-      netAmount: amount, // Beneficiary receives full amount
-    };
-  } else {
-    // Fee is deducted from donation
-    return {
-      originalAmount: amount,
-      fee: totalFee,
-      totalAmount: amount,
-      netAmount: amount - totalFee, // Beneficiary receives amount minus fee
+      fee,
+      totalAmount,
+      netAmount: amount, // beneficiary receives the full base amount
     };
   }
+  // Donor pays only the base — Stripe takes its fee out of the donation.
+  const fee = round2(amount * STRIPE_PERCENT_FEE + STRIPE_FLAT_FEE);
+  return {
+    originalAmount: amount,
+    fee,
+    totalAmount: amount,
+    netAmount: round2(amount - fee),
+  };
 }
 
 serve(async (req) => {

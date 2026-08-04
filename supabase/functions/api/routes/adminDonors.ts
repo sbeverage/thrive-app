@@ -1010,6 +1010,85 @@ export async function handleAdminDonors(
     }
   }
 
+  // GET /admin/donors/:id/debug — temporary diagnostic endpoint
+  // Returns row counts + first-5 samples from each donor-adjacent table
+  // so we can see exactly what data exists for a given donor id without
+  // relying on RLS-blocked direct DB access. Safe to remove once the
+  // history/redemptions display issue is confirmed fixed.
+  const donorDebugMatch = route.match(/^\/admin\/donors\/(\d+)\/debug$/);
+  if (method === "GET" && donorDebugMatch) {
+    const donorId = parseInt(donorDebugMatch[1], 10);
+    const debugResult: any = { donor_id: donorId };
+    try {
+      const { data: allTxns } = await supabase
+        .from("transactions")
+        .select("id, user_id, type, amount, status, created_at, beneficiary_id, description, reference_id, reference_type")
+        .eq("user_id", donorId)
+        .order("created_at", { ascending: false });
+      debugResult.transactions = {
+        count: (allTxns || []).length,
+        by_type: {},
+        by_status: {},
+        by_amount_bucket: { zero: 0, positive: 0, negative: 0, null: 0 },
+        sample: (allTxns || []).slice(0, 5),
+      };
+      for (const t of allTxns || []) {
+        const bt = debugResult.transactions.by_type;
+        const bs = debugResult.transactions.by_status;
+        const bb = debugResult.transactions.by_amount_bucket;
+        bt[t.type || "null"] = (bt[t.type || "null"] || 0) + 1;
+        bs[t.status || "null"] = (bs[t.status || "null"] || 0) + 1;
+        const a = t.amount == null ? "null" : (Number(t.amount) > 0 ? "positive" : Number(t.amount) < 0 ? "negative" : "zero");
+        bb[a] = (bb[a] || 0) + 1;
+      }
+
+      const { data: allReds } = await supabase
+        .from("redemptions")
+        .select("id, user_id, discount_id, vendor_id, redeemed_at, total_bill, total_savings, redemption_code")
+        .eq("user_id", donorId)
+        .order("redeemed_at", { ascending: false });
+      debugResult.redemptions = {
+        count: (allReds || []).length,
+        sample: (allReds || []).slice(0, 5),
+      };
+
+      const { data: allGifts } = await supabase
+        .from("one_time_gifts")
+        .select("id, user_id, amount, status, created_at, beneficiary_id, user_covered_fees, processing_fee, net_amount")
+        .eq("user_id", donorId)
+        .order("created_at", { ascending: false });
+      debugResult.one_time_gifts = {
+        count: (allGifts || []).length,
+        by_status: {},
+        sample: (allGifts || []).slice(0, 5),
+      };
+      for (const g of allGifts || []) {
+        const bs = debugResult.one_time_gifts.by_status;
+        bs[g.status || "null"] = (bs[g.status || "null"] || 0) + 1;
+      }
+
+      const { data: allMonthly } = await supabase
+        .from("monthly_donations")
+        .select("id, user_id, status, amount, last_payment_amount, last_payment_date, next_payment_date, created_at, beneficiary_id, stripe_subscription_id, user_covered_fees")
+        .eq("user_id", donorId)
+        .order("updated_at", { ascending: false });
+      debugResult.monthly_donations = {
+        count: (allMonthly || []).length,
+        sample: allMonthly || [],
+      };
+
+      return new Response(
+        JSON.stringify({ success: true, data: debugResult }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    } catch (e: any) {
+      return new Response(
+        JSON.stringify({ success: false, error: e.message, debugResult }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+  }
+
   // GET /admin/donors/:id/details - Get comprehensive donor details
   const donorDetailsMatch = route.match(/^\/admin\/donors\/(\d+)\/details$/);
   if (method === "GET" && donorDetailsMatch) {
@@ -1118,7 +1197,7 @@ export async function handleAdminDonors(
       try {
         const { data: mdData } = await supabase
           .from("monthly_donations")
-          .select("id, status, amount, last_payment_amount, last_payment_date, next_payment_date, created_at, beneficiary_id, stripe_subscription_id")
+          .select("id, status, amount, last_payment_amount, last_payment_date, next_payment_date, created_at, beneficiary_id, stripe_subscription_id, user_covered_fees, processing_fee")
           .eq("user_id", donorId)
           .order("updated_at", { ascending: false })
           .limit(1)
@@ -1138,6 +1217,10 @@ export async function handleAdminDonors(
               : null,
             next_charge_date: mdData.next_payment_date || null,
             stripe_subscription_id: mdData.stripe_subscription_id || null,
+            user_covered_fees: mdData.user_covered_fees === true,
+            processing_fee: mdData.processing_fee != null
+              ? parseFloat(mdData.processing_fee.toString())
+              : null,
           };
 
           // Current beneficiary — pulled from the monthly_donations row
@@ -1164,9 +1247,17 @@ export async function handleAdminDonors(
         console.log("⚠️ monthly_donations lookup failed:", mdErr);
       }
 
-      // ---- Donation history (from transactions + one_time_gifts) ----
-      // transactions holds every completed charge (monthly + one-time).
-      // Newest first, capped at 50.
+      // ---- Donation history ----
+      // Data lives across two tables, merged into one chronological list:
+      //   1. `transactions` filtered to real money-movement rows
+      //      (monthly_donation / one_time_gift / held_release, amount > 0).
+      //      Transactions with type='redemption' are the mobile app's
+      //      discount-redemption ledger and are excluded here.
+      //   2. `one_time_gifts` completed / succeeded — some rows pre-date
+      //      the transactions upsert flow.
+      // The most recent monthly charge is synthesized from monthly_donations
+      // when the transactions table lacks a matching row (older subs where
+      // the webhook never wrote to transactions).
       let donationHistory: any[] = [];
       try {
         const { data: txns } = await supabase
@@ -1174,42 +1265,119 @@ export async function handleAdminDonors(
           .select("id, user_id, type, amount, status, created_at, beneficiary_id, description")
           .eq("user_id", donorId)
           .eq("status", "completed")
+          .in("type", ["monthly_donation", "one_time_gift", "held_release"])
+          .gt("amount", 0)
           .order("created_at", { ascending: false })
-          .limit(50);
+          .limit(100);
 
-        const beneficiaryIds = Array.from(
-          new Set((txns || []).map((t: any) => t.beneficiary_id).filter(Boolean)),
-        );
+        const { data: gifts } = await supabase
+          .from("one_time_gifts")
+          .select("id, user_id, amount, status, created_at, beneficiary_id")
+          .eq("user_id", donorId)
+          .in("status", ["succeeded", "completed", "processed"])
+          .order("created_at", { ascending: false })
+          .limit(100);
+
+        const { data: monthlyRows } = await supabase
+          .from("monthly_donations")
+          .select("id, amount, last_payment_amount, last_payment_date, created_at, beneficiary_id")
+          .eq("user_id", donorId);
+
+        const beneficiaryIds = new Set<number>();
+        for (const t of txns || []) if (t.beneficiary_id) beneficiaryIds.add(t.beneficiary_id);
+        for (const g of gifts || []) if (g.beneficiary_id) beneficiaryIds.add(g.beneficiary_id);
+        for (const m of monthlyRows || []) if (m.beneficiary_id) beneficiaryIds.add(m.beneficiary_id);
         const nameByBenefId = new Map<number, string>();
-        if (beneficiaryIds.length > 0) {
+        if (beneficiaryIds.size > 0) {
           const { data: benefRows } = await supabase
             .from("charities")
             .select("id, name")
-            .in("id", beneficiaryIds);
+            .in("id", Array.from(beneficiaryIds));
           for (const b of benefRows || []) nameByBenefId.set(b.id, b.name);
         }
 
-        donationHistory = (txns || []).map((t: any) => {
-          const rawAmount = parseFloat((t.amount ?? 0).toString()) || 0;
-          const isMonthly = t.type === "monthly_donation";
-          return {
-            id: t.id,
+        const merged: any[] = [];
+        const monthlyDatesSeen = new Set<string>();
+
+        for (const t of txns || []) {
+          const dateStr = t.created_at ? t.created_at.slice(0, 10) : "";
+          if (t.type === "monthly_donation" && dateStr) monthlyDatesSeen.add(dateStr);
+          merged.push({
+            id: `txn-${t.id}`,
             date: t.created_at || null,
-            amount: rawAmount,
+            amount: parseFloat((t.amount ?? 0).toString()) || 0,
             beneficiary_name: t.beneficiary_id
               ? (nameByBenefId.get(t.beneficiary_id) || "Beneficiary")
               : (t.description || "One-time gift"),
-            type: isMonthly ? "monthly" : "one_time",
-          };
+            type: t.type === "monthly_donation" ? "monthly" : "one_time",
+          });
+        }
+
+        // Backfill one_time_gifts that never landed in transactions.
+        const txnKey = new Set(
+          (txns || []).map((t: any) =>
+            `${(t.created_at || "").slice(0, 10)}|${t.amount}|${t.beneficiary_id || ""}`,
+          ),
+        );
+        for (const g of gifts || []) {
+          const k = `${(g.created_at || "").slice(0, 10)}|${g.amount}|${g.beneficiary_id || ""}`;
+          if (txnKey.has(k)) continue;
+          const amt = parseFloat((g.amount ?? 0).toString()) || 0;
+          if (amt <= 0) continue;
+          merged.push({
+            id: `gift-${g.id}`,
+            date: g.created_at || null,
+            amount: amt,
+            beneficiary_name: g.beneficiary_id
+              ? (nameByBenefId.get(g.beneficiary_id) || "Beneficiary")
+              : "One-time gift",
+            type: "one_time",
+          });
+        }
+
+        // Synthesize the last monthly charge from monthly_donations when the
+        // transactions table doesn't have a matching row — this is the case
+        // for older subscriptions whose webhook path never wrote to
+        // transactions.
+        for (const m of monthlyRows || []) {
+          if (!m.last_payment_date) continue;
+          if (monthlyDatesSeen.has(String(m.last_payment_date).slice(0, 10))) continue;
+          const amt = parseFloat(
+            (m.last_payment_amount ?? m.amount ?? 0).toString(),
+          ) || 0;
+          if (amt <= 0) continue;
+          const dateISO = String(m.last_payment_date).length > 10
+            ? String(m.last_payment_date)
+            : `${m.last_payment_date}T00:00:00`;
+          merged.push({
+            id: `md-${m.id}-${m.last_payment_date}`,
+            date: dateISO,
+            amount: amt,
+            beneficiary_name: m.beneficiary_id
+              ? (nameByBenefId.get(m.beneficiary_id) || "Beneficiary")
+              : "Monthly donation",
+            type: "monthly",
+          });
+        }
+
+        merged.sort((a, b) => {
+          const da = a.date ? Date.parse(a.date) : 0;
+          const db = b.date ? Date.parse(b.date) : 0;
+          return db - da;
         });
+        donationHistory = merged.slice(0, 50);
       } catch (dhErr) {
-        console.log("⚠️ transactions lookup failed:", dhErr);
+        console.log("⚠️ donation history lookup failed:", dhErr);
       }
 
-      // ---- Discount redemptions (from redemptions) ----
-      // Real table name is `redemptions` — the previous code queried
-      // `discount_redemptions` which doesn't exist. Joins to discounts +
-      // vendors so the tab shows what/where/when + savings.
+      // ---- Discount redemptions ----
+      // Real redemption events currently live in TWO places:
+      //   1. `redemptions` — the "proper" table, joined to discounts +
+      //      vendors. Populated by newer code paths.
+      //   2. `transactions` with type='redemption' — the mobile app's older
+      //      write path. Rows have `description` = discount title but no
+      //      vendor_id / discount_id / savings, so display is skinnier.
+      // Merged into one chronological list so admins see everything.
       let discountRedemptions: any[] = [];
       let totalSavings = 0;
       try {
@@ -1240,7 +1408,7 @@ export async function handleAdminDonors(
           for (const v of vRows || []) vendorById.set(v.id, v);
         }
 
-        discountRedemptions = (redData || []).map((r: any) => {
+        const enriched = (redData || []).map((r: any) => {
           const d = discountById.get(r.discount_id);
           const v = vendorById.get(r.vendor_id);
           const savings = r.total_savings != null
@@ -1250,6 +1418,7 @@ export async function handleAdminDonors(
           const addr = v?.address || {};
           const location = [addr.city, addr.state].filter(Boolean).join(", ");
           return {
+            id: `red-${r.id}`,
             vendor_name: v?.name || null,
             discount_name: d?.title || null,
             discount_type: d?.discount_type || null,
@@ -1260,6 +1429,32 @@ export async function handleAdminDonors(
             location: location || null,
           };
         });
+
+        // Also pull redemption-typed transactions — the mobile app's legacy
+        // write target. Skinnier records (no vendor / no savings) but at
+        // least the discount name + date land on the tab.
+        const { data: redTxns } = await supabase
+          .from("transactions")
+          .select("id, description, created_at")
+          .eq("user_id", donorId)
+          .eq("type", "redemption")
+          .order("created_at", { ascending: false })
+          .limit(100);
+
+        const legacy = (redTxns || []).map((t: any) => ({
+          id: `redtxn-${t.id}`,
+          vendor_name: null,
+          discount_name: t.description || "Discount",
+          discount_type: null,
+          date: t.created_at || null,
+          savings: 0,
+          total_bill: null,
+          redemption_code: null,
+          location: null,
+        }));
+
+        discountRedemptions = [...enriched, ...legacy]
+          .sort((a: any, b: any) => (b.date ? Date.parse(b.date) : 0) - (a.date ? Date.parse(a.date) : 0));
       } catch (redErr) {
         console.log("⚠️ redemptions lookup failed:", redErr);
       }
