@@ -21,6 +21,12 @@
         "buildType": "apk"
       }
     },
+    "simulator": {
+      "extends": "development",
+      "ios": {
+        "simulator": true
+      }
+    },
     "preview": {
       "node": "22.14.0",
       "distribution": "internal",
