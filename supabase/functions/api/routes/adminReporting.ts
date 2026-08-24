@@ -89,12 +89,22 @@ export async function handleAdminReporting(
           // Upsert a transactions row for every paid invoice. reference_id
           // = invoice.id keeps this idempotent — matches the webhook's onConflict
           // key so re-running the backfill never creates duplicates.
+          //
+          // Per-invoice processing_fee is pulled from each invoice's charge's
+          // balance_transaction so the payouts report can sum the exact Stripe
+          // cut on the invoices in the window (instead of estimating from
+          // monthly_donations.processing_fee, which is only the most recent).
           for (const inv of paidInvoices) {
             const invPaidAt =
               inv.status_transitions?.paid_at ?? inv.created ?? null;
             const invAmountCents = inv.amount_paid ?? null;
             if (!invPaidAt || invAmountCents == null) continue;
-            const txnRow = {
+            const invChargeId =
+              typeof inv.charge === "string" ? inv.charge : inv.charge?.id;
+            const invFeeUsd = invChargeId
+              ? await fetchChargeFeeUsd(invChargeId)
+              : null;
+            const txnRow: Record<string, any> = {
               user_id: row.user_id,
               type: "monthly_donation",
               amount: invAmountCents / 100,
@@ -105,12 +115,15 @@ export async function handleAdminReporting(
               beneficiary_id: row.beneficiary_id,
               status: "completed",
               created_at: new Date(invPaidAt * 1000).toISOString(),
+              stripe_invoice_id: inv.id,
+              stripe_charge_id: invChargeId ?? null,
+              processing_fee: invFeeUsd,
             };
             const { error: txnError } = await supabase
               .from("transactions")
               .upsert([txnRow], {
                 onConflict: "reference_id",
-                ignoreDuplicates: true,
+                ignoreDuplicates: false,
               });
             if (!txnError) transactionsUpserted += 1;
           }
@@ -262,43 +275,91 @@ export async function handleAdminReporting(
         );
       }
 
+      // Extend the end-of-day cutoff so a payment recorded at 15:00 on the last
+      // day of the window still lands inside [start, end] when comparing against
+      // transactions.created_at (which is a timestamptz).
+      const endOfDayIso = `${endDate}T23:59:59.999Z`;
+
       // Calculate payouts for each charity
       const payoutData = await Promise.all(
         (charities || []).map(async (charity: any) => {
-          // Get monthly donations for this charity in date range
-          const {data: monthlyDonations} = await supabase
-            .from("monthly_donations")
+          // Every completed monthly-donation invoice in the window.
+          //
+          // Sourced from transactions (per-invoice) rather than monthly_donations
+          // (per-subscription) so that:
+          //   • A subscription that renewed twice in the window contributes both
+          //     invoices instead of only its most recent one.
+          //   • A donor who paid in-window and cancelled afterward is still
+          //     counted — the beneficiary is owed for the paid invoice
+          //     regardless of the subscription's current status.
+          //   • processing_fee is per-invoice, not the last-seen value on the
+          //     subscription row, so the payout math reflects the exact Stripe
+          //     cut on the specific invoices in the window.
+          const {data: monthlyTxns} = await supabase
+            .from("transactions")
             .select(
-              "id, amount, status, last_payment_date, last_payment_amount, processing_fee",
+              "id, amount, processing_fee, user_covered_fees, donation_id, created_at",
             )
             .eq("beneficiary_id", charity.id)
-            .eq("status", "active")
-            .gte("last_payment_date", startDate)
-            .lte("last_payment_date", endDate);
+            .eq("type", "monthly_donation")
+            .eq("status", "completed")
+            .gt("amount", 0)
+            .gte("created_at", startDate)
+            .lte("created_at", endOfDayIso);
 
-          // Get one-time gifts for this charity in date range
+          // Fallback fee lookup: for any transaction still missing
+          // processing_fee (webhook fired before balance_transaction resolved
+          // and backfill hasn't run yet), use the parent monthly_donations
+          // row's stored fee as an estimate. It's the most recent known Stripe
+          // cut for that subscription and is a much closer guess than zero.
+          const donationIds = Array.from(
+            new Set(
+              (monthlyTxns || [])
+                .filter((t: any) => t.processing_fee == null && t.donation_id)
+                .map((t: any) => t.donation_id),
+            ),
+          );
+          let fallbackFeeById: Record<string, number> = {};
+          if (donationIds.length) {
+            const {data: donationFees} = await supabase
+              .from("monthly_donations")
+              .select("id, processing_fee")
+              .in("id", donationIds);
+            fallbackFeeById = Object.fromEntries(
+              (donationFees || []).map((d: any) => [
+                d.id,
+                parseFloat(d.processing_fee ?? 0),
+              ]),
+            );
+          }
+
+          // One-time gifts for this charity in the window.
+          //
+          // Filter includes both "succeeded" (what the payment_intent webhook
+          // actually writes) and "completed" (legacy value) so we don't silently
+          // drop any historical gift because of enum drift.
           const {data: oneTimeGifts} = await supabase
             .from("one_time_gifts")
             .select(
               "id, amount, net_amount, processing_fee, user_covered_fees, status, created_at",
             )
             .eq("beneficiary_id", charity.id)
-            .eq("status", "completed")
+            .in("status", ["succeeded", "completed", "processed"])
             .gte("created_at", startDate)
-            .lte("created_at", endDate);
+            .lte("created_at", endOfDayIso);
 
           // Calculate totals
-          const monthlyTotal = (monthlyDonations || []).reduce((sum, d) => {
-            return sum + parseFloat(d.last_payment_amount || d.amount || 0);
+          const monthlyTotal = (monthlyTxns || []).reduce((sum, t: any) => {
+            return sum + parseFloat(t.amount || 0);
           }, 0);
 
-          const oneTimeTotal = (oneTimeGifts || []).reduce((sum, g) => {
+          const oneTimeTotal = (oneTimeGifts || []).reduce((sum, g: any) => {
             return sum + parseFloat(g.net_amount || g.amount || 0);
           }, 0);
 
           const totalDonations = monthlyTotal + oneTimeTotal;
           const donationCount =
-            (monthlyDonations?.length || 0) + (oneTimeGifts?.length || 0);
+            (monthlyTxns?.length || 0) + (oneTimeGifts?.length || 0);
 
           // Calculate fees
           const serviceFee = donationCount * 3.0; // $3 per donation
@@ -308,14 +369,20 @@ export async function handleAdminReporting(
           // Stripe fee (always counted since donors who cover fees pay an estimate,
           // not the exact Stripe cut — the real cut still reduces what hits THRIVE's
           // bank from the gross charge).
-          const oneTimeAbsorbedFees = (oneTimeGifts || []).reduce((sum, g) => {
+          const oneTimeAbsorbedFees = (oneTimeGifts || []).reduce((sum, g: any) => {
             if (!g.user_covered_fees) {
               return sum + parseFloat(g.processing_fee || 0);
             }
             return sum;
           }, 0);
-          const monthlyStripeFees = (monthlyDonations || []).reduce(
-            (sum, d) => sum + parseFloat(d.processing_fee || 0),
+          const monthlyStripeFees = (monthlyTxns || []).reduce(
+            (sum, t: any) => {
+              const fee =
+                t.processing_fee != null
+                  ? parseFloat(t.processing_fee)
+                  : (fallbackFeeById[t.donation_id] || 0);
+              return sum + fee;
+            },
             0,
           );
           const processingFees = oneTimeAbsorbedFees + monthlyStripeFees;
@@ -441,6 +508,368 @@ export async function handleAdminReporting(
             ...corsHeaders,
             "Content-Type": "application/json",
           },
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // GET /admin/reporting/stripe-audit?startDate=&endDate=
+  //
+  // Cross-references every dollar that moved through Stripe in the window
+  // against what we have locally. Returns a structured diff:
+  //   • stripeOnly    — Stripe recorded it, we have no matching transaction
+  //   • localOnly     — we have a transaction, Stripe has nothing matching
+  //   • mismatched    — matched by id, but amount or fee disagrees
+  //   • matched       — clean pairs (returned only in summary counts)
+  //
+  // Used at end-of-month payout to prove the local totals equal what Stripe
+  // actually charged. Read-only — never mutates data.
+  if (method === "GET" && route === "/admin/reporting/stripe-audit") {
+    try {
+      const url = new URL(req.url);
+      const startDate = url.searchParams.get("startDate");
+      const endDate = url.searchParams.get("endDate");
+      if (!startDate || !endDate) {
+        return new Response(
+          JSON.stringify({ error: "startDate and endDate are required" }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 400,
+          },
+        );
+      }
+
+      const stripe = getStripeClient();
+      const startTs = Math.floor(new Date(`${startDate}T00:00:00Z`).getTime() / 1000);
+      const endTs = Math.floor(new Date(`${endDate}T23:59:59.999Z`).getTime() / 1000);
+      const endOfDayIso = `${endDate}T23:59:59.999Z`;
+
+      // Helper — paginate Stripe list endpoints to get everything in the window.
+      // Stripe caps limit=100 per page; loop until has_more=false.
+      const fetchAllStripe = async (
+        listPath: string,
+      ): Promise<any[]> => {
+        const out: any[] = [];
+        let startingAfter: string | undefined;
+        for (let i = 0; i < 20; i++) {
+          const sep = listPath.includes("?") ? "&" : "?";
+          const url =
+            `${stripe.baseUrl}${listPath}${sep}limit=100` +
+            (startingAfter ? `&starting_after=${startingAfter}` : "");
+          const res = await fetch(url, {
+            headers: { Authorization: `Bearer ${stripe.secretKey}` },
+          });
+          if (!res.ok) {
+            console.warn(`stripe-audit: ${listPath} ${res.status}`);
+            break;
+          }
+          const json = await res.json();
+          const items = Array.isArray(json?.data) ? json.data : [];
+          out.push(...items);
+          if (!json.has_more || items.length === 0) break;
+          startingAfter = items[items.length - 1].id;
+        }
+        return out;
+      };
+
+      // -----------------------------------------------------------------
+      // 1) Pull Stripe truth for the window.
+      // -----------------------------------------------------------------
+      // Paid subscription invoices — this is the money that renewed monthly.
+      const stripeInvoices = await fetchAllStripe(
+        `/invoices?status=paid&created[gte]=${startTs}&created[lte]=${endTs}`,
+      );
+      // Successful non-subscription payment intents — one-time gifts.
+      const stripePayments = await fetchAllStripe(
+        `/payment_intents?created[gte]=${startTs}&created[lte]=${endTs}`,
+      );
+
+      // Fetch balance_transactions once per charge so we know the real fee.
+      // Batched sequentially to keep memory bounded; for month-of-August scale
+      // this is a few dozen requests.
+      const feeByChargeId: Record<string, number> = {};
+      const chargeIds = new Set<string>();
+      for (const inv of stripeInvoices) {
+        const cid = typeof inv.charge === "string" ? inv.charge : inv.charge?.id;
+        if (cid) chargeIds.add(cid);
+      }
+      for (const pi of stripePayments) {
+        if (pi.status !== "succeeded") continue;
+        const cid =
+          typeof pi.latest_charge === "string"
+            ? pi.latest_charge
+            : pi.latest_charge?.id ??
+              pi.charges?.data?.[0]?.id;
+        if (cid) chargeIds.add(cid);
+      }
+      for (const cid of chargeIds) {
+        try {
+          const cRes = await fetch(
+            `${stripe.baseUrl}/charges/${encodeURIComponent(cid)}?expand[]=balance_transaction`,
+            { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+          );
+          if (!cRes.ok) continue;
+          const charge = await cRes.json();
+          const fee = charge.balance_transaction?.fee;
+          if (typeof fee === "number") {
+            feeByChargeId[cid] = fee / 100;
+          }
+        } catch (_e) {
+          // best-effort — leave unset if lookup fails
+        }
+      }
+
+      // -----------------------------------------------------------------
+      // 2) Pull local records for the same window.
+      // -----------------------------------------------------------------
+      const { data: localTxns } = await supabase
+        .from("transactions")
+        .select(
+          "id, user_id, type, amount, processing_fee, beneficiary_id, reference_id, stripe_invoice_id, stripe_charge_id, donation_id, gift_id, created_at",
+        )
+        .in("type", ["monthly_donation", "one_time_gift"])
+        .eq("status", "completed")
+        .gte("created_at", startDate)
+        .lte("created_at", endOfDayIso);
+
+      const { data: localGifts } = await supabase
+        .from("one_time_gifts")
+        .select(
+          "id, user_id, amount, net_amount, processing_fee, beneficiary_id, stripe_payment_intent_id, stripe_charge_id, status, created_at",
+        )
+        .in("status", ["succeeded", "completed", "processed"])
+        .gte("created_at", startDate)
+        .lte("created_at", endOfDayIso);
+
+      // -----------------------------------------------------------------
+      // 3) Diff: match Stripe → local by invoice/payment_intent id.
+      // -----------------------------------------------------------------
+      const txnsByInvoice = new Map<string, any>();
+      const txnsByCharge = new Map<string, any>();
+      const txnsByReference = new Map<string, any>();
+      for (const t of localTxns || []) {
+        if (t.stripe_invoice_id) txnsByInvoice.set(t.stripe_invoice_id, t);
+        if (t.stripe_charge_id) txnsByCharge.set(t.stripe_charge_id, t);
+        if (t.reference_id) txnsByReference.set(t.reference_id, t);
+      }
+      const giftsByPI = new Map<string, any>();
+      const giftsByCharge = new Map<string, any>();
+      for (const g of localGifts || []) {
+        if (g.stripe_payment_intent_id)
+          giftsByPI.set(g.stripe_payment_intent_id, g);
+        if (g.stripe_charge_id) giftsByCharge.set(g.stripe_charge_id, g);
+      }
+
+      const stripeOnly: any[] = [];
+      const localOnly: any[] = [];
+      const mismatched: any[] = [];
+      let matchedCount = 0;
+      let stripeTotalCents = 0;
+      let localTotalCents = 0;
+
+      // Monthly invoices
+      for (const inv of stripeInvoices) {
+        const invAmountCents = inv.amount_paid ?? 0;
+        stripeTotalCents += invAmountCents;
+        const chargeId =
+          typeof inv.charge === "string" ? inv.charge : inv.charge?.id;
+        const stripeFeeUsd = chargeId ? feeByChargeId[chargeId] ?? null : null;
+        const localTxn =
+          txnsByInvoice.get(inv.id) ??
+          txnsByReference.get(inv.id) ??
+          (chargeId ? txnsByCharge.get(chargeId) : undefined);
+
+        if (!localTxn) {
+          stripeOnly.push({
+            source: "stripe_invoice",
+            id: inv.id,
+            charge_id: chargeId ?? null,
+            customer: inv.customer ?? null,
+            amount: invAmountCents / 100,
+            fee: stripeFeeUsd,
+            paidAt: inv.status_transitions?.paid_at ?? inv.created ?? null,
+          });
+          continue;
+        }
+        const localAmountCents = Math.round(parseFloat(localTxn.amount) * 100);
+        const localFeeUsd =
+          localTxn.processing_fee != null
+            ? parseFloat(localTxn.processing_fee)
+            : null;
+        const amountOff = localAmountCents !== invAmountCents;
+        const feeOff =
+          stripeFeeUsd != null &&
+          localFeeUsd != null &&
+          Math.abs(stripeFeeUsd - localFeeUsd) > 0.005;
+        if (amountOff || feeOff || (stripeFeeUsd != null && localFeeUsd == null)) {
+          mismatched.push({
+            source: "stripe_invoice",
+            id: inv.id,
+            local_txn_id: localTxn.id,
+            stripe_amount: invAmountCents / 100,
+            local_amount: parseFloat(localTxn.amount),
+            stripe_fee: stripeFeeUsd,
+            local_fee: localFeeUsd,
+            issue: [
+              amountOff && "amount_mismatch",
+              feeOff && "fee_mismatch",
+              stripeFeeUsd != null && localFeeUsd == null && "fee_missing_locally",
+            ].filter(Boolean),
+          });
+        } else {
+          matchedCount++;
+        }
+      }
+
+      // One-time payment intents
+      for (const pi of stripePayments) {
+        if (pi.status !== "succeeded") continue;
+        const piAmountCents = pi.amount_received ?? pi.amount ?? 0;
+        stripeTotalCents += piAmountCents;
+        const chargeId =
+          typeof pi.latest_charge === "string"
+            ? pi.latest_charge
+            : pi.latest_charge?.id ?? pi.charges?.data?.[0]?.id ?? null;
+        const stripeFeeUsd = chargeId ? feeByChargeId[chargeId] ?? null : null;
+
+        const localGift =
+          giftsByPI.get(pi.id) ??
+          (chargeId ? giftsByCharge.get(chargeId) : undefined);
+        // Also allow the transactions table to satisfy the match — a webhook
+        // that landed the transactions row but never updated one_time_gifts
+        // still counts as "we recorded this dollar".
+        const localTxn = chargeId ? txnsByCharge.get(chargeId) : undefined;
+        const local = localGift || localTxn;
+
+        if (!local) {
+          stripeOnly.push({
+            source: "stripe_payment_intent",
+            id: pi.id,
+            charge_id: chargeId,
+            customer: pi.customer ?? null,
+            amount: piAmountCents / 100,
+            fee: stripeFeeUsd,
+            paidAt: pi.created,
+          });
+          continue;
+        }
+        const localAmountUsd = localGift
+          ? parseFloat(localGift.amount || 0)
+          : parseFloat(local.amount || 0);
+        const localAmountCents = Math.round(localAmountUsd * 100);
+        const localFeeUsd =
+          local.processing_fee != null
+            ? parseFloat(local.processing_fee)
+            : null;
+        const amountOff = localAmountCents !== piAmountCents;
+        const feeOff =
+          stripeFeeUsd != null &&
+          localFeeUsd != null &&
+          Math.abs(stripeFeeUsd - localFeeUsd) > 0.005;
+        if (amountOff || feeOff) {
+          mismatched.push({
+            source: "stripe_payment_intent",
+            id: pi.id,
+            local_id: local.id,
+            stripe_amount: piAmountCents / 100,
+            local_amount: localAmountUsd,
+            stripe_fee: stripeFeeUsd,
+            local_fee: localFeeUsd,
+            issue: [
+              amountOff && "amount_mismatch",
+              feeOff && "fee_mismatch",
+            ].filter(Boolean),
+          });
+        } else {
+          matchedCount++;
+        }
+      }
+
+      // -----------------------------------------------------------------
+      // 4) localOnly — anything we recorded that Stripe did not confirm.
+      // Rare but possible: a manual test insert, a webhook replay that
+      // recorded a phantom row, or a Stripe deletion outside our loop.
+      // -----------------------------------------------------------------
+      const stripeInvoiceIds = new Set(stripeInvoices.map((i: any) => i.id));
+      const stripePIIds = new Set(
+        stripePayments.filter((p: any) => p.status === "succeeded").map((p: any) => p.id),
+      );
+      const stripeChargeIds = new Set(
+        [
+          ...stripeInvoices.map((i: any) =>
+            typeof i.charge === "string" ? i.charge : i.charge?.id,
+          ),
+          ...stripePayments.map((p: any) =>
+            typeof p.latest_charge === "string"
+              ? p.latest_charge
+              : p.latest_charge?.id ?? p.charges?.data?.[0]?.id,
+          ),
+        ].filter(Boolean),
+      );
+
+      for (const t of localTxns || []) {
+        const amountCents = Math.round(parseFloat(t.amount || 0) * 100);
+        localTotalCents += amountCents;
+        const inStripe =
+          (t.stripe_invoice_id && stripeInvoiceIds.has(t.stripe_invoice_id)) ||
+          (t.reference_id && stripeInvoiceIds.has(t.reference_id)) ||
+          (t.stripe_charge_id && stripeChargeIds.has(t.stripe_charge_id));
+        if (!inStripe) {
+          localOnly.push({
+            source: "local_transaction",
+            id: t.id,
+            type: t.type,
+            user_id: t.user_id,
+            amount: parseFloat(t.amount || 0),
+            fee: t.processing_fee != null ? parseFloat(t.processing_fee) : null,
+            reference_id: t.reference_id,
+            stripe_invoice_id: t.stripe_invoice_id,
+            stripe_charge_id: t.stripe_charge_id,
+            created_at: t.created_at,
+          });
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            dateRange: { startDate, endDate },
+            summary: {
+              stripe: {
+                invoiceCount: stripeInvoices.length,
+                paymentIntentCount: stripePayments.filter(
+                  (p: any) => p.status === "succeeded",
+                ).length,
+                totalDollars: stripeTotalCents / 100,
+              },
+              local: {
+                transactionCount: (localTxns || []).length,
+                totalDollars: localTotalCents / 100,
+              },
+              matchedCount,
+              mismatchedCount: mismatched.length,
+              stripeOnlyCount: stripeOnly.length,
+              localOnlyCount: localOnly.length,
+              differenceDollars: (stripeTotalCents - localTotalCents) / 100,
+            },
+            mismatched,
+            stripeOnly,
+            localOnly,
+          },
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        },
+      );
+    } catch (error: any) {
+      console.error("❌ stripe-audit error:", error);
+      return new Response(
+        JSON.stringify({ error: error.message || "Stripe audit failed" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
           status: 500,
         },
       );

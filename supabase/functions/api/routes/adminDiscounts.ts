@@ -1,4 +1,5 @@
 import { corsHeaders } from "../lib/cors.ts";
+import { sendPushToVendorFavoriters } from "../lib/push.ts";
 
 export async function handleAdminDiscounts(
   req: Request,
@@ -330,6 +331,31 @@ export async function handleAdminDiscounts(
       ...newDiscount,
       vendor_name: newDiscount.vendor?.name || null,
     };
+
+    // Push to donors who favorited this vendor — same "new discount from
+    // your favorite" moment the vendor-portal path already fires. Only
+    // sends when the vendor row is approved so pending vendors don't leak
+    // pushes before they're live. Fire-and-forget: never block the
+    // admin's Save on a slow push service.
+    if (newDiscount.is_active !== false && newDiscount.vendor?.name) {
+      const { data: v } = await supabase
+        .from("vendors")
+        .select("signup_status")
+        .eq("id", vendorId)
+        .maybeSingle();
+      if (v?.signup_status === "approved") {
+        sendPushToVendorFavoriters(supabase, vendorId, {
+          title: `${newDiscount.vendor.name} just added a new discount`,
+          body: newDiscount.title || "Tap to see the latest offer from a place you love.",
+          data: {
+            path: `/(tabs)/(main)/discounts/${newDiscount.id}`,
+            type: "favorite_new_discount",
+            vendor_id: vendorId,
+            discount_id: newDiscount.id,
+          },
+        }).catch((e) => console.warn("favorite-vendor new-discount push failed:", e));
+      }
+    }
 
     return new Response(
       JSON.stringify({

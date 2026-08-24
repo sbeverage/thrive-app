@@ -36,7 +36,8 @@ export async function handleDiscountRoute(
             image_urls,
             address,
             hours,
-            signup_status
+            signup_status,
+            deactivated_at
           )
         `,
         )
@@ -74,10 +75,14 @@ export async function handleDiscountRoute(
         );
       }
 
-      // Hide discounts whose owning vendor isn't approved yet — keeps the
-      // donor app in sync with /vendors which is also approved-only.
+      // Hide discounts whose owning vendor isn't approved OR has been
+      // deactivated. Keeps the donor app in sync with /vendors, which is
+      // also approved-and-active only.
       const discounts = (rawDiscounts || []).filter(
-        (d: any) => d.vendor && d.vendor.signup_status === "approved",
+        (d: any) =>
+          d.vendor &&
+          d.vendor.signup_status === "approved" &&
+          !d.vendor.deactivated_at,
       );
 
       // Try to get user ID from JWT token (optional - discounts are public)
@@ -241,7 +246,9 @@ export async function handleDiscountRoute(
             logo_url,
             image_urls,
             address,
-            hours
+            hours,
+            signup_status,
+            deactivated_at
           )
         `,
         )
@@ -263,6 +270,19 @@ export async function handleDiscountRoute(
             status: 500,
           },
         );
+      }
+
+      // Hide discounts owned by deactivated or unapproved vendors — mirrors
+      // the /discounts list filter so donors can't deep-link into them either.
+      if (
+        !discount?.vendor ||
+        discount.vendor.signup_status !== "approved" ||
+        discount.vendor.deactivated_at
+      ) {
+        return new Response(JSON.stringify({ error: "Discount not found" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 404,
+        });
       }
 
       // Calculate remaining uses if user is authenticated
@@ -488,6 +508,40 @@ export async function handleDiscountRoute(
             status: 401,
           },
         );
+      }
+
+      // 1a. Gate on subscription status — only donors with a live monthly
+      // subscription can redeem discounts. Cancelled / past_due /
+      // incomplete_expired / no-subscription accounts get a specific
+      // `subscription_required` error code so the mobile client can prompt
+      // them to reactivate (add a card, restart their monthly donation)
+      // instead of showing a generic failure.
+      {
+        const { data: sub } = await supabase
+          .from("monthly_donations")
+          .select("status")
+          .eq("user_id", userId)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const status = String(sub?.status || "").toLowerCase();
+        const ALLOWED = new Set(["active", "trialing"]);
+        if (!ALLOWED.has(status)) {
+          return new Response(
+            JSON.stringify({
+              error: sub
+                ? "Your monthly donation is paused — reactivate to keep redeeming discounts."
+                : "Add a monthly donation to start redeeming discounts.",
+              code: "subscription_required",
+              subscription_status: status || "no_subscription",
+            }),
+            {
+              headers: { "Content-Type": "application/json" },
+              // 402 Payment Required — Stripe uses this for similar states.
+              status: 402,
+            },
+          );
+        }
       }
 
       // 2. Parse request body (optional fields)

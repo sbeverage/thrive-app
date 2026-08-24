@@ -713,6 +713,50 @@ async function handleVendorRedemptions(
 }
 
 // ============================================================================
+// POST /vendor/me/request-reactivation
+// ----------------------------------------------------------------------------
+// Vendor asks to be reinstated after the admin flipped their profile to
+// inactive. Stamps reactivation_requested_at + captures an optional
+// message ("here's what changed"). The vendor lands in the admin's
+// Reactivation Requests queue on the Pending Approvals page.
+//
+// Guardrails:
+//   - Vendor must currently be inactive. Reactivating an already-active
+//     vendor is a no-op / 400 so we don't spam the admin queue.
+//   - Repeated requests just refresh the timestamp + message; no separate
+//     row is created.
+// ============================================================================
+
+async function handleRequestReactivation(
+  req: Request, supabase: any, vendor: any,
+): Promise<JSONResponse> {
+  if (vendor.is_active) {
+    return json({ error: "Your profile is already active — nothing to reactivate." }, 400);
+  }
+
+  const body = await req.json().catch(() => ({}));
+  const rawMessage = String(body.message || "").trim();
+  const message = rawMessage.slice(0, 1000); // upper bound so a runaway paste can't blow up the row
+
+  const { data: updated, error } = await supabase
+    .from("vendors")
+    .update({
+      reactivation_requested_at: new Date().toISOString(),
+      reactivation_message: message || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", vendor.id)
+    .select("*")
+    .single();
+  if (error) {
+    console.error("request-reactivation error:", error);
+    return json({ error: error.message || "Could not submit reactivation request" }, 500);
+  }
+
+  return json({ vendor: updated });
+}
+
+// ============================================================================
 // Router entry point — called from index.ts for any /vendor/* route.
 // ============================================================================
 
@@ -795,6 +839,10 @@ export async function handleVendorPortalRoute(
 
   if (method === "GET" && route === "/vendor/me/redemptions") {
     return handleVendorRedemptions(req, supabase, vendor.id);
+  }
+
+  if (method === "POST" && route === "/vendor/me/request-reactivation") {
+    return handleRequestReactivation(req, supabase, vendor);
   }
 
   if (method === "POST" && route === "/vendor/me/generate-description") {

@@ -111,3 +111,46 @@ export async function sendPushToUser(
   if (!token) return false;
   return sendPush({ ...message, to: token });
 }
+
+/**
+ * Fanout push notification to every donor who favorited this vendor. Used
+ * when a vendor adds a new discount or has one expiring soon — the "why
+ * did I favorite this" payoff moment for the donor.
+ *
+ * Silently drops donors without a push token on file. Callers should NOT
+ * await this on the request path — fire-and-forget so a slow push doesn't
+ * add latency to the vendor's Create Discount save.
+ */
+export async function sendPushToVendorFavoriters(
+  supabase: any,
+  vendorId: number,
+  message: Omit<PushMessage, "to">,
+): Promise<void> {
+  if (!vendorId) return;
+  const { data: favs } = await supabase
+    .from("vendor_favorites")
+    .select("user_id")
+    .eq("vendor_id", vendorId);
+  const userIds = Array.from(
+    new Set((favs || []).map((f: any) => f.user_id).filter(Boolean)),
+  );
+  if (userIds.length === 0) return;
+
+  const { data: users } = await supabase
+    .from("users")
+    .select("expo_push_token")
+    .in("id", userIds);
+  const tokens = (users || [])
+    .map((u: any) => u.expo_push_token)
+    .filter((t: any) => typeof t === "string" && t.length > 0);
+  if (tokens.length === 0) return;
+
+  // Expo's push API accepts up to 100 recipients per POST. Chunk to be
+  // safe for vendors with a large favoriter base.
+  const CHUNK = 90;
+  const batches: PushMessage[] = [];
+  for (let i = 0; i < tokens.length; i += CHUNK) {
+    batches.push({ ...message, to: tokens.slice(i, i + CHUNK) });
+  }
+  await sendPushBatch(batches);
+}

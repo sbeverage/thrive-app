@@ -381,8 +381,17 @@ export async function handleAdminDonors(
           user.preferences?.monthlyDonation ??
           user.preferences?.donationAmount ??
           0;
+        // Lifetime one-time gifts given. total_one_time_gifts_given is
+        // maintained by the payment_intent.succeeded webhook (see webhooks.ts
+        // — 1oo-time gifts handler). The legacy extra_donation_amount /
+        // preferences.oneTimeDonation fields have no writer and were showing
+        // $0 for everyone; keep them as fallbacks so pre-webhook rows still
+        // report something.
         const oneTimeDonation =
-          user.extra_donation_amount ?? user.preferences?.oneTimeDonation ?? 0;
+          user.total_one_time_gifts_given ??
+          user.extra_donation_amount ??
+          user.preferences?.oneTimeDonation ??
+          0;
         return {
           id: user.id,
           name: fullName || user.email.split("@")[0],
@@ -1262,7 +1271,7 @@ export async function handleAdminDonors(
       try {
         const { data: txns } = await supabase
           .from("transactions")
-          .select("id, user_id, type, amount, status, created_at, beneficiary_id, description")
+          .select("id, user_id, type, amount, status, created_at, beneficiary_id, description, gift_id, donation_id, reference_id, stripe_invoice_id")
           .eq("user_id", donorId)
           .eq("status", "completed")
           .in("type", ["monthly_donation", "one_time_gift", "held_release"])
@@ -1280,8 +1289,33 @@ export async function handleAdminDonors(
 
         const { data: monthlyRows } = await supabase
           .from("monthly_donations")
-          .select("id, amount, last_payment_amount, last_payment_date, created_at, beneficiary_id")
+          .select("id, amount, last_payment_amount, last_payment_date, created_at, beneficiary_id, stripe_subscription_id")
           .eq("user_id", donorId);
+
+        // Pull the full paid-invoice history from Stripe for every
+        // subscription this donor has. monthly_donations only remembers
+        // the most recent charge (last_payment_date), so without this we
+        // miss every renewal before the latest one — e.g. Ramon's June
+        // signup charge is invisible if only July's is on file.
+        const stripeInvoicesBySub = new Map<string, any[]>();
+        const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+        if (stripeKey) {
+          for (const m of monthlyRows || []) {
+            if (!m.stripe_subscription_id) continue;
+            try {
+              const invRes = await fetch(
+                `https://api.stripe.com/v1/invoices?subscription=${encodeURIComponent(m.stripe_subscription_id)}&status=paid&limit=100`,
+                { headers: { Authorization: `Bearer ${stripeKey}` } },
+              );
+              if (invRes.ok) {
+                const invJson = await invRes.json();
+                stripeInvoicesBySub.set(m.stripe_subscription_id, invJson.data || []);
+              }
+            } catch (invErr) {
+              console.log(`⚠️ Stripe invoice fetch failed for ${m.stripe_subscription_id}:`, invErr);
+            }
+          }
+        }
 
         const beneficiaryIds = new Set<number>();
         for (const t of txns || []) if (t.beneficiary_id) beneficiaryIds.add(t.beneficiary_id);
@@ -1297,11 +1331,27 @@ export async function handleAdminDonors(
         }
 
         const merged: any[] = [];
-        const monthlyDatesSeen = new Set<string>();
+
+        // Dedupe by real identifiers, not date+amount+beneficiary:
+        //   • seenInvoiceIds — Stripe invoice / reference id for monthly renewals
+        //   • seenGiftIds    — one_time_gifts.id when the txn came from a gift
+        //   • seenMdDates    — subscription-id + date, so two subs paying the
+        //                     same day both show up
+        // The previous keying dropped legitimate rows (two $25 gifts to the
+        // same charity on the same day collapsed to one) and silently under-
+        // counted the "Total Donations" figure. Real IDs never collide.
+        const seenInvoiceIds = new Set<string>();
+        const seenGiftIds = new Set<string>();
+        const seenMdDates = new Set<string>();
 
         for (const t of txns || []) {
-          const dateStr = t.created_at ? t.created_at.slice(0, 10) : "";
-          if (t.type === "monthly_donation" && dateStr) monthlyDatesSeen.add(dateStr);
+          const invId = t.stripe_invoice_id || t.reference_id;
+          if (t.type === "monthly_donation" && invId) {
+            seenInvoiceIds.add(invId);
+          }
+          if (t.type === "one_time_gift" && t.gift_id) {
+            seenGiftIds.add(String(t.gift_id));
+          }
           merged.push({
             id: `txn-${t.id}`,
             date: t.created_at || null,
@@ -1314,16 +1364,12 @@ export async function handleAdminDonors(
         }
 
         // Backfill one_time_gifts that never landed in transactions.
-        const txnKey = new Set(
-          (txns || []).map((t: any) =>
-            `${(t.created_at || "").slice(0, 10)}|${t.amount}|${t.beneficiary_id || ""}`,
-          ),
-        );
+        // Match on gift_id — the only stable identifier.
         for (const g of gifts || []) {
-          const k = `${(g.created_at || "").slice(0, 10)}|${g.amount}|${g.beneficiary_id || ""}`;
-          if (txnKey.has(k)) continue;
+          if (seenGiftIds.has(String(g.id))) continue;
           const amt = parseFloat((g.amount ?? 0).toString()) || 0;
           if (amt <= 0) continue;
+          seenGiftIds.add(String(g.id));
           merged.push({
             id: `gift-${g.id}`,
             date: g.created_at || null,
@@ -1335,29 +1381,63 @@ export async function handleAdminDonors(
           });
         }
 
-        // Synthesize the last monthly charge from monthly_donations when the
-        // transactions table doesn't have a matching row — this is the case
-        // for older subscriptions whose webhook path never wrote to
-        // transactions.
+        // For each subscription, add one row per paid Stripe invoice.
+        // Stripe is the source of truth for renewal history since our
+        // monthly_donations table only remembers the most recent charge.
+        // Falls back to the monthly_donations row when Stripe couldn't
+        // be reached OR the subscription has no stripe_subscription_id.
         for (const m of monthlyRows || []) {
-          if (!m.last_payment_date) continue;
-          if (monthlyDatesSeen.has(String(m.last_payment_date).slice(0, 10))) continue;
-          const amt = parseFloat(
-            (m.last_payment_amount ?? m.amount ?? 0).toString(),
-          ) || 0;
-          if (amt <= 0) continue;
-          const dateISO = String(m.last_payment_date).length > 10
-            ? String(m.last_payment_date)
-            : `${m.last_payment_date}T00:00:00`;
-          merged.push({
-            id: `md-${m.id}-${m.last_payment_date}`,
-            date: dateISO,
-            amount: amt,
-            beneficiary_name: m.beneficiary_id
-              ? (nameByBenefId.get(m.beneficiary_id) || "Beneficiary")
-              : "Monthly donation",
-            type: "monthly",
-          });
+          const invoices = m.stripe_subscription_id
+            ? (stripeInvoicesBySub.get(m.stripe_subscription_id) || [])
+            : [];
+
+          if (invoices.length > 0) {
+            for (const inv of invoices) {
+              // Skip if we already have a transaction row for this invoice —
+              // avoids the double-row that used to happen when the webhook
+              // wrote transactions AND the modal also pulled the invoice.
+              if (seenInvoiceIds.has(inv.id)) continue;
+              const paidAt = (inv.status_transitions?.paid_at || inv.created);
+              if (!paidAt) continue;
+              seenInvoiceIds.add(inv.id);
+              // Stripe amounts are in cents.
+              const amt = ((inv.amount_paid ?? 0) as number) / 100;
+              if (amt <= 0) continue;
+              merged.push({
+                id: `inv-${inv.id}`,
+                date: new Date(paidAt * 1000).toISOString(),
+                amount: amt,
+                beneficiary_name: m.beneficiary_id
+                  ? (nameByBenefId.get(m.beneficiary_id) || "Beneficiary")
+                  : "Monthly donation",
+                type: "monthly",
+              });
+            }
+          } else if (m.last_payment_date) {
+            // Fallback — no Stripe data available, use whatever the local
+            // snapshot has (last charge only). Dedupe by (subscription id,
+            // date) so two subs' most-recent charges on the same date both
+            // show up.
+            const mdKey = `${m.id}|${String(m.last_payment_date).slice(0, 10)}`;
+            if (seenMdDates.has(mdKey)) continue;
+            seenMdDates.add(mdKey);
+            const amt = parseFloat(
+              (m.last_payment_amount ?? m.amount ?? 0).toString(),
+            ) || 0;
+            if (amt <= 0) continue;
+            const dateISO = String(m.last_payment_date).length > 10
+              ? String(m.last_payment_date)
+              : `${m.last_payment_date}T00:00:00`;
+            merged.push({
+              id: `md-${m.id}-${m.last_payment_date}`,
+              date: dateISO,
+              amount: amt,
+              beneficiary_name: m.beneficiary_id
+                ? (nameByBenefId.get(m.beneficiary_id) || "Beneficiary")
+                : "Monthly donation",
+              type: "monthly",
+            });
+          }
         }
 
         merged.sort((a, b) => {
@@ -1369,6 +1449,13 @@ export async function handleAdminDonors(
       } catch (dhErr) {
         console.log("⚠️ donation history lookup failed:", dhErr);
       }
+
+      // Sum of every entry in the donation history — mirrors the
+      // total_savings summary the Discount Redemptions tab already surfaces.
+      const totalDonations = donationHistory.reduce(
+        (acc: number, row: any) => acc + (Number(row.amount) || 0),
+        0,
+      );
 
       // ---- Discount redemptions ----
       // Real redemption events currently live in TWO places:
@@ -1430,28 +1517,64 @@ export async function handleAdminDonors(
           };
         });
 
-        // Also pull redemption-typed transactions — the mobile app's legacy
-        // write target. Skinnier records (no vendor / no savings) but at
-        // least the discount name + date land on the tab.
+        // Also pull redemption-typed transactions — the mobile app's write
+        // target for discount redemptions. Includes `savings` and `spending`
+        // which the mobile Savings Tracker screen edits via PUT
+        // /transactions/:id. Also joins to vendors for the location column.
         const { data: redTxns } = await supabase
           .from("transactions")
-          .select("id, description, created_at")
+          .select("id, description, created_at, savings, spending, amount, vendor_id, metadata")
           .eq("user_id", donorId)
           .eq("type", "redemption")
           .order("created_at", { ascending: false })
           .limit(100);
 
-        const legacy = (redTxns || []).map((t: any) => ({
-          id: `redtxn-${t.id}`,
-          vendor_name: null,
-          discount_name: t.description || "Discount",
-          discount_type: null,
-          date: t.created_at || null,
-          savings: 0,
-          total_bill: null,
-          redemption_code: null,
-          location: null,
-        }));
+        const redTxnVendorIds = Array.from(
+          new Set((redTxns || []).map((t: any) => t.vendor_id).filter(Boolean)),
+        );
+        const redTxnVendorById = new Map<number, any>();
+        if (redTxnVendorIds.length > 0) {
+          const { data: vRows } = await supabase
+            .from("vendors")
+            .select("id, name, address")
+            .in("id", redTxnVendorIds);
+          for (const v of vRows || []) redTxnVendorById.set(v.id, v);
+        }
+
+        const parseMoney = (v: any): number => {
+          if (v == null) return 0;
+          const n = parseFloat(String(v).replace(/[$,]/g, ""));
+          return Number.isFinite(n) ? n : 0;
+        };
+
+        const legacy = (redTxns || []).map((t: any) => {
+          const v = t.vendor_id ? redTxnVendorById.get(t.vendor_id) : null;
+          const addr = v?.address || {};
+          const location = [addr.city, addr.state].filter(Boolean).join(", ");
+          // Savings tracker writes to the dedicated `savings` column, but
+          // legacy edits also mirror into metadata.savings — fall through.
+          const meta = (() => {
+            if (t.metadata == null) return {};
+            if (typeof t.metadata === "string") {
+              try { return JSON.parse(t.metadata); } catch { return {}; }
+            }
+            return t.metadata;
+          })();
+          const savings = parseMoney(t.savings ?? meta.savings);
+          const bill = parseMoney(t.spending ?? meta.spending ?? t.amount);
+          totalSavings += savings;
+          return {
+            id: `redtxn-${t.id}`,
+            vendor_name: v?.name || null,
+            discount_name: t.description || "Discount",
+            discount_type: null,
+            date: t.created_at || null,
+            savings,
+            total_bill: bill || null,
+            redemption_code: null,
+            location: location || null,
+          };
+        });
 
         discountRedemptions = [...enriched, ...legacy]
           .sort((a: any, b: any) => (b.date ? Date.parse(b.date) : 0) - (a.date ? Date.parse(a.date) : 0));
@@ -1538,6 +1661,7 @@ export async function handleAdminDonors(
         monthly_donation: monthlyDonation,
         current_beneficiary: currentBeneficiary,
         donation_history: donationHistory,
+        total_donations: Math.round(totalDonations * 100) / 100,
         discount_redemptions: discountRedemptions,
         total_savings: totalSavings,
         leaderboard_position: leaderboardPosition,

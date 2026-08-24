@@ -1050,7 +1050,7 @@ If you did not request this, you can ignore this email.`;
 // Vendor Portal transactional emails (submission, approval, rejection, rotation)
 // ============================================================================
 
-type VendorEmailKind = "submitted" | "approved" | "rejected" | "rotation_reminder" | "verify_email" | "portal_invite";
+type VendorEmailKind = "submitted" | "approved" | "rejected" | "rotation_reminder" | "verify_email" | "portal_invite" | "reactivated" | "reactivation_denied" | "deactivated";
 
 function vendorPortalUrl(): string {
   return Deno.env.get("VENDOR_PORTAL_URL") || "https://thrive-vendor-portal.vercel.app";
@@ -1100,6 +1100,30 @@ function vendorEmailContent(kind: VendorEmailKind, name: string, businessName: s
         title: "Verify your email",
         body: `Thanks for submitting <strong>${businessName}</strong>! Click the button below to confirm this is your email address. This helps us reach you about your approval status, code rotations, and important updates.`,
         cta: { href: extras.verifyUrl || `${portal}`, label: "Verify email" },
+      };
+    case "deactivated":
+      return {
+        subject: `${businessName} — your THRIVE profile has been paused`,
+        title: "Your profile is paused on THRIVE",
+        body: `<p>Hi ${name || "there"} — we wanted to let you know that <strong>${businessName}</strong> has been paused on the THRIVE app. Donors won't see your profile or your discounts for now.</p>
+${extras.reason ? `<p><strong>Why:</strong> <em>${extras.reason}</em></p>` : ''}
+<p>When you're ready to come back, log into the vendor portal and click <strong>Request reactivation</strong>. Our team will review and re-enable your profile.</p>`,
+        cta: { href: `${portal}/dashboard`, label: "Open the vendor portal" },
+      };
+    case "reactivated":
+      return {
+        subject: `${businessName} is back on THRIVE 🎉`,
+        title: "You're live on THRIVE again",
+        body: `<p>Good news — we've reviewed your reactivation request and <strong>${businessName}</strong> is live on the THRIVE app again. Donors can now find you and redeem your discounts.</p>
+<p>Head to your dashboard to make sure your discounts, hours and photos are still current.</p>`,
+        cta: { href: `${portal}/dashboard`, label: "Open your dashboard" },
+      };
+    case "reactivation_denied":
+      return {
+        subject: `THRIVE Vendor Portal — Update on your reactivation request`,
+        title: "We couldn't reactivate your profile yet",
+        body: `We reviewed your reactivation request for <strong>${businessName}</strong> and couldn't reinstate the profile at this time:<br><br><em>"${extras.reason || "Please review your profile and reach out with any questions."}"</em><br><br>You can update your profile in the portal and request reactivation again once the issue is resolved.`,
+        cta: { href: `${portal}/dashboard`, label: "Open your dashboard" },
       };
     case "portal_invite":
       return {

@@ -1461,10 +1461,37 @@ export async function handleAuthRoute(
 
       // Decode token in case it's URL encoded
       token = decodeURIComponent(token);
+      const emailParam = url.searchParams.get("email");
       console.log(
         "🔍 Verifying token (first 10 chars):",
         token.substring(0, 10) + "...",
       );
+
+      // Shape a verified user row for the client. Shared by the normal token
+      // path and the already-verified fallback below.
+      const formatVerifiedUser = (u: any) => {
+        const fullName = `${u.first_name || ""} ${u.last_name || ""}`.trim();
+        return {
+          id: u.id,
+          email: u.email,
+          name: fullName || u.email.split("@")[0],
+          firstName: u.first_name || "",
+          lastName: u.last_name || "",
+          phone: u.phone || null,
+          role: u.role,
+          isVerified: true,
+          status: u.account_status,
+          // Handle coworking fields - may not exist if migration hasn't been run
+          coworking:
+            u.coworking === true || u.invite_type === "coworking" || false,
+          inviteType: u.invite_type || null,
+          sponsorAmount: u.sponsor_amount || 0,
+          sponsorSource: u.sponsor_source || null,
+          externalBilled: u.external_billed === true || false,
+          extraDonationAmount: u.extra_donation_amount || 0,
+          totalMonthlyDonation: u.total_monthly_donation || 0,
+        };
+      };
 
       // Verify token exists and is valid
       // First, check if token exists at all (without role filter for better debugging)
@@ -1489,6 +1516,40 @@ export async function handleAuthRoute(
       }
 
       if (!tokenCheck || tokenCheck.length === 0) {
+        // The token is gone. Two benign causes account for most of these:
+        // a later /auth/resend-verification rotated it, or this link was
+        // opened twice (mail clients prefetch, users tap the older email).
+        // If the address is already verified, succeed instead of stranding
+        // the user mid-signup with a "verification failed" screen.
+        if (emailParam) {
+          const {data: alreadyVerified} = await supabase
+            .from("users")
+            .select("*")
+            .eq("email", decodeURIComponent(emailParam))
+            .eq("role", "donor")
+            .eq("is_verified", true)
+            .limit(1)
+            .maybeSingle();
+
+          if (alreadyVerified) {
+            console.log(
+              "✅ Token missing but email already verified — returning success:",
+              alreadyVerified.email,
+            );
+            return new Response(
+              JSON.stringify({
+                success: true,
+                user: formatVerifiedUser(alreadyVerified),
+                alreadyVerified: true,
+              }),
+              {
+                headers: {...corsHeaders, "Content-Type": "application/json"},
+                status: 200,
+              },
+            );
+          }
+        }
+
         console.error("❌ Token not found in database:", token);
         return new Response(
           JSON.stringify({
@@ -1614,28 +1675,7 @@ export async function handleAuthRoute(
       }
 
       // Format user data
-      const fullName =
-        `${user.first_name || ""} ${user.last_name || ""}`.trim();
-      const userData = {
-        id: user.id,
-        email: user.email,
-        name: fullName || user.email.split("@")[0],
-        firstName: user.first_name || "",
-        lastName: user.last_name || "",
-        phone: user.phone || null,
-        role: user.role,
-        isVerified: true,
-        status: user.account_status,
-        // Handle coworking fields - may not exist if migration hasn't been run
-        coworking:
-          user.coworking === true || user.invite_type === "coworking" || false,
-        inviteType: user.invite_type || null,
-        sponsorAmount: user.sponsor_amount || 0,
-        sponsorSource: user.sponsor_source || null,
-        externalBilled: user.external_billed === true || false,
-        extraDonationAmount: user.extra_donation_amount || 0,
-        totalMonthlyDonation: user.total_monthly_donation || 0,
-      };
+      const userData = formatVerifiedUser(user);
 
       if (wantsJson) {
         return new Response(JSON.stringify({success: true, user: userData}), {

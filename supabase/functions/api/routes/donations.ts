@@ -547,6 +547,15 @@ export async function handleDonationRoute(
       // Sanity: only meaningful when the chosen beneficiary IS THRIVE itself;
       // otherwise we silently ignore the flag.
       const heldForDonorChoiceRaw = body.held_for_donor_choice === true || body.heldForDonorChoice === true;
+      // Whether the donor opted to gross-up their charge to cover Stripe's cut.
+      // Persisted on monthly_donations so admin reporting can show the correct
+      // fee-absorption pill and so the payouts endpoint knows whether the fee
+      // came out of the beneficiary's share (donor did NOT cover) or the donor's
+      // extra top-up (donor DID cover).
+      const userCoveredFees =
+        body.user_covered_fees === true ||
+        body.userCoveredFees === true ||
+        body.coverFees === true;
 
       if (!beneficiary_id || !amount) {
         return new Response(
@@ -762,6 +771,7 @@ export async function handleDonationRoute(
             status: subscription.status === "incomplete" ? "pending" : "active",
             next_payment_date: nextPaymentDate.toISOString().split("T")[0],
             held_for_donor_choice: heldForDonorChoice,
+            user_covered_fees: userCoveredFees,
           },
         ])
         .select()

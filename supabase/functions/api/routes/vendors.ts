@@ -54,13 +54,19 @@ export async function handleVendorRoute(
   route: string,
   method: string,
 ) {
-  // GET /vendors (public — approved-only)
+  // GET /vendors (public — approved AND not deactivated)
+  //
+  // Deactivating a vendor stamps `deactivated_at` but leaves signup_status
+  // alone (so it can be restored on reactivation without re-approval).
+  // Excluding deactivated_at IS NOT NULL rows here makes the mobile app
+  // treat those vendors as removed until they request reactivation.
   if (method === "GET" && route === "/vendors") {
     try {
       const { data: vendors, error } = await supabase
         .from("vendors")
         .select("*")
         .eq("signup_status", "approved")
+        .is("deactivated_at", null)
         .order("name", { ascending: true });
 
       if (error) {
@@ -139,12 +145,15 @@ export async function handleVendorRoute(
     if (error) return json({ error: error.message }, 500);
     const vendors = (data || [])
       .map((row: any) => row.vendor)
-      .filter((v: any) => v && v.signup_status === "approved")
+      .filter(
+        (v: any) =>
+          v && v.signup_status === "approved" && !v.deactivated_at,
+      )
       .map(formatVendor);
     return json({ vendors });
   }
 
-  // GET /vendors/:id (public — approved-only)
+  // GET /vendors/:id (public — approved AND not deactivated)
   const vendorIdMatch = route.match(/^\/vendors\/(\d+)$/);
   if (method === "GET" && vendorIdMatch) {
     try {
@@ -154,6 +163,7 @@ export async function handleVendorRoute(
         .select("*")
         .eq("id", vendorId)
         .eq("signup_status", "approved")
+        .is("deactivated_at", null)
         .single();
 
       if (error) {

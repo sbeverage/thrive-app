@@ -778,6 +778,11 @@ export async function handleAdminVendors(
       image_urls,
       status,
       is_enabled,
+      // Optional note the admin can leave when deactivating — surfaced back
+      // to the vendor in the portal's deactivated banner. Camel + snake
+      // accepted so either payload shape works.
+      deactivationReason,
+      deactivation_reason,
       // Primary contact + login email live on the linked users row, not the
       // vendors table. The admin UI sends these alongside vendor fields, and
       // we route them to users.* below.
@@ -849,9 +854,31 @@ export async function handleAdminVendors(
       updateObj.contact_name = vendorContactName || null;
     }
     if (logoUrlValue !== undefined) updateObj.logo_url = logoUrlValue || null;
-    // Active/inactive toggle - vendors table uses is_active (not status)
+    // Active / inactive toggle. When flipping to inactive we stamp
+    // deactivated_at and store the optional reason; when flipping back to
+    // active we clear the whole deactivation + reactivation-request block
+    // so the vendor's portal banner and the admin's reactivation queue both
+    // reset cleanly.
     if (status !== undefined) {
-      updateObj.is_active = status === "active";
+      const nextActive = status === "active";
+      updateObj.is_active = nextActive;
+      if (nextActive) {
+        updateObj.deactivated_at = null;
+        updateObj.deactivation_reason = null;
+        updateObj.reactivation_requested_at = null;
+        updateObj.reactivation_message = null;
+      } else {
+        updateObj.deactivated_at = new Date().toISOString();
+        const resolvedReason = deactivationReason ?? deactivation_reason;
+        if (resolvedReason !== undefined) {
+          updateObj.deactivation_reason = String(resolvedReason || "").trim() || null;
+        }
+        // A deactivated vendor's earlier reactivation request is no longer
+        // relevant — reset it so the vendor can request again after the
+        // fresh deactivation.
+        updateObj.reactivation_requested_at = null;
+        updateObj.reactivation_message = null;
+      }
     }
     // is_enabled for enable/disable toggle (if vendors table has this column)
     if (is_enabled !== undefined) {
@@ -959,6 +986,28 @@ export async function handleAdminVendors(
               "Vendor saved, but the contact info on the linked account couldn't be updated.";
           }
         }
+      }
+    }
+
+    // If this PUT flipped the vendor from active → inactive, send them a
+    // heads-up email pointing them at the portal's Request Reactivation
+    // button. Fire-and-forget so an email hiccup can't fail the save.
+    const didJustDeactivate =
+      status !== undefined && status !== "active" && updatedVendor.auth_user_id;
+    if (didJustDeactivate) {
+      const { data: ownerUser } = await supabase
+        .from("users")
+        .select("email, first_name, last_name")
+        .eq("id", updatedVendor.auth_user_id)
+        .maybeSingle();
+      if (ownerUser?.email) {
+        sendVendorEmail({
+          to: ownerUser.email,
+          name: [ownerUser.first_name, ownerUser.last_name].filter(Boolean).join(" "),
+          businessName: updatedVendor.name,
+          kind: "deactivated",
+          reason: updatedVendor.deactivation_reason || "",
+        }).catch((e) => console.error("deactivated email failed:", e));
       }
     }
 

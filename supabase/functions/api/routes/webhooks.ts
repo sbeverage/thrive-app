@@ -327,9 +327,12 @@ export async function handleWebhookRoute(
                 .update(updatePayload)
                 .eq("id", donation.id);
 
-              // Create transaction record — upsert on stripe_invoice_id to be idempotent.
+              // Create transaction record — upsert on reference_id to be idempotent.
               // Inherits the subscription's "Save my spot" flag so we can later
               // release these specific charges to the donor's chosen cause.
+              // processing_fee/user_covered_fees are stored per-invoice so the
+              // payouts report can sum the exact Stripe cut on the specific
+              // invoices that landed in the payout window.
               await supabase.from("transactions").upsert(
                 [
                   {
@@ -343,9 +346,13 @@ export async function handleWebhookRoute(
                     beneficiary_id: donation.beneficiary_id,
                     status: "completed",
                     held_for_donor_choice: !!donation.held_for_donor_choice,
+                    processing_fee: processingFee,
+                    user_covered_fees: !!donation.user_covered_fees,
+                    stripe_invoice_id: invoice.id,
+                    stripe_charge_id: chargeId ?? null,
                   },
                 ],
-                { onConflict: "reference_id", ignoreDuplicates: true },
+                { onConflict: "reference_id", ignoreDuplicates: false },
               );
 
               // Safety net: sync user.total_monthly_donation so the admin donors
@@ -477,7 +484,7 @@ export async function handleWebhookRoute(
 
           const {data: donation} = await supabase
             .from("monthly_donations")
-            .select("id")
+            .select("id, user_id")
             .eq("stripe_subscription_id", subscription.id)
             .single();
 
@@ -488,6 +495,14 @@ export async function handleWebhookRoute(
                 status: "cancelled",
               })
               .eq("id", donation.id);
+
+            // Zero the denormalized monthly amount on the user row so the
+            // Donors admin list stops showing a cancelled donor's old amount.
+            // Historic totals live on transactions/one_time_gifts, not this field.
+            await supabase
+              .from("users")
+              .update({ total_monthly_donation: 0 })
+              .eq("id", donation.user_id);
 
             console.log("🗑️ Subscription cancelled:", subscription.id);
           }
