@@ -62,7 +62,7 @@ export default function UniversalVerifyHandler() {
       console.log('🔗 Universal verification - Token:', token?.substring(0, 10) + '...');
       console.log('🔗 Universal verification - Platform:', Platform.OS);
 
-      const response = await API.verifyEmail(token);
+      const response = await API.verifyEmail(token, email);
 
       if (response.success || response.message?.includes('verified') || response.message?.includes('success')) {
         await markAsVerified();

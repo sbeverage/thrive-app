@@ -299,6 +299,9 @@ export default function StripeIntegration() {
         // "Save my spot" intent flows through to the backend so prior held
         // charges can later be released to the donor's eventual cause pick.
         held_for_donor_choice: holdingForChoice === true,
+        // Persist which side is absorbing the Stripe fee so admin reporting
+        // shows the correct fee-absorption state per donor.
+        user_covered_fees: coverFees === true,
       });
 
       // 409 only when a paid subscription already exists (active / trialing).
@@ -393,6 +396,45 @@ export default function StripeIntegration() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
+      {/* DEV-ONLY: clears the signupFlowPending AsyncStorage key that
+          teleports the app back to this payment screen on every launch
+          when signup wasn't completed. Only renders in __DEV__ (Expo Go /
+          dev builds) — never ships in TestFlight or App Store. Use when
+          you're stuck in the signup flow while testing and want to jump
+          back to the app root. */}
+      {__DEV__ && (
+        <TouchableOpacity
+          onPress={async () => {
+            try {
+              await AsyncStorage.multiRemove([
+                "signupFlowPending",
+                "@thrive_walkthrough_completed",
+                "@thrive_walkthrough_current_step",
+              ]);
+              // Send back to the app root — the auth guard will decide
+              // whether to route to tabs or login based on the JWT.
+              router.replace("/");
+            } catch (e) {
+              console.warn("Dev reset failed:", e);
+            }
+          }}
+          style={{
+            position: "absolute",
+            top: 60,
+            right: 16,
+            zIndex: 999,
+            backgroundColor: "rgba(255, 107, 122, 0.95)",
+            paddingVertical: 6,
+            paddingHorizontal: 12,
+            borderRadius: 6,
+          }}
+        >
+          <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>
+            DEV · RESET
+          </Text>
+        </TouchableOpacity>
+      )}
+
       {/* Blue gradient as absolute background for top half */}
       <View style={styles.gradientAbsoluteBg} pointerEvents="none">
         <LinearGradient

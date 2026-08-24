@@ -12,6 +12,7 @@ import {
   Platform,
   Modal,
   Alert,
+  Dimensions,
 } from 'react-native';
 
 import { AntDesign, Feather, Ionicons } from '@expo/vector-icons';
@@ -23,13 +24,15 @@ import { useBeneficiary } from '../../../context/BeneficiaryContext';
 import { useBeneficiaryFilter } from '../../../context/BeneficiaryFilterContext';
 import { useLocation } from '../../../context/LocationContext';
 import MapView, { Marker, Circle } from 'react-native-maps';
+import * as Location from 'expo-location';
 import { getCurrentLocation, getDefaultRegion, calculateDistance, formatDistance } from '../../../utils/locationService';
 import API from '../../../lib/api';
-import SuggestCard from '../../../../components/SuggestCard';
+import SuggestPrompt from '../../../../components/SuggestPrompt';
 import { Asset } from 'expo-asset';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { IMAGE_ASSETS } from '../../../utils/assetConstants';
 import { beneficiaryLocationMatches } from '../../../utils/beneficiaryLocationMatch';
+import { clusterVendors, isCoLocated, regionForCluster, sharedAddressLabel } from '../../../utils/mapClustering';
 import { readSignupFlowPending } from '../../../utils/signupFlowCheckpoint';
 import SupportThrivePanel from '../../../components/SupportThrivePanel';
 import { cityStateFromLocation } from '../../../utils/cityStateFromLocation';
@@ -71,6 +74,8 @@ const SuggestBullet = ({ text }) => (
     </Text>
   </View>
 );
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function BeneficiaryScreen({ isSignupFlow = false, signupParams = null } = {}) {
   const router = useRouter();
@@ -170,6 +175,18 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
   const [locationSearch, setLocationSearch] = useState('');
   
   const [selectedMarker, setSelectedMarker] = useState(null);
+  // Several charities registered at one address (shared office, umbrella org).
+  const [addressGroup, setAddressGroup] = useState(null);
+  // { [charityId]: { latitude, longitude } } filled in by the geocode effect.
+  const [geocodedCoords, setGeocodedCoords] = useState({});
+  const [registryInfoVisible, setRegistryInfoVisible] = useState(false);
+  const mapRef = useRef(null);
+  // Marker presses bubble up to the map's onPress, so record them and let the
+  // map ignore the follow-up that would undo whatever the tap just set.
+  const markerPressRef = useRef(0);
+  // Captured once: binding initialRegion to state the map itself updates makes
+  // the map re-apply the prop after every settle and zoom in without end.
+  const initialRegionRef = useRef(getDefaultRegion());
 
   const categories = ['All', 'Favorites', 'Animal Welfare', 'Arts & Culture', 'Childhood Illness', 'Disabilities', 'Disaster Relief', 'Education', 'Elderly Care', 'Environment', 'Healthcare', 'Homelessness', 'Hunger Relief', 'International Aid', 'Low Income Families', 'Veterans', 'Youth Development'];
 
@@ -343,6 +360,93 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
     return () => clearTimeout(t);
   }, [searchText]);
 
+  // Most charities arrive from the registry with an address but no
+  // coordinates — 45 of 51 at the time of writing — so without this the map
+  // could only ever plot a handful of them. Geocode the address strings once
+  // and cache the result, exactly as the vendor map does.
+  const CHARITY_GEOCACHE_KEY = '@thrive_charity_geocache';
+
+  useEffect(() => {
+    if (!beneficiaries || beneficiaries.length === 0) return undefined;
+    let cancelled = false;
+
+    const run = async () => {
+      let cache = {};
+      try {
+        const raw = await AsyncStorage.getItem(CHARITY_GEOCACHE_KEY);
+        cache = raw ? JSON.parse(raw) : {};
+      } catch (_) {
+        cache = {};
+      }
+      if (cancelled) return;
+      setGeocodedCoords(cache);
+
+      const needsGeocode = beneficiaries.filter(
+        (b) =>
+          b.latitude == null &&
+          b.location &&
+          String(b.location).trim() &&
+          !cache[String(b.id)],
+      );
+      if (needsGeocode.length === 0) return;
+
+      const updated = { ...cache };
+      for (const b of needsGeocode) {
+        if (cancelled) return;
+        try {
+          const results = await Location.geocodeAsync(String(b.location));
+          if (results?.length > 0) {
+            updated[String(b.id)] = {
+              latitude: results[0].latitude,
+              longitude: results[0].longitude,
+            };
+            // Published as we go so pins appear progressively rather than all
+            // at once after ~11 seconds of geocoding.
+            if (!cancelled) setGeocodedCoords({ ...updated });
+          }
+        } catch (_) {}
+        // Apple's geocoder rate-limits; pace the requests.
+        await new Promise((r) => setTimeout(r, 250));
+      }
+
+      if (!cancelled) {
+        try {
+          await AsyncStorage.setItem(CHARITY_GEOCACHE_KEY, JSON.stringify(updated));
+        } catch (_) {}
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [beneficiaries]);
+
+  const moveMapTo = (region) => {
+    setMapRegion(region);
+    mapRef.current?.animateToRegion(region, 400);
+  };
+
+  // Fires only once a gesture settles, so clustering can track the camera
+  // directly and re-split groups on every pinch.
+  const handleRegionChangeComplete = (region) => {
+    setMapRegion(region);
+  };
+
+  const handleClusterPress = (cluster) => {
+    markerPressRef.current = Date.now();
+    setSelectedMarker(null);
+    // One address, several charities: no zoom level separates these, so list
+    // them rather than zooming forever.
+    if (isCoLocated(cluster)) {
+      setAddressGroup(cluster);
+      return;
+    }
+    setAddressGroup(null);
+    const next = regionForCluster(cluster, mapRegion);
+    if (next) moveMapTo(next);
+  };
+
   const filteredBeneficiaries = beneficiaries.filter(b => {
     // Search text filter
     const matchesSearch =
@@ -391,6 +495,35 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
     );
   });
 
+  // Only charities with real coordinates go on the map — the rest would pile
+  // onto a default point and read as a fake cluster.
+  const mappableBeneficiaries = useMemo(
+    () =>
+      filteredBeneficiaries
+        .map((b) => {
+          if (b.latitude != null && b.longitude != null) return b;
+          const geo = geocodedCoords[String(b.id)];
+          return geo ? { ...b, latitude: geo.latitude, longitude: geo.longitude } : null;
+        })
+        .filter(Boolean),
+    [filteredBeneficiaries, geocodedCoords],
+  );
+
+  const mapClusters = useMemo(
+    () => clusterVendors(mappableBeneficiaries, mapRegion, SCREEN_WIDTH),
+    [mappableBeneficiaries, mapRegion],
+  );
+
+  const mapMarkers = useMemo(
+    () =>
+      mapClusters.map((cluster) =>
+        cluster.count > 1
+          ? { type: 'cluster', id: cluster.id, cluster }
+          : { type: 'single', id: cluster.id, beneficiary: cluster.vendors[0] },
+      ),
+    [mapClusters],
+  );
+
   /** Pin selected cause to top of list when it appears in current filters (no duplicate). */
   let listOrderedWithSelectedFirst = filteredBeneficiaries;
   if (selectedBeneficiary?.id != null && filteredBeneficiaries.length > 0) {
@@ -410,8 +543,14 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
 
   const highlightedBeneficiaries = listOrderedWithSelectedFirst.slice(0, 2);
   const remainingBeneficiaries = listOrderedWithSelectedFirst.slice(2);
-  const beneficiariesSectionTitle =
-    activeCategory === 'All' ? 'All Beneficiaries' : `All ${activeCategory}`;
+  // With the keyboard up there is very little room, so the section header
+  // doubles as the empty-state message instead of a tall block below it.
+  const hasNoBeneficiaryResults = filteredBeneficiaries.length === 0;
+  const beneficiariesSectionTitle = hasNoBeneficiaryResults
+    ? 'No Results Found'
+    : activeCategory === 'All'
+      ? 'All Beneficiaries'
+      : `All ${activeCategory}`;
   const displayedBeneficiaryCount =
     filteredBeneficiaries.length > 50 ? '50+' : String(filteredBeneficiaries.length);
 
@@ -547,7 +686,9 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
   const updateMapRegion = async () => {
     const userLocation = await getCurrentLocation();
     if (userLocation) {
-      setMapRegion({
+      // moveMapTo, not setMapRegion: `region` is no longer a controlled prop,
+      // so state alone would leave the camera where it was.
+      moveMapTo({
         latitude: userLocation.latitude,
         longitude: userLocation.longitude,
         latitudeDelta: 0.05,
@@ -627,8 +768,8 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
           return prev;
         });
 
-        // Update map region
-        setMapRegion({
+        // Update map region (animated — see moveMapTo note above)
+        moveMapTo({
           latitude: userLocation.latitude,
           longitude: userLocation.longitude,
           latitudeDelta: 0.05,
@@ -662,7 +803,14 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
       <View style={styles.registrySection}>
         <View style={styles.registrySectionHeader}>
           <View style={styles.registrySectionDivider} />
-          <Text style={styles.registrySectionLabel}>Not on THRIVE yet</Text>
+          <TouchableOpacity
+            style={styles.registryLabelRow}
+            onPress={() => setRegistryInfoVisible(true)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.registrySectionLabel}>Not on THRIVE yet</Text>
+            <Feather name="info" size={13} color="#8E9BAE" />
+          </TouchableOpacity>
           <View style={styles.registrySectionDivider} />
         </View>
         <Text style={styles.registrySectionSubtitle}>
@@ -863,39 +1011,95 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
               </View>
             ) : (
               <MapView
+                ref={mapRef}
                 style={StyleSheet.absoluteFill}
-                initialRegion={mapRegion}
-                region={mapRegion}
+                initialRegion={initialRegionRef.current}
+                // Deliberately NOT a controlled `region`: that made every
+                // re-render snap the camera back, so a pinch could not stick.
+                onRegionChangeComplete={handleRegionChangeComplete}
+                onPress={() => {
+                  if (Date.now() - markerPressRef.current < 400) return;
+                  setSelectedMarker(null);
+                  setAddressGroup(null);
+                }}
                 showsUserLocation={true}
                 showsMyLocationButton={false}
                 onMapReady={updateMapRegion}
+                showsPointsOfInterests={false}
               >
-                <Circle
-                  center={{ latitude: mapRegion.latitude, longitude: mapRegion.longitude }}
-                  radius={15000}
-                  strokeColor="#DB8633"
-                  fillColor="rgba(219, 134, 51, 0.1)"
-                />
-                {!loadingBeneficiaries && filteredBeneficiaries.filter(b => b.latitude != null && b.longitude != null).map(b => (
-                  <Marker
-                    key={b.id}
-                    coordinate={{ latitude: parseFloat(b.latitude), longitude: parseFloat(b.longitude) }}
-                    onPress={() => setSelectedMarker(b)}
-                    tracksViewChanges={false}
-                  >
-                    <View style={styles.customMarkerContainer}>
-                      <View style={styles.customMarkerBubble}>
+                {userLocation?.latitude != null && userLocation?.longitude != null && (
+                  <Circle
+                    // Anchored to the donor, not to mapRegion — the region now
+                    // follows the camera, so centring on it made the radius
+                    // ring drift around with every pan.
+                    center={{
+                      latitude: userLocation.latitude,
+                      longitude: userLocation.longitude,
+                    }}
+                    radius={15000}
+                    strokeColor="#DB8633"
+                    fillColor="rgba(219, 134, 51, 0.1)"
+                  />
+                )}
+                {!loadingBeneficiaries && mapMarkers.map((entry) => {
+                  if (entry.type === 'cluster') {
+                    const { cluster } = entry;
+                    const size = cluster.count >= 25 ? 62 : cluster.count >= 10 ? 54 : 46;
+                    return (
+                      <Marker
+                        key={`${entry.id}-${cluster.count}`}
+                        coordinate={{ latitude: cluster.latitude, longitude: cluster.longitude }}
+                        onPress={() => handleClusterPress(cluster)}
+                        tracksViewChanges={false}
+                      >
+                        <View
+                          style={[
+                            styles.clusterBubble,
+                            { width: size, height: size, borderRadius: size / 2 },
+                          ]}
+                        >
+                          <Text style={styles.clusterCount}>{cluster.count}</Text>
+                        </View>
+                      </Marker>
+                    );
+                  }
+
+                  const b = entry.beneficiary;
+                  const isSelected =
+                    selectedMarker?.id != null && String(selectedMarker.id) === String(b.id);
+                  return (
+                    <Marker
+                      key={entry.id}
+                      coordinate={{ latitude: parseFloat(b.latitude), longitude: parseFloat(b.longitude) }}
+                      onPress={() => {
+                        markerPressRef.current = Date.now();
+                        setAddressGroup(null);
+                        setSelectedMarker(b);
+                      }}
+                      tracksViewChanges={isSelected}
+                    >
+                      {/* Logo only. The charity name used to sit inside the pin,
+                          which made every marker ~120pt wide and guaranteed
+                          overlap; the name lives in the card below instead. */}
+                      <View
+                        style={[
+                          styles.beneficiaryPin,
+                          isSelected && styles.beneficiaryPinSelected,
+                        ]}
+                      >
                         {b.image && typeof b.image === 'object' && b.image.uri ? (
-                          <Image source={{ uri: b.image.uri }} style={styles.customMarkerLogo} resizeMode="cover" />
+                          <Image
+                            source={{ uri: b.image.uri }}
+                            style={styles.beneficiaryPinLogo}
+                            resizeMode="cover"
+                          />
                         ) : (
-                          <Feather name="heart" size={12} color="#fff" />
+                          <Feather name="heart" size={16} color="#DB8633" />
                         )}
-                        <Text style={styles.customMarkerText} numberOfLines={1}>{b.name}</Text>
                       </View>
-                      <View style={styles.customMarkerTail} />
-                    </View>
-                  </Marker>
-                ))}
+                    </Marker>
+                  );
+                })}
               </MapView>
             )}
 
@@ -907,6 +1111,65 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
               <Feather name="filter" size={15} color="#fff" />
               <Text style={[styles.mapFilterBtnText, styles.mapFilterBtnTextActive]}>Filter</Text>
             </TouchableOpacity>
+
+            {/* Several charities registered at one address */}
+            {addressGroup && (
+              <View style={styles.infoWindow}>
+                <View style={styles.addressGroupHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.addressGroupTitle}>
+                      {addressGroup.count} causes here
+                    </Text>
+                    <Text style={styles.addressGroupSubtitle} numberOfLines={1}>
+                      {sharedAddressLabel(addressGroup)}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.closeButton}
+                    onPress={() => setAddressGroup(null)}
+                  >
+                    <AntDesign name="close" size={20} color="#666" />
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView style={styles.addressGroupList} showsVerticalScrollIndicator={false}>
+                  {addressGroup.vendors.map((b) => (
+                    <TouchableOpacity
+                      key={b.id}
+                      style={styles.addressGroupRow}
+                      onPress={() => {
+                        setAddressGroup(null);
+                        router.push({
+                          pathname: detailRoute,
+                          params: detailParamsFor(b.id),
+                        });
+                      }}
+                    >
+                      {b.image && typeof b.image === 'object' && b.image.uri ? (
+                        <Image
+                          source={{ uri: b.image.uri }}
+                          style={styles.addressGroupLogo}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={[styles.addressGroupLogo, styles.infoWindowLogoFallback]}>
+                          <Feather name="heart" size={16} color="#21555b" />
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.addressGroupName} numberOfLines={1}>
+                          {b.name}
+                        </Text>
+                        <Text style={styles.addressGroupMeta} numberOfLines={1}>
+                          {b.category}
+                        </Text>
+                      </View>
+                      <Feather name="chevron-right" size={18} color="#bbb" />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
 
             {/* Inline Info Window */}
             {selectedMarker && (
@@ -1226,28 +1489,20 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                     almost always has a follow-up (registry suggestion or
                     pick-later panel below), so a giant "No results found"
                     feels punitive. */}
-                <View style={[styles.emptyState, { paddingTop: 24 }]}>
-                  {isSignupFlow ? (
-                    <Text style={styles.emptySubtitle}>
-                      {searchText
-                        ? `We haven't onboarded "${searchText}" yet — but you can add them below.`
-                        : 'Try a different search to find your cause.'}
-                    </Text>
-                  ) : (
-                    <>
-                      <Text style={styles.emptyTitle}>No results found</Text>
-                      <Text style={styles.emptySubtitle}>
-                        {searchText ? `No beneficiaries found for "${searchText}"` : 'Try adjusting your search or filters'}
-                      </Text>
-                      <SuggestCard
-                        type="charity"
-                        searchQuery={searchText}
-                        onSubmit={({ name, website }) =>
-                          API.submitBeneficiaryRequest({ company_name: name, website })
-                        }
-                      />
-                    </>
-                  )}
+                {/* The "No Results Found" heading now lives in the section
+                    header above, so this only carries the one-line hint and a
+                    compact request prompt — everything else can sit higher up
+                    where the keyboard doesn't cover it. */}
+                <View style={styles.emptyStateCompact}>
+                  {/* No hint line — the section header already says "No Results
+                      Found", so a second sentence just pushed the card down. */}
+                  <SuggestPrompt
+                    type="charity"
+                    searchQuery={searchText}
+                    onSubmit={({ name, website }) =>
+                      API.submitBeneficiaryRequest({ company_name: name, website })
+                    }
+                  />
                 </View>
 
                 {/* Inline IRS-registry results — shown immediately under the
@@ -1357,6 +1612,43 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
         </View>
       </Modal>
 
+      {/* What the IRS registry list is, and why approval is required. */}
+      <Modal
+        visible={registryInfoVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRegistryInfoVisible(false)}
+      >
+        <View style={styles.registryInfoBackdrop}>
+          <View style={styles.registryInfoCard}>
+            <View style={styles.registryInfoHeader}>
+              <Text style={styles.registryInfoTitle}>Not on THRIVE yet</Text>
+              <TouchableOpacity
+                onPress={() => setRegistryInfoVisible(false)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <AntDesign name="close" size={20} color="#666" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.registryInfoBody}>
+              These come from the public IRS 501(c)(3) registry, so you can
+              search a much broader set of causes while we grow THRIVE.
+            </Text>
+            <Text style={styles.registryInfoBody}>
+              You can pick one now, but our team verifies the organization
+              before any giving begins. If we can't verify them we'll ask you to
+              choose another cause — your giving is never lost.
+            </Text>
+            <TouchableOpacity
+              style={styles.registryInfoCta}
+              onPress={() => setRegistryInfoVisible(false)}
+            >
+              <Text style={styles.registryInfoCtaText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <SuccessModal visible={showSuccessModal} onClose={closeModal} message={successMessage} />
       {confettiTrigger && (
         <ConfettiCannon
@@ -1435,6 +1727,60 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 1,
     backgroundColor: '#E5E7EB',
+  },
+  emptyStateCompact: {
+    // Matches sectionHeader's inset so the hint and request card line up with
+    // the heading above them instead of running to the screen edge.
+    paddingHorizontal: 25,
+    paddingTop: 4,
+    paddingBottom: 2,
+  },
+  registryInfoBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  registryInfoCard: {
+    width: '100%',
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 20,
+  },
+  registryInfoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  registryInfoTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#324E58',
+  },
+  registryInfoBody: {
+    fontSize: 14,
+    color: '#5D6D7E',
+    lineHeight: 21,
+    marginBottom: 12,
+  },
+  registryInfoCta: {
+    backgroundColor: '#DB8633',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  registryInfoCtaText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  registryLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   registrySectionLabel: {
     fontSize: 11,
@@ -1788,6 +2134,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#324E58',
     marginBottom: 4,
+    // Reserve space for the absolute-positioned favorite heart (top: 8,
+    // right: 8, size ~20) so long charity names wrap on their own line
+    // instead of running under the icon.
+    paddingRight: 32,
   },
   beneficiaryCategory: {
     fontSize: 13,
@@ -2219,6 +2569,94 @@ const styles = StyleSheet.create({
   },
   customMarkerContainer: {
     alignItems: 'center',
+  },
+  // Cluster badge: navy so a group reads as a group instantly, distinct from
+  // the orange-ringed single pins.
+  clusterBubble: {
+    backgroundColor: '#324E58',
+    borderWidth: 3,
+    borderColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 6,
+  },
+  clusterCount: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  beneficiaryPin: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#DB8633',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  beneficiaryPinSelected: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderColor: '#324E58',
+    borderWidth: 3,
+  },
+  beneficiaryPinLogo: {
+    width: '100%',
+    height: '100%',
+  },
+  addressGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
+  addressGroupTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#324E58',
+  },
+  addressGroupSubtitle: {
+    fontSize: 13,
+    color: '#5D6D7E',
+    marginTop: 2,
+  },
+  addressGroupList: {
+    maxHeight: 210,
+  },
+  addressGroupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#e8e8e8',
+  },
+  addressGroupLogo: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#f4f4f4',
+  },
+  addressGroupName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#324E58',
+  },
+  addressGroupMeta: {
+    fontSize: 12,
+    color: '#5D6D7E',
+    marginTop: 2,
   },
   customMarkerBubble: {
     flexDirection: 'row',

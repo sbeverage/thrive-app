@@ -65,11 +65,13 @@ export default function FilterScreen() {
       return;
     }
     setIsLoadingLocation(true);
-    await refreshLocation();
+    // Use the address refreshLocation hands back — `locationAddress` from
+    // context is still the pre-refresh value inside this closure.
+    const fresh = await refreshLocation();
     setIsLoadingLocation(false);
-    if (locationAddress?.city && locationAddress?.state) {
-      const loc = `${locationAddress.city}, ${locationAddress.state}`;
-      setLocation(loc);
+    const addr = fresh || locationAddress;
+    if (addr?.city && addr?.state) {
+      setLocation(`${addr.city}, ${addr.state}`);
       setLocationSuggestions([]);
     }
   };

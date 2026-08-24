@@ -526,6 +526,13 @@ export default function BeneficiaryDetailScreen() {
     }
 
     if (segments.includes("(tabs)")) {
+      // Route to wherever the donor came from. Home passes `from=home` when
+      // they tap the "My Beneficiary" card so back feels like a return trip
+      // instead of a jump to the (unrelated) Beneficiary list.
+      if (params?.from === "home") {
+        router.replace("/(tabs)/(main)/home");
+        return;
+      }
       router.replace("/(tabs)/beneficiary");
       return;
     }

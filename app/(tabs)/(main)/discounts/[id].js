@@ -15,13 +15,15 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { AntDesign, Feather } from '@expo/vector-icons';
+import { AntDesign, Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useDiscount } from '../../../context/DiscountContext';
 import { useUser } from '../../../context/UserContext';
 import API from '../../../lib/api';
 import { useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DiscountsLockOverlay from '../../../../components/DiscountsLockOverlay';
+import useSubscriptionGate from '../../../../hooks/useSubscriptionGate';
 
 const { height } = Dimensions.get('window');
 
@@ -30,6 +32,13 @@ export default function VendorDetails() {
   const { id: vendorId } = useLocalSearchParams();
   const { vendors, discounts, redeemDiscount, isLoading } = useDiscount();
   const { addSavings, user } = useUser();
+
+  // Gated the same way as the discounts tab. The home screen's "Discounts
+  // Near You" carousel links straight here (home.js pushes /discounts/:id),
+  // so locking only the tab left this route wide open.
+  const { isActive: subscriptionActive, status: subscriptionStatus } =
+    useSubscriptionGate({ enabled: !!user?.isLoggedIn });
+  const discountsLocked = subscriptionActive === false;
   const redemptionCountsKey = user?.email ? `redemptionCounts:${user.email}` : 'redemptionCounts';
   
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -38,6 +47,45 @@ export default function VendorDetails() {
   const [vendor, setVendor] = useState(null);
   const [vendorDiscounts, setVendorDiscounts] = useState([]);
   const [redemptionCounts, setRedemptionCounts] = useState({}); // { discountId: count }
+  const [isFavorited, setIsFavorited] = useState(false);
+
+  // Hydrate the favorite flag for this vendor from the same AsyncStorage
+  // key the discounts list uses, so the heart stays in sync between the
+  // list and this detail screen. `vendorId` is aliased from the URL param
+  // `id` — see the useLocalSearchParams destructure at the top of the
+  // component (previously mis-referenced as `id` and crashed the screen).
+  useEffect(() => {
+    if (!vendorId) return;
+    AsyncStorage.getItem('@thrive_favorites')
+      .then((stored) => {
+        if (!stored) return;
+        const ids = new Set(JSON.parse(stored));
+        setIsFavorited(ids.has(String(vendorId)));
+      })
+      .catch(() => {});
+  }, [vendorId]);
+
+  const toggleFavorite = async () => {
+    if (!vendorId) return;
+    const nextFav = !isFavorited;
+    setIsFavorited(nextFav);
+    try {
+      const raw = await AsyncStorage.getItem('@thrive_favorites');
+      const ids = new Set(raw ? JSON.parse(raw) : []);
+      if (nextFav) ids.add(String(vendorId));
+      else ids.delete(String(vendorId));
+      await AsyncStorage.setItem('@thrive_favorites', JSON.stringify([...ids]));
+    } catch {
+      // Local write failed — server call below is still authoritative.
+    }
+    // Mirror to server so vendor stats + push-notification fanout see the
+    // save. Silent failure for logged-out users (they just get local state).
+    try {
+      await API.toggleVendorFavorite(vendorId);
+    } catch {
+      // ignore
+    }
+  };
 
   // Load vendor and discounts
   useEffect(() => {
@@ -142,22 +190,55 @@ export default function VendorDetails() {
 
   const handleRedeem = async () => {
     if (!selectedDiscount) return;
-    
+
     try {
       setIsRedeeming(true);
       setShowConfirmModal(false);
-      
+
       // Redeem the discount - handle API errors gracefully
       let result;
       try {
         result = await redeemDiscount(selectedDiscount.id);
       } catch (redeemError) {
-        // If API fails, still allow redemption with local data
+        // Backend gates redemption on an active monthly subscription. A 402
+        // + code:'subscription_required' means the donor's sub is paused,
+        // cancelled, or never completed — surface a prompt to reactivate
+        // rather than silently letting the redemption go through offline.
+        if (redeemError?.code === 'subscription_required' || redeemError?.status === 402) {
+          setIsRedeeming(false);
+          const isCancelled =
+            redeemError?.subscriptionStatus === 'canceled'
+            || redeemError?.subscriptionStatus === 'cancelled';
+          const msg = redeemError?.message
+            || (isCancelled
+              ? 'Your monthly donation is cancelled. Reactivate to keep redeeming discounts.'
+              : 'You need an active monthly donation to redeem discounts.');
+          Alert.alert(
+            'Reactivate to redeem',
+            msg,
+            [
+              { text: 'Not now', style: 'cancel' },
+              {
+                text: 'Reactivate',
+                onPress: () => {
+                  // Route to the subscription flow — the same signup path new
+                  // donors go through creates a fresh Stripe subscription for
+                  // cancelled / expired accounts.
+                  router.push('/signupFlow/stripeIntegration');
+                },
+              },
+            ],
+          );
+          return;
+        }
+        // Non-402 errors — network hiccup, server error — keep the older
+        // "still let them see the code" fallback so a working donor isn't
+        // blocked by a transient blip.
         console.warn('⚠️ API redemption failed, using local data:', redeemError);
         result = {
           discountCode: selectedDiscount.discountCode || 'N/A',
           success: true,
-          message: 'Discount redeemed successfully (offline mode)'
+          message: 'Discount redeemed successfully (offline mode)',
         };
       }
       
@@ -323,7 +404,16 @@ export default function VendorDetails() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {discountsLocked && (
+        <DiscountsLockOverlay
+          status={subscriptionStatus}
+          onChooseAmount={() => router.push('/(tabs)/menu/editDonationAmount')}
+          onUpdatePayment={() => router.push('/(tabs)/menu/manageCards')}
+        />
+      )}
       <ScrollView
+        // Inert behind the lock so a tap can't reach Redeem underneath it.
+        pointerEvents={discountsLocked ? 'none' : 'auto'}
         style={styles.scroll}
         contentContainerStyle={{ paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}
@@ -339,6 +429,17 @@ export default function VendorDetails() {
             <Image
               source={require('../../../../assets/icons/arrow-left.png')}
               style={{ width: 20, height: 20, tintColor: '#fff' }}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.favoriteButton}
+            onPress={toggleFavorite}
+            hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}
+          >
+            <Ionicons
+              name={isFavorited ? 'heart' : 'heart-outline'}
+              size={22}
+              color={isFavorited ? '#FF6B7A' : '#fff'}
             />
           </TouchableOpacity>
           <View style={styles.headerLogoWrap}>
@@ -775,6 +876,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 16,
     left: 20,
+    padding: 10,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 12,
+  },
+  favoriteButton: {
+    position: 'absolute',
+    top: 16,
+    right: 20,
     padding: 10,
     backgroundColor: 'rgba(255,255,255,0.15)',
     borderRadius: 12,

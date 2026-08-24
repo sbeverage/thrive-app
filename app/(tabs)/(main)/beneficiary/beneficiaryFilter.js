@@ -142,10 +142,14 @@ export default function BeneficiaryFilter() {
             onPress={async () => {
               if (locationPermission !== 'granted') { checkLocationPermission(); return; }
               setIsLoadingLocation(true);
-              await refreshLocation();
+              // Same reason as the discounts filter: context state set by
+              // refreshLocation isn't visible to this closure yet, so use
+              // the address it returns.
+              const fresh = await refreshLocation();
               setIsLoadingLocation(false);
-              if (locationAddress?.city && locationAddress?.state) {
-                updateFilters({ location: `${locationAddress.city}, ${locationAddress.state}` });
+              const addr = fresh || locationAddress;
+              if (addr?.city && addr?.state) {
+                updateFilters({ location: `${addr.city}, ${addr.state}` });
                 setLocationSuggestions([]);
               }
             }}

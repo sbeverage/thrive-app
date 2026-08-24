@@ -355,10 +355,11 @@ const API = {
     }
   },
 
-  /** GET /vendors/me/favorites — list vendors this donor has saved. */
+  /** GET /api/vendors/me/favorites — list vendors this donor has saved.
+   *  Missing /api prefix was 404-ing every favorites hydration. */
   getMyFavoriteVendors: async () => {
     try {
-      const response = await api.get('/vendors/me/favorites');
+      const response = await api.get('/api/vendors/me/favorites');
       return response.data;
     } catch (error) {
       // Anonymous or signed-out donors get a 401 — silent.
@@ -366,20 +367,20 @@ const API = {
     }
   },
 
-  /** POST /vendors/:id/favorite — toggle the donor's save on a vendor. */
+  /** POST /api/vendors/:id/favorite — toggle the donor's save on a vendor. */
   toggleVendorFavorite: async (vendorId) => {
     try {
-      const response = await api.post(`/vendors/${vendorId}/favorite`);
+      const response = await api.post(`/api/vendors/${vendorId}/favorite`);
       return response.data;
     } catch (error) {
       return null;
     }
   },
 
-  /** POST /vendors/:id/view — fire-and-forget profile view tracking. */
+  /** POST /api/vendors/:id/view — fire-and-forget profile view tracking. */
   trackVendorView: async (vendorId) => {
     try {
-      await api.post(`/vendors/${vendorId}/view`);
+      await api.post(`/api/vendors/${vendorId}/view`);
     } catch (error) {
       // Analytics — never surface to the user.
     }
@@ -576,7 +577,13 @@ const API = {
    */
   verifyEmail: async (token, email) => {
     try {
-      const response = await api.get(`/api/auth/verify-email?token=${encodeURIComponent(token)}`);
+      // Send the email too: if the token was rotated by a resend, or this link
+      // was already used, the backend falls back to an already-verified check
+      // on the address instead of failing the user.
+      const query = `token=${encodeURIComponent(token)}${
+        email ? `&email=${encodeURIComponent(email)}` : ''
+      }`;
+      const response = await api.get(`/api/auth/verify-email?${query}`);
       // Guard: backend returned HTML instead of JSON (e.g. server error page)
       if (typeof response.data === 'string' && response.data.trim().startsWith('<')) {
         console.error("Email verification: server returned HTML instead of JSON");
@@ -1317,14 +1324,26 @@ const API = {
       );
       return response.data;
     } catch (error) {
-      // Log error but don't throw - let the component handle it gracefully
+      const status = error.response?.status;
+      const data = error.response?.data || {};
       console.warn(
-        "⚠️ Redeem discount API failed (will use local fallback):",
-        error.response?.status || error.message,
+        "⚠️ Redeem discount API failed:",
+        status || error.message,
+        data.code || data.error,
       );
-      throw new Error(
-        error.response?.data?.message || "Failed to redeem discount.",
+      // Preserve status + backend error `code` so the calling component
+      // can distinguish `subscription_required` (donor's monthly is
+      // paused / cancelled) from a transient network failure. Without
+      // this the component's generic try/catch treats every failure —
+      // including "you need to reactivate" — as a silent success.
+      const err = new Error(
+        data.error || data.message || "Failed to redeem discount.",
       );
+      err.status = status;
+      err.code = data.code || null;
+      err.subscriptionStatus = data.subscription_status || null;
+      err.responseData = data;
+      throw err;
     }
   },
 

@@ -548,7 +548,7 @@ export default function DiscountTeaser() {
         >
           <Text style={styles.continueButtonText}>
             {milestoneHit
-              ? '🔥 Pick a cause to save them →'
+              ? 'Pick a cause to save them →'
               : 'Pick Your Cause →'}
           </Text>
         </TouchableOpacity>

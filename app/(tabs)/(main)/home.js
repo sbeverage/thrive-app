@@ -77,6 +77,23 @@ export default function MainHome() {
   const { vendors, discounts, loadDiscounts } = useDiscount();
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [topDiscounts, setTopDiscounts] = useState([]);
+  const [favoriteVendorIds, setFavoriteVendorIds] = useState(new Set());
+
+  // Hydrate favorites from the same AsyncStorage key the discounts list +
+  // vendor detail use, so a heart flipped elsewhere shows up on the
+  // "Discounts Near You" cards as soon as the donor lands on Home.
+  useFocusEffect(
+    useCallback(() => {
+      AsyncStorage.getItem('@thrive_favorites')
+        .then((stored) => {
+          if (!stored) return;
+          try {
+            setFavoriteVendorIds(new Set(JSON.parse(stored).map(String)));
+          } catch { /* ignore malformed cache */ }
+        })
+        .catch(() => {});
+    }, [])
+  );
   
   // Referral data state
   const [paidFriendsCount, setPaidFriendsCount] = useState(0);
@@ -402,13 +419,20 @@ export default function MainHome() {
             <Text style={styles.sectionHeader}>My Beneficiary</Text>
           </View>
           {selectedBeneficiary ? (
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => {
                 router.push({
-                  pathname: '/(tabs)/beneficiary/beneficiaryDetail', 
-                  params: { id: selectedBeneficiary?.id?.toString() } 
+                  pathname: '/(tabs)/beneficiary/beneficiaryDetail',
+                  params: {
+                    id: selectedBeneficiary?.id?.toString(),
+                    // Tells beneficiaryDetail's back handler to send the
+                    // donor back to Home instead of dumping them on the
+                    // Beneficiary list — they clicked from Home, so that's
+                    // where "back" should feel natural.
+                    from: 'home',
+                  },
                 });
-              }} 
+              }}
               style={styles.beneficiaryCard}
               activeOpacity={0.9}
             >
@@ -478,10 +502,15 @@ export default function MainHome() {
                     activeOpacity={0.7}
                   >
                     <View style={styles.cardCream}>
+                      {favoriteVendorIds.has(String(voucher.id)) && (
+                        <View style={styles.discountCardFavoriteBadge}>
+                          <AntDesign name="heart" size={14} color="#FF6B7A" />
+                        </View>
+                      )}
                       {voucher.logo ? (
-                        <Image 
-                          source={voucher.logo} 
-                          style={styles.discountLogo} 
+                        <Image
+                          source={voucher.logo}
+                          style={styles.discountLogo}
                           resizeMode="contain"
                         />
                       ) : (
@@ -831,6 +860,28 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   discountBadgeText: { color: 'white', fontWeight: '700', fontSize: 12, textAlign: 'center' },
+  // Little heart in the top-right corner of a Discounts Near You card
+  // when the donor has favorited this vendor. Purely decorative — donors
+  // manage favorites on the vendor detail page + discounts list. Sits on
+  // top of the cream card with a soft white pill so it reads over any
+  // logo background.
+  discountCardFavoriteBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    zIndex: 2,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
+  },
   placeholderBox: {
     backgroundColor: '#F4F6F8',
     padding: 20,
