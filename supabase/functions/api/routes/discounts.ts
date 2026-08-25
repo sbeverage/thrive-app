@@ -517,13 +517,47 @@ export async function handleDiscountRoute(
       // them to reactivate (add a card, restart their monthly donation)
       // instead of showing a generic failure.
       {
-        const { data: sub } = await supabase
-          .from("monthly_donations")
-          .select("status")
-          .eq("user_id", userId)
-          .order("updated_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        // Ordering column is not guaranteed to exist on this table, and the
+        // previous version discarded the error — so a failed query looked
+        // identical to "this donor has no subscription" and returned 402 to
+        // everyone. Try updated_at, fall back to created_at, and if BOTH
+        // fail say so honestly instead of asserting they aren't subscribed.
+        const fetchLatest = async (orderBy: string) =>
+          await supabase
+            .from("monthly_donations")
+            .select("status")
+            .eq("user_id", userId)
+            .order(orderBy, { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        let { data: sub, error: subError } = await fetchLatest("updated_at");
+        if (subError) {
+          console.warn(
+            "⚠️ monthly_donations order by updated_at failed, retrying on created_at:",
+            subError.message,
+          );
+          ({ data: sub, error: subError } = await fetchLatest("created_at"));
+        }
+
+        if (subError) {
+          console.error(
+            "❌ Could not read subscription status — refusing to guess:",
+            subError.message,
+          );
+          return new Response(
+            JSON.stringify({
+              error:
+                "We couldn't verify your monthly donation just now. Please try again in a moment.",
+              code: "subscription_check_failed",
+            }),
+            {
+              headers: { "Content-Type": "application/json" },
+              status: 503,
+            },
+          );
+        }
+
         const status = String(sub?.status || "").toLowerCase();
         const ALLOWED = new Set(["active", "trialing"]);
         if (!ALLOWED.has(status)) {
