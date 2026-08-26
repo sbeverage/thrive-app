@@ -29,6 +29,7 @@ import { persistSignupFlowCheckpointFromParams } from '../utils/signupFlowCheckp
 import { useLocation } from '../context/LocationContext';
 import { useDiscountFilter } from '../context/DiscountFilterContext';
 import { calculateDistance } from '../utils/locationService';
+import SuggestPrompt from '../../components/SuggestPrompt';
 
 // Preload the piggy artwork at module load so it's decoded into memory by
 // the time the screen mounts. Without this, RN's Image lazily decodes the
@@ -482,7 +483,7 @@ export default function DiscountTeaser() {
         {loading
           ? [0, 1, 2, 3].map((i) => <SkeletonCard key={i} />)
           : visible.length === 0
-            ? <EmptyState filters={filters} />
+            ? <EmptyState filters={filters} searchQuery={searchQuery} />
             : visible.map((v) => (
                 <LockedVoucherCard
                   key={v.id}
@@ -649,7 +650,7 @@ function SkeletonCard() {
   );
 }
 
-function EmptyState({ filters }) {
+function EmptyState({ filters, searchQuery = '' }) {
   const isFavoritesEmpty = filters?.showFavorites;
   return (
     <View style={styles.emptyState}>
@@ -661,6 +662,18 @@ function EmptyState({ filters }) {
           ? 'Tap the heart on any card to save your favorite stores. They\'ll be waiting for you after signup.'
           : 'Try clearing your filters to see more options.'}
       </Text>
+
+      {/* Same compact request card as the live Discounts and Beneficiary
+          tabs — a donor part-way through signup is exactly who knows a
+          business worth adding. Favorites-empty is a different situation
+          (nothing saved yet), so the prompt only shows on a real miss. */}
+      {!isFavoritesEmpty && (
+        <SuggestPrompt
+          type="vendor"
+          searchQuery={searchQuery}
+          onSubmit={({ name, website }) => API.submitVendorRequest({ name, website })}
+        />
+      )}
     </View>
   );
 }

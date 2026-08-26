@@ -629,16 +629,27 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
   const handleConfirmBeneficiary = async () => {
     if (!pendingBeneficiary) return;
     setConfirmModalVisible(false);
+    // A donor-suggested charity from the IRS registry hasn't been verified by
+    // the THRIVE team yet. They're allowed to pick it — that's the whole point
+    // of the registry — but their giving must not reach an unverified
+    // organisation, so it is held exactly as "Set aside" does until approval.
+    const isUnverified = !!(
+      pendingBeneficiary.isPendingVerification ||
+      pendingBeneficiary.is_pending_verification
+    );
+
     // _saveMySpot is set by the Support-THRIVE panel's "Set aside" CTA so we
     // know whether to pass held_for_donor_choice through. Any other pick
     // (including "Help THRIVE grow") clears the held flag.
-    const willBeHeld = !!pendingBeneficiary._saveMySpot;
+    const willBeHeld = !!pendingBeneficiary._saveMySpot || isUnverified;
     setHoldingForChoice(willBeHeld);
 
     // Outside signup, if the donor is already in held-mode and is picking a
     // real cause (not THRIVE), use the redirect endpoint — it updates their
     // active subscription's beneficiary AND releases prior held charges to
     // the new cause in one shot.
+    // willBeHeld already covers the unverified case, so an unverified pick can
+    // never release previously held funds.
     const isLeavingHeldMode =
       !isSignupFlow && !willBeHeld && !pendingBeneficiary.is_thrive && holdingForChoice;
 
@@ -1304,7 +1315,20 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                         )}
                       </TouchableOpacity>
                       <View style={styles.beneficiaryCardContent}>
-                        <Text style={styles.beneficiaryName}>{b.name}</Text>
+                        <View style={styles.beneficiaryNameRow}>
+                          <Text style={styles.beneficiaryName} numberOfLines={1}>
+                            {b.name}
+                          </Text>
+                          {(b.isPendingVerification || b.is_pending_verification) && (
+                            /* Donor-suggested from the IRS registry, not yet verified by the
+                               team. Without this the card is indistinguishable from a vetted
+                               cause. */
+                            <View style={styles.pendingBadge}>
+                              <Feather name="clock" size={10} color="#8A5A12" />
+                              <Text style={styles.pendingBadgeText}>Pending</Text>
+                            </View>
+                          )}
+                        </View>
                         <Text style={styles.beneficiaryCategory}>{b.category}</Text>
                         {!isSignupFlow && (
                           <View style={styles.beneficiaryLocation}>
@@ -1399,7 +1423,20 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                       )}
                     </TouchableOpacity>
                     <View style={styles.beneficiaryCardContent}>
-                      <Text style={styles.beneficiaryName}>{b.name}</Text>
+                      <View style={styles.beneficiaryNameRow}>
+                        <Text style={styles.beneficiaryName} numberOfLines={1}>
+                          {b.name}
+                        </Text>
+                        {(b.isPendingVerification || b.is_pending_verification) && (
+                          /* Donor-suggested from the IRS registry, not yet verified by the
+                             team. Without this the card is indistinguishable from a vetted
+                             cause. */
+                          <View style={styles.pendingBadge}>
+                            <Feather name="clock" size={10} color="#8A5A12" />
+                            <Text style={styles.pendingBadgeText}>Pending</Text>
+                          </View>
+                        )}
+                      </View>
                       <Text style={styles.beneficiaryCategory}>{b.category}</Text>
                       {!isSignupFlow && (
                         <View style={styles.beneficiaryLocation}>
@@ -1591,6 +1628,9 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                 ? 'Start Now, Pick Later.'
                 : pendingBeneficiary?.is_thrive
                 ? 'Give to THRIVE Initiative'
+                : pendingBeneficiary?.isPendingVerification ||
+                  pendingBeneficiary?.is_pending_verification
+                ? "We'll verify them first"
                 : 'Confirm Your Beneficiary'}
             </Text>
             <Text style={styles.modalText}>
@@ -1598,6 +1638,9 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                 ? "You're starting your monthly gift today. No rush — we'll hold it with THRIVE until you find a cause you love to give to."
                 : pendingBeneficiary?.is_thrive
                 ? 'Your monthly donation will go directly toward growing the platform and reaching more donors and cities.'
+                : pendingBeneficiary?.isPendingVerification ||
+                  pendingBeneficiary?.is_pending_verification
+                ? `"${pendingBeneficiary?.name}" comes from the IRS registry and our team hasn't verified them yet. We'll set your giving aside until they're approved — and if we can't verify them, you can choose another cause. Nothing is lost either way.`
                 : `Set "${pendingBeneficiary?.name}" as your monthly beneficiary?`}
             </Text>
             <View style={styles.modalActions}>
@@ -2128,6 +2171,25 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
     justifyContent: 'center',
+  },
+  beneficiaryNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  pendingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#FDF3E3',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  pendingBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#8A5A12',
   },
   beneficiaryName: {
     fontSize: 16,

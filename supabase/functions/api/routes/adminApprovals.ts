@@ -8,8 +8,14 @@
 //   POST  /admin/approvals/:id/approve                  approve a submission
 //   POST  /admin/approvals/:id/reject                   reject with reason
 //
-// Currently scoped to vendors. Beneficiary approvals follow the same shape
-// if/when a self-serve beneficiary signup is added.
+// Vendors, plus donor-suggested charities:
+//   GET   /admin/approvals?type=charity                 list pending charities
+//   POST  /admin/approvals/charity/:id/approve          approve + complete profile
+//   POST  /admin/approvals/charity/:id/reject           reject with reason
+//
+// Charity routes carry `charity` in the path rather than reusing
+// /admin/approvals/:id — vendor and charity ids come from different tables and
+// would collide.
 
 import { corsHeaders } from "../lib/cors.ts";
 import { sendVendorEmail } from "../lib/email.ts";
@@ -58,6 +64,75 @@ function formatVendor(v: any, contactName: string, submissionKind: "signup" | "r
   };
 }
 
+// Same shape the Pending Approvals UI already renders for vendors, so the
+// table can show both without a second code path.
+function formatCharity(c: any, suggestedByName: string) {
+  return {
+    id: c.id,
+    // "beneficiary" — the admin panel's Beneficiaries tab filters on this
+    // exact value, so the existing UI mapping works untouched.
+    type: "beneficiary",
+    submission_kind: "suggestion",
+    name: c.name,
+    contact_person: suggestedByName || null,
+    email: c.email || null,
+    phone: c.phone || null,
+    location: c.location || null,
+    created_at: c.created_at,
+    submitted_at: c.suggested_at || c.created_at,
+    // Everything an admin needs to judge the org before approving.
+    ein: c.ein || null,
+    website: c.website || null,
+    category: c.category || null,
+    description: c.description || null,
+    suggested_by_user_id: c.suggested_by_user_id || null,
+    suggested_by_name: suggestedByName || null,
+    verification_status: c.verification_status || "pending",
+    verification_rejected_reason: c.verification_rejected_reason || null,
+  };
+}
+
+// Profile fields an admin may fill in while approving. camelCase accepted too
+// so the panel can post either shape.
+const CHARITY_PROFILE_FIELDS: Record<string, string> = {
+  name: "name",
+  category: "category",
+  type: "type",
+  description: "description",
+  about: "about",
+  whyThisMatters: "why_this_matters",
+  why_this_matters: "why_this_matters",
+  successStory: "success_story",
+  success_story: "success_story",
+  storyAuthor: "story_author",
+  story_author: "story_author",
+  impactStatement1: "impact_statement_1",
+  impact_statement_1: "impact_statement_1",
+  impactStatement2: "impact_statement_2",
+  impact_statement_2: "impact_statement_2",
+  familiesHelped: "families_helped",
+  families_helped: "families_helped",
+  communitiesServed: "communities_served",
+  communities_served: "communities_served",
+  livesImpacted: "lives_impacted",
+  lives_impacted: "lives_impacted",
+  programsActive: "programs_active",
+  programs_active: "programs_active",
+  directToProgramsPercentage: "direct_to_programs_percentage",
+  direct_to_programs_percentage: "direct_to_programs_percentage",
+  imageUrl: "image_url",
+  image_url: "image_url",
+  logoUrl: "logo_url",
+  logo_url: "logo_url",
+  location: "location",
+  website: "website",
+  phone: "phone",
+  email: "email",
+  contactName: "contact_name",
+  contact_name: "contact_name",
+  ein: "ein",
+};
+
 export async function handleAdminApprovals(
   req: Request,
   supabase: any,
@@ -70,6 +145,59 @@ export async function handleAdminApprovals(
     const page = parseInt(url.searchParams.get("page") || "1", 10);
     const limit = parseInt(url.searchParams.get("limit") || "50", 10);
     const status = url.searchParams.get("status") || "pending";
+
+    // type=charity → donor-suggested charities awaiting verification. The
+    // default stays vendor-only so the existing UI call is unaffected.
+    const typeParam = url.searchParams.get("type");
+    if (typeParam === "charity" || typeParam === "beneficiary") {
+      let q = supabase
+        .from("charities")
+        .select("*")
+        .order("suggested_at", { ascending: false, nullsFirst: false });
+
+      if (status === "pending") {
+        q = q.eq("is_pending_verification", true);
+      } else if (status === "approved" || status === "rejected") {
+        q = q.eq("verification_status", status);
+      }
+      q = q.range((page - 1) * limit, page * limit - 1);
+
+      const { data: charities, error: chErr } = await q;
+      if (chErr) return json({ error: chErr.message }, 500);
+
+      // Who suggested each one — useful context when judging a submission.
+      const suggesterIds = (charities || [])
+        .map((c: any) => c.suggested_by_user_id)
+        .filter(Boolean);
+      const nameBySuggester = new Map<number, string>();
+      if (suggesterIds.length > 0) {
+        const { data: users } = await supabase
+          .from("users")
+          .select("id, first_name, last_name, email")
+          .in("id", suggesterIds);
+        for (const u of users || []) {
+          nameBySuggester.set(
+            u.id,
+            [u.first_name, u.last_name].filter(Boolean).join(" ").trim() || u.email,
+          );
+        }
+      }
+
+      const data = (charities || []).map((c: any) =>
+        formatCharity(c, c.suggested_by_user_id ? nameBySuggester.get(c.suggested_by_user_id) || "" : ""),
+      );
+
+      return json({
+        success: true,
+        data,
+        pagination: {
+          page,
+          limit,
+          total: data.length,
+          pages: Math.max(1, Math.ceil(data.length / limit)),
+        },
+      });
+    }
 
     // Two parallel queries when we want "pending": first-time signups AND
     // returning vendors asking to reactivate. Approved / rejected / all
@@ -137,6 +265,172 @@ export async function handleAdminApprovals(
         total: data.length,
         pages: Math.max(1, Math.ceil(data.length / limit)),
       },
+    });
+  }
+
+  // POST /admin/approvals/charity/:id/approve
+  //
+  // Clears the pending flag, applies whatever profile detail the admin filled
+  // in, and releases any giving that was held while the charity was
+  // unverified. The hold is set on the app side when a donor picks a
+  // registry charity, so approval is what actually lets that money move.
+  const charityApprove = route.match(/^\/admin\/approvals\/charity\/(\d+)\/approve$/);
+  if (method === "POST" && charityApprove) {
+    const charityId = parseInt(charityApprove[1], 10);
+
+    const { data: charity, error: findErr } = await supabase
+      .from("charities")
+      .select("*")
+      .eq("id", charityId)
+      .maybeSingle();
+    if (findErr) return json({ error: findErr.message }, 500);
+    if (!charity) return json({ error: "Charity not found" }, 404);
+
+    let body: any = {};
+    try {
+      const text = await req.text();
+      if (text) body = JSON.parse(text);
+    } catch {
+      // Approving with no profile edits is valid.
+    }
+
+    // Only known columns, so a stray key from the panel can't fail the write.
+    const profile: Record<string, unknown> = {};
+    for (const [key, column] of Object.entries(CHARITY_PROFILE_FIELDS)) {
+      if (body[key] !== undefined) profile[column] = body[key];
+    }
+
+    const { error: updErr } = await supabase
+      .from("charities")
+      .update({
+        ...profile,
+        is_pending_verification: false,
+        verification_status: "approved",
+        verification_rejected_at: null,
+        verification_rejected_reason: null,
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", charityId);
+    if (updErr) return json({ error: updErr.message }, 500);
+
+    // ── Release held giving for every donor who picked this charity ──
+    // Mirrors POST /donations/monthly/redirect, but scoped to one charity and
+    // run across all its waiting donors rather than one authenticated user.
+    let releasedDonors = 0;
+    let releasedTotal = 0;
+    try {
+      const { data: heldSubs } = await supabase
+        .from("monthly_donations")
+        .select("id, user_id")
+        .eq("beneficiary_id", charityId)
+        .eq("held_for_donor_choice", true);
+
+      for (const sub of heldSubs || []) {
+        const { data: heldTxns } = await supabase
+          .from("transactions")
+          .select("id, amount")
+          .eq("user_id", sub.user_id)
+          .eq("held_for_donor_choice", true)
+          .is("released_at", null);
+
+        const txnIds = (heldTxns || []).map((t: any) => t.id);
+        const total = (heldTxns || []).reduce(
+          (sum: number, t: any) => sum + parseFloat(t.amount || 0),
+          0,
+        );
+
+        if (total > 0 && txnIds.length > 0) {
+          await supabase.from("transactions").insert({
+            user_id: sub.user_id,
+            type: "held_release",
+            amount: total,
+            description: `Released held donations to ${charity.name}`,
+            beneficiary_id: charityId,
+            status: "completed",
+            reference_type: "donation",
+          });
+          await supabase
+            .from("transactions")
+            .update({
+              released_at: new Date().toISOString(),
+              released_to_charity_id: charityId,
+            })
+            .in("id", txnIds);
+          releasedTotal += total;
+        }
+
+        await supabase
+          .from("monthly_donations")
+          .update({ held_for_donor_choice: false })
+          .eq("id", sub.id);
+        releasedDonors += 1;
+      }
+    } catch (e: any) {
+      // The charity IS approved at this point; a release failure must not
+      // report the approval as failed. Surface it as a warning instead so an
+      // admin knows to check rather than approving twice.
+      console.error("⚠️ Charity approved but releasing held funds failed:", e?.message || e);
+      return json({
+        success: true,
+        charity: { id: charityId, name: charity.name },
+        warning:
+          "Charity approved, but releasing held donations failed — please check held funds for this cause.",
+      });
+    }
+
+    return json({
+      success: true,
+      charity: { id: charityId, name: charity.name },
+      released_donor_count: releasedDonors,
+      released_amount: Number(releasedTotal.toFixed(2)),
+    });
+  }
+
+  // POST /admin/approvals/charity/:id/reject
+  //
+  // The donor keeps their held funds and is asked to pick another cause; the
+  // charity stays in the table flagged rejected so the same EIN doesn't come
+  // straight back through /charities/suggest as a fresh submission.
+  const charityReject = route.match(/^\/admin\/approvals\/charity\/(\d+)\/reject$/);
+  if (method === "POST" && charityReject) {
+    const charityId = parseInt(charityReject[1], 10);
+
+    let reason = "";
+    try {
+      const text = await req.text();
+      if (text) reason = (JSON.parse(text).reason || "").toString().trim();
+    } catch {
+      // reason is optional
+    }
+
+    const { data: charity, error: findErr } = await supabase
+      .from("charities")
+      .select("id, name")
+      .eq("id", charityId)
+      .maybeSingle();
+    if (findErr) return json({ error: findErr.message }, 500);
+    if (!charity) return json({ error: "Charity not found" }, 404);
+
+    const { error: updErr } = await supabase
+      .from("charities")
+      .update({
+        is_pending_verification: false,
+        verification_status: "rejected",
+        verification_rejected_at: new Date().toISOString(),
+        verification_rejected_reason: reason || null,
+        // Hidden from the donor app, but the row is kept for the audit trail
+        // and for suggest-time dedupe.
+        is_active: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", charityId);
+    if (updErr) return json({ error: updErr.message }, 500);
+
+    return json({
+      success: true,
+      charity: { id: charityId, name: charity.name },
+      reason: reason || null,
     });
   }
 
