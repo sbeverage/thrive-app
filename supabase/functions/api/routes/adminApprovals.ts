@@ -19,6 +19,7 @@
 
 import { corsHeaders } from "../lib/cors.ts";
 import { sendVendorEmail } from "../lib/email.ts";
+import { sendPushToUser } from "../lib/push.ts";
 
 const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: jsonHeaders });
@@ -379,6 +380,31 @@ export async function handleAdminApprovals(
       });
     }
 
+    // Tell every donor who picked this cause that it cleared review. Awaited
+    // rather than fire-and-forget: an Edge Function isolate can be torn down
+    // the moment the response is returned, dropping un-awaited work.
+    try {
+      const { data: donors } = await supabase
+        .from("monthly_donations")
+        .select("user_id")
+        .eq("beneficiary_id", charityId);
+      const userIds = [...new Set((donors || []).map((d: any) => d.user_id).filter(Boolean))];
+      for (const uid of userIds) {
+        await sendPushToUser(supabase, uid as number, {
+          title: `${charity.name} is verified`,
+          body: "Your giving is on its way to them. Tap to see your cause.",
+          data: {
+            path: "/(tabs)/beneficiary",
+            type: "charity_approved",
+            charity_id: charityId,
+          },
+        });
+      }
+    } catch (e: any) {
+      // Approval already succeeded; a failed push must not undo or hide that.
+      console.warn("charity approved but donor push failed:", e?.message || e);
+    }
+
     return json({
       success: true,
       charity: { id: charityId, name: charity.name },
@@ -426,6 +452,30 @@ export async function handleAdminApprovals(
       })
       .eq("id", charityId);
     if (updErr) return json({ error: updErr.message }, 500);
+
+    // The donor's giving stays held and safe, but nothing else would tell
+    // them to choose again — so say it plainly, and don't repeat the internal
+    // rejection reason to them.
+    try {
+      const { data: donors } = await supabase
+        .from("monthly_donations")
+        .select("user_id")
+        .eq("beneficiary_id", charityId);
+      const userIds = [...new Set((donors || []).map((d: any) => d.user_id).filter(Boolean))];
+      for (const uid of userIds) {
+        await sendPushToUser(supabase, uid as number, {
+          title: `We couldn't verify ${charity.name}`,
+          body: "Your giving is safe and still set aside — tap to choose another cause.",
+          data: {
+            path: "/(tabs)/beneficiary",
+            type: "charity_rejected",
+            charity_id: charityId,
+          },
+        });
+      }
+    } catch (e: any) {
+      console.warn("charity rejected but donor push failed:", e?.message || e);
+    }
 
     return json({
       success: true,
