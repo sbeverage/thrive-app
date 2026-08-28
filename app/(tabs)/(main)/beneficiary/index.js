@@ -20,7 +20,11 @@ import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import SuccessModal from '../../../../components/SuccessModal';
 import ConfettiCannon from 'react-native-confetti-cannon';
-import { useBeneficiary } from '../../../context/BeneficiaryContext';
+import {
+  useBeneficiary,
+  isThriveCause,
+  resolveBeneficiaryHeroImageSource,
+} from '../../../context/BeneficiaryContext';
 import { useBeneficiaryFilter } from '../../../context/BeneficiaryFilterContext';
 import { useLocation } from '../../../context/LocationContext';
 import MapView, { Marker, Circle } from 'react-native-maps';
@@ -188,7 +192,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
   // the map re-apply the prop after every settle and zoom in without end.
   const initialRegionRef = useRef(getDefaultRegion());
 
-  const categories = ['All', 'Favorites', 'Animal Welfare', 'Arts & Culture', 'Childhood Illness', 'Disabilities', 'Disaster Relief', 'Education', 'Elderly Care', 'Environment', 'Healthcare', 'Homelessness', 'Hunger Relief', 'International Aid', 'Low Income Families', 'Veterans', 'Youth Development'];
+  const categories = ['All', 'Favorites', 'Animal Welfare', 'Arts & Culture', 'Childhood Illness', 'Disabilities', 'Disaster Relief', 'Education', 'Elderly Care', 'Environment', 'Healthcare', 'Homelessness', 'Hunger Relief', 'International Aid', 'Low Income Families', 'Religion', 'Veterans', 'Youth Development'];
 
   // State for beneficiaries from API
   const [beneficiaries, setBeneficiaries] = useState([]);
@@ -651,7 +655,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
     // willBeHeld already covers the unverified case, so an unverified pick can
     // never release previously held funds.
     const isLeavingHeldMode =
-      !isSignupFlow && !willBeHeld && !pendingBeneficiary.is_thrive && holdingForChoice;
+      !isSignupFlow && !willBeHeld && !isThriveCause(pendingBeneficiary) && holdingForChoice;
 
     try {
       if (isLeavingHeldMode) {
@@ -1508,14 +1512,21 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                 <SupportThrivePanel
                   thriveCharity={thriveCharity}
                   isLoading={false}
+                  // Signup only — an existing donor already gives monthly, so
+                  // "start now, pick later" doesn't apply to them.
+                  allowPickLater={isSignupFlow}
                   onPickGrow={(c) => {
                     setHoldingForChoice(false);
-                    setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url } });
+                    setPendingBeneficiary({ ...c, image: resolveBeneficiaryHeroImageSource(c) });
                     setConfirmModalVisible(true);
                   }}
                   onPickHold={(c) => {
                     setHoldingForChoice(true);
-                    setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url }, _saveMySpot: true });
+                    setPendingBeneficiary({
+                      ...c,
+                      image: resolveBeneficiaryHeroImageSource(c),
+                      _saveMySpot: true,
+                    });
                     setConfirmModalVisible(true);
                   }}
                 />
@@ -1552,14 +1563,21 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                 <SupportThrivePanel
                   thriveCharity={thriveCharity}
                   isLoading={false}
+                  // Signup only — an existing donor already gives monthly, so
+                  // "start now, pick later" doesn't apply to them.
+                  allowPickLater={isSignupFlow}
                   onPickGrow={(c) => {
                     setHoldingForChoice(false);
-                    setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url } });
+                    setPendingBeneficiary({ ...c, image: resolveBeneficiaryHeroImageSource(c) });
                     setConfirmModalVisible(true);
                   }}
                   onPickHold={(c) => {
                     setHoldingForChoice(true);
-                    setPendingBeneficiary({ ...c, image: { uri: c.imageUrl || c.image_url }, _saveMySpot: true });
+                    setPendingBeneficiary({
+                      ...c,
+                      image: resolveBeneficiaryHeroImageSource(c),
+                      _saveMySpot: true,
+                    });
                     setConfirmModalVisible(true);
                   }}
                 />
@@ -1626,7 +1644,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
             <Text style={styles.modalTitle}>
               {pendingBeneficiary?._saveMySpot
                 ? 'Start Now, Pick Later.'
-                : pendingBeneficiary?.is_thrive
+                : isThriveCause(pendingBeneficiary)
                 ? 'Give to THRIVE Initiative'
                 : pendingBeneficiary?.isPendingVerification ||
                   pendingBeneficiary?.is_pending_verification
@@ -1636,7 +1654,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
             <Text style={styles.modalText}>
               {pendingBeneficiary?._saveMySpot
                 ? "You're starting your monthly gift today. No rush — we'll hold it with THRIVE until you find a cause you love to give to."
-                : pendingBeneficiary?.is_thrive
+                : isThriveCause(pendingBeneficiary)
                 ? 'Your monthly donation will go directly toward growing the platform and reaching more donors and cities.'
                 : pendingBeneficiary?.isPendingVerification ||
                   pendingBeneficiary?.is_pending_verification

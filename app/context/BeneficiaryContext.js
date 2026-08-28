@@ -11,10 +11,31 @@ export function pickFirstNonEmptyString(...values) {
 }
 
 /**
+ * Is this the THRIVE Initiative row (donor gives to the platform itself)?
+ *
+ * `formatCharityResponse` emits camelCase `isThrive`, but rows read straight
+ * from Postgres carry `is_thrive`. Both spellings appear in stored/rehydrated
+ * beneficiaries, so every check goes through here rather than picking one.
+ */
+export function isThriveCause(beneficiary) {
+  if (!beneficiary) return false;
+  return beneficiary.isThrive === true || beneficiary.is_thrive === true;
+}
+
+/**
  * Image source for large “hero” cards (Home, etc.). Prefers main/hero URLs over logos.
  */
 export function resolveBeneficiaryHeroImageSource(beneficiary) {
   if (!beneficiary) return null;
+  // THRIVE-as-a-cause always uses the bundled photo. This sits *before* the
+  // URL pick on purpose: the THRIVE row does carry an imageUrl (the brand
+  // mark), which would otherwise win and the photo would never show. Trade-off
+  // — THRIVE's large card art is changed by replacing this asset file, not
+  // from the admin panel. Same file as the pending placeholder, one source of
+  // truth for the same picture.
+  if (isThriveCause(beneficiary)) {
+    return require('../../assets/images/pending-charity.png');
+  }
   const uri = pickFirstNonEmptyString(
     beneficiary.imageUrl,
     beneficiary.image_url,

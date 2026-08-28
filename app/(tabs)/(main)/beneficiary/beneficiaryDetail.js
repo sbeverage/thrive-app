@@ -7,7 +7,7 @@ import { useLocalSearchParams, useRouter, useSegments } from 'expo-router';
 import BeneficiaryDetailCard from '../../../../components/BeneficiaryDetailCard';
 import SuccessModal from '../../../../components/SuccessModal';
 import ConfettiCannon from 'react-native-confetti-cannon';
-import { useBeneficiary } from '../../../context/BeneficiaryContext';
+import { useBeneficiary, isThriveCause } from '../../../context/BeneficiaryContext';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import API from '../../../lib/api';
@@ -301,8 +301,13 @@ export default function BeneficiaryDetailScreen() {
             // Handle main image (imageUrl) - for the large banner image
             let imageSource;
             const imageUrl = foundBeneficiary.imageUrl || foundBeneficiary.image_url || null;
-            
-            if (imageUrl && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
+
+            if (isThriveCause(foundBeneficiary)) {
+              // THRIVE-as-a-cause uses the bundled photo rather than the row's
+              // brand mark — matches resolveBeneficiaryHeroImageSource, which
+              // drives the My Beneficiary card on Home.
+              imageSource = require('../../../../assets/images/pending-charity.png');
+            } else if (imageUrl && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
               if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
                 console.log('✅ Using main image URL from backend:', imageUrl);
                 imageSource = { uri: imageUrl };
@@ -362,6 +367,7 @@ export default function BeneficiaryDetailScreen() {
               name: foundBeneficiary.name,
               category: foundBeneficiary.category,
               type: foundBeneficiary.type,
+              isThrive: isThriveCause(foundBeneficiary),
               image: imageSource, // Main banner image (from imageUrl)
               logoUrl: logoSource, // Logo image (from logoUrl, falls back to main image)
               location: foundBeneficiary.location,
@@ -374,6 +380,13 @@ export default function BeneficiaryDetailScreen() {
               website: foundBeneficiary.website || '',
               phone: foundBeneficiary.phone || '',
               social: foundBeneficiary.social || '',
+              // Photo gallery + video. This transform whitelists fields, so
+              // anything not listed here never reaches the card — which is why
+              // media saved in the admin panel wasn't showing up.
+              imageUrls: Array.isArray(foundBeneficiary.imageUrls)
+                ? foundBeneficiary.imageUrls
+                : (Array.isArray(foundBeneficiary.image_urls) ? foundBeneficiary.image_urls : []),
+              videoUrl: foundBeneficiary.videoUrl ?? foundBeneficiary.video_url ?? null,
               // Impact metrics - pass BOTH camelCase and snake_case to ensure component can read either
               livesImpacted: finalLivesImpacted,
               lives_impacted: foundBeneficiary.lives_impacted ?? foundBeneficiary.livesImpacted ?? finalLivesImpacted,
