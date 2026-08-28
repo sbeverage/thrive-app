@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import API from '../lib/api';
 
 /** First non-empty string (trimmed); ignores null / undefined / "". */
 export function pickFirstNonEmptyString(...values) {
@@ -44,13 +45,15 @@ export function resolveBeneficiaryHeroImageSource(beneficiary) {
     beneficiary.logo_url,
   );
   if (uri) return { uri };
-  if (beneficiary.image !== undefined && beneficiary.image !== null) return beneficiary.image;
-  // Charity is donor-suggested and pending verification — no real image
-  // exists yet. Fall back to the in-app placeholder so the card never
-  // renders a blank tile after an app reload or context rehydrate.
+  // Checked before the raw `image` passthrough below. A rehydrated
+  // beneficiary carries `image: null` (no URL to store), and a live one can
+  // carry a require() module id — a number that is only valid for the bundle
+  // that produced it. The boolean flag is the one trustworthy signal, so it
+  // decides before either of those gets a say.
   if (beneficiary.isPendingVerification || beneficiary.is_pending_verification) {
     return require('../../assets/images/pending-charity.png');
   }
+  if (beneficiary.image !== undefined && beneficiary.image !== null) return beneficiary.image;
   return null;
 }
 
@@ -96,6 +99,33 @@ export const BeneficiaryProvider = ({ children }) => {
           const parsed = JSON.parse(saved);
           console.log('✅ Loaded beneficiary from storage:', parsed?.name || parsed?.id);
           setSelectedBeneficiary(parsed);
+
+          // Records written before isPendingVerification joined the stored
+          // whitelist have no flag at all, so a donor-suggested charity keeps
+          // showing the wrong Home art until they re-pick it. Re-read the
+          // charity once to heal it. Only fires while the key is missing, so
+          // it costs one request per install, not one per launch.
+          if (parsed?.id && parsed.isPendingVerification === undefined) {
+            try {
+              const fresh = await API.getCharityById(parsed.id);
+              if (fresh) {
+                const healed = {
+                  ...parsed,
+                  isPendingVerification: !!(
+                    fresh.isPendingVerification || fresh.is_pending_verification
+                  ),
+                  isThrive: !!(fresh.isThrive || fresh.is_thrive),
+                };
+                setSelectedBeneficiary(healed);
+                await AsyncStorage.setItem('selectedBeneficiary', JSON.stringify(healed));
+                console.log('🩹 Backfilled placeholder flags for', healed.name);
+              }
+            } catch (e) {
+              // Offline or the charity is gone — the stored record still
+              // renders, just with the generic fallback art.
+              console.warn('Could not backfill beneficiary flags:', e?.message || e);
+            }
+          }
         } else {
           console.log('⚠️ No beneficiary found in storage');
         }
@@ -170,6 +200,15 @@ export const BeneficiaryProvider = ({ children }) => {
           website: beneficiary.website || '',
           phone: beneficiary.phone || '',
           ein: beneficiary.ein || '',
+          // These two decide which bundled placeholder the hero resolver
+          // picks. Dropping them meant a donor-suggested charity looked
+          // right until the first reload, then fell through to an unrelated
+          // stock photo on the Home card — the whole point of storing a
+          // whitelist is that anything unlisted is silently lost.
+          isPendingVerification: !!(
+            beneficiary.isPendingVerification || beneficiary.is_pending_verification
+          ),
+          isThrive: !!(beneficiary.isThrive || beneficiary.is_thrive),
           latitude: beneficiary.latitude ?? null,
           longitude: beneficiary.longitude ?? null,
         };

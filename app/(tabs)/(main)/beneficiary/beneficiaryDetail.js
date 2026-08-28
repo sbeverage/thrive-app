@@ -7,7 +7,10 @@ import { useLocalSearchParams, useRouter, useSegments } from 'expo-router';
 import BeneficiaryDetailCard from '../../../../components/BeneficiaryDetailCard';
 import SuccessModal from '../../../../components/SuccessModal';
 import ConfettiCannon from 'react-native-confetti-cannon';
-import { useBeneficiary, isThriveCause } from '../../../context/BeneficiaryContext';
+import {
+  useBeneficiary,
+  isThriveCause,
+} from '../../../context/BeneficiaryContext';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import API from '../../../lib/api';
@@ -302,7 +305,14 @@ export default function BeneficiaryDetailScreen() {
             let imageSource;
             const imageUrl = foundBeneficiary.imageUrl || foundBeneficiary.image_url || null;
 
-            if (isThriveCause(foundBeneficiary)) {
+            const detailIsPending = !!(
+              foundBeneficiary.isPendingVerification ||
+              foundBeneficiary.is_pending_verification
+            );
+
+            if (detailIsPending) {
+              imageSource = require('../../../../assets/images/pending-charity.png');
+            } else if (isThriveCause(foundBeneficiary)) {
               // THRIVE-as-a-cause uses the bundled photo rather than the row's
               // brand mark — matches resolveBeneficiaryHeroImageSource, which
               // drives the My Beneficiary card on Home.
@@ -368,6 +378,7 @@ export default function BeneficiaryDetailScreen() {
               category: foundBeneficiary.category,
               type: foundBeneficiary.type,
               isThrive: isThriveCause(foundBeneficiary),
+              isPendingVerification: detailIsPending,
               image: imageSource, // Main banner image (from imageUrl)
               logoUrl: logoSource, // Logo image (from logoUrl, falls back to main image)
               location: foundBeneficiary.location,
