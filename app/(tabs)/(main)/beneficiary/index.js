@@ -347,10 +347,15 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
       try {
         const results = await API.searchCharities(q);
         if (lastRegistryQueryRef.current !== q) return;
-        // Drop anything already in our DB — they're rendered as normal
-        // (live) charity cards via filteredBeneficiaries, no need to
-        // duplicate them down in the registry section.
-        const novel = (results || []).filter((r) => !r.existingCharityId);
+        // Drop orgs that are already live on THRIVE — those render as normal
+        // charity cards via filteredBeneficiaries, no need to duplicate them
+        // down here. But KEEP the ones sitting in the pending queue: they are
+        // created with is_active=false, so /charities filters them out of the
+        // main list, and dropping them here too made a charity vanish from the
+        // app entirely the moment a donor requested it.
+        const novel = (results || []).filter(
+          (r) => !r.existingCharityId || r.existingIsPending,
+        );
         setRegistryResults(novel.slice(0, 8));
       } catch (e) {
         if (lastRegistryQueryRef.current === q) {
@@ -871,10 +876,25 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                   </View>
                   <Text style={styles.registryCardEin}>EIN {item.ein}</Text>
                 </View>
-                <View style={styles.registryCardCta}>
-                  <Feather name="plus" size={14} color="#fff" />
-                  <Text style={styles.registryCardCtaText}>Add</Text>
-                </View>
+                {item.existingIsPending ? (
+                  // Already requested — by this donor or another one. Still
+                  // tappable: /charities/suggest dedups by EIN and returns the
+                  // existing row, so tapping selects it rather than filing a
+                  // second request.
+                  <View style={[styles.registryCardCta, styles.registryCardCtaPending]}>
+                    <Feather name="clock" size={14} color="#324E58" />
+                    <Text
+                      style={[styles.registryCardCtaText, styles.registryCardCtaTextPending]}
+                    >
+                      Pending
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.registryCardCta}>
+                    <Feather name="plus" size={14} color="#fff" />
+                    <Text style={styles.registryCardCtaText}>Add</Text>
+                  </View>
+                )}
               </TouchableOpacity>
             );
           })
@@ -1606,10 +1626,14 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                 style={{ width: 60, height: 60, borderRadius: 30 }}
               />
             </View>
-            <Text style={styles.modalTitle}>Add {suggestConfirmFor?.name}?</Text>
+            <Text style={styles.modalTitle}>
+              {suggestConfirmFor?.existingIsPending ? 'Pick' : 'Add'}{' '}
+              {suggestConfirmFor?.name}?
+            </Text>
             <Text style={styles.modalText}>
-              We'll verify this 501(c)(3) within 5 business days. Until they're
-              approved:
+              {suggestConfirmFor?.existingIsPending
+                ? "This one's already been requested and our team is verifying them. Until they're approved:"
+                : "We'll verify this 501(c)(3) within 5 business days. Until they're approved:"}
             </Text>
             <View style={styles.suggestBulletList}>
               <SuggestBullet text="Your monthly donations are held safely" />
@@ -1923,6 +1947,15 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     marginLeft: 10,
+  },
+  registryCardCtaPending: {
+    // Muted, so a queued request reads as status rather than another CTA.
+    backgroundColor: '#EEF2F4',
+    borderWidth: 1,
+    borderColor: '#D6DEE2',
+  },
+  registryCardCtaTextPending: {
+    color: '#324E58',
   },
   registryCardCtaText: {
     color: '#fff',
