@@ -2821,7 +2821,7 @@ export async function handleAuthRoute(
       if (charityId) {
         const {data: charity} = await supabase
           .from("charities")
-          .select("id, name, description, logo_url, image_url, category, location")
+          .select("id, name, description, logo_url, image_url, category, location, is_pending_verification, is_thrive")
           .eq("id", charityId)
           .single();
         if (charity) {
@@ -2839,6 +2839,12 @@ export async function handleAuthRoute(
             category: charity.category || null,
             location: charity.location || "",
             image: heroUrl ? {uri: heroUrl} : null,
+            // The app picks a bundled placeholder from these. Without them a
+            // donor-suggested charity has no hero art of its own and the Home
+            // card fell through to an unrelated stock photo on every profile
+            // sync.
+            isPendingVerification: !!charity.is_pending_verification,
+            isThrive: !!charity.is_thrive,
           };
         }
       }

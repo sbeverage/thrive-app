@@ -89,8 +89,31 @@ async function persistSelectedBeneficiaryToStorage(raw) {
     typeof raw.image?.uri === 'string' ? raw.image.uri : null,
   );
 
+  // Preserve the placeholder flags across a profile sync. GET /auth/profile
+  // selects a fixed column list that does not include them, so `raw` almost
+  // never carries them — falling back to `existing` is what stops this write
+  // from stomping a record that already knows it is pending. When neither
+  // source knows, the key is omitted rather than written as false, so
+  // BeneficiaryContext's backfill can still repair it on the next launch.
+  const rawPending = raw.isPendingVerification ?? raw.is_pending_verification;
+  const rawThrive = raw.isThrive ?? raw.is_thrive;
+  const knownPending =
+    rawPending != null
+      ? !!rawPending
+      : sameId && existing?.isPendingVerification != null
+        ? !!existing.isPendingVerification
+        : undefined;
+  const knownThrive =
+    rawThrive != null
+      ? !!rawThrive
+      : sameId && existing?.isThrive != null
+        ? !!existing.isThrive
+        : undefined;
+
   const normalized = {
     id: raw.id,
+    ...(knownPending !== undefined ? { isPendingVerification: knownPending } : {}),
+    ...(knownThrive !== undefined ? { isThrive: knownThrive } : {}),
     name: raw.name || existing?.name || '',
     category: raw.category ?? existing?.category ?? '',
     description: raw.description ?? existing?.description ?? null,

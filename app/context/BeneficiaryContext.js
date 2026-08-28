@@ -187,6 +187,11 @@ export const BeneficiaryProvider = ({ children }) => {
           beneficiary.imageUrl,
           beneficiary.image_url,
         );
+        const rawPending =
+          beneficiary.isPendingVerification ?? beneficiary.is_pending_verification;
+        const rawThrive = beneficiary.isThrive ?? beneficiary.is_thrive;
+        const pendingFlag = rawPending != null ? !!rawPending : undefined;
+        const thriveFlag = rawThrive != null ? !!rawThrive : undefined;
         const toStore = {
           id: beneficiary.id,
           name: beneficiary.name || '',
@@ -205,10 +210,8 @@ export const BeneficiaryProvider = ({ children }) => {
           // right until the first reload, then fell through to an unrelated
           // stock photo on the Home card — the whole point of storing a
           // whitelist is that anything unlisted is silently lost.
-          isPendingVerification: !!(
-            beneficiary.isPendingVerification || beneficiary.is_pending_verification
-          ),
-          isThrive: !!(beneficiary.isThrive || beneficiary.is_thrive),
+          ...(pendingFlag !== undefined ? { isPendingVerification: pendingFlag } : {}),
+          ...(thriveFlag !== undefined ? { isThrive: thriveFlag } : {}),
           latitude: beneficiary.latitude ?? null,
           longitude: beneficiary.longitude ?? null,
         };
