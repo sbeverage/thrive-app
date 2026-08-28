@@ -19,6 +19,11 @@ export function formatCharityResponse(charity: any) {
     directToPrograms: null,
     imageUrl: charity.image_url || charity.logo_url || null,
     logoUrl: charity.logo_url || charity.image_url || null,
+    // Photo gallery (max 5, enforced by a CHECK constraint) + one video.
+    // videoUrl holds either an uploaded .mp4/.mov in the charity-images
+    // bucket, played inline, or a YouTube/Vimeo link, opened externally.
+    imageUrls: Array.isArray(charity.image_urls) ? charity.image_urls : [],
+    videoUrl: charity.video_url || null,
     location: charity.location || null,
     latitude: charity.latitude ? parseFloat(charity.latitude) : null,
     longitude: charity.longitude ? parseFloat(charity.longitude) : null,

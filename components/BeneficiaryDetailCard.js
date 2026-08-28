@@ -15,6 +15,8 @@ import {
   Pressable,
 } from 'react-native';
 import { AntDesign, Feather, MaterialIcons } from '@expo/vector-icons';
+import { Video, ResizeMode } from 'expo-av';
+import { WebView } from 'react-native-webview';
 import { useRouter, useSegments } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -137,7 +139,11 @@ export default function BeneficiaryDetailCard({
 
   const [donation, setDonation] = useState('');
   const [selectedAmount, setSelectedAmount] = useState(null);
-  const [activeTab, setActiveTab] = useState('about');
+  // Tabs removed: "About & Impact" / "Give Gift" split buried the gift behind
+  // a tap and made the profile feel like two half-pages. About is now the
+  // page; the gift is a card that opens a modal.
+  const [giftModalVisible, setGiftModalVisible] = useState(false);
+  const [giftInfoVisible, setGiftInfoVisible] = useState(false);
   const [showFullAbout, setShowFullAbout] = useState(false);
   const [liked, setLiked] = useState(false);
   
@@ -244,17 +250,17 @@ export default function BeneficiaryDetailCard({
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'giveGift' && !isSignupFlow) {
+    if (giftModalVisible && !isSignupFlow) {
       loadPaymentMethodsFromApi();
     }
-  }, [activeTab, isSignupFlow, loadPaymentMethodsFromApi]);
+  }, [giftModalVisible, isSignupFlow, loadPaymentMethodsFromApi]);
 
   useFocusEffect(
     useCallback(() => {
-      if (activeTab === 'giveGift' && !isSignupFlow) {
+      if (giftModalVisible && !isSignupFlow) {
         loadPaymentMethodsFromApi();
       }
-    }, [activeTab, isSignupFlow, loadPaymentMethodsFromApi]),
+    }, [giftModalVisible, isSignupFlow, loadPaymentMethodsFromApi]),
   );
 
   const persistSelectedPaymentMethod = async (method) => {
@@ -269,6 +275,43 @@ export default function BeneficiaryDetailCard({
     setShowCardPicker(false);
   };
 
+
+  // The narrative sections (Why This Matters, Our Impact, Success Story, Your
+  // Impact) were removed: most charities had none of it, so the profile read
+  // as half-built. Photos and video carry the story instead. Git history has
+  // the markup if they come back.
+  //
+  // hasValue treats 0 as present but rejects null/undefined/''/'null' (the
+  // string, which the API returns for some columns).
+  // Photos + video. imageUrls is capped at 5 by a DB CHECK; videoUrl is either
+  // an uploaded file (played inline) or a YouTube/Vimeo link (opened out).
+  const galleryImages = Array.isArray(data?.imageUrls)
+    ? data.imageUrls.filter((u) => typeof u === 'string' && u.trim())
+    : [];
+  const videoUrl = (data?.videoUrl ?? data?.video_url ?? '').toString().trim();
+  // Turn a share link into its embeddable player URL so the video stays in
+  // the app. expo-av can only play a direct media file, so hosted videos go
+  // through a WebView pointed at the host's own player.
+  const toEmbedUrl = (url) => {
+    if (!url) return null;
+    // https://vimeo.com/1177313764?fl=pl -> https://player.vimeo.com/video/1177313764
+    const vimeo = url.match(/vimeo\.com\/(?:video\/)?(\d+)/i);
+    if (vimeo) return `https://player.vimeo.com/video/${vimeo[1]}`;
+    // watch?v=ID, youtu.be/ID, /embed/ID
+    const yt = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/i);
+    if (yt) return `https://www.youtube.com/embed/${yt[1]}?playsinline=1`;
+    return null;
+  };
+
+  // expo-av plays a direct file but cannot render a YouTube/Vimeo page.
+  const videoIsPlayable = /\.(mp4|mov|m4v)(\?|$)/i.test(videoUrl);
+  const videoEmbedUrl = videoIsPlayable ? null : toEmbedUrl(videoUrl);
+
+  const hasValue = (v) =>
+    v !== null &&
+    v !== undefined &&
+    String(v).trim() !== '' &&
+    String(v).trim().toLowerCase() !== 'null';
 
   return (
     <>
@@ -373,24 +416,7 @@ export default function BeneficiaryDetailCard({
           </TouchableOpacity>
         </View>
 
-        {/* Tabs */}
-        <View style={styles.tabRow}>
-          <TouchableOpacity onPress={() => setActiveTab('about')}>
-            <Text style={activeTab === 'about' ? styles.tabActive : styles.tabInactive}>
-              About & Impact
-            </Text>
-          </TouchableOpacity>
-          {!isSignupFlow && (
-            <TouchableOpacity onPress={() => setActiveTab('giveGift')}>
-              <Text style={activeTab === 'giveGift' ? styles.tabActive : styles.tabInactive}>
-                Give Gift
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Tab Content */}
-        {activeTab === 'about' && (
+        {(
           <>
             {/* Enhanced About Section */}
             <View style={styles.aboutSection}>
@@ -405,107 +431,113 @@ export default function BeneficiaryDetailCard({
               </Text>
             </View>
 
-            {/* Why This Matters Section - Always show with placeholder if no data */}
-            <View style={styles.impactSection}>
-              <Text style={styles.sectionTitle}>Why This Matters</Text>
-              {(data?.whyThisMatters ?? data?.why_this_matters) ? (
-                <Text style={styles.impactText}>
-                  {data?.whyThisMatters ?? data?.why_this_matters}
-                </Text>
-              ) : (
-                <Text style={[styles.impactText, { fontStyle: 'italic', color: '#999' }]}>
-                  Information about why this cause matters will appear here.
-                </Text>
-              )}
-            </View>
 
-            {/* Impact Metrics - Always show, use ?? to handle 0 and empty strings correctly */}
-            <View style={styles.metricsSection}>
-              <Text style={styles.sectionTitle}>Our Impact</Text>
-              <View style={styles.metricsGrid}>
-                <View style={styles.metricCard}>
-                  <MaterialIcons name="favorite" size={24} color="#DB8633" />
-                  <Text style={styles.metricNumber}>
-                    {(data.livesImpacted ?? data.lives_impacted) || '—'}
-                  </Text>
-                  <Text style={styles.metricLabel}>Lives Impacted</Text>
-                </View>
-                <View style={styles.metricCard}>
-                  <MaterialIcons name="volunteer-activism" size={24} color="#DB8633" />
-                  <Text style={styles.metricNumber}>
-                    {(data.programsActive ?? data.programs_active) || '—'}
-                  </Text>
-                  <Text style={styles.metricLabel}>Programs Active</Text>
-                </View>
-                <View style={styles.metricCard}>
-                  <MaterialIcons name="account-balance" size={24} color="#DB8633" />
-                  <Text style={styles.metricNumber}>
-                    {(data.directToProgramsPercentage ?? data.direct_to_programs_percentage)
-                      ? `${parseFloat(data.directToProgramsPercentage ?? data.direct_to_programs_percentage).toFixed(0)}%`
-                      : '—'}
-                  </Text>
-                  <Text style={styles.metricLabel}>Direct to Programs</Text>
-                </View>
+
+
+
+            {/* Photos — up to 5 tiles in a 4:3 horizontal strip, matching the
+                vendor gallery. Hidden entirely when the charity has none, so a
+                profile without photos still reads as finished. */}
+            {galleryImages.length > 0 && (
+              <View style={styles.charityGallerySection}>
+                <Text style={styles.sectionTitle}>Photos</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.charityGalleryScroll}
+                >
+                  {galleryImages.map((uri, i) => (
+                    <Image
+                      key={`${uri}_${i}`}
+                      source={{ uri }}
+                      style={styles.charityGalleryTile}
+                      resizeMode="cover"
+                    />
+                  ))}
+                </ScrollView>
               </View>
-            </View>
+            )}
 
-            {/* Success Story - Always show with placeholder if no data */}
-            <View style={styles.storySection}>
-              <Text style={styles.sectionTitle}>Success Story</Text>
-              <View style={styles.storyCard}>
-                {(data?.successStory ?? data?.success_story) ? (
-                  <>
-                    <Text style={styles.storyText}>
-                      {data?.successStory ?? data?.success_story}
-                    </Text>
-                    {(data?.storyAuthor ?? data?.story_author) && (
-                      <Text style={styles.storyAuthor}>
-                        {data?.storyAuthor ?? data?.story_author}
-                      </Text>
-                    )}
-                  </>
+            {/* Video. A direct file plays inline with native controls; a
+                YouTube/Vimeo link becomes a tappable card that opens the browser,
+                because expo-av cannot render those pages. */}
+            {videoUrl !== '' && (
+              <View style={styles.charityVideoSection}>
+                <Text style={styles.sectionTitle}>Video</Text>
+                {videoIsPlayable ? (
+                  <Video
+                    source={{ uri: videoUrl }}
+                    style={styles.charityVideoPlayer}
+                    useNativeControls
+                    resizeMode={ResizeMode.CONTAIN}
+                    isLooping={false}
+                  />
+                ) : videoEmbedUrl ? (
+                  // Host's own player inside a WebView, so playback stays in
+                  // the app. allowsInlineMediaPlayback matters on iOS —
+                  // without it tapping play hands off to the fullscreen
+                  // native player instead of playing in place.
+                  <View style={styles.charityVideoPlayer}>
+                    <WebView
+                      source={{ uri: videoEmbedUrl }}
+                      style={styles.charityVideoWebView}
+                      allowsInlineMediaPlayback
+                      allowsFullscreenVideo
+                      javaScriptEnabled
+                      domStorageEnabled
+                      // Require a tap — never autoplay at someone.
+                      mediaPlaybackRequiresUserAction
+                      startInLoadingState
+                      renderLoading={() => (
+                        <View style={styles.charityVideoLoading}>
+                          <ActivityIndicator size="small" color="#DB8633" />
+                        </View>
+                      )}
+                    />
+                  </View>
                 ) : (
-                  <Text style={[styles.storyText, { fontStyle: 'italic', color: '#999' }]}>
-                    A success story showcasing the impact of this organization will appear here.
-                  </Text>
+                  // Unrecognised host and not a direct file — nothing can be
+                  // embedded safely, so offer the link rather than a dead box.
+                  <TouchableOpacity
+                    style={styles.charityVideoLinkCard}
+                    onPress={() => {
+                      Linking.openURL(videoUrl).catch(() => {
+                        Alert.alert('Error', 'Could not open the video link.');
+                      });
+                    }}
+                  >
+                    <MaterialIcons name="play-circle-outline" size={34} color="#DB8633" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.charityVideoLinkTitle}>Watch their story</Text>
+                      <Text style={styles.charityVideoLinkSub} numberOfLines={1}>
+                        Opens in your browser
+                      </Text>
+                    </View>
+                    <MaterialIcons name="chevron-right" size={22} color="#8E9BAE" />
+                  </TouchableOpacity>
                 )}
               </View>
-            </View>
+            )}
 
-            {/* Your Impact - Always show with placeholders if no data */}
-            <View style={styles.yourImpactSection}>
-              <Text style={styles.sectionTitle}>Your Impact</Text>
-              {(data?.impactStatement1 ?? data?.impact_statement_1) ? (
-                <View style={styles.impactCard}>
-                  <MaterialIcons name="favorite" size={20} color="#DB8633" />
-                  <Text style={styles.impactText}>
-                    {data?.impactStatement1 ?? data?.impact_statement_1}
-                  </Text>
+            {!isSignupFlow && (
+              <View style={styles.giftCtaCard}>
+                <View style={styles.giftCtaHeaderRow}>
+                  <Text style={styles.giftCtaTitle}>Give a one-time gift</Text>
+                  <TouchableOpacity
+                    onPress={() => setGiftInfoVisible(true)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <MaterialIcons name="info-outline" size={18} color="#8A5A12" />
+                  </TouchableOpacity>
                 </View>
-              ) : (
-                <View style={styles.impactCard}>
-                  <MaterialIcons name="favorite" size={20} color="#DB8633" />
-                  <Text style={[styles.impactText, { fontStyle: 'italic', color: '#999' }]}>
-                    Your first impact statement will appear here.
-                  </Text>
-                </View>
-              )}
-              {(data?.impactStatement2 ?? data?.impact_statement_2) ? (
-                <View style={styles.impactCard}>
-                  <MaterialIcons name="home" size={20} color="#DB8633" />
-                  <Text style={styles.impactText}>
-                    {data?.impactStatement2 ?? data?.impact_statement_2}
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.impactCard}>
-                  <MaterialIcons name="home" size={20} color="#DB8633" />
-                  <Text style={[styles.impactText, { fontStyle: 'italic', color: '#999' }]}>
-                    Your second impact statement will appear here.
-                  </Text>
-                </View>
-              )}
-            </View>
+                <TouchableOpacity
+                  style={styles.giftCtaButton}
+                  onPress={() => setGiftModalVisible(true)}
+                >
+                  <Text style={styles.giftCtaButtonText}>Choose an amount</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* Trust & Transparency */}
             <View style={styles.trustSection}>
@@ -514,10 +546,12 @@ export default function BeneficiaryDetailCard({
                 <MaterialIcons name="verified" size={20} color="#4CA1AF" />
                 <Text style={styles.trustText}>Verified 501(c)(3) Nonprofit</Text>
               </View>
-              <View style={styles.trustRow}>
-                <MaterialIcons name="account-balance" size={20} color="#4CA1AF" />
-                <Text style={styles.trustText}>EIN: {data.ein}</Text>
-              </View>
+              {hasValue(data.ein) && (
+                <View style={styles.trustRow}>
+                  <MaterialIcons name="account-balance" size={20} color="#4CA1AF" />
+                  <Text style={styles.trustText}>EIN: {data.ein}</Text>
+                </View>
+              )}
               {data.website && (
                 <TouchableOpacity 
                   style={styles.trustRow}
@@ -555,185 +589,256 @@ export default function BeneficiaryDetailCard({
             </View>
           </>
         )}
-        {activeTab === 'giveGift' && !isSignupFlow && (
-          <View style={styles.giftTabSection}>
-            <Text style={styles.sectionTitle}>Give One-Time Gift</Text>
-            <Text style={styles.giftSubtext}>
-              Make a one-time donation to {data.name}. Every dollar makes a difference!
-            </Text>
+        {/* One-time gift — a card on the page rather than a hidden tab.
+            Deliberately loud (filled, own colour block) because it is the one
+            action a donor can take here beyond switching their cause. */}
 
-            {/* Preset Amounts */}
-            <View style={styles.giftPresetContainer}>
-              {giftPresetAmounts.map((preset) => (
+        {/* What a one-time gift is — and, more importantly, what it isn't.
+            Donors on a recurring plan need to know this won't touch it. */}
+        <Modal
+          visible={giftInfoVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setGiftInfoVisible(false)}
+        >
+          <View style={styles.giftInfoBackdrop}>
+            <View style={styles.giftInfoCard}>
+              <View style={styles.giftInfoHeader}>
+                <Text style={styles.giftInfoTitle}>About one-time gifts</Text>
                 <TouchableOpacity
-                  key={preset}
-                  style={[
-                    styles.giftPresetButton,
-                    giftAmount === preset.toString() && styles.giftPresetButtonSelected
-                  ]}
-                  onPress={() => {
-                    setGiftAmount(preset.toString());
-                    setCustomGiftAmount('');
-                  }}
+                  onPress={() => setGiftInfoVisible(false)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <Text style={[
-                    styles.giftPresetText,
-                    giftAmount === preset.toString() && styles.giftPresetTextSelected
-                  ]}>
-                    ${preset}
-                  </Text>
+                  <MaterialIcons name="close" size={20} color="#666" />
                 </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Custom Amount Input */}
-            <View style={styles.giftCustomContainer}>
-              <Text style={styles.giftCustomLabel}>Or enter custom amount</Text>
-              <View style={styles.giftCustomInputWrapper}>
-                <Text style={styles.giftCurrencySymbol}>$</Text>
-                <TextInput
-                  style={styles.giftCustomInput}
-                  placeholder="0"
-                  placeholderTextColor="#999"
-                  keyboardType="numeric"
-                  value={customGiftAmount}
-                  onChangeText={(text) => {
-                    const numericValue = text.replace(/[^0-9]/g, '');
-                    setCustomGiftAmount(numericValue);
-                    if (numericValue) {
-                      setGiftAmount(numericValue);
-                    } else {
-                      setGiftAmount('');
-                    }
-                  }}
-                  maxLength={6}
-                />
               </View>
+              <Text style={styles.giftInfoBody}>
+                This does not change your monthly donation. Your recurring gift
+                continues exactly as it is.
+              </Text>
+              <Text style={styles.giftInfoBody}>
+                A one-time gift is an extra amount you give right now, on top of
+                your monthly giving — for a specific need, a moment that moved
+                you, or simply because you want to do more this month.
+              </Text>
+              <TouchableOpacity
+                style={styles.giftInfoCta}
+                onPress={() => setGiftInfoVisible(false)}
+              >
+                <Text style={styles.giftInfoCtaText}>Got it</Text>
+              </TouchableOpacity>
             </View>
+          </View>
+        </Modal>
 
-            {/* Selected Amount Display */}
-            {giftAmount && parseFloat(giftAmount) > 0 && (
-              <View style={styles.giftSelectedCard}>
-                <Text style={styles.giftSelectedLabel}>Your Gift</Text>
-                <Text style={styles.giftSelectedAmount}>${parseFloat(giftAmount).toFixed(2)}</Text>
-              </View>
-            )}
+        {/* The amount picker. Same flow that lived in the tab — presets,
+            custom amount, saved cards, checkout — just presented as a sheet. */}
+        {!isSignupFlow && (
+          <Modal
+            visible={giftModalVisible}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setGiftModalVisible(false)}
+          >
+            <View style={styles.giftSheetBackdrop}>
+              <View style={styles.giftSheet}>
+                <View style={styles.giftSheetHeader}>
+                  <Text style={styles.giftSheetTitle}>Give a one-time gift</Text>
+                  <TouchableOpacity
+                    onPress={() => setGiftModalVisible(false)}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  >
+                    <MaterialIcons name="close" size={22} color="#666" />
+                  </TouchableOpacity>
+                </View>
+                <ScrollView
+                  style={styles.giftSheetScroll}
+                  contentContainerStyle={{ paddingBottom: 16 }}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
+              <View style={styles.giftTabSection}>
+                <Text style={styles.sectionTitle}>Give One-Time Gift</Text>
+                <Text style={styles.giftSubtext}>
+                  Make a one-time donation to {data.name}. Every dollar makes a difference!
+                </Text>
 
-            {/* Payment Method: real saved cards from API (demo placeholder removed) */}
-            {giftAmount && parseFloat(giftAmount) > 0 && (
-              <View style={styles.giftPaymentMethodCard}>
-                <Text style={styles.giftPaymentMethodLabel}>Payment Method</Text>
-                {loadingPaymentMethods ? (
-                  <View style={styles.giftPaymentMethodLoadingRow}>
-                    <ActivityIndicator color="#DB8633" />
-                    <Text style={[styles.giftPaymentMethodSubtext, styles.giftPaymentMethodLoadingText]}>
-                      Loading saved cards…
-                    </Text>
-                  </View>
-                ) : !paymentMethod ? (
-                  <View>
-                    <Text style={styles.giftPaymentMethodSubtext}>
-                      No saved card on file yet. Add one under Menu → Manage Billing, or use any card at
-                      checkout.
-                    </Text>
+                {/* Preset Amounts */}
+                <View style={styles.giftPresetContainer}>
+                  {giftPresetAmounts.map((preset) => (
                     <TouchableOpacity
-                      style={styles.giftManageCardsLink}
-                      onPress={() => router.push('/menu/manageCards')}
-                      accessibilityRole="button"
-                      accessibilityLabel="Manage saved cards"
+                      key={preset}
+                      style={[
+                        styles.giftPresetButton,
+                        giftAmount === preset.toString() && styles.giftPresetButtonSelected
+                      ]}
+                      onPress={() => {
+                        setGiftAmount(preset.toString());
+                        setCustomGiftAmount('');
+                      }}
                     >
-                      <Text style={styles.giftManageCardsLinkText}>Manage saved cards</Text>
-                      <Feather name="chevron-right" size={18} color="#21555b" />
+                      <Text style={[
+                        styles.giftPresetText,
+                        giftAmount === preset.toString() && styles.giftPresetTextSelected
+                      ]}>
+                        ${preset}
+                      </Text>
                     </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Custom Amount Input */}
+                <View style={styles.giftCustomContainer}>
+                  <Text style={styles.giftCustomLabel}>Or enter custom amount</Text>
+                  <View style={styles.giftCustomInputWrapper}>
+                    <Text style={styles.giftCurrencySymbol}>$</Text>
+                    <TextInput
+                      style={styles.giftCustomInput}
+                      placeholder="0"
+                      placeholderTextColor="#999"
+                      keyboardType="numeric"
+                      value={customGiftAmount}
+                      onChangeText={(text) => {
+                        const numericValue = text.replace(/[^0-9]/g, '');
+                        setCustomGiftAmount(numericValue);
+                        if (numericValue) {
+                          setGiftAmount(numericValue);
+                        } else {
+                          setGiftAmount('');
+                        }
+                      }}
+                      maxLength={6}
+                    />
                   </View>
-                ) : (
-                  <View style={styles.giftPaymentMethodRow}>
-                    {paymentMethod.type === 'applepay' ? (
-                      <>
-                        <View style={styles.giftApplePayBadge}>
-                          <Text style={styles.giftApplePayText}>Apple Pay</Text>
-                        </View>
-                        <Text style={[styles.giftPaymentMethodText, { flex: 1 }]}>Secure digital payment</Text>
-                      </>
-                    ) : (
-                      <>
-                        <View style={styles.giftCardIcon}>
-                          <Feather name="credit-card" size={20} color="#324E58" />
-                        </View>
-                        <View style={styles.giftPaymentMethodInfo}>
-                          <Text style={styles.giftPaymentMethodText}>
-                            {paymentMethod.cardType || 'Card'} ending in {paymentMethod.last4 || '····'}
-                          </Text>
-                          <Text style={styles.giftPaymentMethodSubtext}>
-                            You can confirm or switch cards on the next screen.
-                          </Text>
-                        </View>
+                </View>
+
+                {/* Selected Amount Display */}
+                {giftAmount && parseFloat(giftAmount) > 0 && (
+                  <View style={styles.giftSelectedCard}>
+                    <Text style={styles.giftSelectedLabel}>Your Gift</Text>
+                    <Text style={styles.giftSelectedAmount}>${parseFloat(giftAmount).toFixed(2)}</Text>
+                  </View>
+                )}
+
+                {/* Payment Method: real saved cards from API (demo placeholder removed) */}
+                {giftAmount && parseFloat(giftAmount) > 0 && (
+                  <View style={styles.giftPaymentMethodCard}>
+                    <Text style={styles.giftPaymentMethodLabel}>Payment Method</Text>
+                    {loadingPaymentMethods ? (
+                      <View style={styles.giftPaymentMethodLoadingRow}>
+                        <ActivityIndicator color="#DB8633" />
+                        <Text style={[styles.giftPaymentMethodSubtext, styles.giftPaymentMethodLoadingText]}>
+                          Loading saved cards…
+                        </Text>
+                      </View>
+                    ) : !paymentMethod ? (
+                      <View>
+                        <Text style={styles.giftPaymentMethodSubtext}>
+                          No saved card on file yet. Add one under Menu → Manage Billing, or use any card at
+                          checkout.
+                        </Text>
                         <TouchableOpacity
-                          style={styles.giftChangeCardBtn}
-                          onPress={() => setShowCardPicker(true)}
+                          style={styles.giftManageCardsLink}
+                          onPress={() => router.push('/menu/manageCards')}
                           accessibilityRole="button"
-                          accessibilityLabel="Change payment card"
+                          accessibilityLabel="Manage saved cards"
                         >
-                          <Text style={styles.giftChangeCardText}>Change</Text>
+                          <Text style={styles.giftManageCardsLinkText}>Manage saved cards</Text>
+                          <Feather name="chevron-right" size={18} color="#21555b" />
                         </TouchableOpacity>
-                      </>
+                      </View>
+                    ) : (
+                      <View style={styles.giftPaymentMethodRow}>
+                        {paymentMethod.type === 'applepay' ? (
+                          <>
+                            <View style={styles.giftApplePayBadge}>
+                              <Text style={styles.giftApplePayText}>Apple Pay</Text>
+                            </View>
+                            <Text style={[styles.giftPaymentMethodText, { flex: 1 }]}>Secure digital payment</Text>
+                          </>
+                        ) : (
+                          <>
+                            <View style={styles.giftCardIcon}>
+                              <Feather name="credit-card" size={20} color="#324E58" />
+                            </View>
+                            <View style={styles.giftPaymentMethodInfo}>
+                              <Text style={styles.giftPaymentMethodText}>
+                                {paymentMethod.cardType || 'Card'} ending in {paymentMethod.last4 || '····'}
+                              </Text>
+                              <Text style={styles.giftPaymentMethodSubtext}>
+                                You can confirm or switch cards on the next screen.
+                              </Text>
+                            </View>
+                            <TouchableOpacity
+                              style={styles.giftChangeCardBtn}
+                              onPress={() => setShowCardPicker(true)}
+                              accessibilityRole="button"
+                              accessibilityLabel="Change payment card"
+                            >
+                              <Text style={styles.giftChangeCardText}>Change</Text>
+                            </TouchableOpacity>
+                          </>
+                        )}
+                      </View>
                     )}
                   </View>
                 )}
-              </View>
-            )}
 
-            {/* Continue to Checkout Button */}
-            <TouchableOpacity
-              style={[
-                styles.giftCheckoutButton,
-                (!giftAmount || parseFloat(giftAmount) < 1) && styles.giftCheckoutButtonDisabled
-              ]}
-              onPress={async () => {
-                const donationAmount = parseFloat(giftAmount);
+                {/* Continue to Checkout Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.giftCheckoutButton,
+                    (!giftAmount || parseFloat(giftAmount) < 1) && styles.giftCheckoutButtonDisabled
+                  ]}
+                  onPress={async () => {
+                    const donationAmount = parseFloat(giftAmount);
                 
-                if (!giftAmount || donationAmount < 1) {
-                  return;
-                }
+                    if (!giftAmount || donationAmount < 1) {
+                      return;
+                    }
 
-                if (donationAmount > 10000) {
-                  return;
-                }
+                    if (donationAmount > 10000) {
+                      return;
+                    }
 
-                if (!data.id) {
-                  Alert.alert('Error', 'Beneficiary information is missing. Please try again.');
-                  return;
-                }
+                    if (!data.id) {
+                      Alert.alert('Error', 'Beneficiary information is missing. Please try again.');
+                      return;
+                    }
 
-                // Navigate to checkout screen
-                router.push({
-                  pathname: '/(tabs)/beneficiary/checkout',
-                  params: {
-                    beneficiaryId: data.id,
-                    beneficiaryName: data.name || 'Charity',
-                    beneficiaryImage:
-                      resolveRemoteImageUri(data.logoUrl || data.image) ||
-                      resolveRemoteImageUri(data.image_url) ||
-                      '',
-                    amount: donationAmount.toString(),
-                    userCoveredFees: 'true', // Default to user covering fees
-                    donorMessage: '',
-                    isAnonymous: 'false',
-                  },
-                });
-              }}
-              disabled={!giftAmount || parseFloat(giftAmount) < 1}
-            >
-              <Text style={styles.giftCheckoutButtonText}>
-                Continue to Checkout
-              </Text>
-            </TouchableOpacity>
+                    // Navigate to checkout screen
+                    router.push({
+                      pathname: '/(tabs)/beneficiary/checkout',
+                      params: {
+                        beneficiaryId: data.id,
+                        beneficiaryName: data.name || 'Charity',
+                        beneficiaryImage:
+                          resolveRemoteImageUri(data.logoUrl || data.image) ||
+                          resolveRemoteImageUri(data.image_url) ||
+                          '',
+                        amount: donationAmount.toString(),
+                        userCoveredFees: 'true', // Default to user covering fees
+                        donorMessage: '',
+                        isAnonymous: 'false',
+                      },
+                    });
+                  }}
+                  disabled={!giftAmount || parseFloat(giftAmount) < 1}
+                >
+                  <Text style={styles.giftCheckoutButtonText}>
+                    Continue to Checkout
+                  </Text>
+                </TouchableOpacity>
 
-            {/* Info Note */}
-            <Text style={styles.giftInfoNote}>
-              💝 Your one-time gift will be processed securely and added to your transaction history.
-            </Text>
-          </View>
+                {/* Info Note */}
+                <Text style={styles.giftInfoNote}>
+                  💝 Your one-time gift will be processed securely and added to your transaction history.
+                </Text>
+              </View>
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
         )}
       </View>
 
@@ -832,6 +937,160 @@ export default function BeneficiaryDetailCard({
 }
 
 const styles = StyleSheet.create({
+  charityGallerySection: { paddingHorizontal: 20, marginTop: 4, marginBottom: 18 },
+  charityGalleryScroll: { paddingRight: 20, paddingTop: 4, paddingBottom: 4 },
+  charityGalleryTile: {
+    width: 220,
+    height: 165, // 4:3
+    borderRadius: 12,
+    marginRight: 12,
+    backgroundColor: '#EDF0F3',
+  },
+  charityVideoSection: { paddingHorizontal: 20, marginBottom: 18 },
+  charityVideoPlayer: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    backgroundColor: '#000',
+    // clips the WebView to the rounded corners
+    overflow: 'hidden',
+  },
+  charityVideoWebView: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  charityVideoLoading: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000',
+  },
+  charityVideoLinkCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#ECEFF3',
+  },
+  charityVideoLinkTitle: { fontSize: 15, fontWeight: '700', color: '#324E58' },
+  charityVideoLinkSub: { fontSize: 12, color: '#8E9BAE', marginTop: 2 },
+  // ── One-time gift CTA ──────────────────────────────────────────────
+  giftCtaCard: {
+    marginHorizontal: 20,
+    marginTop: 18,
+    marginBottom: 6,
+    backgroundColor: '#FFF5EB',
+    borderRadius: 18,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#F3D9B8',
+  },
+  giftCtaHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    // Was 6 — the description line below used to supply this gap.
+    marginBottom: 14,
+  },
+  giftCtaTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#8A5A12',
+  },
+  giftCtaButton: {
+    backgroundColor: '#DB8633',
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  giftCtaButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  // ── "What is a one-time gift" explainer ────────────────────────────
+  giftInfoBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(20, 32, 40, 0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  giftInfoCard: {
+    width: '100%',
+    maxWidth: 440,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 22,
+  },
+  giftInfoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  giftInfoTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#324E58',
+  },
+  giftInfoBody: {
+    fontSize: 14,
+    color: '#5D6D7E',
+    lineHeight: 21,
+    marginBottom: 12,
+  },
+  giftInfoCta: {
+    backgroundColor: '#DB8633',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  giftInfoCtaText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  // ── Amount-picker sheet ────────────────────────────────────────────
+  giftSheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(20, 32, 40, 0.55)',
+    justifyContent: 'flex-end',
+  },
+  giftSheet: {
+    // Percentage resolves against the backdrop, which is flex:1 — put this on
+    // a child of a content-height wrapper instead and it silently does
+    // nothing, which is how a sheet ends up clipping its own submit button.
+    maxHeight: '88%',
+    backgroundColor: '#F5F5FA',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingTop: 16,
+    paddingBottom: 12,
+  },
+  giftSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 4,
+  },
+  giftSheetTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#324E58',
+  },
+  giftSheetScroll: {
+    flexShrink: 1,
+  },
   container: { flex: 1, backgroundColor: '#fff' },
   containerNoFlex: { 
     backgroundColor: '#fff',
@@ -867,8 +1126,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 12,
-    marginTop: 12,
-    marginBottom: 16,
+    marginTop: 6,
+    marginBottom: 10,
     paddingHorizontal: 24,
   },
   /** Same flex + padding as secondaryBtn so the row stays visually balanced vs Select + Favorite. */
@@ -1002,8 +1261,11 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingHorizontal: 24,
   },
-  aboutSection: { 
-    marginTop: 24,
+  aboutSection: {
+    // sectionTitle already carries marginTop: 24, so this was stacking to 48
+    // above the heading while the photo/video sections sat at ~28. Trimmed to
+    // match them.
+    marginTop: 4,
     paddingHorizontal: 24,
   },
   impactSection: { 
@@ -1077,8 +1339,9 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     flex: 1,
   },
-  trustSection: { 
-    marginTop: 24,
+  trustSection: {
+    // Same doubling as aboutSection — see note there.
+    marginTop: 4,
     paddingHorizontal: 24,
     marginBottom: 0,
   },

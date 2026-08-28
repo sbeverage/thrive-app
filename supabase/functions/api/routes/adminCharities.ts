@@ -603,6 +603,130 @@ export async function handleAdminCharities(
   }
 
   // PUT /admin/charities/:id - Update charity
+  // ── Charity photo gallery + video ──────────────────────────────────────
+  // Mirrors /admin/vendors/:id/images. Max 5 photos, enforced here and by the
+  // charities_image_urls_max_5 CHECK constraint.
+  const charityImagesMatch = route.match(/^\/admin\/charities\/(\d+)\/images$/);
+
+  if (method === "POST" && charityImagesMatch) {
+    const charityId = charityImagesMatch[1];
+    const { data: charity, error: findErr } = await supabase
+      .from("charities")
+      .select("id, image_urls")
+      .eq("id", charityId)
+      .single();
+    if (findErr || !charity) {
+      return new Response(JSON.stringify({ error: "Charity not found" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 404,
+      });
+    }
+
+    const existing: string[] = Array.isArray(charity.image_urls) ? charity.image_urls : [];
+    if (existing.length >= 5) {
+      return new Response(
+        JSON.stringify({ error: "This charity already has 5 images. Remove one before adding another." }),
+        { headers: { "Content-Type": "application/json" }, status: 400 },
+      );
+    }
+
+    const formData = await req.formData();
+    const file = formData.get("image") as File;
+    if (!file) {
+      return new Response(JSON.stringify({ error: "No file uploaded" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 400,
+      });
+    }
+
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
+    const filePath = `charity-${charityId}/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("charity-images")
+      .upload(filePath, buf, { contentType: file.type, upsert: false });
+    if (uploadError) {
+      console.error("❌ Error uploading charity image:", uploadError);
+      return new Response(JSON.stringify({ error: "Failed to upload image" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 500,
+      });
+    }
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("charity-images").getPublicUrl(filePath);
+
+    const nextArray = [...existing, publicUrl];
+    const { error: updateError } = await supabase
+      .from("charities")
+      .update({ image_urls: nextArray, updated_at: new Date().toISOString() })
+      .eq("id", charityId);
+    if (updateError) {
+      // Roll the storage object back so a failed write doesn't orphan a file.
+      await supabase.storage.from("charity-images").remove([filePath]).catch(() => {});
+      console.error("❌ Error updating charity image_urls:", updateError);
+      return new Response(JSON.stringify({ error: "Failed to save image" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 500,
+      });
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, imageUrl: publicUrl, image_urls: nextArray }),
+      { headers: { "Content-Type": "application/json" }, status: 200 },
+    );
+  }
+
+  // DELETE /admin/charities/:id/images — body { url }. Reordering goes through
+  // PUT /admin/charities/:id with an image_urls array.
+  if (method === "DELETE" && charityImagesMatch) {
+    const charityId = charityImagesMatch[1];
+    const body = await req.json().catch(() => ({}));
+    const url = String(body.url || "").trim();
+    if (!url) {
+      return new Response(JSON.stringify({ error: "Missing `url` in request body" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 400,
+      });
+    }
+
+    const { data: charity } = await supabase
+      .from("charities")
+      .select("id, image_urls")
+      .eq("id", charityId)
+      .single();
+    const existing: string[] = Array.isArray(charity?.image_urls) ? charity.image_urls : [];
+    const nextArray = existing.filter((u) => u !== url);
+
+    const { error: updateError } = await supabase
+      .from("charities")
+      .update({ image_urls: nextArray, updated_at: new Date().toISOString() })
+      .eq("id", charityId);
+    if (updateError) {
+      return new Response(JSON.stringify({ error: "Failed to remove image" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 500,
+      });
+    }
+
+    // Delete the underlying object too. Derived from the public URL, which
+    // always ends /charity-images/<path>.
+    const marker = "/charity-images/";
+    const idx = url.indexOf(marker);
+    if (idx !== -1) {
+      const objectPath = decodeURIComponent(url.slice(idx + marker.length));
+      await supabase.storage.from("charity-images").remove([objectPath]).catch(() => {});
+    }
+
+    return new Response(JSON.stringify({ success: true, image_urls: nextArray }), {
+      headers: { "Content-Type": "application/json" },
+      status: 200,
+    });
+  }
+
   const updateCharityMatch = route.match(/^\/admin\/charities\/(\d+)$/);
   if (method === "PUT" && updateCharityMatch) {
     try {
@@ -629,6 +753,12 @@ export async function handleAdminCharities(
         // familiesHelped, families_helped, communitiesServed, communities_served,
         // directToPrograms, direct_to_programs
         website,
+        video_url,
+        videoUrl,
+        is_thrive,
+        isThrive,
+        image_urls,
+        imageUrls,
         phone,
         email,
         primary_email,
@@ -744,6 +874,27 @@ export async function handleAdminCharities(
       // families_helped, communities_served, direct_to_programs
       // These columns do not exist in the database schema
       if (website !== undefined) updateData.website = website;
+      // Accept either casing — the admin panel posts camelCase, the SQL
+      // column is snake_case.
+      // is_thrive marks the single THRIVE Initiative row. The donor app finds
+      // it by this flag for the Support-THRIVE panel and the held-funds flow,
+      // so it was previously impossible to set through the admin API at all.
+      const thriveValue = is_thrive !== undefined ? is_thrive : isThrive;
+      if (thriveValue !== undefined) {
+        updateData.is_thrive = thriveValue === true || thriveValue === "true";
+      }
+
+      const videoValue = video_url !== undefined ? video_url : videoUrl;
+      if (videoValue !== undefined) {
+        // Empty string clears the video rather than storing "".
+        updateData.video_url = String(videoValue).trim() === "" ? null : String(videoValue).trim();
+      }
+      const imagesValue = image_urls !== undefined ? image_urls : imageUrls;
+      if (Array.isArray(imagesValue)) {
+        // Trim to 5 here as well as in the DB CHECK, so a bad payload gets a
+        // sensible result instead of a constraint error.
+        updateData.image_urls = imagesValue.filter((u: unknown) => typeof u === "string").slice(0, 5);
+      }
       if (email !== undefined || primary_email !== undefined) {
         updateData.email = email || primary_email || null;
       }

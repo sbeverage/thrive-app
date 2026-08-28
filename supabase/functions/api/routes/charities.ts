@@ -23,7 +23,7 @@ function nteeToCategory(nteeCode: string | null | undefined): string | null {
     case "Q": return "Community";
     case "R": case "S": case "T": case "U": return "Community";
     case "V": case "W": return "Community";
-    case "X": return "Community";
+    case "X": return "Religion";
     case "Y": return "Veterans";
     case "Z": return "Community";
     default: return null;

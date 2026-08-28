@@ -32,6 +32,7 @@ const causeOptions = [
   'Hunger Relief',
   'International Aid',
   'Low Income Families',
+  'Religion',
   'Veterans',
   'Youth Development',
 ];
