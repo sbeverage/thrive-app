@@ -10,6 +10,13 @@ import API from '../app/lib/api';
 // try to redeem. See supabase/functions/api/routes/discounts.ts.
 const ALLOWED_STATUSES = new Set(['active', 'trialing']);
 
+// ─── DEV BYPASS ──────────────────────────────────────────────────────────
+// Forces the gate open so the rest of the app can be exercised without a
+// live subscription. Guarded by __DEV__ as well as this flag, so even if it
+// is left `true` a release build ignores it entirely.
+const DEV_BYPASS_GATE = true;
+// ─────────────────────────────────────────────────────────────────────────
+
 function latestByUpdatedAt(subscriptions) {
   // `/donations/monthly` sorts by created_at, but the redeem gate reads
   // updated_at — a reactivated subscription is the newest *update*, not the
@@ -49,6 +56,25 @@ export default function useSubscriptionGate({ enabled = true } = {}) {
         ? res
         : res?.subscriptions || res?.data || [];
       const latest = latestByUpdatedAt(list);
+
+      if (__DEV__) {
+        // Why the gate decided what it decided. Every row, so we can see
+        // whether a merged `donations` row is shadowing the real
+        // monthly_donations row by updated_at.
+        console.log(
+          '[GATE] rows:',
+          list.length,
+          list.map((r) => ({
+            status: r.status,
+            updated_at: r.updated_at,
+            created_at: r.created_at,
+            stripe_subscription_id: r.stripe_subscription_id || r.subscription_id || null,
+            amount: r.amount ?? r.monthly_amount ?? null,
+          })),
+        );
+        console.log('[GATE] winner ->', latest?.status, '| updated_at', latest?.updated_at);
+      }
+
       setStatus(String(latest?.status || '').toLowerCase() || 'no_subscription');
     } catch (e) {
       // Don't lock the tab on a network blip — a false lock is worse than a
@@ -64,7 +90,8 @@ export default function useSubscriptionGate({ enabled = true } = {}) {
     load();
   }, [load]);
 
-  const isActive = status === null ? null : ALLOWED_STATUSES.has(status);
+  let isActive = status === null ? null : ALLOWED_STATUSES.has(status);
+  if (__DEV__ && DEV_BYPASS_GATE) isActive = true;
 
   return { loading, isActive, status, refresh: load };
 }
