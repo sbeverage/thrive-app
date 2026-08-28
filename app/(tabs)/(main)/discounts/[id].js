@@ -37,7 +37,7 @@ export default function VendorDetails() {
   // Near You" carousel links straight here (home.js pushes /discounts/:id),
   // so locking only the tab left this route wide open.
   const { isActive: subscriptionActive, status: subscriptionStatus } =
-    useSubscriptionGate({ enabled: !!user?.isLoggedIn });
+    useSubscriptionGate({ enabled: !!user?.isLoggedIn, user });
   const discountsLocked = subscriptionActive === false;
   const redemptionCountsKey = user?.email ? `redemptionCounts:${user.email}` : 'redemptionCounts';
   

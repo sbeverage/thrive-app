@@ -10,6 +10,24 @@ import API from '../app/lib/api';
 // try to redeem. See supabase/functions/api/routes/discounts.ts.
 const ALLOWED_STATUSES = new Set(['active', 'trialing']);
 
+// Comped memberships: THRIVE team accounts and coworking seats. Neither ever
+// creates a monthly_donations row — coworking is billed to the space outside
+// Stripe, team is not billed at all — so gating them on subscription status
+// would lock them out of the discounts they exist to exercise. Mirrors
+// isCompedAccount() in supabase/functions/api/lib/membership.ts, which the
+// redeem endpoint applies server-side.
+const COMPED_INVITE_TYPES = new Set(['team', 'coworking']);
+
+export function isCompedMembership(user) {
+  if (!user) return false;
+  const type = String(user.inviteType || user.invite_type || '').toLowerCase();
+  return (
+    COMPED_INVITE_TYPES.has(type) ||
+    user.coworking === true ||
+    user.externalBilled === true
+  );
+}
+
 // ─── DEV BYPASS ──────────────────────────────────────────────────────────
 // Forces the gate open so the rest of the app can be exercised without a
 // live subscription. Guarded by __DEV__ as well as this flag, so even if it
@@ -39,7 +57,7 @@ function latestByUpdatedAt(subscriptions) {
  *  - isActive is null while loading so callers can avoid flashing a lock
  *    screen at someone who turns out to be paid up.
  */
-export default function useSubscriptionGate({ enabled = true } = {}) {
+export default function useSubscriptionGate({ enabled = true, user = null } = {}) {
   const [loading, setLoading] = useState(enabled);
   const [status, setStatus] = useState(null);
 
@@ -90,8 +108,20 @@ export default function useSubscriptionGate({ enabled = true } = {}) {
     load();
   }, [load]);
 
+  const comped = isCompedMembership(user);
+
   let isActive = status === null ? null : ALLOWED_STATUSES.has(status);
+  // Resolved without waiting on the network: membership comes from the user
+  // record, so a comped account never sees a lock flash while the
+  // subscription lookup is in flight.
+  if (comped) isActive = true;
   if (__DEV__ && DEV_BYPASS_GATE) isActive = true;
 
-  return { loading, isActive, status, refresh: load };
+  return {
+    loading: comped ? false : loading,
+    isActive,
+    status: comped ? 'comped' : status,
+    comped,
+    refresh: load,
+  };
 }

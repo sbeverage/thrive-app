@@ -33,6 +33,8 @@ const LOGGED_OUT_USER_STATE = {
   profileImage: null,
   profileImageUrl: null,
   coworking: false,
+  inviteType: 'standard',
+  externalBilled: false,
   sponsorAmount: 0,
   extraDonationAmount: 0,
   totalMonthlyDonation: 0,
@@ -161,6 +163,8 @@ export const UserProvider = ({ children }) => {
     profileImage: null,
     profileImageUrl: null,
     coworking: false,
+    inviteType: 'standard',
+    externalBilled: false,
     sponsorAmount: 0,
     extraDonationAmount: 0,
     totalMonthlyDonation: 0,
@@ -252,6 +256,14 @@ export const UserProvider = ({ children }) => {
                   // IMPORTANT: Prioritize backend profile image to ensure it's loaded
                   profileImage: profileData.profileImage || profileData.profileImageUrl || loadedUser.profileImage || null,
                   profileImageUrl: profileData.profileImageUrl || profileData.profileImage || loadedUser.profileImageUrl || null,
+                  // Membership type — 'standard' | 'coworking' | 'team'.
+                  // The discounts gate and the Home donation card read this,
+                  // so it has to survive a cold start, not just the invite
+                  // screen that first set it.
+                  inviteType: profileData.inviteType || loadedUser.inviteType || 'standard',
+                  coworking: profileData.coworking ?? loadedUser.coworking ?? false,
+                  sponsorAmount: profileData.sponsorAmount ?? loadedUser.sponsorAmount ?? 0,
+                  externalBilled: profileData.externalBilled ?? loadedUser.externalBilled ?? false,
                   // Beneficiary from backend (keeps Donation Summary / home in sync with API)
                   ...(backendBeneficiary
                     ? {
@@ -407,6 +419,8 @@ export const UserProvider = ({ children }) => {
         points: pointsToSet,
         monthlyDonation: userData.monthlyDonation ?? existingData.monthlyDonation ?? user.monthlyDonation ?? 15,
         coworking: userData.coworking ?? existingData.coworking ?? user.coworking ?? false,
+        inviteType: userData.inviteType ?? existingData.inviteType ?? user.inviteType ?? 'standard',
+        externalBilled: userData.externalBilled ?? existingData.externalBilled ?? user.externalBilled ?? false,
         sponsorAmount: userData.sponsorAmount ?? existingData.sponsorAmount ?? user.sponsorAmount ?? 0,
         extraDonationAmount: userData.extraDonationAmount ?? existingData.extraDonationAmount ?? user.extraDonationAmount ?? 0,
         totalMonthlyDonation: userData.totalMonthlyDonation ?? existingData.totalMonthlyDonation ?? user.totalMonthlyDonation ?? 0,
@@ -682,6 +696,10 @@ export const UserProvider = ({ children }) => {
           lastName: (profileData.lastName && profileData.lastName.trim()) ? profileData.lastName : localUser.lastName || '',
           email: (profileData.email && profileData.email.trim()) ? profileData.email : localUser.email || '',
           phone: (profileData.phone && profileData.phone.trim()) ? profileData.phone : localUser.phone || '',
+          inviteType: profileData.inviteType || localUser.inviteType || 'standard',
+          coworking: profileData.coworking ?? localUser.coworking ?? false,
+          sponsorAmount: profileData.sponsorAmount ?? localUser.sponsorAmount ?? 0,
+          externalBilled: profileData.externalBilled ?? localUser.externalBilled ?? false,
           profileImage: profileData.profileImage || profileData.profileImageUrl || localUser.profileImage || localUser.profileImageUrl || null,
           profileImageUrl: profileData.profileImageUrl || profileData.profileImage || localUser.profileImageUrl || localUser.profileImage || null,
           ...(backendBeneficiary

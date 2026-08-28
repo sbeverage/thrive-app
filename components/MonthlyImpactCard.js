@@ -9,6 +9,10 @@ export default function MonthlyImpactCard({
   coworking = false,
   sponsorAmount = 0,
   extraDonationAmount = 0,
+  // Internal THRIVE account: comped, no subscription, nothing scheduled. Both
+  // the amount and the "next donation" date are meaningless here, and showing
+  // them would tell a team member they owe money they don't.
+  isTeam = false,
 }) {
   // Debug the values received by the card
   
@@ -32,8 +36,15 @@ export default function MonthlyImpactCard({
       {/* Top Row */}
       <View style={styles.headerRow}>
         <View style={styles.dateRow}>
-          <Feather name="calendar" size={16} color="#324E58" style={{ marginRight: 6 }} />
-          <Text style={styles.dateText}>Next Donation: {getNextBillingDate()}</Text>
+          <Feather
+            name={isTeam ? 'shield' : 'calendar'}
+            size={16}
+            color="#324E58"
+            style={{ marginRight: 6 }}
+          />
+          <Text style={styles.dateText}>
+            {isTeam ? 'THRIVE Team account' : `Next Donation: ${getNextBillingDate()}`}
+          </Text>
         </View>
       </View>
 
@@ -42,8 +53,12 @@ export default function MonthlyImpactCard({
         {/* Monthly Donation */}
         <View style={styles.impactBox}>
           <Image source={flowerSeed} style={styles.icon} resizeMode="contain" />
-          <Text style={styles.amount}>${Math.round(parseFloat(monthlyDonation || 0))}</Text>
-          <Text style={styles.caption}>Monthly Donation</Text>
+          <Text style={styles.amount}>
+            {isTeam ? '$0' : `$${Math.round(parseFloat(monthlyDonation || 0))}`}
+          </Text>
+          <Text style={styles.caption}>
+            {isTeam ? 'No Monthly Charge' : 'Monthly Donation'}
+          </Text>
           {coworking && (sponsorAmount > 0 || extraDonationAmount > 0) && (
             <Text
               style={styles.subcaption}

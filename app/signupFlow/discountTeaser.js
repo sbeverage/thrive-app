@@ -290,7 +290,12 @@ export default function DiscountTeaser() {
       : 'Detecting location...');
 
   const handleContinue = () => {
-    if (params?.flow === 'coworking') {
+    if (params?.flow === 'team') {
+      router.push({
+        pathname: '/signupFlow/beneficiarySignupCause',
+        params: { flow: 'team' },
+      });
+    } else if (params?.flow === 'coworking') {
       router.push({
         pathname: '/signupFlow/beneficiarySignupCause',
         params: { flow: 'coworking', sponsorAmount: params?.sponsorAmount || '15' },

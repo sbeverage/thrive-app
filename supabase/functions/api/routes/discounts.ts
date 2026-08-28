@@ -1,5 +1,6 @@
 import { verify as verifyJWT } from "https://deno.land/x/djwt@v2.9/mod.ts";
 import { getAppAuthHeader } from "../lib/jwt-app.ts";
+import { isCompedAccount, MEMBERSHIP_COLUMNS } from "../lib/membership.ts";
 
 // Public discounts routes handler (for mobile app)
 export async function handleDiscountRoute(
@@ -517,64 +518,88 @@ export async function handleDiscountRoute(
       // them to reactivate (add a card, restart their monthly donation)
       // instead of showing a generic failure.
       {
-        // Ordering column is not guaranteed to exist on this table, and the
-        // previous version discarded the error — so a failed query looked
-        // identical to "this donor has no subscription" and returned 402 to
-        // everyone. Try updated_at, fall back to created_at, and if BOTH
-        // fail say so honestly instead of asserting they aren't subscribed.
-        const fetchLatest = async (orderBy: string) =>
-          await supabase
-            .from("monthly_donations")
-            .select("status")
-            .eq("user_id", userId)
-            .order(orderBy, { ascending: false })
-            .limit(1)
-            .maybeSingle();
+        // Comped accounts (team, coworking) never create a subscription, so
+        // gating them on monthly_donations would lock them out of the exact
+        // feature they exist to exercise. Checked before the subscription
+        // lookup so a comped donor costs one query instead of two.
+        const { data: memberRow, error: memberErr } = await supabase
+          .from("users")
+          .select(MEMBERSHIP_COLUMNS)
+          .eq("id", userId)
+          .maybeSingle();
 
-        let { data: sub, error: subError } = await fetchLatest("updated_at");
-        if (subError) {
+        if (memberErr) {
+          // Don't fail the redemption over this — fall through to the normal
+          // subscription check, which is the stricter path.
           console.warn(
-            "⚠️ monthly_donations order by updated_at failed, retrying on created_at:",
-            subError.message,
+            "⚠️ Could not read membership for redeem gate:",
+            memberErr.message,
           );
-          ({ data: sub, error: subError } = await fetchLatest("created_at"));
-        }
+        } else if (isCompedAccount(memberRow)) {
+          console.log(
+            `✅ Comped account (${memberRow?.invite_type || "external_billed"}) — skipping subscription gate`,
+          );
+        } else {
 
-        if (subError) {
-          console.error(
-            "❌ Could not read subscription status — refusing to guess:",
-            subError.message,
-          );
-          return new Response(
-            JSON.stringify({
-              error:
-                "We couldn't verify your monthly donation just now. Please try again in a moment.",
-              code: "subscription_check_failed",
-            }),
-            {
-              headers: { "Content-Type": "application/json" },
-              status: 503,
-            },
-          );
-        }
+          // Ordering column is not guaranteed to exist on this table, and the
+          // previous version discarded the error — so a failed query looked
+          // identical to "this donor has no subscription" and returned 402 to
+          // everyone. Try updated_at, fall back to created_at, and if BOTH
+          // fail say so honestly instead of asserting they aren't subscribed.
+          const fetchLatest = async (orderBy: string) =>
+            await supabase
+              .from("monthly_donations")
+              .select("status")
+              .eq("user_id", userId)
+              .order(orderBy, { ascending: false })
+              .limit(1)
+              .maybeSingle();
 
-        const status = String(sub?.status || "").toLowerCase();
-        const ALLOWED = new Set(["active", "trialing"]);
-        if (!ALLOWED.has(status)) {
-          return new Response(
-            JSON.stringify({
-              error: sub
-                ? "Your monthly donation is paused — reactivate to keep redeeming discounts."
-                : "Add a monthly donation to start redeeming discounts.",
-              code: "subscription_required",
-              subscription_status: status || "no_subscription",
-            }),
-            {
-              headers: { "Content-Type": "application/json" },
-              // 402 Payment Required — Stripe uses this for similar states.
-              status: 402,
-            },
-          );
+          let { data: sub, error: subError } = await fetchLatest("updated_at");
+          if (subError) {
+            console.warn(
+              "⚠️ monthly_donations order by updated_at failed, retrying on created_at:",
+              subError.message,
+            );
+            ({ data: sub, error: subError } = await fetchLatest("created_at"));
+          }
+
+          if (subError) {
+            console.error(
+              "❌ Could not read subscription status — refusing to guess:",
+              subError.message,
+            );
+            return new Response(
+              JSON.stringify({
+                error:
+                  "We couldn't verify your monthly donation just now. Please try again in a moment.",
+                code: "subscription_check_failed",
+              }),
+              {
+                headers: { "Content-Type": "application/json" },
+                status: 503,
+              },
+            );
+          }
+
+          const status = String(sub?.status || "").toLowerCase();
+          const ALLOWED = new Set(["active", "trialing"]);
+          if (!ALLOWED.has(status)) {
+            return new Response(
+              JSON.stringify({
+                error: sub
+                  ? "Your monthly donation is paused — reactivate to keep redeeming discounts."
+                  : "Add a monthly donation to start redeeming discounts.",
+                code: "subscription_required",
+                subscription_status: status || "no_subscription",
+              }),
+              {
+                headers: { "Content-Type": "application/json" },
+                // 402 Payment Required — Stripe uses this for similar states.
+                status: 402,
+              },
+            );
+          }
         }
       }
 

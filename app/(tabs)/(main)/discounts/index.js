@@ -61,7 +61,7 @@ export default function DiscountsScreen() {
   // Discounts require a live monthly donation. Only checked for signed-in
   // donors — logged-out users are redirected off this tab anyway.
   const { isActive: subscriptionActive, status: subscriptionStatus } =
-    useSubscriptionGate({ enabled: !!user?.isLoggedIn });
+    useSubscriptionGate({ enabled: !!user?.isLoggedIn, user });
   // Explicitly `=== false`: the hook reports null while loading or after a
   // failed check, and flashing a lock at a paying donor is worse than a brief
   // unlocked state the server would still block.

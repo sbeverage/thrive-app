@@ -1,4 +1,5 @@
 import { corsHeaders } from "../lib/cors.ts";
+import { isTeamMember } from "../lib/membership.ts";
 
 export type AdminAnalyticsDeps = {
   sendReferralReminderEmail: (args: {
@@ -57,10 +58,16 @@ export async function handleAdminAnalytics(
       const ninetyDaysAgo = cur.quarterly;
 
       // All donor users — we'll classify each as active/inactive below.
-      const { data: donors, error: donorsError } = await supabase
+      // Team accounts are internal and comped, so they are dropped before any
+      // counting. Filtered in JS rather than with .neq("invite_type","team"):
+      // invite_type is null on every pre-existing donor, and in SQL
+      // NULL != 'team' is NULL, not true — a .neq would have silently excluded
+      // every real donor instead of just the team.
+      const { data: allDonorRows, error: donorsError } = await supabase
         .from("users")
-        .select("id, created_at")
+        .select("id, created_at, invite_type, coworking")
         .eq("role", "donor");
+      const donors = (allDonorRows || []).filter((d: any) => !isTeamMember(d));
 
       if (donorsError) {
         console.error("donor-overview: users query failed", donorsError);
@@ -398,12 +405,14 @@ export async function handleAdminAnalytics(
   if (method === "GET" && route === "/admin/analytics/donor-charts") {
     try {
       // ---- Donors snapshot (used by multiple charts) ----
-      const { data: donors, error: donorsError } = await supabase
+      const { data: allDonorRows, error: donorsError } = await supabase
         .from("users")
         .select(
-          "id, created_at, city, state, invite_type",
+          "id, created_at, city, state, invite_type, coworking",
         )
         .eq("role", "donor");
+      // Internal team accounts stay out of every donor chart.
+      const donors = (allDonorRows || []).filter((d: any) => !isTeamMember(d));
       if (donorsError) {
         console.error("donor-charts: users query failed", donorsError);
         return new Response(
@@ -737,10 +746,16 @@ export async function handleAdminAnalytics(
       }));
 
       // --- Most Selected Beneficiary (counts of users.preferences.preferredCharity) ---
-      const { data: donorsForSelect } = await supabase
+      // This is the chart the exclusion matters most for: a team member picks
+      // a cause purely to exercise the app, and counting it would overstate
+      // real donor demand for that charity.
+      const { data: donorsForSelectRaw } = await supabase
         .from("users")
-        .select("id, preferences, city, state")
+        .select("id, preferences, city, state, invite_type, coworking")
         .eq("role", "donor");
+      const donorsForSelect = (donorsForSelectRaw || []).filter(
+        (d: any) => !isTeamMember(d),
+      );
       const selectionCount: Record<number, number> = {};
       for (const d of donorsForSelect || []) {
         const prefId =

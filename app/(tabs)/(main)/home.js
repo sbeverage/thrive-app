@@ -288,7 +288,11 @@ export default function MainHome() {
     return displayLocation;
   };
   // Calculate monthly values based on user's donation amount
-  const monthlyDonation = user.monthlyDonation || 15;
+  // Team accounts are comped, so the usual `|| 15` fallback would show them a
+  // monthly donation nobody is charging.
+  const isTeamAccount =
+    String(user.inviteType || '').toLowerCase() === 'team';
+  const monthlyDonation = isTeamAccount ? 0 : (user.monthlyDonation || 15);
   const monthlySavings = user.totalSavings || 0; // Use total savings from discounts
   
   // Check location permission when home page loads
@@ -404,6 +408,7 @@ export default function MainHome() {
               monthlyDonation={monthlyDonation} 
               monthlySavings={monthlySavings} 
               coworking={user.coworking}
+              isTeam={isTeamAccount}
               sponsorAmount={user.sponsorAmount}
               extraDonationAmount={user.extraDonationAmount}
             />

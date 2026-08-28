@@ -2,6 +2,7 @@ import { corsHeaders } from "../lib/cors.ts";
 import { bcryptHash } from "../lib/password.ts";
 import { capitalizeName } from "../lib/strings.ts";
 import { geocodeAddress } from "../lib/geocoding.ts";
+import { membershipOf } from "../lib/membership.ts";
 
 export type AdminDonorsDeps = {
   sendInvitationEmail: (args: {
@@ -401,8 +402,14 @@ export async function handleAdminDonors(
           beneficiary_name: preferredCharityId
             ? charityNameById[preferredCharityId] || "N/A"
             : "N/A",
-          coworking:
-            user.coworking === true || user.invite_type === "coworking",
+          coworking: membershipOf(user) === "coworking",
+          // 'standard' | 'coworking' | 'team'. The list response previously
+          // exposed only the coworking boolean, so a team account was
+          // indistinguishable from a standard one in the admin table.
+          invite_type: membershipOf(user),
+          inviteType: membershipOf(user),
+          sponsor_amount: Number(user.sponsor_amount || 0),
+          external_billed: user.external_billed === true,
           total_donations: parseFloat(monthlyDonation) || 0,
           one_time_donation: parseFloat(oneTimeDonation) || 0,
           last_donation_date: lastDonationByUser.get(user.id) || null,
@@ -492,6 +499,8 @@ export async function handleAdminDonors(
         inviteType,
         sponsor_amount,
         sponsorAmount,
+        external_billed,
+        externalBilled,
         donation_amount,
         donationAmount,
         one_time_donation,
@@ -740,6 +749,22 @@ export async function handleAdminDonors(
       if (sponsor_amount !== undefined || sponsorAmount !== undefined) {
         updateData.sponsor_amount =
           parseFloat(sponsor_amount ?? sponsorAmount) || 0;
+      }
+      if (external_billed !== undefined || externalBilled !== undefined) {
+        updateData.external_billed =
+          (external_billed ?? externalBilled) === true;
+      }
+      // Switching an existing donor to Team has to clear the money fields too.
+      // Without this a former standard donor kept their pledged monthly amount
+      // and stayed in the totals the Team type is supposed to keep them out of.
+      if (
+        String(updateData.invite_type ?? "").trim().toLowerCase() === "team"
+      ) {
+        updateData.external_billed = true;
+        updateData.coworking = false;
+        updateData.sponsor_amount = 0;
+        updateData.sponsor_source = "THRIVE Team";
+        updateData.total_monthly_donation = 0;
       }
 
       // Update donation amounts if provided
@@ -2024,25 +2049,42 @@ export async function handleAdminDonors(
       tokenExpiry.setHours(tokenExpiry.getHours() + 24);
       // We'll log the expiration but won't store it if column doesn't exist
 
+      // A team account is internal: comped, never billed, and deliberately
+      // left out of donation totals. Derived from invite_type here rather than
+      // trusting the client to send a consistent set of flags.
+      const isTeam =
+        String(invite_type ?? inviteType ?? "").trim().toLowerCase() === "team";
       const isCoworking =
-        coworking === true || coworking === "Yes" || coworking === "yes";
+        !isTeam &&
+        (coworking === true || coworking === "Yes" || coworking === "yes" ||
+          String(invite_type ?? inviteType ?? "").trim().toLowerCase() ===
+            "coworking");
       const rawSponsorAmount =
         sponsor_amount ??
         sponsorAmount ??
         body.donation ??
         body.donationAmount ??
         0;
-      const sponsorAmountValue = isCoworking
-        ? parseFloat(rawSponsorAmount) || 15
-        : parseFloat(rawSponsorAmount) || 0;
-      const sponsorSourceValue =
-        sponsor_source ||
-        sponsorSource ||
-        (isCoworking ? "THRIVE Coworking" : null);
-      const inviteTypeValue =
-        invite_type || inviteType || (isCoworking ? "coworking" : "standard");
-      const externalBilledValue =
-        external_billed ?? externalBilled ?? isCoworking;
+      // Team is forced to 0: nobody pays for the seat, so any amount left in
+      // the admin form must not become a pledge in total_monthly_donation.
+      const sponsorAmountValue = isTeam
+        ? 0
+        : isCoworking
+          ? parseFloat(rawSponsorAmount) || 15
+          : parseFloat(rawSponsorAmount) || 0;
+      const sponsorSourceValue = isTeam
+        ? "THRIVE Team"
+        : sponsor_source ||
+          sponsorSource ||
+          (isCoworking ? "THRIVE Coworking" : null);
+      const inviteTypeValue = isTeam
+        ? "team"
+        : invite_type || inviteType || (isCoworking ? "coworking" : "standard");
+      // Comped accounts settle outside Stripe. The app reads this to skip the
+      // payment step, and /auth/login treats it as onboarding-complete.
+      const externalBilledValue = isTeam
+        ? true
+        : external_billed ?? externalBilled ?? isCoworking;
 
       const preferences: any = {};
       if (

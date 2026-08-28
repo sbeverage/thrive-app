@@ -40,7 +40,13 @@ export default function ExplainerDonate() {
 
   const handleContinue = () => {
     try {
-      if (params?.flow === 'coworking') {
+      if (params?.flow === 'team') {
+        // Team accounts have no sponsor amount to carry through.
+        router.push({
+          pathname: '/signupFlow/discountTeaser',
+          params: { flow: 'team' },
+        });
+      } else if (params?.flow === 'coworking') {
         router.push({
           pathname: '/signupFlow/discountTeaser',
           params: { flow: 'coworking', sponsorAmount: params?.sponsorAmount || '15' }

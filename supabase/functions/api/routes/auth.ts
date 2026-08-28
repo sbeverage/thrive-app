@@ -17,6 +17,7 @@ import {
   exchangeAppleAuthorizationCode,
   revokeAppleRefreshToken,
 } from "../lib/apple-revoke.ts";
+import {membershipOf, MEMBERSHIP_COLUMNS} from "../lib/membership.ts";
 
 export type AuthRouteDeps = {
   createReferralRecord: (
@@ -2798,7 +2799,8 @@ export async function handleAuthRoute(
       const {data: user, error: userError} = await supabase
         .from("users")
         .select(
-          "id, email, first_name, last_name, phone, profile_picture_url, city, state, zip_code, latitude, longitude, location_permission_granted, location_updated_at, preferences, is_verified, account_status",
+          "id, email, first_name, last_name, phone, profile_picture_url, city, state, zip_code, latitude, longitude, location_permission_granted, location_updated_at, preferences, is_verified, account_status, " +
+            MEMBERSHIP_COLUMNS,
         )
         .eq("id", userId)
         .single();
@@ -2880,6 +2882,14 @@ export async function handleAuthRoute(
             referredCharity: selectedBeneficiary,
             isVerified: user.is_verified || false,
             accountStatus: user.account_status || "active",
+            // The discounts gate and the Home donation card both need to know
+            // this on a cold start. Previously only /auth/verify-invitation
+            // returned it, so a comped account looked like an unpaid standard
+            // one after the app was reopened.
+            inviteType: membershipOf(user),
+            coworking: membershipOf(user) === "coworking",
+            sponsorAmount: Number(user.sponsor_amount || 0),
+            externalBilled: user.external_billed === true,
           },
         }),
         {

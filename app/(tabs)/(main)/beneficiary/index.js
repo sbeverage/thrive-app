@@ -678,7 +678,10 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
     }
     setSelectedBeneficiary(pendingBeneficiary);
     if (isSignupFlow) {
-      if (routeParams?.flow === 'coworking') {
+      if (routeParams?.flow === 'team') {
+        // Team accounts skip payment entirely — no amount step, no Stripe.
+        router.push({ pathname: '/signupFlow/teamAccountReady', params: { flow: 'team' } });
+      } else if (routeParams?.flow === 'coworking') {
         router.push({
           pathname: '/signupFlow/coworkingDonationPrompt',
           params: { sponsorAmount: String(routeParams?.sponsorAmount ?? '15') },

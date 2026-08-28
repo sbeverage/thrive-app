@@ -1,6 +1,6 @@
 import { verify as verifyJWT } from "https://deno.land/x/djwt@v2.9/mod.ts";
 import { getAppAuthHeader } from "../lib/jwt-app.ts";
-import { getStripeClient } from "../lib/stripe.ts";
+import { getStripeClient, createOrGetStripeCustomer } from "../lib/stripe.ts";
 
 export async function handlePaymentMethodRoute(
   req: Request,
@@ -44,20 +44,42 @@ export async function handlePaymentMethodRoute(
   // Get user's Stripe customer ID
   const {data: user} = await supabase
     .from("users")
-    .select("stripe_customer_id")
+    .select("stripe_customer_id, email")
     .eq("id", userId)
     .single();
 
   if (!user?.stripe_customer_id) {
-    return new Response(
-      JSON.stringify({
-        error: "No Stripe customer found. Please create a subscription first.",
-      }),
-      {
-        headers: {"Content-Type": "application/json"},
-        status: 404,
-      },
-    );
+    // "Create a subscription first" was a dead end for comped accounts: a team
+    // member never creates a subscription, so they could never reach the card
+    // form — and therefore never make a one-time gift, which is the one paid
+    // thing they are meant to be able to do. The customer is cheap to create
+    // and is what a subscription would have created anyway, so make it on
+    // demand instead of refusing.
+    if (!user?.email) {
+      return new Response(
+        JSON.stringify({error: "Account is missing an email address."}),
+        {headers: {"Content-Type": "application/json"}, status: 400},
+      );
+    }
+    try {
+      const customer = await createOrGetStripeCustomer(user.email, userId);
+      await supabase
+        .from("users")
+        .update({stripe_customer_id: customer.id})
+        .eq("id", userId);
+      user.stripe_customer_id = customer.id;
+      console.log(
+        `✅ Created Stripe customer ${customer.id} on demand for user ${userId}`,
+      );
+    } catch (e: any) {
+      console.error("❌ Could not create Stripe customer on demand:", e?.message);
+      return new Response(
+        JSON.stringify({
+          error: "Could not set up payments for this account. Please try again.",
+        }),
+        {headers: {"Content-Type": "application/json"}, status: 502},
+      );
+    }
   }
 
   const stripe = getStripeClient();
