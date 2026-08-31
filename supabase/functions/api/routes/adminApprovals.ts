@@ -20,6 +20,7 @@
 import { corsHeaders } from "../lib/cors.ts";
 import { sendVendorEmail } from "../lib/email.ts";
 import { sendPushToUser } from "../lib/push.ts";
+import { charityProfileGaps } from "../lib/charities.ts";
 
 const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: jsonHeaders });
@@ -315,9 +316,19 @@ export async function handleAdminApprovals(
       if (body[key] !== undefined) profile[column] = body[key];
     }
 
-    const { error: updErr } = await supabase
-      .from("charities")
-      .update({
+    // Merge the admin's edits over the stored row so completeness is judged
+    // on what the record will actually look like after this write.
+    const gaps = charityProfileGaps({ ...charity, ...profile });
+    const complete = gaps.length === 0;
+
+    // awaiting_profile_completion arrives with migration 20260831000000. If
+    // that has not been applied yet, the write below fails with a
+    // column-not-found error and the whole approval 500s — which is exactly
+    // the failure this endpoint just had. Retry without the column instead:
+    // the charity still gets approved, it just publishes immediately as it
+    // did before.
+    const buildUpdate = (withFlag: boolean) => {
+      const u: Record<string, unknown> = {
         ...profile,
         is_pending_verification: false,
         // Boolean column, not an enum — writing the string "approved" made
@@ -327,10 +338,36 @@ export async function handleAdminApprovals(
         verification_status: true,
         verification_rejected_at: null,
         verification_rejected_reason: null,
-        is_active: true,
+        // Approval clears review and releases held giving, but the charity
+        // stays hidden until the profile is presentable. A suggested charity
+        // arrives with placeholder `about` copy, type "Pending" and no image;
+        // publishing that put a visibly broken profile in front of donors.
+        is_active: withFlag ? complete : true,
         updated_at: new Date().toISOString(),
-      })
-      .eq("id", charityId);
+      };
+      if (withFlag) u.awaiting_profile_completion = !complete;
+      return u;
+    };
+
+    let updErr: any = null;
+    {
+      const first = await supabase
+        .from("charities")
+        .update(buildUpdate(true))
+        .eq("id", charityId);
+      updErr = first.error;
+      if (updErr && /awaiting_profile_completion/i.test(updErr.message || "")) {
+        console.warn(
+          "⚠️ awaiting_profile_completion column missing — apply migration " +
+            "20260831000000. Approving without the hold-back for now.",
+        );
+        const retry = await supabase
+          .from("charities")
+          .update(buildUpdate(false))
+          .eq("id", charityId);
+        updErr = retry.error;
+      }
+    }
     if (updErr) return json({ error: updErr.message }, 500);
 
     // ── Release held giving for every donor who picked this charity ──
@@ -428,6 +465,10 @@ export async function handleAdminApprovals(
       charity: { id: charityId, name: charity.name },
       released_donor_count: releasedDonors,
       released_amount: Number(releasedTotal.toFixed(2)),
+      // The panel opens the profile editor when this is false and lists what
+      // is missing; saving the profile is what publishes the charity.
+      isComplete: complete,
+      missingFields: gaps,
     });
   }
 
@@ -470,6 +511,18 @@ export async function handleAdminApprovals(
       })
       .eq("id", charityId);
     if (updErr) return json({ error: updErr.message }, 500);
+
+    // A rejected charity is not waiting on a profile — leaving the flag set
+    // would let the PUT path publish it the moment anyone edited it. Written
+    // separately and ignored on failure so a missing column (migration
+    // 20260831000000 not yet applied) cannot fail the rejection.
+    await supabase
+      .from("charities")
+      .update({ awaiting_profile_completion: false })
+      .eq("id", charityId)
+      .then(({ error }: any) => {
+        if (error) console.warn("could not clear awaiting flag:", error.message);
+      });
 
     // The donor's giving stays held and safe, but nothing else would tell
     // them to choose again — so say it plainly, and don't repeat the internal

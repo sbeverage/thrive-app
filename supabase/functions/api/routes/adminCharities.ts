@@ -1,5 +1,5 @@
 import { geocodeAddress } from "../lib/geocoding.ts";
-import { formatCharityResponse } from "../lib/charities.ts";
+import { formatCharityResponse, charityProfileGaps } from "../lib/charities.ts";
 import { corsHeaders } from "../lib/cors.ts";
 
 export async function handleAdminCharities(
@@ -988,10 +988,47 @@ export async function handleAdminCharities(
         );
       }
 
+      // Publish a charity that was approved-but-hidden once its profile is
+      // presentable. Saving the completed profile is the publish step, so an
+      // admin doesn't have to remember a separate "make visible" action.
+      //
+      // Gated on awaiting_profile_completion rather than on is_active, because
+      // the admin DELETE below is a soft delete that also sets is_active
+      // false — inferring from that would republish deleted charities.
+      let wentLive = false;
+      let profileGaps = charityProfileGaps(updatedCharity);
+      if (updatedCharity.awaiting_profile_completion && profileGaps.length === 0) {
+        const {data: published, error: publishErr} = await supabase
+          .from("charities")
+          .update({
+            is_active: true,
+            awaiting_profile_completion: false,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", charityId)
+          .select()
+          .single();
+        if (publishErr) {
+          // The profile edits saved; only the publish failed. Say so rather
+          // than reporting the whole write as failed.
+          console.error("❌ Could not publish completed charity:", publishErr.message);
+        } else if (published) {
+          Object.assign(updatedCharity, published);
+          wentLive = true;
+          profileGaps = [];
+          console.log(`✅ Charity ${charityId} profile completed — now visible to donors`);
+        }
+      }
+
       return new Response(
         JSON.stringify({
           success: true,
           data: formatCharityResponse(updatedCharity),
+          // True on the save that made the charity visible, so the panel can
+          // say so instead of showing a generic "saved".
+          wentLive,
+          // Still-missing fields while it waits; empty once published.
+          missingFields: updatedCharity.awaiting_profile_completion ? profileGaps : [],
         }),
         {
           headers: {"Content-Type": "application/json"},
