@@ -243,6 +243,21 @@ export async function handleCharityRoute(
   const deleteCharityMatch = route.match(/^\/charities\/(\d+)$/);
   if (method === "DELETE" && deleteCharityMatch) {
     try {
+      // ── Auth ──────────────────────────────────────────────────────────
+      // This is a HARD delete, and /charities is in index.ts's publicRoutes,
+      // so it was reachable by anyone holding the anon key — which ships in
+      // the mobile app. Note the contrast with DELETE /admin/charities/:id,
+      // which only soft-deletes by setting is_active = false; this route is
+      // the only way to actually remove a row, so it needs the stronger gate.
+      const adminSecret = req.headers.get("x-admin-secret");
+      const expectedSecret = Deno.env.get("ADMIN_SECRET_KEY");
+      if (!expectedSecret || adminSecret !== expectedSecret) {
+        return new Response(
+          JSON.stringify({error: "Unauthorized"}),
+          {headers: {"Content-Type": "application/json"}, status: 401},
+        );
+      }
+
       const charityId = deleteCharityMatch[1];
 
       const {error} = await supabase
