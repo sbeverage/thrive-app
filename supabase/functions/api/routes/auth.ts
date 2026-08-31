@@ -2336,6 +2336,65 @@ export async function handleAuthRoute(
         );
       }
 
+      // ── Auth ────────────────────────────────────────────────────────
+      // This route cancels Stripe subscriptions, revokes the Apple refresh
+      // token, deletes the profile picture and HARD-deletes the users row —
+      // all keyed off an email in the request body. Unauthenticated, anyone
+      // who knew a donor's address could destroy their account. It was listed
+      // in index.ts publicRoutes with the note "Public for testing - should be
+      // secured in production."
+      //
+      // Two callers, both already sending credentials, so both keep working:
+      //   • admin panel  → X-Admin-Secret
+      //   • donor app    → user JWT (axios interceptor), deleting themselves
+      // A JWT only authorises deleting your OWN account; anything else needs
+      // the admin secret.
+      {
+        const adminSecret = req.headers.get("x-admin-secret");
+        const expectedSecret = Deno.env.get("ADMIN_SECRET_KEY");
+        const isAdmin = !!expectedSecret && adminSecret === expectedSecret;
+
+        if (!isAdmin) {
+          const payload: any = await getJwtPayload(getAppAuthHeader(req));
+          const callerEmail = String(payload?.email || "").trim().toLowerCase();
+          const targetEmail = String(email).trim().toLowerCase();
+
+          if (!payload) {
+            return new Response(
+              JSON.stringify({message: "Authentication required."}),
+              {headers: {"Content-Type": "application/json"}, status: 401},
+            );
+          }
+
+          // The JWT may not carry an email, so fall back to comparing ids.
+          let authorised = !!callerEmail && callerEmail === targetEmail;
+          if (!authorised) {
+            const callerId = payload?.id ?? payload?.userId;
+            if (callerId != null) {
+              const {data: self} = await supabase
+                .from("users")
+                .select("email")
+                .eq("id", callerId)
+                .maybeSingle();
+              authorised =
+                String(self?.email || "").trim().toLowerCase() === targetEmail;
+            }
+          }
+
+          if (!authorised) {
+            console.warn(
+              `⚠️ Refused delete-user: caller may only delete their own account`,
+            );
+            return new Response(
+              JSON.stringify({
+                message: "You may only delete your own account.",
+              }),
+              {headers: {"Content-Type": "application/json"}, status: 403},
+            );
+          }
+        }
+      }
+
       console.log(`🗑️ Attempting to delete user: ${email}`);
 
       // Get user to check if exists and get profile picture URL + Stripe customer

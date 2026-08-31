@@ -157,6 +157,20 @@ export async function handleCharityRoute(
   // POST /charities (requires auth - will be handled by middleware)
   if (method === "POST" && route === "/charities") {
     try {
+      // ── Auth ──────────────────────────────────────────────────────────
+      // is_active defaults to true below, so without this anyone holding the
+      // anon key could publish a live, donor-selectable charity with any name
+      // and EIN. Nothing legitimate calls this route: the app never posts
+      // here and the admin panel uses POST /admin/charities.
+      const adminSecret = req.headers.get("x-admin-secret");
+      const expectedSecret = Deno.env.get("ADMIN_SECRET_KEY");
+      if (!expectedSecret || adminSecret !== expectedSecret) {
+        return new Response(
+          JSON.stringify({error: "Unauthorized"}),
+          {headers: {"Content-Type": "application/json"}, status: 401},
+        );
+      }
+
       const body = await req.json();
       const {
         name,
