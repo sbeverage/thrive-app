@@ -88,7 +88,13 @@ function formatCharity(c: any, suggestedByName: string) {
     description: c.description || null,
     suggested_by_user_id: c.suggested_by_user_id || null,
     suggested_by_name: suggestedByName || null,
-    verification_status: c.verification_status || "pending",
+    // Derived for display. The column is a boolean, so `|| "pending"`
+    // reported every rejected charity as still pending.
+    verification_status: c.is_pending_verification
+      ? "pending"
+      : c.verification_status === false
+        ? "rejected"
+        : "approved",
     verification_rejected_reason: c.verification_rejected_reason || null,
   };
 }
@@ -158,8 +164,16 @@ export async function handleAdminApprovals(
 
       if (status === "pending") {
         q = q.eq("is_pending_verification", true);
-      } else if (status === "approved" || status === "rejected") {
-        q = q.eq("verification_status", status);
+      } else if (status === "approved") {
+        // Null counts as approved: the 51 charities that predate this flow
+        // were never explicitly verified but are live.
+        q = q
+          .eq("is_pending_verification", false)
+          .or("verification_status.is.null,verification_status.eq.true");
+      } else if (status === "rejected") {
+        // A freshly suggested charity also has verification_status false, so
+        // the pending flag is what separates rejected from not-yet-judged.
+        q = q.eq("verification_status", false).eq("is_pending_verification", false);
       }
       q = q.range((page - 1) * limit, page * limit - 1);
 
@@ -306,7 +320,11 @@ export async function handleAdminApprovals(
       .update({
         ...profile,
         is_pending_verification: false,
-        verification_status: "approved",
+        // Boolean column, not an enum — writing the string "approved" made
+        // Postgres reject the whole update, which surfaced in the admin panel
+        // as "Failed to approve item". lib/charities.ts reads it as
+        // `verification_status !== false`, so true means verified.
+        verification_status: true,
         verification_rejected_at: null,
         verification_rejected_reason: null,
         is_active: true,
@@ -442,7 +460,7 @@ export async function handleAdminApprovals(
       .from("charities")
       .update({
         is_pending_verification: false,
-        verification_status: "rejected",
+        verification_status: false,
         verification_rejected_at: new Date().toISOString(),
         verification_rejected_reason: reason || null,
         // Hidden from the donor app, but the row is kept for the audit trail
