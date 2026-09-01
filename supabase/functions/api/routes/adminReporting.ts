@@ -590,6 +590,208 @@ export async function handleAdminReporting(
     }
   }
 
+  // GET /admin/reporting/billing-audit — read-only sweep of ALL Stripe billing.
+  //
+  // Answers "is anyone else being double-billed, and is anything else odd?"
+  // across every customer, rather than the two accounts that happened to be
+  // investigated by hand. Enumerates subscriptions and charges from Stripe —
+  // the authority on what is actually billed — and flags:
+  //   • customers with more than one live subscription (double billing)
+  //   • live subscriptions our monthly_donations table has never heard of
+  //   • refunded, disputed or failed charges
+  //   • subscriptions stuck incomplete/past_due/unpaid
+  //   • amounts outside the plausible range for this product
+  if (method === "GET" && route.startsWith("/admin/reporting/billing-audit")) {
+    try {
+      const stripe = getStripeClient();
+      const headers = { Authorization: `Bearer ${stripe.secretKey}` };
+      const page = async (path: string, after: string | null) => {
+        const sep = path.includes("?") ? "&" : "?";
+        const url = `${stripe.baseUrl}${path}${after ? `${sep}starting_after=${after}` : ""}`;
+        const r = await fetch(url, { headers });
+        return r.ok ? await r.json() : null;
+      };
+
+      const LIVE = new Set(["active", "trialing", "past_due", "unpaid"]);
+      const STUCK = new Set(["past_due", "unpaid", "incomplete"]);
+
+      // ── every subscription ───────────────────────────────────────────
+      const subs: any[] = [];
+      let after: string | null = null;
+      for (let i = 0; i < 40; i++) {
+        const body = await page("/subscriptions?status=all&limit=100", after);
+        if (!body) break;
+        subs.push(...(body.data || []));
+        if (!body.has_more || !(body.data || []).length) break;
+        after = body.data[body.data.length - 1].id;
+      }
+
+      // ── local mirror, to spot untracked subscriptions ────────────────
+      const { data: localSubs } = await supabase
+        .from("monthly_donations")
+        .select("stripe_subscription_id");
+      const trackedSubIds = new Set(
+        (localSubs || [])
+          .map((r: any) => r.stripe_subscription_id)
+          .filter(Boolean)
+          .map(String),
+      );
+
+      // ── customer -> email, so findings are readable ──────────────────
+      const custIds = [
+        ...new Set(
+          subs
+            .map((x: any) => (typeof x.customer === "string" ? x.customer : x.customer?.id))
+            .filter(Boolean),
+        ),
+      ];
+      const emailByCustomer = new Map<string, string>();
+      for (const cid of custIds) {
+        const c = await page(`/customers/${encodeURIComponent(cid)}`, null);
+        if (c?.email) emailByCustomer.set(cid, c.email);
+      }
+
+      const describe = (x: any) => {
+        const cid = typeof x.customer === "string" ? x.customer : x.customer?.id;
+        return {
+          id: x.id,
+          customer: cid,
+          email: cid ? emailByCustomer.get(cid) ?? null : null,
+          status: x.status,
+          amount_usd: (x.items?.data?.[0]?.price?.unit_amount ?? 0) / 100,
+          interval: x.items?.data?.[0]?.price?.recurring?.interval ?? null,
+          created: new Date(x.created * 1000).toISOString(),
+          next_bill: x.current_period_end
+            ? new Date(x.current_period_end * 1000).toISOString()
+            : null,
+          tracked_locally: trackedSubIds.has(String(x.id)),
+        };
+      };
+
+      // ── duplicates, grouped by EMAIL not customer: the same person can
+      //    hold several customers, which is how one case was missed ──────
+      const liveByEmail = new Map<string, any[]>();
+      for (const x of subs) {
+        if (!LIVE.has(x.status)) continue;
+        const d = describe(x);
+        const key = d.email || d.customer || "unknown";
+        if (!liveByEmail.has(key)) liveByEmail.set(key, []);
+        liveByEmail.get(key)!.push(d);
+      }
+      const doubleBilled = [...liveByEmail.entries()]
+        .filter(([, list]) => list.length > 1)
+        .map(([key, list]) => ({
+          identity: key,
+          live_subscription_count: list.length,
+          monthly_total_usd:
+            Math.round(list.reduce((a, s) => a + s.amount_usd, 0) * 100) / 100,
+          subscriptions: list,
+        }));
+
+      const untracked = subs
+        .filter((x: any) => LIVE.has(x.status) && !trackedSubIds.has(String(x.id)))
+        .map(describe);
+      const stuck = subs.filter((x: any) => STUCK.has(x.status)).map(describe);
+
+      // Plausible band for this product: $1 coworking minimum up to $1000 plus
+      // fees. Anything outside is worth a human look.
+      const oddAmounts = subs
+        .filter((x: any) => {
+          if (!LIVE.has(x.status)) return false;
+          const amt = (x.items?.data?.[0]?.price?.unit_amount ?? 0) / 100;
+          return amt < 1 || amt > 1100;
+        })
+        .map(describe);
+
+      // ── charges: refunds, disputes, failures ─────────────────────────
+      const charges: any[] = [];
+      after = null;
+      for (let i = 0; i < 20; i++) {
+        const body = await page("/charges?limit=100", after);
+        if (!body) break;
+        charges.push(...(body.data || []));
+        if (!body.has_more || !(body.data || []).length) break;
+        after = body.data[body.data.length - 1].id;
+      }
+      const describeCharge = (c: any) => ({
+        id: c.id,
+        // Attribution. Our PaymentIntents always carry metadata (user_id,
+        // beneficiary_id, gift_id) and a statement descriptor; a charge with
+        // neither did not originate in this app, which is the question when
+        // unexplained traffic shows up on a Stripe account this old.
+        metadata: c.metadata && Object.keys(c.metadata).length ? c.metadata : null,
+        description: c.description ?? null,
+        payment_intent: c.payment_intent ?? null,
+        statement_descriptor:
+          c.calculated_statement_descriptor ?? c.statement_descriptor ?? null,
+        card_country: c.payment_method_details?.card?.country ?? null,
+        card_brand: c.payment_method_details?.card?.brand ?? null,
+        decline_code: c.outcome?.reason ?? c.failure_code ?? null,
+        risk_level: c.outcome?.risk_level ?? null,
+        email: c.billing_details?.email ?? (c.customer ? emailByCustomer.get(c.customer) ?? null : null),
+        customer: c.customer ?? null,
+        amount_usd: (c.amount ?? 0) / 100,
+        refunded_usd: (c.amount_refunded ?? 0) / 100,
+        status: c.status,
+        disputed: !!c.disputed,
+        failure_message: c.failure_message ?? null,
+        created: new Date(c.created * 1000).toISOString(),
+      });
+      // The question that matters after finding card-testing attempts: did any
+      // of it succeed? Our PaymentIntents always carry metadata, so a
+      // succeeded charge in the current era with none is money that came from
+      // somewhere other than this app and deserves a look.
+      const eraStart = Date.parse("2026-01-01T00:00:00Z") / 1000;
+      const suspiciousSucceeded = charges
+        .filter(
+          (c: any) =>
+            c.status === "succeeded" &&
+            c.created >= eraStart &&
+            !(c.metadata && Object.keys(c.metadata).length) &&
+            !c.invoice,
+        )
+        .map(describeCharge);
+
+      const refunded = charges.filter((c: any) => (c.amount_refunded ?? 0) > 0).map(describeCharge);
+      const disputed = charges.filter((c: any) => c.disputed).map(describeCharge);
+      const failed = charges.filter((c: any) => c.status === "failed").map(describeCharge);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            subscriptions_scanned: subs.length,
+            charges_scanned: charges.length,
+            live_subscriptions: subs.filter((x: any) => LIVE.has(x.status)).length,
+            double_billed_count: doubleBilled.length,
+            double_billed: doubleBilled,
+            untracked_live_count: untracked.length,
+            untracked_live: untracked,
+            stuck_count: stuck.length,
+            stuck,
+            odd_amount_count: oddAmounts.length,
+            odd_amounts: oddAmounts,
+            suspicious_succeeded_count: suspiciousSucceeded.length,
+            suspicious_succeeded_total_usd:
+              Math.round(suspiciousSucceeded.reduce((a, c) => a + c.amount_usd, 0) * 100) / 100,
+            suspicious_succeeded: suspiciousSucceeded.slice(0, 25),
+            refunded_count: refunded.length,
+            refunded,
+            disputed_count: disputed.length,
+            disputed,
+            failed_charge_count: failed.length,
+            failed: failed.slice(0, 25),
+          },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e?.message || "billing audit failed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
+      });
+    }
+  }
+
   // GET /admin/reporting/whois?email=... — read-only lookup.
   //
   // Answers "does this person exist in our system, and what is attached to
