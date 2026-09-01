@@ -391,12 +391,16 @@ export async function handleWebhookRoute(
                     type: "monthly_donation",
                     amount: amount,
                     description: `Monthly donation to beneficiary ${donation.beneficiary_id}`,
-                    // reference_id is an INTEGER column — writing the Stripe
-                    // invoice id (a string like "in_1Tbm…") into it failed with
-                    // "invalid input syntax for type integer" on every event.
-                    // The invoice id belongs in stripe_invoice_id, which is
-                    // also what dedupe matches on.
-                    reference_id: donation.id,
+                    // MUST stay null. Two unique indexes cover this column:
+                    // transactions_reference_id_uidx (all rows, where not
+                    // null) and formerly a monthly_donation partial one. Both
+                    // assume reference_id holds a unique EXTERNAL id, but it
+                    // is an INTEGER column so a Stripe invoice id cannot go in
+                    // it, and a local donation id repeats across that
+                    // subscription's monthly charges. Identity for these rows
+                    // is stripe_invoice_id, enforced by
+                    // transactions_monthly_stripe_invoice_unique.
+                    reference_id: null,
                     reference_type: "donation",
                     donation_id: donation.id,
                     beneficiary_id: donation.beneficiary_id,

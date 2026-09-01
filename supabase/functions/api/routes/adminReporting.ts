@@ -123,8 +123,9 @@ export async function handleAdminReporting(
             type: "monthly_donation",
             amount,
             description: `Monthly donation to beneficiary ${donation.beneficiary_id} (backfilled from Stripe invoice)`,
-            // Integer column — the Stripe invoice id goes in stripe_invoice_id.
-            reference_id: donation.id,
+            // Null by necessity — see the note in webhooks.ts. Identity for
+            // these rows is stripe_invoice_id.
+            reference_id: null,
             reference_type: "donation",
             donation_id: donation.id,
             beneficiary_id: donation.beneficiary_id,
@@ -316,6 +317,17 @@ export async function handleAdminReporting(
 
       unmatched.sort((a, b) => (a.paid_at < b.paid_at ? -1 : 1));
 
+      // The mirror image of an unrecorded payment: a monthly_donation row with
+      // no Stripe invoice id. It can't be tied to a collected invoice, so it is
+      // either a legacy/manual record or a duplicate of a payment that was also
+      // recorded properly — in which case a charity is credited twice.
+      const { data: orphanRows } = await supabase
+        .from("transactions")
+        .select("id, user_id, amount, created_at, description")
+        .eq("type", "monthly_donation")
+        .is("stripe_invoice_id", null);
+      const orphans = orphanRows || [];
+
       return new Response(
         JSON.stringify({
           success: true,
@@ -327,6 +339,10 @@ export async function handleAdminReporting(
             unrecorded_count: unmatched.length,
             unrecorded_total_usd: unmatchedCents / 100,
             unrecorded: unmatched,
+            unlinked_transaction_count: orphans.length,
+            unlinked_transaction_total_usd:
+              Math.round(orphans.reduce((a: number, r: any) => a + Number(r.amount || 0), 0) * 100) / 100,
+            unlinked_transactions: orphans,
             errors,
           },
         }),
