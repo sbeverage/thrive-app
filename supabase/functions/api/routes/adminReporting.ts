@@ -182,6 +182,124 @@ export async function handleAdminReporting(
     }
   }
 
+  // POST /admin/reporting/backfill-transaction-fees
+  //
+  // Fills processing_fee and stripe_charge_id on monthly_donation transactions
+  // that lack them, reading the real fee from Stripe's balance transaction.
+  //
+  // Needed for two things: the payouts report sums processing_fee PER
+  // transaction (see 20260804000000), so a null there understates what Stripe
+  // actually took; and the dashboard's "Total Donation" figure is the donation
+  // net of the service fee and the card fee, which cannot be computed without
+  // it. The rows written by backfill-paid-invoices did not set it.
+  //
+  // Idempotent: only touches rows where processing_fee IS NULL.
+  if (method === "POST" && route.startsWith("/admin/reporting/backfill-transaction-fees")) {
+    try {
+      const dryRun = new URL(req.url).searchParams.get("dry_run") === "true";
+      const stripe = getStripeClient();
+
+      const { data: rows } = await supabase
+        .from("transactions")
+        .select("id, amount, stripe_invoice_id, stripe_charge_id, processing_fee")
+        .eq("type", "monthly_donation")
+        .is("processing_fee", null);
+
+      const updated: any[] = [];
+      const failed: any[] = [];
+
+      for (const t of rows || []) {
+        if (!t.stripe_invoice_id) {
+          failed.push({ id: t.id, reason: "no stripe_invoice_id" });
+          continue;
+        }
+        // Invoice -> charge -> balance transaction fee. Both shapes again:
+        // `charge` was removed from invoices in Stripe 2025-04-30.
+        const invRes = await fetch(
+          `${stripe.baseUrl}/invoices/${encodeURIComponent(t.stripe_invoice_id)}?expand[]=payments`,
+          { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+        );
+        if (!invRes.ok) {
+          failed.push({ id: t.id, reason: `invoice HTTP ${invRes.status}` });
+          continue;
+        }
+        const inv = await invRes.json();
+        let chargeId: string | null =
+          (typeof inv.charge === "string" ? inv.charge : inv.charge?.id) ?? null;
+        if (!chargeId) {
+          const pay = inv?.payments?.data?.[0]?.payment;
+          chargeId =
+            (typeof pay?.charge === "string" ? pay.charge : pay?.charge?.id) ?? null;
+          if (!chargeId && typeof pay?.payment_intent === "string") {
+            const piRes = await fetch(
+              `${stripe.baseUrl}/payment_intents/${encodeURIComponent(pay.payment_intent)}?expand[]=latest_charge`,
+              { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+            );
+            if (piRes.ok) {
+              const pi = await piRes.json();
+              chargeId =
+                (typeof pi.latest_charge === "string" ? pi.latest_charge : pi.latest_charge?.id) ?? null;
+            }
+          }
+        }
+        if (!chargeId) {
+          failed.push({ id: t.id, reason: "no charge on invoice" });
+          continue;
+        }
+
+        const chRes = await fetch(
+          `${stripe.baseUrl}/charges/${encodeURIComponent(chargeId)}?expand[]=balance_transaction`,
+          { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+        );
+        if (!chRes.ok) {
+          failed.push({ id: t.id, reason: `charge HTTP ${chRes.status}` });
+          continue;
+        }
+        const ch = await chRes.json();
+        const feeCents = ch?.balance_transaction?.fee;
+        if (typeof feeCents !== "number") {
+          failed.push({ id: t.id, reason: "no balance_transaction fee" });
+          continue;
+        }
+        const fee = Math.round(feeCents) / 100;
+
+        if (!dryRun) {
+          const { error: upErr } = await supabase
+            .from("transactions")
+            .update({ processing_fee: fee, stripe_charge_id: chargeId })
+            .eq("id", t.id);
+          if (upErr) {
+            failed.push({ id: t.id, reason: `update failed: ${upErr.message}` });
+            continue;
+          }
+        }
+        updated.push({ id: t.id, amount: t.amount, processing_fee: fee, charge: chargeId });
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            dry_run: dryRun,
+            candidates: (rows || []).length,
+            updated_count: updated.length,
+            total_fees_usd:
+              Math.round(updated.reduce((a, u) => a + u.processing_fee, 0) * 100) / 100,
+            updated,
+            failed_count: failed.length,
+            failed,
+          },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e?.message || "fee backfill failed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500,
+      });
+    }
+  }
+
   // GET /admin/reporting/webhook-health — read-only.
   //
   // Whether Stripe is actually configured to call us, and whether recent
