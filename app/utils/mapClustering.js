@@ -161,8 +161,15 @@ export function regionForCluster(cluster, currentRegion = null) {
  * "19 Academy Street" or, with no street on file, "Alpharetta, GA".
  */
 export function sharedAddressLabel(cluster) {
+  // cluster.vendors holds vendors, not the {vendor, lat, lng} wrappers used
+  // while grouping (see `members.map((p) => p.vendor)` above) — so
+  // `first.vendor.address` was one level too deep and the street never
+  // rendered. `location` isn't a vendor field either; build the fallback from
+  // the address parts that do exist.
   const first = cluster?.vendors?.[0];
-  const street = first?.vendor?.address?.street;
+  const addr = first?.address || {};
+  const street = addr.street;
   if (street && String(street).trim()) return String(street).trim();
-  return first?.location || 'this location';
+  const cityState = [addr.city, addr.state].filter(Boolean).join(', ');
+  return cityState || 'this location';
 }

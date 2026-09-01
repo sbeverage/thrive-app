@@ -404,13 +404,6 @@ export default function VendorDetails() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {discountsLocked && (
-        <DiscountsLockOverlay
-          status={subscriptionStatus}
-          onChooseAmount={() => router.push('/(tabs)/menu/editDonationAmount')}
-          onUpdatePayment={() => router.push('/(tabs)/menu/manageCards')}
-        />
-      )}
       <ScrollView
         // Inert behind the lock so a tap can't reach Redeem underneath it.
         pointerEvents={discountsLocked ? 'none' : 'auto'}
@@ -764,6 +757,19 @@ export default function VendorDetails() {
           )}
         </View>
       </ScrollView>
+
+      {/* Declared AFTER the ScrollView on purpose. React Native paints later
+          siblings on top regardless of absolute positioning, and this overlay
+          has no zIndex — placed before the content it rendered *behind* the
+          opaque page, so a locked donor saw a normal vendor screen where
+          nothing responded. discounts/index.js already ordered it this way. */}
+      {discountsLocked && (
+        <DiscountsLockOverlay
+          status={subscriptionStatus}
+          onChooseAmount={() => router.push('/(tabs)/menu/editDonationAmount')}
+          onUpdatePayment={() => router.push('/(tabs)/menu/manageCards')}
+        />
+      )}
 
       {/* Confirmation Modal */}
       <Modal visible={showConfirmModal} transparent animationType="fade">

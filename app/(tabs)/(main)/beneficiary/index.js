@@ -400,8 +400,32 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
       if (needsGeocode.length === 0) return;
 
       const updated = { ...cache };
+
+      // Persist as we go, not once at the end.
+      //
+      // This effect keys on [beneficiaries], and that array is replaced by
+      // loadBeneficiaries() on focus and again by the distance effect once
+      // userLocation resolves. Either replacement runs the cleanup, sets
+      // cancelled and returns — so a single write after the ~11s sweep almost
+      // never happened. The restart then re-read an empty cache and called
+      // setGeocodedCoords(cache), which is why pins appeared and then vanished,
+      // and why the full geocode cost was paid on every visit.
+      //
+      // Writes are cheap next to a 250ms-paced network call, and a partial
+      // cache is strictly better than none: the next run only geocodes what is
+      // still missing.
+      const persist = async () => {
+        try {
+          await AsyncStorage.setItem(CHARITY_GEOCACHE_KEY, JSON.stringify(updated));
+        } catch (_) {}
+      };
+
       for (const b of needsGeocode) {
-        if (cancelled) return;
+        // Save whatever has resolved so far before bowing out.
+        if (cancelled) {
+          await persist();
+          return;
+        }
         try {
           const results = await Location.geocodeAsync(String(b.location));
           if (results?.length > 0) {
@@ -412,17 +436,14 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
             // Published as we go so pins appear progressively rather than all
             // at once after ~11 seconds of geocoding.
             if (!cancelled) setGeocodedCoords({ ...updated });
+            await persist();
           }
         } catch (_) {}
         // Apple's geocoder rate-limits; pace the requests.
         await new Promise((r) => setTimeout(r, 250));
       }
 
-      if (!cancelled) {
-        try {
-          await AsyncStorage.setItem(CHARITY_GEOCACHE_KEY, JSON.stringify(updated));
-        } catch (_) {}
-      }
+      await persist();
     };
 
     run();

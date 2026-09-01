@@ -383,11 +383,22 @@ export async function handleAdminReporting(
     try {
       const stripe = getStripeClient();
 
+      // Sweep Stripe directly rather than per-donor.
+      //
+      // The first version iterated users with a stripe_customer_id and listed
+      // each one's invoices — so any paid invoice whose customer wasn't linked
+      // to a user row was invisible, and this endpoint reported "0 unrecorded"
+      // while three real invoices ($61.09) sat unaccounted for. Stripe is the
+      // authority on what was collected, so enumerate from there and resolve
+      // the donor afterwards.
       const { data: donors } = await supabase
         .from("users")
         .select("id, email, stripe_customer_id")
-        .eq("role", "donor")
-        .not("stripe_customer_id", "is", null);
+        .eq("role", "donor");
+      const userByCustomer = new Map<string, any>();
+      for (const d of donors || []) {
+        if (d.stripe_customer_id) userByCustomer.set(String(d.stripe_customer_id), d);
+      }
 
       const { data: txns } = await supabase
         .from("transactions")
@@ -406,31 +417,85 @@ export async function handleAdminReporting(
       let unmatchedCents = 0;
       const errors: any[] = [];
 
-      for (const d of donors || []) {
-        const res = await fetch(
-          `${stripe.baseUrl}/invoices?customer=${encodeURIComponent(d.stripe_customer_id)}&status=paid&limit=100`,
-          { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
-        );
+      // Every paid invoice on the account, paginated. `starting_after` rather
+      // than a single limit=100 so a growing history can't silently truncate
+      // and look reconciled.
+      let after: string | null = null;
+      let pages = 0;
+      while (pages < 40) {
+        pages += 1;
+        const qs = new URLSearchParams({ status: "paid", limit: "100" });
+        if (after) qs.set("starting_after", after);
+        const res = await fetch(`${stripe.baseUrl}/invoices?${qs.toString()}`, {
+          headers: { Authorization: `Bearer ${stripe.secretKey}` },
+        });
         if (!res.ok) {
-          errors.push({ donor_id: d.id, email: d.email, error: `HTTP ${res.status}` });
-          continue;
+          errors.push({ error: `invoice list HTTP ${res.status}`, page: pages });
+          break;
         }
         const body = await res.json();
-        for (const inv of body.data || []) {
+        const batch = body.data || [];
+        for (const inv of batch) {
           paidInvoiceCount += 1;
           paidCents += inv.amount_paid || 0;
-          if (!recorded.has(String(inv.id))) {
-            unmatchedCents += inv.amount_paid || 0;
-            unmatched.push({
-              donor_id: d.id,
-              email: d.email,
-              invoice_id: inv.id,
-              amount_usd: (inv.amount_paid || 0) / 100,
-              paid_at: new Date(inv.created * 1000).toISOString(),
-              subscription: inv.subscription ?? null,
-            });
+          if (recorded.has(String(inv.id))) continue;
+
+          const customerId =
+            typeof inv.customer === "string" ? inv.customer : inv.customer?.id;
+          let donor = customerId ? userByCustomer.get(String(customerId)) : null;
+
+          // Fall back to the customer's email. A donor can have a Stripe
+          // customer that was never written back to users.stripe_customer_id —
+          // which is exactly how these invoices ended up attributable to nobody.
+          // Only for unmatched invoices, so the extra Stripe calls are few.
+          let stripeCustomerEmail: string | null = null;
+          if (!donor && customerId) {
+            const cRes = await fetch(
+              `${stripe.baseUrl}/customers/${encodeURIComponent(customerId)}`,
+              { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+            );
+            if (cRes.ok) {
+              const cust = await cRes.json();
+              stripeCustomerEmail = cust?.email || null;
+              if (stripeCustomerEmail) {
+                const match = (donors || []).find(
+                  (d: any) =>
+                    String(d.email || "").trim().toLowerCase() ===
+                    stripeCustomerEmail!.trim().toLowerCase(),
+                );
+                if (match) donor = match;
+              }
+            }
           }
+          unmatchedCents += inv.amount_paid || 0;
+          unmatched.push({
+            donor_id: donor?.id ?? null,
+            email: donor?.email ?? null,
+            // Named explicitly: an invoice whose customer matches no user row
+            // is the case the per-donor sweep could never see.
+            donor_linked: Boolean(donor),
+            // How the donor was found: by the customer id on their user row, or
+            // only by matching the Stripe customer's email. The latter means
+            // users.stripe_customer_id is missing or wrong for them.
+            matched_by: donor
+              ? (customerId && userByCustomer.has(String(customerId)) ? "customer_id" : "email")
+              : "unresolved",
+            stripe_customer: customerId ?? null,
+            stripe_customer_email: stripeCustomerEmail,
+            invoice_id: inv.id,
+            amount_usd: (inv.amount_paid || 0) / 100,
+            paid_at: new Date(inv.created * 1000).toISOString(),
+            subscription:
+              inv.subscription ??
+              inv.parent?.subscription_details?.subscription ??
+              null,
+          });
         }
+        if (!body.has_more || batch.length === 0) break;
+        after = batch[batch.length - 1].id;
+      }
+      if (pages >= 40) {
+        errors.push({ error: "stopped at 40 pages — rerun if this appears" });
       }
 
       unmatched.sort((a, b) => (a.paid_at < b.paid_at ? -1 : 1));
@@ -451,6 +516,13 @@ export async function handleAdminReporting(
           success: true,
           data: {
             donors_checked: (donors || []).length,
+            unrecorded_unlinked_count: unmatched.filter((u) => !u.donor_linked).length,
+            unrecorded_unlinked_total_usd:
+              Math.round(
+                unmatched
+                  .filter((u) => !u.donor_linked)
+                  .reduce((a, u) => a + u.amount_usd, 0) * 100,
+              ) / 100,
             monthly_donation_transactions_on_file: (txns || []).length,
             paid_invoices_on_stripe: paidInvoiceCount,
             total_collected_usd: paidCents / 100,
@@ -582,7 +654,13 @@ export async function handleAdminReporting(
               type: "monthly_donation",
               amount: invAmountCents / 100,
               description: `Monthly donation to beneficiary ${row.beneficiary_id ?? "?"}`,
-              reference_id: inv.id,
+              // MUST stay null. reference_id is an INTEGER column, so writing a
+              // Stripe invoice id ("in_1U9T…") fails with "invalid input syntax
+              // for type integer" — every insert here failed silently while the
+              // endpoint returned 200 with transactionsUpserted: 0. Identity
+              // lives in stripe_invoice_id. Same fault as webhooks.ts had;
+              // fixed there and missed on this sibling path.
+              reference_id: null,
               reference_type: "donation",
               donation_id: row.id,
               beneficiary_id: row.beneficiary_id,
@@ -592,13 +670,31 @@ export async function handleAdminReporting(
               stripe_charge_id: invChargeId ?? null,
               processing_fee: invFeeUsd,
             };
-            const { error: txnError } = await supabase
+            // ON CONFLICT (reference_id) cannot work: there is no unique
+            // CONSTRAINT on that column, only partial indexes, which ON CONFLICT
+            // cannot target. Check-then-insert on stripe_invoice_id instead,
+            // which is the real idempotency key.
+            const { data: existingTxn } = await supabase
               .from("transactions")
-              .upsert([txnRow], {
-                onConflict: "reference_id",
-                ignoreDuplicates: false,
-              });
-            if (!txnError) transactionsUpserted += 1;
+              .select("id")
+              .eq("stripe_invoice_id", inv.id)
+              .maybeSingle();
+            const { error: txnError } = existingTxn
+              ? await supabase
+                  .from("transactions")
+                  .update(txnRow)
+                  .eq("id", existingTxn.id)
+              : await supabase.from("transactions").insert([txnRow]);
+            if (txnError) {
+              // Was swallowed by `if (!txnError)`, which is how this went
+              // unnoticed — a failed write looked identical to nothing to do.
+              console.error(
+                `❌ backfill-payment-dates could not write transaction for invoice ${inv.id}:`,
+                txnError.message,
+              );
+            } else {
+              transactionsUpserted += 1;
+            }
           }
 
           // Then update the monthly_donations row from the most-recent paid invoice
@@ -1195,9 +1291,36 @@ export async function handleAdminReporting(
         }
       }
 
-      // One-time payment intents
+      // One-time payment intents.
+      //
+      // A subscription renewal settles through a PaymentIntent as well as its
+      // invoice, so counting every succeeded PI double-counted every renewal:
+      // it inflated stripeTotalCents and pushed the same charge into stripeOnly
+      // as money we supposedly hadn't recorded. Evidence from the August audit:
+      // invoice in_1U9TdC and pi_3U9UZv both resolved to charge
+      // ch_3U9UZvHeCafBpXfQ0nHtC0ah, three such pairs in one month.
+      //
+      // Invoice-backed PaymentIntents are skipped — the invoice loop above has
+      // already accounted for that money. `invoice` is the field on a PI when
+      // Stripe created it for one; charge-id overlap is the belt-and-braces
+      // check for API versions that omit it.
+      const invoiceChargeIds = new Set<string>();
+      for (const inv of stripeInvoices) {
+        const cid = typeof inv.charge === "string" ? inv.charge : inv.charge?.id;
+        if (cid) invoiceChargeIds.add(cid);
+      }
+      let subscriptionPisSkipped = 0;
+
       for (const pi of stripePayments) {
         if (pi.status !== "succeeded") continue;
+        const piChargeId =
+          typeof pi.latest_charge === "string"
+            ? pi.latest_charge
+            : pi.latest_charge?.id ?? pi.charges?.data?.[0]?.id ?? null;
+        if (pi.invoice || (piChargeId && invoiceChargeIds.has(piChargeId))) {
+          subscriptionPisSkipped += 1;
+          continue;
+        }
         const piAmountCents = pi.amount_received ?? pi.amount ?? 0;
         stripeTotalCents += piAmountCents;
         const chargeId =
@@ -1324,6 +1447,10 @@ export async function handleAdminReporting(
               matchedCount,
               mismatchedCount: mismatched.length,
               stripeOnlyCount: stripeOnly.length,
+              // Renewals accounted for by their invoice rather than counted a
+              // second time as a PaymentIntent. Surfaced so a jump here is
+              // visible rather than silently changing the totals.
+              subscriptionPaymentIntentsSkipped: subscriptionPisSkipped,
               localOnlyCount: localOnly.length,
               differenceDollars: (stripeTotalCents - localTotalCents) / 100,
             },
