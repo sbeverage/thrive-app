@@ -1,5 +1,6 @@
 import { getStripeClient } from "../lib/stripe.ts";
 import { sendPushToUser } from "../lib/push.ts";
+import { sendNotificationEmail } from "../lib/email.ts";
 
 // ─── Stripe API-shape compatibility ──────────────────────────────────────
 // The webhook endpoint is pinned to 2025-10-29.clover. Stripe removed
@@ -490,31 +491,103 @@ export async function handleWebhookRoute(
           const invoice = event.data.object;
           const subscriptionId = invoiceSubscriptionId(invoice);
 
-          if (subscriptionId) {
-            const {data: donation} = await supabase
-              .from("monthly_donations")
-              .select("id, user_id")
-              .eq("stripe_subscription_id", subscriptionId)
-              .single();
+          if (!subscriptionId) {
+            console.error(
+              `❌ invoice.payment_failed ${invoice.id}: no subscription id in any known shape.`,
+            );
+            break;
+          }
 
-            if (donation) {
-              await supabase
-                .from("monthly_donations")
-                .update({
-                  status: "past_due",
-                })
-                .eq("id", donation.id);
+          const {data: donation} = await supabase
+            .from("monthly_donations")
+            .select("id, user_id, amount, beneficiary_id")
+            .eq("stripe_subscription_id", subscriptionId)
+            .maybeSingle();
 
-              console.log("❌ Monthly donation payment failed:", donation.id);
+          if (!donation) {
+            // A subscription Stripe is billing that we never mirrored. The
+            // donor gets no warning at all in that state, so make it loud.
+            console.error(
+              `❌ payment failed for UNTRACKED subscription ${subscriptionId} — no monthly_donations row, donor cannot be notified. Link it with POST /admin/reporting/link-subscription.`,
+            );
+            break;
+          }
 
-              // Retention-critical push: a failed charge is the most common
-              // churn vector. Get them back into Manage Cards ASAP.
-              sendPushToUser(supabase, donation.user_id, {
-                title: "Your THRIVE payment didn't go through",
-                body: "Tap to update your card so we can keep your donation going.",
-                data: { path: "/menu/manageCards", type: "payment_failed" },
-              }).catch((e) => console.warn("payment failed push failed:", e));
-            }
+          // ── Dunning ────────────────────────────────────────────────────
+          // Stripe's Smart Retries drive the schedule: it re-attempts a failed
+          // invoice roughly four times over two to three weeks and fires this
+          // event each time, so the "few emails spread out" come from Stripe's
+          // cadence rather than a scheduler of our own. `next_payment_attempt`
+          // is null once Stripe has given up, which is the only reliable
+          // signal that this was the last try.
+          const attempt = Number(invoice.attempt_count || 1);
+          const isFinal = !invoice.next_payment_attempt;
+          const amountDue = (invoice.amount_due || 0) / 100;
+          const nextTry = invoice.next_payment_attempt
+            ? new Date(invoice.next_payment_attempt * 1000).toLocaleDateString("en-US", {
+                month: "long",
+                day: "numeric",
+              })
+            : null;
+
+          // Paused, not cancelled. Cancelling would destroy the subscription
+          // and force a full re-signup to recover; "unpaid" keeps their chosen
+          // cause and history so updating a card is enough to resume. The
+          // discounts gate already treats anything non-active as locked.
+          await supabase
+            .from("monthly_donations")
+            .update({ status: isFinal ? "unpaid" : "past_due" })
+            .eq("id", donation.id);
+
+          console.log(
+            `❌ Monthly donation ${donation.id} payment failed (attempt ${attempt}${isFinal ? ", FINAL — paused" : `, next ${nextTry}`})`,
+          );
+
+          const {data: donor} = await supabase
+            .from("users")
+            .select("email, first_name")
+            .eq("id", donation.user_id)
+            .maybeSingle();
+          const donorName = donor?.first_name || "there";
+
+          // Push on the first failure and on the last, not on every retry —
+          // four identical notifications in a fortnight reads as spam and gets
+          // the app muted, which loses the one channel that recovers them.
+          if (attempt <= 1 || isFinal) {
+            sendPushToUser(supabase, donation.user_id, {
+              title: isFinal
+                ? "Your giving is paused"
+                : "Your THRIVE payment didn't go through",
+              body: isFinal
+                ? "We couldn't process your card after several tries. Update it to start giving again."
+                : "Tap to update your card so we can keep your donation going.",
+              data: { path: "/menu/manageCards", type: "payment_failed" },
+            }).catch((e) => console.warn("payment failed push failed:", e));
+          }
+
+          // Email every attempt — that is the "spread out" sequence, paced by
+          // Stripe's retries.
+          if (donor?.email) {
+            const title = isFinal
+              ? "Your monthly giving is paused"
+              : attempt <= 1
+                ? "We couldn't process your donation"
+                : `Still unable to process your donation (attempt ${attempt})`;
+            const message = isFinal
+              ? `We tried your card a few times over the past couple of weeks and it didn't go through, so your monthly gift of $${amountDue.toFixed(2)} is paused for now.\n\nNothing is lost — your cause is still saved. Open the THRIVE app and update your payment method to pick up right where you left off.`
+              : `Your monthly gift of $${amountDue.toFixed(2)} couldn't be processed${attempt > 1 ? ` (this was attempt ${attempt})` : ""}.\n\n${nextTry ? `We'll try again on ${nextTry}.` : ""} To avoid a gap, open the THRIVE app and update your payment method — it takes a moment and your cause stays exactly as you set it.`;
+
+            sendNotificationEmail({
+              to: donor.email,
+              name: donorName,
+              title,
+              message,
+              level: isFinal ? "error" : "warning",
+            }).catch((e) => console.warn("payment failed email failed:", e?.message || e));
+          } else {
+            console.warn(
+              `⚠️ No email on user ${donation.user_id} — payment-failure notice not sent.`,
+            );
           }
           break;
         }

@@ -792,6 +792,95 @@ export async function handleAdminReporting(
     }
   }
 
+  // POST /admin/reporting/link-subscription?id=sub_..&user_id=..&beneficiary_id=..
+  //
+  // Creates the monthly_donations row for a Stripe subscription we never
+  // mirrored, so future charges get recorded.
+  //
+  // This matters more than it looks: the invoice.payment_succeeded webhook
+  // finds the donation by stripe_subscription_id, and skips the whole block
+  // when there is no match. A subscription Stripe is happily billing but that
+  // we never wrote down produces no transaction, no charity credit and no
+  // donor history — silently, month after month. That is what happened to
+  // gonzalezramoniii@gmail.com's sub_1Tc5By.
+  if (method === "POST" && route.startsWith("/admin/reporting/link-subscription")) {
+    try {
+      const url = new URL(req.url);
+      const subId = (url.searchParams.get("id") || "").trim();
+      const userId = parseInt(url.searchParams.get("user_id") || "", 10);
+      const beneficiaryId = parseInt(url.searchParams.get("beneficiary_id") || "", 10);
+      if (!/^sub_[A-Za-z0-9]+$/.test(subId) || !Number.isFinite(userId) || !Number.isFinite(beneficiaryId)) {
+        return new Response(
+          JSON.stringify({ error: "id (sub_...), user_id and beneficiary_id are required" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+
+      const { data: existing } = await supabase
+        .from("monthly_donations")
+        .select("id")
+        .eq("stripe_subscription_id", subId)
+        .maybeSingle();
+      if (existing) {
+        return new Response(
+          JSON.stringify({ success: true, data: { already_linked: true, id: existing.id } }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+        );
+      }
+
+      const stripe = getStripeClient();
+      const r = await fetch(`${stripe.baseUrl}/subscriptions/${encodeURIComponent(subId)}`, {
+        headers: { Authorization: `Bearer ${stripe.secretKey}` },
+      });
+      if (!r.ok) {
+        return new Response(
+          JSON.stringify({ error: `Subscription not found on Stripe (HTTP ${r.status})` }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 404 },
+        );
+      }
+      const sub = await r.json();
+
+      // Mirror Stripe rather than assume: status, amount and next billing date
+      // all come from the subscription itself.
+      const amount = (sub.items?.data?.[0]?.price?.unit_amount ?? 0) / 100;
+      const PAID = new Set(["active", "trialing"]);
+      const row: Record<string, any> = {
+        user_id: userId,
+        beneficiary_id: beneficiaryId,
+        amount,
+        currency: (sub.currency || "usd").toUpperCase(),
+        status: PAID.has(sub.status) ? "active" : sub.status,
+        stripe_subscription_id: subId,
+        stripe_customer_id:
+          typeof sub.customer === "string" ? sub.customer : sub.customer?.id ?? null,
+        next_payment_date: sub.current_period_end
+          ? new Date(sub.current_period_end * 1000).toISOString().split("T")[0]
+          : null,
+        created_at: new Date(sub.created * 1000).toISOString(),
+      };
+
+      const { data: inserted, error: insErr } = await supabase
+        .from("monthly_donations")
+        .insert([row])
+        .select()
+        .single();
+      if (insErr) {
+        return new Response(JSON.stringify({ error: insErr.message }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
+        });
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, data: { created: inserted, stripe_status: sub.status } }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e?.message || "link failed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
+      });
+    }
+  }
+
   // GET /admin/reporting/whois?email=... — read-only lookup.
   //
   // Answers "does this person exist in our system, and what is attached to
