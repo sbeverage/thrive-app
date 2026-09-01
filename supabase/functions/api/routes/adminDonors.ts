@@ -1079,6 +1079,34 @@ export async function handleAdminDonors(
       out.email = user.email;
       out.stripe_customer_id = user.stripe_customer_id || null;
 
+      // Every Stripe customer under this email, not just the one linked on the
+      // user row. A donor can have customers that were never written back to
+      // users.stripe_customer_id — that is exactly how a second live
+      // subscription for ramon@workatthrive.com stayed invisible for months.
+      const customerIds: string[] = [];
+      if (user.stripe_customer_id) customerIds.push(String(user.stripe_customer_id));
+      if (user.email) {
+        try {
+          const stripeC = getStripeClient();
+          const sr = await fetch(
+            `${stripeC.baseUrl}/customers/search?query=${encodeURIComponent(`email:'${String(user.email).toLowerCase()}'`)}&limit=20`,
+            { headers: { Authorization: `Bearer ${stripeC.secretKey}` } },
+          );
+          if (sr.ok) {
+            const body = await sr.json();
+            for (const c of body.data || []) {
+              if (c?.id && !customerIds.includes(c.id)) customerIds.push(c.id);
+            }
+          }
+        } catch (e: any) {
+          console.warn("customer search by email failed:", e?.message);
+        }
+      }
+      out.stripe_customers = customerIds;
+      out.unlinked_customers = customerIds.filter(
+        (c) => c !== String(user.stripe_customer_id || ""),
+      );
+
       const { data: subs } = await supabase
         .from("monthly_donations")
         .select("id, status, amount, stripe_subscription_id, created_at, updated_at")
@@ -1127,41 +1155,75 @@ export async function handleAdminDonors(
       // Every subscription Stripe has for this customer, including any our
       // rows don't reference — the amount-change path used to delete and
       // recreate subscriptions, so orphans are possible.
-      if (user.stripe_customer_id) {
+      out.all_stripe_subscriptions = [];
+      for (const cid of customerIds) {
         const all = await get(
-          `/subscriptions?customer=${encodeURIComponent(user.stripe_customer_id)}&status=all&limit=20`,
+          `/subscriptions?customer=${encodeURIComponent(cid)}&status=all&limit=20`,
         );
-        out.all_stripe_subscriptions = (all.body?.data || []).map((x: any) => ({
-          id: x.id,
-          status: x.status,
-          created: new Date(x.created * 1000).toISOString(),
-          amount: x.items?.data?.[0]?.price?.unit_amount ?? null,
-          cancel_at_period_end: x.cancel_at_period_end,
-          known_locally: (out.local_monthly_donations || []).some(
-            (r: any) => r.stripe_subscription_id === x.id,
-          ),
-        }));
+        for (const x of all.body?.data || []) {
+          out.all_stripe_subscriptions.push({
+            id: x.id,
+            customer: cid,
+            status: x.status,
+            created: new Date(x.created * 1000).toISOString(),
+            amount: x.items?.data?.[0]?.price?.unit_amount ?? null,
+            interval: x.items?.data?.[0]?.price?.recurring?.interval ?? null,
+            current_period_end: x.current_period_end
+              ? new Date(x.current_period_end * 1000).toISOString()
+              : null,
+            cancel_at_period_end: x.cancel_at_period_end,
+            known_locally: (out.local_monthly_donations || []).some(
+              (r: any) => r.stripe_subscription_id === x.id,
+            ),
+          });
+        }
       }
+      out.all_stripe_subscriptions.sort((a: any, b: any) =>
+        a.created < b.created ? 1 : -1,
+      );
+      // What the donor is actually charged each month, across every customer.
+      out.live_monthly_total_usd =
+        Math.round(
+          out.all_stripe_subscriptions
+            .filter((s: any) =>
+              ["active", "trialing", "past_due", "unpaid"].includes(String(s.status)),
+            )
+            .reduce((a: number, s: any) => a + (s.amount || 0) / 100, 0) * 100,
+        ) / 100;
+      out.live_subscription_count = out.all_stripe_subscriptions.filter((s: any) =>
+        ["active", "trialing", "past_due", "unpaid"].includes(String(s.status)),
+      ).length;
 
       // Open invoices — what would actually need paying.
-      if (user.stripe_customer_id) {
-        const inv = await get(
-          `/invoices?customer=${encodeURIComponent(user.stripe_customer_id)}&limit=10`,
-        );
-        out.invoices = (inv.body?.data || []).map((x: any) => ({
-          id: x.id,
-          status: x.status,
-          amount_due: x.amount_due,
-          amount_paid: x.amount_paid,
-          created: new Date(x.created * 1000).toISOString(),
-          subscription: x.subscription ?? null,
-        }));
+      out.invoices = [];
+      for (const cid of customerIds) {
+        const inv = await get(`/invoices?customer=${encodeURIComponent(cid)}&limit=24`);
+        for (const x of inv.body?.data || []) {
+          out.invoices.push({
+            id: x.id,
+            customer: cid,
+            status: x.status,
+            amount_due: x.amount_due,
+            amount_paid: x.amount_paid,
+            created: new Date(x.created * 1000).toISOString(),
+            subscription:
+              x.subscription ?? x.parent?.subscription_details?.subscription ?? null,
+            hosted_invoice_url: x.hosted_invoice_url ?? null,
+          });
+        }
       }
+      out.invoices.sort((a: any, b: any) => (a.created < b.created ? 1 : -1));
+      out.total_paid_usd =
+        Math.round(
+          out.invoices
+            .filter((i: any) => i.status === "paid")
+            .reduce((a: number, i: any) => a + (i.amount_paid || 0) / 100, 0) * 100,
+        ) / 100;
 
       // Recent activity on the customer — shows whether a fresh attempt
       // (e.g. Apple Pay) actually reached Stripe.
-      if (user.stripe_customer_id) {
-        const cid = encodeURIComponent(user.stripe_customer_id);
+      if (customerIds.length) {
+        const cid = encodeURIComponent(customerIds[0]);
         const pi = await get(`/payment_intents?customer=${cid}&limit=5`);
         out.recent_payment_intents = (pi.body?.data || []).map((x: any) => ({
           id: x.id,
