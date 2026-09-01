@@ -1247,6 +1247,98 @@ export async function handleDonationRoute(
         );
       }
 
+      // ── Self-heal a stale local status ────────────────────────────────
+      // This is the endpoint the app's discounts gate reads, so a row stuck at
+      // "pending" while Stripe has actually collected shows the donor "your
+      // giving is paused" indefinitely.
+      //
+      // POST /donations/monthly/sync-status already repairs exactly this, but
+      // it is only ever called from the signup payment screen
+      // (signupFlow/stripeIntegration.js) — so a donor who paid, or who later
+      // changed their amount, had no way back. PUT
+      // /donations/monthly/amount doesn't touch status either.
+      //
+      // Doing it here fixes every affected donor without an app release. Only
+      // reached when a row is in a repairable state and carries a Stripe
+      // subscription id, so an already-active donor costs no extra call, and
+      // any failure leaves the rows exactly as they were.
+      try {
+        const REPAIRABLE = new Set([
+          "pending",
+          "incomplete",
+          "past_due",
+          "unpaid",
+        ]);
+        const PAID = new Set(["active", "trialing"]);
+        const list = subscriptions || [];
+        const anyPaid = list.some((r: any) =>
+          PAID.has(String(r.status || "").toLowerCase()),
+        );
+
+        if (!anyPaid) {
+          const stale = list.find(
+            (r: any) =>
+              REPAIRABLE.has(String(r.status || "").toLowerCase()) &&
+              r.stripe_subscription_id,
+          );
+
+          if (stale) {
+            const details = await getStripeSubscriptionInvoicePaymentDetails(
+              stale.stripe_subscription_id,
+            );
+            const subSt = String(details.subscriptionStatus || "").toLowerCase();
+            const piSt = String(details.paymentIntentStatus || "").toLowerCase();
+            const paidOnStripe =
+              PAID.has(subSt) || piSt === "succeeded" || piSt === "processing";
+
+            if (paidOnStripe) {
+              const nextStatus = PAID.has(subSt) ? subSt : "active";
+              const today = new Date().toISOString().split("T")[0];
+              const nextMonth = new Date();
+              nextMonth.setMonth(nextMonth.getMonth() + 1);
+              const payload: Record<string, any> = {
+                status: nextStatus,
+                last_payment_date: today,
+                next_payment_date: nextMonth.toISOString().split("T")[0],
+              };
+              const amt = details.paymentIntentAmountUsd
+                ? parseFloat(details.paymentIntentAmountUsd)
+                : null;
+              if (amt != null && !Number.isNaN(amt)) {
+                payload.last_payment_amount = amt;
+              }
+              const {error: healErr} = await supabase
+                .from("monthly_donations")
+                .update(payload)
+                .eq("id", stale.id);
+              if (healErr) {
+                console.warn(
+                  "⚠️ Could not heal stale subscription status:",
+                  healErr.message,
+                );
+              } else {
+                console.log(
+                  `✅ Healed monthly_donations ${stale.id} for user ${userId}: ${stale.status} -> ${nextStatus} (Stripe sub ${subSt}, PI ${piSt})`,
+                );
+                stale.status = nextStatus;
+                stale.last_payment_date = payload.last_payment_date;
+                stale.next_payment_date = payload.next_payment_date;
+                if (payload.last_payment_amount != null) {
+                  stale.last_payment_amount = payload.last_payment_amount;
+                }
+              }
+            } else {
+              console.log(
+                `ℹ️ Subscription ${stale.id} still unpaid on Stripe (sub ${subSt || "?"}, PI ${piSt || "?"}) — leaving as ${stale.status}`,
+              );
+            }
+          }
+        }
+      } catch (e: any) {
+        // Never fail the read because a repair attempt failed.
+        console.warn("⚠️ Subscription self-heal skipped:", e?.message || e);
+      }
+
       return new Response(
         JSON.stringify({
           success: true,
