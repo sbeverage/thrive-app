@@ -227,5 +227,102 @@ export async function handleAdminDashboard(
     }
   }
 
+  // GET /admin/dashboard/charts/donations?period=30d
+  //
+  // Weekly donation series for the dashboard chart. The chart previously had no
+  // data source at all — this route did not exist, so average and trend read
+  // "--" — and the "chart" itself was a static CSS bar pinned at top: 50% with
+  // hardcoded $0-$1000 axis labels, drawing the same flat line whatever the
+  // numbers were.
+  //
+  // Values use the same definition as the Total Donation card: the donation
+  // itself, not the gross charge.
+  if (method === "GET" && route.startsWith("/admin/dashboard/charts/donations")) {
+    try {
+      const url = new URL(req.url);
+      const days = periodDays(url.searchParams.get("period")) ?? 30;
+      const bucketDays = 7;
+      const buckets = Math.max(1, Math.ceil(days / bucketDays));
+      const now = Date.now();
+      const windowStart = now - days * 86400000;
+      // Same length again, immediately before, for the trend comparison.
+      const prevStart = windowStart - days * 86400000;
+
+      const { data: txns } = await supabase
+        .from("transactions")
+        .select("amount, processing_fee, created_at")
+        .eq("type", "monthly_donation")
+        .eq("status", "completed")
+        .gte("created_at", new Date(prevStart).toISOString());
+
+      const { data: gifts } = await supabase
+        .from("one_time_gifts")
+        .select("amount, created_at, status")
+        .eq("status", "succeeded")
+        .gte("created_at", new Date(prevStart).toISOString());
+
+      const donationOf = (t: any) => {
+        const gross = Number(t.amount || 0);
+        const fee = t.processing_fee == null ? 0 : Number(t.processing_fee);
+        return Math.max(0, gross - SERVICE_FEE_USD - fee);
+      };
+
+      const events: { at: number; value: number }[] = [
+        ...(txns || []).map((t: any) => ({
+          at: new Date(t.created_at).getTime(),
+          value: donationOf(t),
+        })),
+        ...(gifts || []).map((g: any) => ({
+          at: new Date(g.created_at).getTime(),
+          value: Number(g.amount || 0),
+        })),
+      ].filter((e) => Number.isFinite(e.at));
+
+      const series: { label: string; value: number; start: string }[] = [];
+      for (let i = 0; i < buckets; i++) {
+        // Oldest bucket first, so the chart reads left to right.
+        const from = windowStart + i * bucketDays * 86400000;
+        const to = i === buckets - 1 ? now : from + bucketDays * 86400000;
+        const value = events
+          .filter((e) => e.at >= from && e.at < to)
+          .reduce((a, e) => a + e.value, 0);
+        series.push({
+          label: buckets <= 6 ? `Week ${i + 1}` : `W${i + 1}`,
+          value: Math.round(value * 100) / 100,
+          start: new Date(from).toISOString().split("T")[0],
+        });
+      }
+
+      const total = series.reduce((a, b) => a + b.value, 0);
+      const previousTotal = events
+        .filter((e) => e.at >= prevStart && e.at < windowStart)
+        .reduce((a, e) => a + e.value, 0);
+      // No prior activity means there is no percentage to state — null rather
+      // than a fabricated 0% or an infinite jump.
+      const trend =
+        previousTotal > 0
+          ? Math.round(((total - previousTotal) / previousTotal) * 1000) / 10
+          : null;
+
+      return json({
+        success: true,
+        data: {
+          series,
+          total: Math.round(total * 100) / 100,
+          average: Math.round((total / buckets) * 100) / 100,
+          weeklyAverage: Math.round((total / buckets) * 100) / 100,
+          previousTotal: Math.round(previousTotal * 100) / 100,
+          trend,
+          growthPercentage: trend,
+          period: `${days}-days`,
+          bucketCount: buckets,
+        },
+      });
+    } catch (e: any) {
+      console.error("❌ /admin/dashboard/charts/donations failed:", e?.message || e);
+      return json({ error: e?.message || "Failed to load chart data" }, 500);
+    }
+  }
+
   return json({ error: "Admin dashboard route not found" }, 404);
 }
