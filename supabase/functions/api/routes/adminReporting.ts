@@ -7,6 +7,345 @@ export async function handleAdminReporting(
   route: string,
   method: string,
 ) {
+  // POST /admin/reporting/backfill-paid-invoices
+  //
+  // Writes the transaction rows the webhook should have written. The webhook
+  // read `invoice.subscription`, which Stripe removed in 2025-04-30 while the
+  // endpoint is pinned to 2025-10-29.clover — so every paid invoice was
+  // acknowledged with a 200 and recorded nowhere. This replays them from
+  // Stripe, which is the source of truth for what was actually collected.
+  //
+  // Idempotent: upserts on reference_id (the Stripe invoice id), exactly as
+  // the webhook does, so running it twice cannot double-count. Pass
+  // ?dry_run=true to see what it would write without writing.
+  if (method === "POST" && route.startsWith("/admin/reporting/backfill-paid-invoices")) {
+    try {
+      const url = new URL(req.url);
+      const dryRun = url.searchParams.get("dry_run") === "true";
+      const stripe = getStripeClient();
+
+      const { data: donors } = await supabase
+        .from("users")
+        .select("id, email, stripe_customer_id")
+        .eq("role", "donor")
+        .not("stripe_customer_id", "is", null);
+
+      const { data: existing } = await supabase
+        .from("transactions")
+        .select("reference_id, stripe_invoice_id")
+        .eq("type", "monthly_donation");
+      // Key on stripe_invoice_id only. reference_id is the donation row id,
+      // which repeats across a donor's invoices — using it here would make the
+      // second invoice for the same subscription look already-recorded.
+      const already = new Set<string>();
+      for (const t of existing || []) {
+        if (t.stripe_invoice_id) already.add(String(t.stripe_invoice_id));
+      }
+
+      const subIdOf = (inv: any): string | null => {
+        const c = [
+          inv?.subscription,
+          inv?.parent?.subscription_details?.subscription,
+          inv?.lines?.data?.[0]?.parent?.subscription_item_details?.subscription,
+        ];
+        for (const v of c) {
+          if (typeof v === "string" && v) return v;
+          if (v && typeof v === "object" && typeof v.id === "string") return v.id;
+        }
+        return null;
+      };
+
+      const written: any[] = [];
+      const skipped: any[] = [];
+
+      for (const d of donors || []) {
+        const res = await fetch(
+          `${stripe.baseUrl}/invoices?customer=${encodeURIComponent(d.stripe_customer_id)}&status=paid&limit=100`,
+          { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+        );
+        if (!res.ok) {
+          skipped.push({ donor_id: d.id, email: d.email, reason: `stripe HTTP ${res.status}` });
+          continue;
+        }
+        const body = await res.json();
+        for (const inv of body.data || []) {
+          if (already.has(String(inv.id))) continue;
+
+          const amount = (inv.amount_paid || 0) / 100;
+          const stripeSubId = subIdOf(inv);
+
+          // Attribute to the donor's subscription row where we can, so the
+          // charity credit is right. Match on the invoice's subscription id
+          // first, then fall back to the donor's own row.
+          let donation: any = null;
+          // Exact = the invoice's own subscription id still matches a row.
+          // Fallback = attributed to the donor's most recent subscription,
+          // which is only a guess if they ever changed cause. Reported so the
+          // distinction is visible rather than buried.
+          let matchMethod = "none";
+          if (stripeSubId) {
+            const { data } = await supabase
+              .from("monthly_donations")
+              .select("id, user_id, beneficiary_id, held_for_donor_choice, user_covered_fees")
+              .eq("stripe_subscription_id", stripeSubId)
+              .maybeSingle();
+            donation = data || null;
+            if (donation) matchMethod = "exact_subscription_id";
+          }
+          if (!donation) {
+            const { data } = await supabase
+              .from("monthly_donations")
+              .select("id, user_id, beneficiary_id, held_for_donor_choice, user_covered_fees")
+              .eq("user_id", d.id)
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            donation = data || null;
+            if (donation) matchMethod = "fallback_latest_subscription";
+          }
+
+          if (!donation?.beneficiary_id) {
+            // Recording money with no cause would corrupt payouts. Report it
+            // instead so it can be attributed by hand.
+            skipped.push({
+              donor_id: d.id,
+              email: d.email,
+              invoice_id: inv.id,
+              amount_usd: amount,
+              paid_at: new Date(inv.created * 1000).toISOString(),
+              reason: donation ? "subscription row has no beneficiary_id" : "no subscription row to attribute to",
+            });
+            continue;
+          }
+
+          const row = {
+            user_id: donation.user_id ?? d.id,
+            type: "monthly_donation",
+            amount,
+            description: `Monthly donation to beneficiary ${donation.beneficiary_id} (backfilled from Stripe invoice)`,
+            // Integer column — the Stripe invoice id goes in stripe_invoice_id.
+            reference_id: donation.id,
+            reference_type: "donation",
+            donation_id: donation.id,
+            beneficiary_id: donation.beneficiary_id,
+            status: "completed",
+            held_for_donor_choice: !!donation.held_for_donor_choice,
+            user_covered_fees: !!donation.user_covered_fees,
+            stripe_invoice_id: inv.id,
+            created_at: new Date(inv.created * 1000).toISOString(),
+          };
+
+          if (!dryRun) {
+            // Plain insert: transactions.reference_id has no unique
+            // constraint, so an ON CONFLICT upsert fails outright. The
+            // `already` set above is what makes this idempotent.
+            const { error: insErr } = await supabase
+              .from("transactions")
+              .insert([row]);
+            if (insErr) {
+              skipped.push({
+                donor_id: d.id, email: d.email, invoice_id: inv.id,
+                amount_usd: amount, reason: `insert failed: ${insErr.message}`,
+              });
+              continue;
+            }
+          }
+          written.push({
+            donor_id: d.id, email: d.email, invoice_id: inv.id,
+            amount_usd: amount, beneficiary_id: donation.beneficiary_id,
+            paid_at: row.created_at, match: matchMethod,
+          });
+        }
+      }
+
+      const total = written.reduce((a, w) => a + w.amount_usd, 0);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            dry_run: dryRun,
+            written_count: written.length,
+            written_total_usd: Math.round(total * 100) / 100,
+            written,
+            skipped_count: skipped.length,
+            skipped,
+          },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (e: any) {
+      return new Response(
+        JSON.stringify({ error: e?.message || "backfill failed" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 },
+      );
+    }
+  }
+
+  // GET /admin/reporting/webhook-health — read-only.
+  //
+  // Whether Stripe is actually configured to call us, and whether recent
+  // deliveries succeeded. Added after reconciliation showed 16 paid invoices
+  // and only 1 recorded transaction: the webhook writes those records, so if
+  // it is not being delivered nothing downstream can be right.
+  if (method === "GET" && route === "/admin/reporting/webhook-health") {
+    try {
+      const stripe = getStripeClient();
+      const get = async (path: string) => {
+        const r = await fetch(`${stripe.baseUrl}${path}`, {
+          headers: { Authorization: `Bearer ${stripe.secretKey}` },
+        });
+        return { ok: r.ok, status: r.status, body: await r.json() };
+      };
+
+      const eps = await get("/webhook_endpoints?limit=20");
+      const endpoints = (eps.body?.data || []).map((e: any) => ({
+        id: e.id,
+        url: e.url,
+        status: e.status,
+        enabled_events: e.enabled_events,
+        api_version: e.api_version,
+        created: new Date(e.created * 1000).toISOString(),
+      }));
+
+      // Recent invoice.payment_succeeded events and whether Stripe considers
+      // them delivered (pending_webhooks > 0 means still undelivered).
+      const evs = await get(
+        "/events?type=invoice.payment_succeeded&limit=10",
+      );
+      const events = (evs.body?.data || []).map((e: any) => ({
+        id: e.id,
+        created: new Date(e.created * 1000).toISOString(),
+        pending_webhooks: e.pending_webhooks,
+        invoice: e.data?.object?.id ?? null,
+        amount_paid: e.data?.object?.amount_paid ?? null,
+      }));
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            endpoints_configured: endpoints.length,
+            endpoints,
+            recent_invoice_payment_succeeded: events,
+          },
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        },
+      );
+    } catch (e: any) {
+      return new Response(
+        JSON.stringify({ error: e?.message || "webhook health failed" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // GET /admin/reporting/paid-invoice-reconciliation
+  //
+  // Every invoice Stripe has actually collected, checked against our own
+  // records. A paid invoice with no matching transaction means real money left
+  // a donor's card and nothing on our side knows who it was for — so it never
+  // reached a charity's payout figure.
+  //
+  // Matching is exact: the webhook stores the Stripe invoice id on the
+  // transaction (reference_id and stripe_invoice_id), so this is not
+  // amount-and-date guesswork.
+  //
+  // Strictly read-only. It reports; it does not write or refund anything.
+  if (
+    method === "GET" &&
+    route === "/admin/reporting/paid-invoice-reconciliation"
+  ) {
+    try {
+      const stripe = getStripeClient();
+
+      const { data: donors } = await supabase
+        .from("users")
+        .select("id, email, stripe_customer_id")
+        .eq("role", "donor")
+        .not("stripe_customer_id", "is", null);
+
+      const { data: txns } = await supabase
+        .from("transactions")
+        .select("id, user_id, amount, stripe_invoice_id, reference_id, type")
+        .eq("type", "monthly_donation");
+
+      // Match on the Stripe invoice id only — reference_id is a local integer.
+      const recorded = new Set<string>();
+      for (const t of txns || []) {
+        if (t.stripe_invoice_id) recorded.add(String(t.stripe_invoice_id));
+      }
+
+      const unmatched: any[] = [];
+      let paidInvoiceCount = 0;
+      let paidCents = 0;
+      let unmatchedCents = 0;
+      const errors: any[] = [];
+
+      for (const d of donors || []) {
+        const res = await fetch(
+          `${stripe.baseUrl}/invoices?customer=${encodeURIComponent(d.stripe_customer_id)}&status=paid&limit=100`,
+          { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+        );
+        if (!res.ok) {
+          errors.push({ donor_id: d.id, email: d.email, error: `HTTP ${res.status}` });
+          continue;
+        }
+        const body = await res.json();
+        for (const inv of body.data || []) {
+          paidInvoiceCount += 1;
+          paidCents += inv.amount_paid || 0;
+          if (!recorded.has(String(inv.id))) {
+            unmatchedCents += inv.amount_paid || 0;
+            unmatched.push({
+              donor_id: d.id,
+              email: d.email,
+              invoice_id: inv.id,
+              amount_usd: (inv.amount_paid || 0) / 100,
+              paid_at: new Date(inv.created * 1000).toISOString(),
+              subscription: inv.subscription ?? null,
+            });
+          }
+        }
+      }
+
+      unmatched.sort((a, b) => (a.paid_at < b.paid_at ? -1 : 1));
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            donors_checked: (donors || []).length,
+            monthly_donation_transactions_on_file: (txns || []).length,
+            paid_invoices_on_stripe: paidInvoiceCount,
+            total_collected_usd: paidCents / 100,
+            unrecorded_count: unmatched.length,
+            unrecorded_total_usd: unmatchedCents / 100,
+            unrecorded: unmatched,
+            errors,
+          },
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        },
+      );
+    } catch (e: any) {
+      return new Response(
+        JSON.stringify({ error: e?.message || "reconciliation failed" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        },
+      );
+    }
+  }
+
   // POST /admin/reporting/backfill-payment-dates
   // For each monthly_donations row missing last_payment_date, look up the
   // Stripe subscription's latest paid invoice and stamp last_payment_date /

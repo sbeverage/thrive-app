@@ -1,6 +1,42 @@
 import { getStripeClient } from "../lib/stripe.ts";
 import { sendPushToUser } from "../lib/push.ts";
 
+// ─── Stripe API-shape compatibility ──────────────────────────────────────
+// The webhook endpoint is pinned to 2025-10-29.clover. Stripe removed
+// `invoice.subscription` in 2025-04-30 (moved under
+// invoice.parent.subscription_details) and removed `invoice.charge` in the
+// same release. The handlers below read the old field names, so every
+// invoice.payment_succeeded event arrived with an undefined subscription id,
+// skipped its whole block and returned 200 — Stripe recorded a successful
+// delivery while nothing was written. 16 paid invoices totalling $299.43 went
+// unrecorded before this was found.
+//
+// Read both shapes so this keeps working across versions in either direction.
+
+function invoiceSubscriptionId(invoice: any): string | null {
+  const candidates = [
+    invoice?.subscription,
+    invoice?.parent?.subscription_details?.subscription,
+    invoice?.lines?.data?.[0]?.parent?.subscription_item_details?.subscription,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c) return c;
+    if (c && typeof c === "object" && typeof c.id === "string") return c.id;
+  }
+  return null;
+}
+
+function invoiceChargeId(invoice: any): string | null {
+  if (typeof invoice?.charge === "string") return invoice.charge;
+  if (invoice?.charge?.id) return invoice.charge.id;
+  // 2025-04-30+: the charge hangs off the invoice's payments collection.
+  const payment = invoice?.payments?.data?.[0]?.payment;
+  if (typeof payment?.charge === "string") return payment.charge;
+  if (payment?.charge?.id) return payment.charge.id;
+  return null;
+}
+
+
 /** Injected from index.ts to avoid circular imports with referral helpers. */
 export type UpdateReferralStatusFn = (
   supabase: any,
@@ -286,7 +322,12 @@ export async function handleWebhookRoute(
 
         case "invoice.payment_succeeded": {
           const invoice = event.data.object;
-          const subscriptionId = invoice.subscription;
+          const subscriptionId = invoiceSubscriptionId(invoice);
+          if (!subscriptionId) {
+            console.error(
+              `❌ invoice.payment_succeeded ${invoice.id}: no subscription id in any known shape — payment NOT recorded. Check the endpoint's Stripe API version.`,
+            );
+          }
 
           if (subscriptionId) {
             // Find monthly donation by subscription ID
@@ -303,10 +344,7 @@ export async function handleWebhookRoute(
 
               // Best-effort: capture the real Stripe processing fee for this
               // invoice so admin reporting can show what Stripe took.
-              const chargeId =
-                typeof invoice.charge === "string"
-                  ? invoice.charge
-                  : invoice.charge?.id;
+              const chargeId = invoiceChargeId(invoice);
               const processingFee = chargeId
                 ? await fetchStripeFeeUsd(chargeId)
                 : null;
@@ -333,14 +371,32 @@ export async function handleWebhookRoute(
               // processing_fee/user_covered_fees are stored per-invoice so the
               // payouts report can sum the exact Stripe cut on the specific
               // invoices that landed in the payout window.
-              await supabase.from("transactions").upsert(
-                [
-                  {
+              // `upsert(..., {onConflict: "reference_id"})` was used here for
+              // idempotency, but transactions.reference_id has no unique
+              // constraint — so Postgres rejected every one of these with
+              // "no unique or exclusion constraint matching the ON CONFLICT
+              // specification". Combined with the API-shape bug above, that is
+              // why 16 collected invoices totalling $299.43 were never
+              // recorded. Check-then-insert keeps idempotency without
+              // depending on a constraint that isn't there.
+              const {data: existingTxn} = await supabase
+                .from("transactions")
+                .select("id")
+                .eq("stripe_invoice_id", invoice.id)
+                .maybeSingle();
+
+              const txnRow =
+                {
                     user_id: donation.user_id,
                     type: "monthly_donation",
                     amount: amount,
                     description: `Monthly donation to beneficiary ${donation.beneficiary_id}`,
-                    reference_id: invoice.id,
+                    // reference_id is an INTEGER column — writing the Stripe
+                    // invoice id (a string like "in_1Tbm…") into it failed with
+                    // "invalid input syntax for type integer" on every event.
+                    // The invoice id belongs in stripe_invoice_id, which is
+                    // also what dedupe matches on.
+                    reference_id: donation.id,
                     reference_type: "donation",
                     donation_id: donation.id,
                     beneficiary_id: donation.beneficiary_id,
@@ -350,10 +406,25 @@ export async function handleWebhookRoute(
                     user_covered_fees: !!donation.user_covered_fees,
                     stripe_invoice_id: invoice.id,
                     stripe_charge_id: chargeId ?? null,
-                  },
-                ],
-                { onConflict: "reference_id", ignoreDuplicates: false },
-              );
+                  };
+
+              const {error: txnErr} = existingTxn
+                ? await supabase
+                    .from("transactions")
+                    .update(txnRow)
+                    .eq("id", existingTxn.id)
+                : await supabase.from("transactions").insert([txnRow]);
+              if (txnErr) {
+                // Loud: a silent failure here loses the record of real money.
+                console.error(
+                  `❌ Could not record monthly_donation for invoice ${invoice.id}:`,
+                  txnErr.message,
+                );
+              } else {
+                console.log(
+                  `✅ Recorded monthly_donation ${amount} for invoice ${invoice.id}`,
+                );
+              }
 
               // Safety net: sync user.total_monthly_donation so the admin donors
               // list reflects this donor's active monthly amount even if the
@@ -413,7 +484,7 @@ export async function handleWebhookRoute(
 
         case "invoice.payment_failed": {
           const invoice = event.data.object;
-          const subscriptionId = invoice.subscription;
+          const subscriptionId = invoiceSubscriptionId(invoice);
 
           if (subscriptionId) {
             const {data: donation} = await supabase
