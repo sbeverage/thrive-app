@@ -300,6 +300,253 @@ export async function handleAdminReporting(
     }
   }
 
+  // POST /admin/reporting/attribute-invoices?email=..&beneficiary_id=..[&dry_run=true]
+  //
+  // Records a person's paid Stripe invoices as monthly_donation transactions
+  // credited to one charity. Built for a real case: gonzalezramoniii@gmail.com
+  // had 8 paid invoices ($149.04) on two Stripe subscriptions our database knew
+  // nothing about — no monthly_donations row, no transactions — because the
+  // subscriptions were only ever created in Stripe and the user's role is
+  // vendorAdmin, so the donor-scoped reconciliation never looked at them.
+  //
+  // Resolves the user by email across ALL roles, which is the gap that hid this.
+  // Idempotent on stripe_invoice_id. Pass dry_run=true to preview.
+  if (method === "POST" && route.startsWith("/admin/reporting/attribute-invoices")) {
+    try {
+      const url = new URL(req.url);
+      const email = (url.searchParams.get("email") || "").trim().toLowerCase();
+      const beneficiaryId = parseInt(url.searchParams.get("beneficiary_id") || "", 10);
+      const dryRun = url.searchParams.get("dry_run") === "true";
+      if (!email || !Number.isFinite(beneficiaryId)) {
+        return new Response(
+          JSON.stringify({ error: "email and beneficiary_id are required" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+
+      // Any role — not just donor.
+      const { data: users } = await supabase
+        .from("users")
+        .select("id, email, role")
+        .ilike("email", email);
+      const user = (users || [])[0];
+      if (!user) {
+        return new Response(
+          JSON.stringify({ error: `No user found with email ${email}` }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 404 },
+        );
+      }
+
+      const { data: charity } = await supabase
+        .from("charities")
+        .select("id, name")
+        .eq("id", beneficiaryId)
+        .maybeSingle();
+      if (!charity) {
+        return new Response(
+          JSON.stringify({ error: `No charity with id ${beneficiaryId}` }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 404 },
+        );
+      }
+
+      const stripe = getStripeClient();
+      const sFetch = async (path: string) => {
+        const r = await fetch(`${stripe.baseUrl}${path}`, {
+          headers: { Authorization: `Bearer ${stripe.secretKey}` },
+        });
+        return r.ok ? await r.json() : null;
+      };
+
+      // Every Stripe customer under this email — he has two.
+      const custSearch = await sFetch(
+        `/customers/search?query=${encodeURIComponent(`email:'${email}'`)}&limit=20`,
+      );
+      const customers = (custSearch?.data || []).map((c: any) => c.id);
+      if (!customers.length) {
+        return new Response(
+          JSON.stringify({ error: `No Stripe customer for ${email}` }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 404 },
+        );
+      }
+
+      const { data: existingTxns } = await supabase
+        .from("transactions")
+        .select("stripe_invoice_id")
+        .eq("type", "monthly_donation")
+        .not("stripe_invoice_id", "is", null);
+      const already = new Set((existingTxns || []).map((t: any) => String(t.stripe_invoice_id)));
+
+      const written: any[] = [];
+      const skipped: any[] = [];
+
+      for (const cid of customers) {
+        const invs = await sFetch(
+          `/invoices?customer=${encodeURIComponent(cid)}&status=paid&limit=100`,
+        );
+        for (const inv of invs?.data || []) {
+          if (already.has(String(inv.id))) {
+            skipped.push({ invoice_id: inv.id, reason: "already recorded" });
+            continue;
+          }
+          const amount = (inv.amount_paid || 0) / 100;
+
+          // Real Stripe fee off the charge's balance transaction, so payouts
+          // reflect what Stripe actually took.
+          let chargeId: string | null =
+            (typeof inv.charge === "string" ? inv.charge : inv.charge?.id) ?? null;
+          if (!chargeId) {
+            const pay = inv?.payments?.data?.[0]?.payment;
+            chargeId = (typeof pay?.charge === "string" ? pay.charge : pay?.charge?.id) ?? null;
+          }
+          let fee: number | null = null;
+          if (chargeId) {
+            const ch = await sFetch(
+              `/charges/${encodeURIComponent(chargeId)}?expand[]=balance_transaction`,
+            );
+            if (typeof ch?.balance_transaction?.fee === "number") {
+              fee = Math.round(ch.balance_transaction.fee) / 100;
+            }
+          }
+
+          const row: Record<string, any> = {
+            user_id: user.id,
+            type: "monthly_donation",
+            amount,
+            description: `Monthly donation to ${charity.name} (attributed from Stripe invoice)`,
+            // Null by necessity — see the note in webhooks.ts. Identity is
+            // stripe_invoice_id.
+            reference_id: null,
+            reference_type: "donation",
+            beneficiary_id: charity.id,
+            status: "completed",
+            stripe_invoice_id: inv.id,
+            stripe_charge_id: chargeId,
+            processing_fee: fee,
+            created_at: new Date(inv.created * 1000).toISOString(),
+          };
+
+          if (!dryRun) {
+            const { error: insErr } = await supabase.from("transactions").insert([row]);
+            if (insErr) {
+              skipped.push({ invoice_id: inv.id, amount_usd: amount, reason: insErr.message });
+              continue;
+            }
+          }
+          written.push({
+            invoice_id: inv.id,
+            amount_usd: amount,
+            processing_fee: fee,
+            paid_at: row.created_at,
+            stripe_customer: cid,
+          });
+        }
+      }
+
+      written.sort((a, b) => (a.paid_at < b.paid_at ? -1 : 1));
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            dry_run: dryRun,
+            email,
+            user_id: user.id,
+            user_role: user.role,
+            beneficiary: { id: charity.id, name: charity.name },
+            stripe_customers: customers,
+            written_count: written.length,
+            written_total_usd:
+              Math.round(written.reduce((a, w) => a + w.amount_usd, 0) * 100) / 100,
+            written,
+            skipped_count: skipped.length,
+            skipped,
+          },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e?.message || "attribution failed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
+      });
+    }
+  }
+
+  // GET /admin/reporting/whois?email=... — read-only lookup.
+  //
+  // Answers "does this person exist in our system, and what is attached to
+  // them?" across roles and Stripe. Written while attributing unrecorded
+  // invoices: the reconciliation sweep filters role='donor', so an account
+  // under any other role looked like no account at all.
+  if (method === "GET" && route.startsWith("/admin/reporting/whois")) {
+    try {
+      const email = (new URL(req.url).searchParams.get("email") || "").trim().toLowerCase();
+      if (!email) return new Response(JSON.stringify({ error: "email is required" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400,
+      });
+
+      const { data: users } = await supabase
+        .from("users")
+        .select("id, email, role, account_status, stripe_customer_id, created_at, invite_type")
+        .ilike("email", email);
+
+      const ids = (users || []).map((u: any) => u.id);
+      let subs: any[] = [];
+      let txns: any[] = [];
+      if (ids.length) {
+        const a = await supabase
+          .from("monthly_donations")
+          .select("id, user_id, status, amount, beneficiary_id, stripe_subscription_id, stripe_customer_id")
+          .in("user_id", ids);
+        subs = a.data || [];
+        const b = await supabase
+          .from("transactions")
+          .select("id, user_id, type, amount, beneficiary_id, stripe_invoice_id, created_at")
+          .in("user_id", ids);
+        txns = b.data || [];
+      }
+
+      // Any subscription row that references the same Stripe customer, even if
+      // its user_id points elsewhere.
+      const stripe = getStripeClient();
+      const cRes = await fetch(
+        `${stripe.baseUrl}/customers/search?query=${encodeURIComponent(`email:'${email}'`)}&limit=10`,
+        { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+      );
+      const stripeCustomers = cRes.ok ? ((await cRes.json()).data || []) : [];
+      const customerIds = stripeCustomers.map((c: any) => c.id);
+
+      let subsByCustomer: any[] = [];
+      if (customerIds.length) {
+        const c = await supabase
+          .from("monthly_donations")
+          .select("id, user_id, status, amount, beneficiary_id, stripe_subscription_id, stripe_customer_id")
+          .in("stripe_customer_id", customerIds);
+        subsByCustomer = c.data || [];
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            email,
+            users: users || [],
+            user_count: (users || []).length,
+            monthly_donations_by_user: subs,
+            transactions_by_user: txns,
+            stripe_customers: stripeCustomers.map((c: any) => ({
+              id: c.id, email: c.email, created: new Date(c.created * 1000).toISOString(),
+            })),
+            monthly_donations_by_stripe_customer: subsByCustomer,
+          },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e?.message || "whois failed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
+      });
+    }
+  }
+
   // GET /admin/reporting/webhook-health — read-only.
   //
   // Whether Stripe is actually configured to call us, and whether recent
