@@ -470,6 +470,126 @@ export async function handleAdminReporting(
     }
   }
 
+  // POST /admin/reporting/cancel-subscription?id=sub_..&mode=immediate|period_end
+  //
+  // Cancels ONE Stripe subscription, named explicitly. Exists because the
+  // resume/amount-change bugs fixed on 2026-09-01 created duplicate
+  // subscriptions for real donors — gonzalezramoniii@gmail.com was billed twice
+  // a month from 2026-05-28 — so support needs a way to stop the extra one.
+  //
+  // Deliberately narrow: one id per call, no bulk, no cancel-by-customer, and
+  // it refuses anything that isn't a subscription id. It does NOT refund; past
+  // charges are a separate decision. `immediate` stops future billing now and
+  // leaves the already-paid current period alone; `period_end` lets it bill
+  // once more, which is usually not what "remove the duplicate" means.
+  if (method === "POST" && route.startsWith("/admin/reporting/cancel-subscription")) {
+    try {
+      const url = new URL(req.url);
+      const id = (url.searchParams.get("id") || "").trim();
+      const mode = (url.searchParams.get("mode") || "immediate").trim();
+      if (!/^sub_[A-Za-z0-9]+$/.test(id)) {
+        return new Response(
+          JSON.stringify({ error: "id must be a Stripe subscription id (sub_...)" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+      if (!["immediate", "period_end"].includes(mode)) {
+        return new Response(
+          JSON.stringify({ error: "mode must be immediate or period_end" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+
+      const stripe = getStripeClient();
+      const headers = { Authorization: `Bearer ${stripe.secretKey}` };
+
+      // Read first, so the response records what was cancelled.
+      const beforeRes = await fetch(
+        `${stripe.baseUrl}/subscriptions/${encodeURIComponent(id)}`,
+        { headers },
+      );
+      if (!beforeRes.ok) {
+        return new Response(
+          JSON.stringify({ error: `Subscription not found on Stripe (HTTP ${beforeRes.status})` }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 404 },
+        );
+      }
+      const before = await beforeRes.json();
+
+      let after: any;
+      if (mode === "immediate") {
+        const r = await fetch(`${stripe.baseUrl}/subscriptions/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers,
+        });
+        after = await r.json();
+        if (!r.ok) {
+          return new Response(
+            JSON.stringify({ error: after?.error?.message || `Stripe HTTP ${r.status}` }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 502 },
+          );
+        }
+      } else {
+        const form = new URLSearchParams();
+        form.append("cancel_at_period_end", "true");
+        const r = await fetch(`${stripe.baseUrl}/subscriptions/${encodeURIComponent(id)}`, {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/x-www-form-urlencoded" },
+          body: form.toString(),
+        });
+        after = await r.json();
+        if (!r.ok) {
+          return new Response(
+            JSON.stringify({ error: after?.error?.message || `Stripe HTTP ${r.status}` }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 502 },
+          );
+        }
+      }
+
+      // Keep any local row honest about it. Matched on the Stripe id, so this
+      // is a no-op when the subscription was never mirrored locally — which is
+      // the case for the duplicates that prompted this.
+      const localStatus = mode === "immediate" ? "cancelled" : "active";
+      const { data: localRows } = await supabase
+        .from("monthly_donations")
+        .update({ status: localStatus, updated_at: new Date().toISOString() })
+        .eq("stripe_subscription_id", id)
+        .select("id");
+
+      console.log(
+        `🛑 Cancelled Stripe subscription ${id} (${mode}); local rows updated: ${(localRows || []).length}`,
+      );
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            id,
+            mode,
+            customer: before.customer ?? null,
+            amount_usd: (before.items?.data?.[0]?.price?.unit_amount ?? 0) / 100,
+            status_before: before.status,
+            status_after: after.status,
+            cancel_at_period_end: after.cancel_at_period_end ?? null,
+            canceled_at: after.canceled_at
+              ? new Date(after.canceled_at * 1000).toISOString()
+              : null,
+            current_period_end: after.current_period_end
+              ? new Date(after.current_period_end * 1000).toISOString()
+              : null,
+            local_rows_updated: (localRows || []).length,
+            note: "No refund was issued. Past charges are a separate decision.",
+          },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e?.message || "cancel failed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
+      });
+    }
+  }
+
   // GET /admin/reporting/whois?email=... — read-only lookup.
   //
   // Answers "does this person exist in our system, and what is attached to
@@ -523,6 +643,32 @@ export async function handleAdminReporting(
         subsByCustomer = c.data || [];
       }
 
+      // Live subscription state per customer — what will bill again, and when.
+      const subscriptions: any[] = [];
+      for (const cid of customerIds) {
+        const sRes = await fetch(
+          `${stripe.baseUrl}/subscriptions?customer=${encodeURIComponent(cid)}&status=all&limit=20`,
+          { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+        );
+        if (!sRes.ok) continue;
+        const body = await sRes.json();
+        for (const sub of body.data || []) {
+          subscriptions.push({
+            id: sub.id,
+            customer: cid,
+            status: sub.status,
+            amount_usd: (sub.items?.data?.[0]?.price?.unit_amount ?? 0) / 100,
+            interval: sub.items?.data?.[0]?.price?.recurring?.interval ?? null,
+            created: new Date(sub.created * 1000).toISOString(),
+            current_period_end: sub.current_period_end
+              ? new Date(sub.current_period_end * 1000).toISOString()
+              : null,
+            cancel_at_period_end: sub.cancel_at_period_end ?? null,
+          });
+        }
+      }
+      subscriptions.sort((a, b) => (a.created < b.created ? -1 : 1));
+
       return new Response(
         JSON.stringify({
           success: true,
@@ -530,6 +676,7 @@ export async function handleAdminReporting(
             email,
             users: users || [],
             user_count: (users || []).length,
+            stripe_subscriptions: subscriptions,
             monthly_donations_by_user: subs,
             transactions_by_user: txns,
             stripe_customers: stripeCustomers.map((c: any) => ({
