@@ -4,6 +4,7 @@ import {
   createStripePaymentIntent,
   getStripePaymentIntent,
   createOrGetStripeCustomer,
+  getStripeClient,
 } from "../lib/stripe.ts";
 
 export type CalculateProcessingFeeFn = (
@@ -161,6 +162,34 @@ export async function handleOneTimeGiftRoute(
         console.warn("⚠️ Could not resolve Stripe customer for gift:", e?.message);
       }
 
+      // Ephemeral key for the Payment Sheet's saved-card list. Best-effort —
+      // a gift must not fail because this call did.
+      let giftEphemeralKeySecret: string | null = null;
+      if (giftCustomerId) {
+        try {
+          const stripe = getStripeClient();
+          const form = new URLSearchParams();
+          form.append("customer", giftCustomerId);
+          const ekRes = await fetch(`${stripe.baseUrl}/ephemeral_keys`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${stripe.secretKey}`,
+              "Content-Type": "application/x-www-form-urlencoded",
+              "Stripe-Version": "2024-06-20",
+            },
+            body: form.toString(),
+          });
+          if (ekRes.ok) {
+            const ek = await ekRes.json();
+            giftEphemeralKeySecret = ek.secret || null;
+          } else {
+            console.warn("⚠️ Gift ephemeral key failed:", ekRes.status);
+          }
+        } catch (e: any) {
+          console.warn("⚠️ Gift ephemeral key threw:", e?.message);
+        }
+      }
+
       const paymentIntent = await createStripePaymentIntent(
         feeCalculation.totalAmount,
         currency.toLowerCase(),
@@ -207,6 +236,13 @@ export async function handleOneTimeGiftRoute(
       return new Response(
         JSON.stringify({
           success: true,
+          // The Payment Sheet can only offer the donor's saved cards when it is
+          // initialised with their customer id and an ephemeral key. Without
+          // these the sheet asks for card details on every gift even though a
+          // card is already on file. Client-side, oneTimeGift.js already reads
+          // both keys off this response if present.
+          customerId: giftCustomerId,
+          customerEphemeralKeySecret: giftEphemeralKeySecret,
           payment_intent: {
             id: paymentIntent.id,
             client_secret: paymentIntent.client_secret,
