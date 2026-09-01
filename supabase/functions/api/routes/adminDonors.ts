@@ -1123,6 +1123,40 @@ export async function handleAdminDonors(
         });
       }
 
+      // Every subscription Stripe has for this customer, including any our
+      // rows don't reference — the amount-change path used to delete and
+      // recreate subscriptions, so orphans are possible.
+      if (user.stripe_customer_id) {
+        const all = await get(
+          `/subscriptions?customer=${encodeURIComponent(user.stripe_customer_id)}&status=all&limit=20`,
+        );
+        out.all_stripe_subscriptions = (all.body?.data || []).map((x: any) => ({
+          id: x.id,
+          status: x.status,
+          created: new Date(x.created * 1000).toISOString(),
+          amount: x.items?.data?.[0]?.price?.unit_amount ?? null,
+          cancel_at_period_end: x.cancel_at_period_end,
+          known_locally: (out.local_monthly_donations || []).some(
+            (r: any) => r.stripe_subscription_id === x.id,
+          ),
+        }));
+      }
+
+      // Open invoices — what would actually need paying.
+      if (user.stripe_customer_id) {
+        const inv = await get(
+          `/invoices?customer=${encodeURIComponent(user.stripe_customer_id)}&limit=10`,
+        );
+        out.invoices = (inv.body?.data || []).map((x: any) => ({
+          id: x.id,
+          status: x.status,
+          amount_due: x.amount_due,
+          amount_paid: x.amount_paid,
+          created: new Date(x.created * 1000).toISOString(),
+          subscription: x.subscription ?? null,
+        }));
+      }
+
       // Recent activity on the customer — shows whether a fresh attempt
       // (e.g. Apple Pay) actually reached Stripe.
       if (user.stripe_customer_id) {

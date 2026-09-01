@@ -661,7 +661,38 @@ export async function handleDonationRoute(
             );
           }
 
-          if (paymentDetails.clientSecret) {
+          // Only resume a payment that can still be completed. Stripe hands
+          // back a client_secret even for a canceled PaymentIntent, so the old
+          // `if (clientSecret)` test sent the app off to confirm a dead
+          // payment — Apple Pay would return without an error and nothing was
+          // ever collected, which is exactly how a donor got stuck retrying.
+          // Anything not resumable falls through to the orphan branch below,
+          // which drops the row and builds a fresh subscription.
+          const RESUMABLE_PI = new Set([
+            "requires_payment_method",
+            "requires_confirmation",
+            "requires_action",
+            "processing",
+          ]);
+          const RESUMABLE_SUB = new Set(["incomplete", "past_due", "unpaid"]);
+          const piStatus = String(
+            paymentDetails.paymentIntentStatus || "",
+          ).toLowerCase();
+          const subStatus = String(
+            paymentDetails.subscriptionStatus || "",
+          ).toLowerCase();
+          const canResume =
+            !!paymentDetails.clientSecret &&
+            RESUMABLE_PI.has(piStatus) &&
+            (!subStatus || RESUMABLE_SUB.has(subStatus));
+
+          if (!canResume && paymentDetails.clientSecret) {
+            console.log(
+              `ℹ️ Not resuming subscription ${existing.stripe_subscription_id}: sub=${subStatus || "?"}, pi=${piStatus || "?"} — starting fresh instead`,
+            );
+          }
+
+          if (canResume) {
             let customerEphemeralKeySecret: string | null = null;
             try {
               const stripe = getStripeClient();
