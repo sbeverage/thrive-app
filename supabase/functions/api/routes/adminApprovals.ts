@@ -54,6 +54,14 @@ function formatVendor(v: any, contactName: string, submissionKind: "signup" | "r
     website: v.website,
     logo_url: v.logo_url,
     documents_submitted: "N/A", // self-serve flow doesn't collect docs yet
+    // "incomplete" = registered but never submitted for review, so there is
+    // nothing to judge yet — chase them rather than approve them. Reactivation
+    // requests are always a real submission.
+    submission_state:
+      submissionKind === "reactivation" || v.submitted_at
+        ? "submitted"
+        : "incomplete",
+    is_incomplete: submissionKind !== "reactivation" && !v.submitted_at,
     verification_status: v.signup_status === "approved" ? "verified" : "pending",
     is_active: v.is_active !== false,
     is_enabled: v.signup_status === "approved",
@@ -224,9 +232,14 @@ export async function handleAdminApprovals(
       .select("*")
       .order("submitted_at", { ascending: false, nullsFirst: false });
     if (status === "pending") {
-      signupQuery = signupQuery
-        .eq("signup_status", "pending")
-        .not("submitted_at", "is", null);
+      // Unsubmitted registrations belong here too. Portal signup creates the
+      // vendor with signup_status "pending" and no submitted_at; stamping
+      // submitted_at is a separate step (/vendor/me/resubmit). Requiring it
+      // meant a vendor who created an account and stopped was invisible
+      // everywhere — not in this queue, not in the app, with nothing telling
+      // anyone they existed. Applebee's Grill + Bar sat that way for three
+      // weeks. They now appear, flagged incomplete, so they can be chased.
+      signupQuery = signupQuery.eq("signup_status", "pending");
     } else if (status === "approved" || status === "rejected") {
       signupQuery = signupQuery.eq("signup_status", status);
     }

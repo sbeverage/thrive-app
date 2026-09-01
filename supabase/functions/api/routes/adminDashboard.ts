@@ -164,11 +164,13 @@ export async function handleAdminDashboard(
       //     signup_status "pending" without ever having applied, and it is not
       //     in the queue.
       //   • a reactivation request — inactive with reactivation_requested_at.
+      // No submitted_at requirement: the approvals queue now lists unsubmitted
+      // registrations too (flagged incomplete), and this card must agree with
+      // the page it links to.
       const { count: pendingVendorSignups } = await supabase
         .from("vendors")
         .select("id", { count: "exact", head: true })
-        .eq("signup_status", "pending")
-        .not("submitted_at", "is", null);
+        .eq("signup_status", "pending");
       const { count: pendingVendorReactivations } = await supabase
         .from("vendors")
         .select("id", { count: "exact", head: true })
