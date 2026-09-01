@@ -241,8 +241,24 @@ export async function handleAdminDashboard(
     try {
       const url = new URL(req.url);
       const days = periodDays(url.searchParams.get("period")) ?? 30;
-      const bucketDays = 7;
+      // Aim for ~6 points whatever the period. Fixed 7-day buckets meant a
+      // 6-month view produced 26 of them, which is unreadable on a card this
+      // size — 26 crammed labels along the x-axis.
+      const TARGET_BUCKETS = 6;
+      const bucketDays = Math.max(1, Math.round(days / TARGET_BUCKETS));
       const buckets = Math.max(1, Math.ceil(days / bucketDays));
+      // What one bucket represents, so the caller can label an average
+      // honestly rather than always saying "per week".
+      // Only claim "week" or "month" when the bucket really is one — a 15-day
+      // bucket is not a week and a 61-day bucket is not a month.
+      const bucketUnit =
+        bucketDays === 1
+          ? "day"
+          : bucketDays >= 6 && bucketDays <= 8
+            ? "week"
+            : bucketDays >= 28 && bucketDays <= 31
+              ? "month"
+              : `${bucketDays} days`;
       const now = Date.now();
       const windowStart = now - days * 86400000;
       // Same length again, immediately before, for the trend comparison.
@@ -286,10 +302,20 @@ export async function handleAdminDashboard(
         const value = events
           .filter((e) => e.at >= from && e.at < to)
           .reduce((a, e) => a + e.value, 0);
+        // Date-based labels rather than "Week N": with adaptive buckets a
+        // "week" may be five days or a month, so the label has to say when.
+        const fromDate = new Date(from);
+        const label = bucketDays >= 28
+          ? fromDate.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })
+          : fromDate.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              timeZone: "UTC",
+            });
         series.push({
-          label: buckets <= 6 ? `Week ${i + 1}` : `W${i + 1}`,
+          label,
           value: Math.round(value * 100) / 100,
-          start: new Date(from).toISOString().split("T")[0],
+          start: fromDate.toISOString().split("T")[0],
         });
       }
 
@@ -316,6 +342,8 @@ export async function handleAdminDashboard(
           growthPercentage: trend,
           period: `${days}-days`,
           bucketCount: buckets,
+          bucketDays,
+          bucketUnit,
         },
       });
     } catch (e: any) {
