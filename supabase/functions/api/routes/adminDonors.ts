@@ -11,6 +11,7 @@ export type AdminDonorsDeps = {
     name: string;
     verificationToken: string;
     donorId: number;
+    inviteType?: string;
   }) => Promise<void>;
 };
 
@@ -1981,6 +1982,7 @@ export async function handleAdminDonors(
           name: donorName,
           verificationToken: verificationToken,
           donorId: donor.id,
+          inviteType: membershipOf(donor),
         });
 
         console.log("✅ Invitation email resent successfully to:", donor.email);
@@ -2386,6 +2388,9 @@ export async function handleAdminDonors(
         name: name || email.split("@")[0],
         verificationToken: verificationToken,
         donorId: newDonor.id,
+        // So a team or coworking invite doesn't read "join as a donor" and
+        // send them looking for a payment step they'll never be shown.
+        inviteType: inviteTypeValue,
       }).catch((emailError) => {
         console.error("❌ Error sending invitation email:", emailError);
         // Don't fail the request if email fails - user can resend later

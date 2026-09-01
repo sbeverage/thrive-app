@@ -31,7 +31,7 @@ type DonorsHandler = (
   supabase: any,
   route: string,
   method: string,
-  deps: { sendInvitationEmail: (args: { to: string; name: string; verificationToken: string; donorId: number }) => Promise<void> },
+  deps: { sendInvitationEmail: (args: { to: string; name: string; verificationToken: string; donorId: number; inviteType?: string }) => Promise<void> },
 ) => Promise<Response>;
 
 type InvitationsHandler = (
@@ -39,7 +39,7 @@ type InvitationsHandler = (
   supabase: any,
   route: string,
   method: string,
-  deps: { sendInvitationEmail: (args: { to: string; name: string; verificationToken: string; donorId: number }) => Promise<void> },
+  deps: { sendInvitationEmail: (args: { to: string; name: string; verificationToken: string; donorId: number; inviteType?: string }) => Promise<void> },
 ) => Promise<Response>;
 
 export type AdminRouteDeps = {
@@ -58,7 +58,7 @@ export type AdminRouteDeps = {
   handleAdminInvitations: InvitationsHandler;
   sendReferralReminderEmail: (args: { to: string; name: string; referrerName?: string }) => Promise<void>;
   sendAdminTempPasswordEmail: (args: { to: string; name: string; tempPassword: string }) => Promise<void>;
-  sendInvitationEmail: (args: { to: string; name: string; verificationToken: string; donorId: number }) => Promise<void>;
+  sendInvitationEmail: (args: { to: string; name: string; verificationToken: string; donorId: number; inviteType?: string }) => Promise<void>;
 };
 
 export async function handleAdminRoute(

@@ -39,11 +39,19 @@ export async function sendInvitationEmail({
   name,
   verificationToken,
   donorId,
+  inviteType = "standard",
 }: {
   to: string;
   name: string;
   verificationToken: string;
   donorId: number;
+  /**
+   * 'standard' | 'coworking' | 'team'. Previously absent, so a coworking
+   * member and an internal team account both received "you've been invited to
+   * join as a donor" and were told to set up a payment method they will never
+   * be asked for.
+   */
+  inviteType?: string;
 }): Promise<void> {
   try {
     // Get email service configuration from environment variables
@@ -52,6 +60,27 @@ export async function sendInvitationEmail({
 
     // Determine if this is an invitation (64-char token) or self-signup
     const isInvitationToken = verificationToken.length === 64;
+
+    const membership = String(inviteType || "standard").trim().toLowerCase();
+    const isTeamInvite = membership === "team";
+    const isCoworkingInvite = membership === "coworking";
+
+    // What the account actually is, in the recipient's terms.
+    const inviteIntro = isTeamInvite
+      ? `<p>You've been given a <span class="highlight">${appName}</span> team account. It works exactly like a donor account so you can see what donors see — with no payment required and nothing charged.</p>`
+      : isCoworkingInvite
+        ? `<p>Your <span class="highlight">${appName}</span> membership is included with your coworking space, so there's nothing to pay — you just choose the cause your monthly giving supports.</p>`
+        : `<p>You've been invited to join <span class="highlight">${appName}</span> as a donor! We're excited to have you join our community of changemakers.</p>`;
+
+    // Neither comped type is asked for a card, so don't imply otherwise.
+    const inviteStepsIntro = isTeamInvite || isCoworkingInvite
+      ? "Here's how to get started — no payment details needed:"
+      : "Here's how to get started — just 3 steps:";
+    const inviteLastStep = isTeamInvite
+      ? "Pick a cause and you're in — discounts included 🎉"
+      : isCoworkingInvite
+        ? "Choose the cause your giving supports 🎉"
+        : "Done! 🎉";
 
     // Build verification link - Use Universal Link (Vercel frontend URL) so iOS intercepts it
     // and opens the app directly instead of showing a web page in Safari.
@@ -84,17 +113,22 @@ export async function sendInvitationEmail({
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Tells the client the design handles both schemes, so it applies our
+       dark-mode block instead of force-inverting the palette itself. -->
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
   <title>${emailSubject}</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
       line-height: 1.6;
-      color: #333;
+      color: #333333;
       max-width: 600px;
       margin: 0 auto;
       padding: 0;
-      background: linear-gradient(135deg, #4a6b7a 0%, #324E58 100%);
+      /* Same ordering rule as .header: solid first, gradient as an upgrade. */
       background-color: #f5f5f5;
+      background: #f5f5f5 linear-gradient(135deg, #4a6b7a 0%, #324E58 100%);
     }
     .email-wrapper {
       padding: 40px 20px;
@@ -107,7 +141,13 @@ export async function sendInvitationEmail({
       overflow: hidden;
     }
     .header {
-      background: linear-gradient(135deg, #4a6b7a 0%, #324E58 100%);
+      /* Solid colour FIRST, gradient second. Outlook and several other
+         clients drop CSS gradients — with no fallback the header had no
+         background at all and the white logo and h1 rendered white-on-white,
+         so the title was invisible. Only the 👋 survived, because emoji
+         ignore text colour. */
+      background-color: #324E58;
+      background: #324E58 linear-gradient(135deg, #4a6b7a 0%, #324E58 100%);
       padding: 40px 30px;
       text-align: center;
       color: #ffffff;
@@ -129,7 +169,7 @@ export async function sendInvitationEmail({
       padding: 30px;
     }
     p {
-      color: #555;
+      color: #333333;
       font-size: 16px;
       margin-bottom: 20px;
       line-height: 1.7;
@@ -226,30 +266,70 @@ export async function sendInvitationEmail({
       color: #324E58;
       font-weight: 600;
     }
+
+    /* Dark mode. Clients that honour prefers-color-scheme get deliberate
+       colours instead of an automatic inversion, which is what turns a
+       carefully chosen palette into unreadable mud. Clients that ignore it
+       keep the light design, which is why every colour above is explicit
+       rather than inherited. */
+    @media (prefers-color-scheme: dark) {
+      body {
+        background-color: #1c2b31 !important;
+        background: #1c2b31 !important;
+        color: #e8eef0 !important;
+      }
+      .container {
+        background-color: #24363d !important;
+      }
+      /* Header keeps its dark brand colour — white on #324E58 reads well in
+         either scheme, so it does not need inverting. */
+      p, li, ol {
+        color: #e8eef0 !important;
+      }
+      .highlight {
+        color: #f0b072 !important;
+      }
+      .app-links {
+        background-color: #1f3038 !important;
+        border-top-color: #35505a !important;
+      }
+      .app-links p {
+        color: #e8eef0 !important;
+      }
+      .footer {
+        background-color: #1c2b31 !important;
+        color: #b9c7cc !important;
+      }
+      /* The CTA is already high-contrast orange on white text. */
+      .button {
+        background-color: #DB8633 !important;
+        color: #ffffff !important;
+      }
+    }
   </style>
 </head>
 <body>
   <div class="email-wrapper">
     <div class="container">
-      <div class="header">
-        <div class="logo">${appName}</div>
-        <h1>Welcome, ${name}! 👋</h1>
+      <div class="header" style="background-color:#324E58;padding:40px 30px;text-align:center;color:#ffffff;">
+        <div class="logo" style="font-size:28px;font-weight:bold;color:#ffffff;margin-bottom:10px;letter-spacing:0.5px;">${appName}</div>
+        <h1 style="color:#ffffff;font-size:26px;margin:10px 0;font-weight:600;">Welcome, ${name}! 👋</h1>
       </div>
       <div class="content">
 
         ${
           isInvitation
-            ? `<p>You've been invited to join <span class="highlight">${appName}</span> as a donor! We're excited to have you join our community of changemakers.</p>`
+            ? inviteIntro
             : `<p>Thank you for signing up for <span class="highlight">${appName}</span>! We're thrilled to have you on board.</p>`
         }
         ${
           isInvitation
             ? `
-        <p><strong>Here's how to get started — just 3 steps:</strong></p>
-        <ol style="color:#555;font-size:16px;line-height:1.8;padding-left:20px;margin:20px 0;">
+        <p><strong>${inviteStepsIntro}</strong></p>
+        <ol style="color:#333333;font-size:16px;line-height:1.8;padding-left:20px;margin:20px 0;">
           <li><a href="${appStoreLinks.ios}" style="color:#324E58;font-weight:600;text-decoration:underline;">Download the iOS app</a></li>
           <li>Come back to this email and tap the button below to verify</li>
-          <li>Done! 🎉</li>
+          <li>${inviteLastStep}</li>
         </ol>
 
         <div class="button-container">

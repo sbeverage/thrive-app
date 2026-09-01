@@ -8,6 +8,7 @@ export type AdminInvitationsDeps = {
     name: string;
     verificationToken: string;
     donorId: number;
+    inviteType?: string;
   }) => Promise<void>;
 };
 
