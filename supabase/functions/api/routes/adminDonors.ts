@@ -3,6 +3,7 @@ import { bcryptHash } from "../lib/password.ts";
 import { capitalizeName } from "../lib/strings.ts";
 import { geocodeAddress } from "../lib/geocoding.ts";
 import { membershipOf } from "../lib/membership.ts";
+import { getStripeClient } from "../lib/stripe.ts";
 
 export type AdminDonorsDeps = {
   sendInvitationEmail: (args: {
@@ -1049,6 +1050,115 @@ export async function handleAdminDonors(
   // so we can see exactly what data exists for a given donor id without
   // relying on RLS-blocked direct DB access. Safe to remove once the
   // history/redemptions display issue is confirmed fixed.
+  // GET /admin/donors/:id/stripe — read-only support diagnostic.
+  //
+  // Compares what we stored against what Stripe actually says, which is
+  // otherwise unanswerable: the Stripe secret key only exists server-side, so
+  // there is no way to check a donor's real subscription state from a laptop.
+  // Added while chasing a donor stuck at status "pending" whose local row and
+  // Stripe had diverged.
+  //
+  // Strictly read-only — it never writes to the database or to Stripe.
+  const donorStripeMatch = route.match(/^\/admin\/donors\/(\d+)\/stripe$/);
+  if (method === "GET" && donorStripeMatch) {
+    const donorId = parseInt(donorStripeMatch[1], 10);
+    const out: any = { donor_id: donorId };
+    try {
+      const { data: user } = await supabase
+        .from("users")
+        .select("id, email, stripe_customer_id")
+        .eq("id", donorId)
+        .maybeSingle();
+      if (!user) {
+        return new Response(JSON.stringify({ error: "Donor not found" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 404,
+        });
+      }
+      out.email = user.email;
+      out.stripe_customer_id = user.stripe_customer_id || null;
+
+      const { data: subs } = await supabase
+        .from("monthly_donations")
+        .select("id, status, amount, stripe_subscription_id, created_at, updated_at")
+        .eq("user_id", donorId)
+        .order("created_at", { ascending: false });
+      out.local_monthly_donations = subs || [];
+
+      const stripe = getStripeClient();
+      const get = async (path: string) => {
+        const r = await fetch(`${stripe.baseUrl}${path}`, {
+          headers: { Authorization: `Bearer ${stripe.secretKey}` },
+        });
+        const body = await r.json();
+        return { ok: r.ok, status: r.status, body };
+      };
+
+      // Each local subscription, as Stripe sees it.
+      out.stripe_subscriptions = [];
+      for (const sub of out.local_monthly_donations) {
+        if (!sub.stripe_subscription_id) continue;
+        const res = await get(
+          `/subscriptions/${encodeURIComponent(sub.stripe_subscription_id)}?expand[]=latest_invoice.payment_intent`,
+        );
+        const b = res.body || {};
+        out.stripe_subscriptions.push({
+          local_id: sub.id,
+          local_status: sub.status,
+          stripe_id: sub.stripe_subscription_id,
+          found: res.ok,
+          stripe_error: res.ok ? null : b?.error?.message || `HTTP ${res.status}`,
+          stripe_status: b.status ?? null,
+          cancel_at_period_end: b.cancel_at_period_end ?? null,
+          latest_invoice_status: b.latest_invoice?.status ?? null,
+          latest_invoice_paid: b.latest_invoice?.paid ?? null,
+          amount_due: b.latest_invoice?.amount_due ?? null,
+          amount_paid: b.latest_invoice?.amount_paid ?? null,
+          payment_intent_status:
+            b.latest_invoice?.payment_intent?.status ?? null,
+          last_payment_error:
+            b.latest_invoice?.payment_intent?.last_payment_error?.message ??
+            null,
+          default_payment_method: b.default_payment_method ?? null,
+        });
+      }
+
+      // Recent activity on the customer — shows whether a fresh attempt
+      // (e.g. Apple Pay) actually reached Stripe.
+      if (user.stripe_customer_id) {
+        const cid = encodeURIComponent(user.stripe_customer_id);
+        const pi = await get(`/payment_intents?customer=${cid}&limit=5`);
+        out.recent_payment_intents = (pi.body?.data || []).map((x: any) => ({
+          id: x.id,
+          status: x.status,
+          amount: x.amount,
+          created: new Date(x.created * 1000).toISOString(),
+          last_error: x.last_payment_error?.message ?? null,
+        }));
+        const pm = await get(`/payment_methods?customer=${cid}&type=card&limit=5`);
+        out.saved_cards = (pm.body?.data || []).map((x: any) => ({
+          id: x.id,
+          brand: x.card?.brand,
+          last4: x.card?.last4,
+          exp: `${x.card?.exp_month}/${x.card?.exp_year}`,
+        }));
+      }
+
+      return new Response(JSON.stringify({ success: true, data: out }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    } catch (e: any) {
+      return new Response(
+        JSON.stringify({ error: e?.message || "diagnostic failed", partial: out }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        },
+      );
+    }
+  }
+
   const donorDebugMatch = route.match(/^\/admin\/donors\/(\d+)\/debug$/);
   if (method === "GET" && donorDebugMatch) {
     const donorId = parseInt(donorDebugMatch[1], 10);

@@ -1659,6 +1659,38 @@ export async function handleDonationRoute(
         });
       }
 
+      // ── Refuse to "change the amount" of a subscription that never paid ──
+      // Below, this endpoint DELETES the Stripe subscription and creates a new
+      // one, which starts `incomplete` with a fresh unpaid invoice. For a donor
+      // whose first invoice was never paid that was a destructive no-op loop:
+      // the old unpaid subscription was cancelled, a new unpaid one took its
+      // place, the row was written back as "pending", and the client reported
+      // "Donation updated — applies on your next invoice". Nothing was ever
+      // collected, so the discounts gate kept saying giving was paused, and
+      // each retry destroyed and recreated the subscription again.
+      //
+      // 409 is what the client already expects for this: editDonationAmount.js
+      // maps it to "Payment setup required — complete first payment setup
+      // before changing amount," which is the truth.
+      {
+        const st = String(existing.status || "").toLowerCase();
+        const PAID = new Set(["active", "trialing"]);
+        if (!PAID.has(st)) {
+          console.warn(
+            `⚠️ Refusing amount change on unpaid subscription ${existing.id} (status ${st || "unknown"}) for user ${userId}`,
+          );
+          return new Response(
+            JSON.stringify({
+              error:
+                "This subscription hasn't completed its first payment yet, so the amount can't be changed. Finish payment setup first.",
+              code: "payment_setup_required",
+              subscription_status: st || "unknown",
+            }),
+            {headers: {"Content-Type": "application/json"}, status: 409},
+          );
+        }
+      }
+
       // Cancel old Stripe subscription
       if (existing.stripe_subscription_id) {
         const stripe = getStripeClient();

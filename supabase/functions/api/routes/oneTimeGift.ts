@@ -3,6 +3,7 @@ import { getAppAuthHeader } from "../lib/jwt-app.ts";
 import {
   createStripePaymentIntent,
   getStripePaymentIntent,
+  createOrGetStripeCustomer,
 } from "../lib/stripe.ts";
 
 export type CalculateProcessingFeeFn = (
@@ -134,6 +135,32 @@ export async function handleOneTimeGiftRoute(
       const feeCalculation = calculateProcessingFee(amount, user_covered_fees);
 
       // Create Stripe PaymentIntent
+      // Attach the donor's Stripe customer so the gift is not created as a
+      // "Guest" payment. Without it the charge is unlinked from the customer:
+      // their saved card can't be used, the gift is invisible in their Stripe
+      // history, and every gift re-asks for card details. Created on demand if
+      // they don't have one yet, the same way /payment-methods now does.
+      let giftCustomerId: string | null = null;
+      try {
+        const {data: giftUser} = await supabase
+          .from("users")
+          .select("email, stripe_customer_id")
+          .eq("id", userId)
+          .maybeSingle();
+        giftCustomerId = giftUser?.stripe_customer_id || null;
+        if (!giftCustomerId && giftUser?.email) {
+          const customer = await createOrGetStripeCustomer(giftUser.email, userId);
+          giftCustomerId = customer.id;
+          await supabase
+            .from("users")
+            .update({stripe_customer_id: giftCustomerId})
+            .eq("id", userId);
+        }
+      } catch (e: any) {
+        // Fall back to a guest payment rather than blocking the gift.
+        console.warn("⚠️ Could not resolve Stripe customer for gift:", e?.message);
+      }
+
       const paymentIntent = await createStripePaymentIntent(
         feeCalculation.totalAmount,
         currency.toLowerCase(),
@@ -142,6 +169,7 @@ export async function handleOneTimeGiftRoute(
           user_id: userId.toString(),
           beneficiary_id: beneficiary_id.toString(),
         },
+        giftCustomerId,
       );
 
       // Create one-time gift record
