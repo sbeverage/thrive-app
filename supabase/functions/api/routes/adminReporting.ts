@@ -898,6 +898,10 @@ export async function handleAdminReporting(
       const url = new URL(req.url);
       const email = (url.searchParams.get("email") || "").trim().toLowerCase();
       const forceFinal = url.searchParams.get("final") === "true";
+      // The notice normally pushes only on the first and last attempt. A donor
+      // who was already mid-sequence when dunning shipped has had no push at
+      // all, so allow one to be forced.
+      const forcePush = url.searchParams.get("force_push") === "true";
       if (!email) {
         return new Response(JSON.stringify({ error: "email is required" }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400,
@@ -963,6 +967,7 @@ export async function handleAdminReporting(
         isFinal: forceFinal || (attempt > 1 && !nextTry),
         amountDue,
         nextTry,
+        forcePush,
       });
 
       return new Response(
@@ -988,6 +993,56 @@ export async function handleAdminReporting(
     }
   }
 
+  // GET /admin/reporting/push-health — read-only.
+  //
+  // How many people can actually receive a push. Every notification feature —
+  // charity approvals, payment failures, "your favourite vendor added a
+  // discount" — filters on users.expo_push_token IS NOT NULL and silently
+  // drops anyone without one. sendPushToUser returns false rather than
+  // throwing, so a missing token looks like success from the caller's side.
+  if (method === "GET" && route.startsWith("/admin/reporting/push-health")) {
+    try {
+      const { data: users } = await supabase
+        .from("users")
+        .select("id, role, expo_push_token, account_status");
+      const all = users || [];
+      const withToken = all.filter((u: any) => !!u.expo_push_token);
+
+      const byRole: Record<string, { total: number; with_token: number }> = {};
+      for (const u of all) {
+        const r = String(u.role || "unknown");
+        if (!byRole[r]) byRole[r] = { total: 0, with_token: 0 };
+        byRole[r].total += 1;
+        if (u.expo_push_token) byRole[r].with_token += 1;
+      }
+
+      const { count: favouriteRows } = await supabase
+        .from("vendor_favorites")
+        .select("vendor_id", { count: "exact", head: true });
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            users_total: all.length,
+            users_with_push_token: withToken.length,
+            coverage_percent:
+              all.length ? Math.round((withToken.length / all.length) * 1000) / 10 : 0,
+            by_role: byRole,
+            vendor_favorite_rows: favouriteRows ?? 0,
+            note:
+              "A push feature can only reach users_with_push_token. Favourite-vendor alerts additionally require a vendor_favorites row.",
+          },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e?.message || "push health failed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
+      });
+    }
+  }
+
   // GET /admin/reporting/whois?email=... — read-only lookup.
   //
   // Answers "does this person exist in our system, and what is attached to
@@ -1003,10 +1058,25 @@ export async function handleAdminReporting(
 
       const { data: users } = await supabase
         .from("users")
-        .select("id, email, role, account_status, stripe_customer_id, created_at, invite_type")
+        .select(
+          "id, email, role, account_status, stripe_customer_id, created_at, invite_type, expo_push_token",
+        )
         .ilike("email", email);
 
       const ids = (users || []).map((u: any) => u.id);
+
+      // Push readiness and favourites — the two things that decide whether the
+      // "your favourite vendor added a discount" fanout can reach someone. The
+      // fanout filters on users.expo_push_token IS NOT NULL, so no token means
+      // no notification, silently.
+      let favourites: any[] = [];
+      if (ids.length) {
+        const f = await supabase
+          .from("vendor_favorites")
+          .select("vendor_id, user_id")
+          .in("user_id", ids);
+        favourites = f.data || [];
+      }
       let subs: any[] = [];
       let txns: any[] = [];
       if (ids.length) {
@@ -1072,8 +1142,16 @@ export async function handleAdminReporting(
           success: true,
           data: {
             email,
-            users: users || [],
+            users: (users || []).map((u: any) => ({
+              ...u,
+              // Never echo the token itself; presence is the diagnostic.
+              expo_push_token: undefined,
+              push_token_registered: !!u.expo_push_token,
+            })),
             user_count: (users || []).length,
+            push_ready: (users || []).some((u: any) => !!u.expo_push_token),
+            favorite_vendor_ids: favourites.map((f: any) => f.vendor_id),
+            favorite_count: favourites.length,
             stripe_subscriptions: subscriptions,
             monthly_donations_by_user: subs,
             transactions_by_user: txns,

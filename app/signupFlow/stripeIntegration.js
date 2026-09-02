@@ -347,8 +347,16 @@ export default function StripeIntegration() {
             response,
             {
               cardOnly: true,
-              // Signup must collect a card — don't auto-confirm from a saved Stripe PM without showing the sheet.
-              skipSavedPaymentMethods: true,
+              // No skipSavedPaymentMethods here. It strips customerId and
+              // customerEphemeralKeySecret from the sheet config, so a donor
+              // with a card already on file was shown an empty wallet and had
+              // to re-enter it — and a resumed payment could not reuse the
+              // card that was already attached.
+              //
+              // The rationale it carried ("don't auto-confirm from a saved
+              // PM") was wrong: initPaymentSheet + presentPaymentSheet always
+              // shows the sheet. Passing a customer only populates the saved
+              // cards inside it; it never confirms anything on its own.
             },
           );
 

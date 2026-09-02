@@ -20,6 +20,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useDiscount } from '../../../context/DiscountContext';
 import { useUser } from '../../../context/UserContext';
 import API from '../../../lib/api';
+import { availabilityLabel } from '../../../utils/discountDisplay';
+import { paymentRecoveryRoute } from '../../../utils/paymentRecovery';
 import { useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DiscountsLockOverlay from '../../../../components/DiscountsLockOverlay';
@@ -475,17 +477,6 @@ export default function VendorDetails() {
                 };
                 return isReached(a) - isReached(b);
               }).map(discount => {
-                const formatDiscountAmount = () => {
-                  if (!discount.discountType) return null;
-                  if (discount.discountType === 'free') return 'Free Item';
-                  if (discount.discountType === 'bogo') return 'Buy one, get one';
-                  if (!discount.discountValue) return null;
-                  const value = discount.discountValue;
-                  if (discount.discountType === 'percentage') return `${value}% off`;
-                  if (discount.discountType === 'fixed') return `$${value} off`;
-                  return null;
-                };
-
                 let rawUsageLimit = discount.usageLimit || discount.usage_limit || null;
                 let usageLimit = null;
                 if (rawUsageLimit !== null && rawUsageLimit !== undefined && rawUsageLimit !== '') {
@@ -520,7 +511,7 @@ export default function VendorDetails() {
                   usageText = 'Unlimited uses';
                 }
 
-                const discountAmount = formatDiscountAmount();
+                const availability = availabilityLabel(discount.availability);
 
                 return (
                   <View key={discount.id} style={[styles.discountCard, isLimitReached && styles.discountCardDisabled]}>
@@ -531,27 +522,30 @@ export default function VendorDetails() {
                       end={{ x: 1, y: 0 }}
                       style={styles.discountBand}
                     >
-                      {discountAmount ? (
-                        <Text style={styles.bandAmount}>{discountAmount}</Text>
-                      ) : (
-                        <Text style={styles.bandTitle} numberOfLines={1}>{discount.title}</Text>
-                      )}
-                      {isLimitReached && (
-                        <View style={styles.limitBadge}>
-                          <Text style={styles.limitBadgeText}>Limit Reached</Text>
+                      {/* One line, truncated with an ellipsis. TITLE_MAX keeps
+                          titles short enough that this rarely fires, but a
+                          wide 45-character title can still overrun the band —
+                          and legacy rows predate the cap. Deliberately not
+                          adjustsFontSizeToFit: shrinking to fit is what made
+                          these unreadable in the first place. */}
+                      <Text
+                        style={styles.bandTitle}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
+                        {discount.title}
+                      </Text>
+                      {availability && (
+                        <View style={styles.availabilityPill}>
+                          <Text style={styles.availabilityPillText}>{availability}</Text>
                         </View>
                       )}
                     </LinearGradient>
 
                     {/* Card body */}
                     <View style={styles.discountBody}>
-                      {discountAmount && (
-                        <Text style={[styles.discountTitle, isLimitReached && styles.discountTextDisabled]}>
-                          {discount.title}
-                        </Text>
-                      )}
                       {discount.description && discount.description !== discount.terms && (
-                        <Text style={[styles.discountAppliesTo, isLimitReached && styles.discountTextDisabled]} numberOfLines={2}>
+                        <Text style={[styles.discountAppliesTo, isLimitReached && styles.discountTextDisabled]} numberOfLines={3}>
                           {discount.description}
                         </Text>
                       )}
@@ -766,8 +760,8 @@ export default function VendorDetails() {
       {discountsLocked && (
         <DiscountsLockOverlay
           status={subscriptionStatus}
-          onChooseAmount={() => router.push('/(tabs)/menu/editDonationAmount')}
-          onUpdatePayment={() => router.push('/(tabs)/menu/manageCards')}
+          onChooseAmount={() => router.push(paymentRecoveryRoute(user))}
+          onUpdatePayment={() => router.push(paymentRecoveryRoute(user))}
         />
       )}
 
@@ -993,41 +987,34 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 18,
   },
-  // Coupon band typography — kept identical for both branches (amount vs
-  // fallback title) so the banner reads consistently whether the discount
-  // has a computed value like "10% off" or falls back to its title.
-  bandAmount: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#fff',
-    letterSpacing: 0.5,
-  },
+  // The band carries the offer itself. 18pt rather than 20 buys roughly five
+  // more characters at the same legibility, and TITLE_MAX is enforced when the
+  // discount is written so this never has to shrink to fit.
   bandTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     color: '#fff',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
     flex: 1,
+    marginRight: 10,
   },
-  limitBadge: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
+  // Where the offer can be redeemed — in-store, online, or both. Sits opposite
+  // the title so a donor can tell at a glance whether a trip is involved.
+  availabilityPill: {
+    backgroundColor: 'rgba(255,255,255,0.22)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 20,
+    flexShrink: 0,
   },
-  limitBadgeText: {
+  availabilityPillText: {
     fontSize: 11,
     fontWeight: '700',
     color: '#fff',
+    letterSpacing: 0.2,
   },
   discountBody: {
     padding: 16,
-  },
-  discountTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#324E58',
-    marginBottom: 6,
   },
   discountAppliesTo: {
     fontSize: 13,

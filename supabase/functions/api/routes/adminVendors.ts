@@ -1,4 +1,5 @@
 import { corsHeaders } from "../lib/cors.ts";
+import { normalizeCategory } from "../lib/categories.ts";
 import { bcryptHash } from "../lib/password.ts";
 import { sendVendorEmail } from "../lib/email.ts";
 import { normalizeHours } from "../lib/vendorHours.ts";
@@ -652,7 +653,7 @@ export async function handleAdminVendors(
       .insert([
         {
           name,
-          category: category || null,
+          category: normalizeCategory(category),
           description: description || null,
           website: website || null,
           phone: phone || null,

@@ -33,6 +33,8 @@ import { useLocation } from '../../../context/LocationContext';
 import { useDiscount } from '../../../context/DiscountContext';
 import { useUser } from '../../../context/UserContext';
 import { useDiscountFilter } from '../../../context/DiscountFilterContext';
+import { groupByCategory, categoryKey, categoryLabel } from '../../../utils/categories';
+import { paymentRecoveryRoute } from '../../../utils/paymentRecovery';
 import { IMAGE_ASSETS } from '../../../utils/assetConstants';
 import { beneficiaryLocationMatches } from '../../../utils/beneficiaryLocationMatch';
 import { clusterVendors, isCoLocated, regionForCluster, sharedAddressLabel } from '../../../utils/mapClustering';
@@ -275,13 +277,11 @@ export default function DiscountsScreen() {
       }
     });
     
-    // Order by preferred sequence, then alphabetical for any extras
-    const preferred = ['restaurant', 'retail', 'coworking'];
-    const all = Array.from(categories);
-    const ordered = [
-      ...preferred.filter(c => all.some(a => a.toLowerCase() === c)),
-      ...all.filter(a => !preferred.includes(a.toLowerCase())).sort(),
-    ];
+    // Grouped on a case-insensitive key so "Restaurant" and "restaurant" are
+    // one entry, ordered with the catch-all bucket last.
+    const ordered = groupByCategory(
+      Array.from(categories).map(c => ({ category: c })),
+    ).map(c => c.label);
     return ['All', ...ordered];
   }, [vendors]);
 
@@ -429,15 +429,14 @@ export default function DiscountsScreen() {
     return matchesSearch && matchesLocation && matchesRadius && matchesType && matchesCategory && matchesAvailability && matchesFavoritesFilter;
   });
 
-  // Count vendors per category for badge display (scope + search applied, category not applied)
-  const categoryCounts = useMemo(() => {
-    const counts = {};
-    transformedVendors.forEach(v => {
-      const cats = new Set([v.category, ...(v.tags || [])].filter(Boolean));
-      cats.forEach(c => { counts[c] = (counts[c] || 0) + 1; });
-    });
-    return counts;
-  }, [transformedVendors]);
+  // Category chips for the donor's scroll row (scope + search applied, category
+  // not applied). Grouped case-insensitively — the raw strings split
+  // "Restaurant" from "restaurant" into two chips with the counts divided
+  // between them — and ordered so "Other" comes last.
+  const categoryChips = useMemo(
+    () => groupByCategory(transformedVendors),
+    [transformedVendors],
+  );
 
   const highlightedVendors = filteredVendors.slice(0, 2);
   const remainingVendors = filteredVendors.slice(2);
@@ -662,7 +661,7 @@ export default function DiscountsScreen() {
         </View>
 
         {/* Category Tag Pills */}
-        {Object.keys(categoryCounts).length > 0 && (
+        {categoryChips.length > 0 && (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -687,17 +686,23 @@ export default function DiscountsScreen() {
                 <Text style={[styles.tagText, filters.showFavorites && styles.tagTextActive]}>Favorites</Text>
               </View>
             </TouchableOpacity>
-            {Object.entries(categoryCounts).map(([cat]) => (
-              <TouchableOpacity
-                key={cat}
-                style={[styles.tag, filters.category === cat && styles.tagActive]}
-                onPress={() => updateFilters({ category: filters.category === cat ? '' : cat, showFavorites: false })}
-              >
-                <Text style={[styles.tagText, filters.category === cat && styles.tagTextActive]}>
-                  {cat}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {categoryChips.map(({ key, label }) => {
+              const isActive = categoryKey(filters.category) === key;
+              return (
+                <TouchableOpacity
+                  key={key}
+                  style={[styles.tag, isActive && styles.tagActive]}
+                  onPress={() => updateFilters({
+                    category: isActive ? '' : key,
+                    showFavorites: false,
+                  })}
+                >
+                  <Text style={[styles.tagText, isActive && styles.tagTextActive]}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
         )}
 
@@ -1061,8 +1066,12 @@ export default function DiscountsScreen() {
         {discountsLocked && (
           <DiscountsLockOverlay
             status={subscriptionStatus}
-            onChooseAmount={() => router.push('/(tabs)/menu/editDonationAmount')}
-            onUpdatePayment={() => router.push('/(tabs)/menu/manageCards')}
+            // Both routes go somewhere that can actually take the payment.
+            // They used to land on editDonationAmount (changes a number) and
+            // manageCards (attaches a card, charges nothing), so a donor whose
+            // payment failed could not recover from inside the app at all.
+            onChooseAmount={() => router.push(paymentRecoveryRoute(user))}
+            onUpdatePayment={() => router.push(paymentRecoveryRoute(user))}
           />
         )}
       </View>

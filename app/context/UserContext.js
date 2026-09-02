@@ -12,6 +12,7 @@ import API from '../lib/api';
 import { pickFirstNonEmptyString } from './BeneficiaryContext';
 import { extractIsVerifiedFromApiProfile } from '../utils/extractIsVerifiedFromApiProfile';
 import { registerForPushNotificationsAsync, clearPushTokenOnServer } from '../utils/pushNotifications';
+import { syncFavoritesToServer } from '../utils/favoritesSync';
 
 const UserContext = createContext();
 
@@ -731,6 +732,10 @@ export const UserProvider = ({ children }) => {
         // Best-effort: request push permission + register token. Silently
         // no-ops if user declines or runs in a simulator.
         registerForPushNotificationsAsync().catch(() => {});
+
+        // Favourites picked during signup were stored locally only until
+        // 2026-09-01. Replay them so the new-discount push can find them.
+        syncFavoritesToServer().catch(() => {});
 
         console.log('✅ User data synced with backend');
         return mergedUser;

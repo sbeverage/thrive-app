@@ -19,6 +19,7 @@
 
 import { verify as verifyJWT } from "https://deno.land/x/djwt@v2.9/mod.ts";
 import { corsHeaders } from "../lib/cors.ts";
+import { normalizeCategory, normalizeTags } from "../lib/categories.ts";
 import { getAppAuthHeader } from "../lib/jwt-app.ts";
 import { sendVendorEmail } from "../lib/email.ts";
 import { sendPushBatch } from "../lib/push.ts";
@@ -92,7 +93,7 @@ async function handleVendorSignup(req: Request, supabase: any, userId: number): 
   const body = await req.json().catch(() => ({}));
   const insertPayload = {
     name: body.name || "",
-    category: body.category ?? null,
+    category: normalizeCategory(body.category),
     description: body.description ?? null,
     logo_url: body.logo_url ?? null,
     website: body.website ?? null,
@@ -355,6 +356,44 @@ async function handleDiscountList(supabase: any, vendorId: number): Promise<JSON
   return json({ discounts: discounts ?? [] });
 }
 
+/**
+ * Donor-facing card limits, mirrored from app/utils/discountDisplay.js.
+ *
+ * The coupon band renders the title on one line, shared with the availability
+ * pill. A title past TITLE_MAX truncates with an ellipsis, so it is rejected at
+ * write time rather than quietly mangled at render time.
+ */
+const TITLE_MAX = 26;
+const DESCRIPTION_MAX = 140;
+const TERMS_MAX = 200;
+const AVAILABILITY_VALUES = ["in-store", "online", "both"];
+
+/** Returns an error message, or null when the discount is presentable. */
+function validateDiscountCopy(body: Record<string, any>): string | null {
+  const len = (v: unknown) => (typeof v === "string" ? v.trim().length : 0);
+  // Required on create, and on any update that touches it — but absent from an
+  // update body means "leave it alone", not "clear it", so only check when the
+  // caller actually sent the field.
+  if ("description" in body && len(body.description) === 0) {
+    return "Description is required — tell donors what the offer includes.";
+  }
+  if ("title" in body && len(body.title) > TITLE_MAX) {
+    return `Title must be ${TITLE_MAX} characters or fewer — it has to fit on one line of the discount card.`;
+  }
+  if ("description" in body && len(body.description) > DESCRIPTION_MAX) {
+    return `Description must be ${DESCRIPTION_MAX} characters or fewer.`;
+  }
+  if ("terms" in body && len(body.terms) > TERMS_MAX) {
+    return `Terms must be ${TERMS_MAX} characters or fewer.`;
+  }
+  if (body.availability != null && body.availability !== "") {
+    if (!AVAILABILITY_VALUES.includes(String(body.availability))) {
+      return `availability must be one of: ${AVAILABILITY_VALUES.join(", ")}`;
+    }
+  }
+  return null;
+}
+
 async function handleDiscountCreate(req: Request, supabase: any, vendorId: number): Promise<JSONResponse> {
   const body = await req.json().catch(() => ({}));
   const allowed: Record<string, unknown> = {
@@ -367,16 +406,28 @@ async function handleDiscountCreate(req: Request, supabase: any, vendorId: numbe
     discount_percentage: body.discount_percentage ?? null,
     discount_amount: body.discount_amount ?? null,
     max_discount: body.max_discount ?? null,
-    category: body.category ?? null,
-    tags: body.tags ?? null,
+    category: normalizeCategory(body.category),
+    tags: normalizeTags(body.tags),
     image_url: body.image_url ?? null,
     start_date: body.start_date ?? null,
     end_date: body.end_date ?? null,
     terms: body.terms ?? null,
     is_active: body.is_active ?? true,
     usage_limit: body.usage_limit ?? "unlimited",
+    // Where the offer can be redeemed. Shown on the card's coupon band, so a
+    // donor knows before travelling. Defaults to in-store: the safe assumption
+    // for a bricks-and-mortar vendor, and never silently claims online.
+    availability: body.availability ?? "in-store",
   };
   if (!allowed.title) return json({ error: "title is required" }, 400);
+  if (typeof body.description !== "string" || body.description.trim() === "") {
+    return json(
+      { error: "Description is required — tell donors what the offer includes." },
+      400,
+    );
+  }
+  const copyError = validateDiscountCopy(body);
+  if (copyError) return json({ error: copyError }, 400);
 
   const { data: discount, error } = await supabase
     .from("discounts")
@@ -456,10 +507,13 @@ async function handleDiscountUpdate(
     "title", "description", "discount_code", "discount_type", "discount_value",
     "discount_percentage", "discount_amount", "max_discount", "category",
     "tags", "image_url", "start_date", "end_date", "terms", "is_active",
-    "usage_limit",
+    "usage_limit", "availability",
   ];
   const updates: Record<string, unknown> = {};
   for (const k of editable) if (k in body) updates[k] = body[k];
+
+  const copyError = validateDiscountCopy(body);
+  if (copyError) return json({ error: copyError }, 400);
 
   const { data: discount, error } = await supabase
     .from("discounts")

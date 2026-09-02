@@ -44,9 +44,15 @@ export async function handleDiscountRoute(
         )
         .neq("is_active", false);
 
-      // Filter by active and not expired
+      // Filter by active and in-window.
+      //
+      // A null end_date means the offer runs continuously, so it must pass the
+      // expiry test rather than be filtered out. A start_date in the future
+      // means it hasn't opened yet — previously ignored entirely, which made a
+      // scheduled discount visible and redeemable the moment it was saved.
       const today = new Date().toISOString().split("T")[0];
       query = query.or(`end_date.is.null,end_date.gte.${today}`);
+      query = query.or(`start_date.is.null,start_date.lte.${today}`);
 
       // Filter by category
       if (category && category !== "All") {
@@ -654,7 +660,8 @@ export async function handleDiscountRoute(
         });
       }
 
-      // Check if discount has expired
+      // Check if discount has expired. A null end_date is a continuous offer
+      // and never expires.
       if (discount.end_date) {
         const endDate = new Date(discount.end_date);
         const now = new Date();
@@ -663,6 +670,19 @@ export async function handleDiscountRoute(
             headers: { "Content-Type": "application/json" },
             status: 400,
           });
+        }
+      }
+
+      // And that it has actually started. The listing hides future-dated
+      // offers, but a donor holding a deep link or a stale list could still
+      // reach redemption directly.
+      if (discount.start_date) {
+        const startDate = new Date(discount.start_date);
+        if (startDate > new Date()) {
+          return new Response(
+            JSON.stringify({ error: "This discount hasn't started yet" }),
+            { headers: { "Content-Type": "application/json" }, status: 400 },
+          );
         }
       }
 

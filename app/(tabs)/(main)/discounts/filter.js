@@ -12,6 +12,7 @@ import {
 import { Feather, AntDesign, MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useDiscountFilter } from '../../../context/DiscountFilterContext';
+import { groupByCategory, categoryKey } from '../../../utils/categories';
 import { useLocation } from '../../../context/LocationContext';
 import { useDiscount } from '../../../context/DiscountContext';
 
@@ -35,18 +36,19 @@ export default function FilterScreen() {
   const [radius, setRadius] = useState(filters.radius || '');
   const [type, setType] = useState(filters.type || '');
   const [availability, setAvailability] = useState(filters.availability || '');
-  const [category, setCategory] = useState(filters.category || '');
+  const [category, setCategory] = useState(categoryKey(filters.category) || '');
   const [showFavorites, setShowFavorites] = useState(filters.showFavorites || false);
 
-  const categoryOptions = useMemo(() => {
-    if (!vendors) return [];
-    const cats = new Set();
-    vendors.forEach(v => {
-      if (v.category) cats.add(v.category);
-      if (v.tags && Array.isArray(v.tags)) v.tags.forEach(t => { if (t) cats.add(t); });
-    });
-    return Array.from(cats).sort();
-  }, [vendors]);
+  // Same grouping as the chip row on the discounts screen: one entry per
+  // category regardless of how it was cased when it was saved, with the
+  // catch-all bucket last.
+  // renderPills compares the selected value, so the pill carries the
+  // normalised key while showing the Title Case label. Storing the key is what
+  // lets a filter survive a vendor re-saving their category in a different case.
+  const categoryOptions = useMemo(
+    () => groupByCategory(vendors).map(c => ({ label: c.label, value: c.key })),
+    [vendors],
+  );
   const [locationSuggestions, setLocationSuggestions] = useState([]);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const debounceRef = useRef(null);

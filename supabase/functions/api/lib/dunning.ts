@@ -16,6 +16,11 @@ export type FailureNoticeStage = {
   amountDue: number;
   /** Human date of the next retry, when there is one. */
   nextTry?: string | null;
+  /**
+   * Send the push regardless of stage. For donors already mid-sequence when
+   * this flow shipped, who would otherwise never receive one.
+   */
+  forcePush?: boolean;
 };
 
 export type FailureNoticeResult = {
@@ -38,7 +43,7 @@ export async function sendPaymentFailureNotice(
   userId: number,
   stage: FailureNoticeStage,
 ): Promise<FailureNoticeResult> {
-  const { attempt, isFinal, amountDue, nextTry } = stage;
+  const { attempt, isFinal, amountDue, nextTry, forcePush } = stage;
 
   const title = isFinal
     ? "Your monthly giving is paused"
@@ -56,9 +61,12 @@ export async function sendPaymentFailureNotice(
 
   const result: FailureNoticeResult = { pushSent: false, emailSent: false, title };
 
-  if (attempt <= 1 || isFinal) {
+  if (attempt <= 1 || isFinal || forcePush) {
     try {
-      await sendPushToUser(supabase, userId, {
+      // sendPushToUser returns false when the user has no expo_push_token —
+      // it does not throw. Treating "didn't throw" as "delivered" reported
+      // success for a notification that never left the building.
+      const delivered = await sendPushToUser(supabase, userId, {
         title: isFinal
           ? "Your giving is paused"
           : "Your THRIVE payment didn't go through",
@@ -67,7 +75,13 @@ export async function sendPaymentFailureNotice(
           : "Tap to update your card so we can keep your donation going.",
         data: { path: "/menu/manageCards", type: "payment_failed" },
       });
-      result.pushSent = true;
+      result.pushSent = delivered;
+      if (!delivered) {
+        result.reason = "no push token registered for this user";
+        console.warn(
+          `⚠️ No expo_push_token for user ${userId} — payment-failure push not delivered.`,
+        );
+      }
     } catch (e: any) {
       console.warn("payment failure push failed:", e?.message || e);
     }

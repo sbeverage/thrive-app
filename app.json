@@ -15,7 +15,7 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "buildNumber": "62",
+      "buildNumber": "63",
       "supportsTablet": true,
       "bundleIdentifier": "com.thriveinitiative.app",
       "googleServicesFile": "./GoogleService-Info.plist",
@@ -123,6 +123,7 @@
     "plugins": [
       "expo-router",
       "expo-font",
+      "expo-notifications",
       [
         "expo-location",
         {
