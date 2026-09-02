@@ -30,15 +30,18 @@ NOTIFY pgrst, 'reload schema';
 -- portals, and both API routes already enforce it; this closes the last gap —
 -- a direct PostgREST write or a hand-run UPDATE.
 --
--- IMPORTANT: two titles exceeded 26 characters when this was written:
+-- Two titles exceeded 26 characters when the cap was first set, and both were
+-- resolved before this file was applied:
 --
---     32  "Free Signature Tapas with Dinner"  (Fogón and Lions)
---     29  "10% off any service or retail"     (PetSuites Roswell)
+--     32  "Free Signature Tapas with Dinner"  (Fogón and Lions)   — sample,
+--         deleted by Stephanie on 2026-09-02
+--     29  "10% off any service or retail"     (PetSuites Roswell) — trimmed to
+--         "10% off service or retail" (25) via the admin API, full record
+--         re-sent so no other field was nulled
 --
--- The ADD CONSTRAINT below WILL FAIL until those are shortened. That is the
--- intended behaviour — it refuses to pretend the rule holds when it doesn't.
--- Shorten them in the admin panel (the form now demands it on save), or run
--- the UPDATEs by hand, then re-run this file.
+-- Every remaining title is under the cap, so ADD CONSTRAINT applies cleanly.
+-- If it ever does fail, a row is over the limit — shorten that title rather
+-- than dropping the constraint. The admin form demands it on save.
 --
 -- To find any offenders yourself:
 --
