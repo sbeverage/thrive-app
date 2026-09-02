@@ -1,6 +1,6 @@
 import { getStripeClient } from "../lib/stripe.ts";
 import { sendPushToUser } from "../lib/push.ts";
-import { sendNotificationEmail } from "../lib/email.ts";
+import { sendPaymentFailureNotice } from "../lib/dunning.ts";
 
 // ─── Stripe API-shape compatibility ──────────────────────────────────────
 // The webhook endpoint is pinned to 2025-10-29.clover. Stripe removed
@@ -550,45 +550,14 @@ export async function handleWebhookRoute(
             .maybeSingle();
           const donorName = donor?.first_name || "there";
 
-          // Push on the first failure and on the last, not on every retry —
-          // four identical notifications in a fortnight reads as spam and gets
-          // the app muted, which loses the one channel that recovers them.
-          if (attempt <= 1 || isFinal) {
-            sendPushToUser(supabase, donation.user_id, {
-              title: isFinal
-                ? "Your giving is paused"
-                : "Your THRIVE payment didn't go through",
-              body: isFinal
-                ? "We couldn't process your card after several tries. Update it to start giving again."
-                : "Tap to update your card so we can keep your donation going.",
-              data: { path: "/menu/manageCards", type: "payment_failed" },
-            }).catch((e) => console.warn("payment failed push failed:", e));
-          }
-
-          // Email every attempt — that is the "spread out" sequence, paced by
-          // Stripe's retries.
-          if (donor?.email) {
-            const title = isFinal
-              ? "Your monthly giving is paused"
-              : attempt <= 1
-                ? "We couldn't process your donation"
-                : `Still unable to process your donation (attempt ${attempt})`;
-            const message = isFinal
-              ? `We tried your card a few times over the past couple of weeks and it didn't go through, so your monthly gift of $${amountDue.toFixed(2)} is paused for now.\n\nNothing is lost — your cause is still saved. Open the THRIVE app and update your payment method to pick up right where you left off.`
-              : `Your monthly gift of $${amountDue.toFixed(2)} couldn't be processed${attempt > 1 ? ` (this was attempt ${attempt})` : ""}.\n\n${nextTry ? `We'll try again on ${nextTry}.` : ""} To avoid a gap, open the THRIVE app and update your payment method — it takes a moment and your cause stays exactly as you set it.`;
-
-            sendNotificationEmail({
-              to: donor.email,
-              name: donorName,
-              title,
-              message,
-              level: isFinal ? "error" : "warning",
-            }).catch((e) => console.warn("payment failed email failed:", e?.message || e));
-          } else {
-            console.warn(
-              `⚠️ No email on user ${donation.user_id} — payment-failure notice not sent.`,
-            );
-          }
+          // Copy and volume live in lib/dunning.ts so the automatic notice and
+          // an admin's manual one stay identical.
+          sendPaymentFailureNotice(supabase, donation.user_id, {
+            attempt,
+            isFinal,
+            amountDue,
+            nextTry,
+          }).catch((e) => console.warn("dunning notice failed:", e?.message || e));
           break;
         }
 

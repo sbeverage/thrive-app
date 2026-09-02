@@ -1,5 +1,6 @@
 import { corsHeaders } from "../lib/cors.ts";
 import { getStripeClient } from "../lib/stripe.ts";
+import { sendPaymentFailureNotice } from "../lib/dunning.ts";
 
 export async function handleAdminReporting(
   req: Request,
@@ -876,6 +877,112 @@ export async function handleAdminReporting(
       );
     } catch (e: any) {
       return new Response(JSON.stringify({ error: e?.message || "link failed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
+      });
+    }
+  }
+
+  // POST /admin/reporting/send-payment-notice?email=..[&final=true]
+  //
+  // Sends the payment-failure notice by hand. The automatic version fires from
+  // invoice.payment_failed as Stripe retries, but a donor already sitting at
+  // past_due has usually missed that event — the sequence only started
+  // existing today — so this lets someone reach them now rather than waiting
+  // for the next retry.
+  //
+  // Uses the same copy as the webhook (lib/dunning.ts), and derives the amount
+  // and attempt number from the donor's actual subscription rather than
+  // inventing them.
+  if (method === "POST" && route.startsWith("/admin/reporting/send-payment-notice")) {
+    try {
+      const url = new URL(req.url);
+      const email = (url.searchParams.get("email") || "").trim().toLowerCase();
+      const forceFinal = url.searchParams.get("final") === "true";
+      if (!email) {
+        return new Response(JSON.stringify({ error: "email is required" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400,
+        });
+      }
+
+      const { data: users } = await supabase
+        .from("users")
+        .select("id, email, first_name")
+        .ilike("email", email);
+      const user = (users || [])[0];
+      if (!user) {
+        return new Response(JSON.stringify({ error: `No user with email ${email}` }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 404,
+        });
+      }
+
+      // The failing subscription, so the amount in the email is the real one.
+      const { data: subs } = await supabase
+        .from("monthly_donations")
+        .select("id, amount, status, stripe_subscription_id")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+      const failing =
+        (subs || []).find((r: any) =>
+          ["past_due", "unpaid", "incomplete", "pending"].includes(
+            String(r.status || "").toLowerCase(),
+          ),
+        ) || (subs || [])[0];
+
+      let amountDue = Number(failing?.amount || 0);
+      let attempt = 1;
+      let nextTry: string | null = null;
+
+      // Prefer Stripe's own view of the open invoice: attempt count and next
+      // retry date are facts we should not guess at.
+      if (failing?.stripe_subscription_id) {
+        const stripe = getStripeClient();
+        const r = await fetch(
+          `${stripe.baseUrl}/invoices?subscription=${encodeURIComponent(failing.stripe_subscription_id)}&limit=5`,
+          { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+        );
+        if (r.ok) {
+          const body = await r.json();
+          const open = (body.data || []).find((i: any) =>
+            ["open", "draft", "uncollectible"].includes(i.status),
+          );
+          if (open) {
+            amountDue = (open.amount_due || 0) / 100 || amountDue;
+            attempt = Number(open.attempt_count || 1);
+            nextTry = open.next_payment_attempt
+              ? new Date(open.next_payment_attempt * 1000).toLocaleDateString("en-US", {
+                  month: "long",
+                  day: "numeric",
+                })
+              : null;
+          }
+        }
+      }
+
+      const result = await sendPaymentFailureNotice(supabase, user.id, {
+        attempt,
+        isFinal: forceFinal || (attempt > 1 && !nextTry),
+        amountDue,
+        nextTry,
+      });
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            sent_to: user.email,
+            user_id: user.id,
+            subscription: failing?.stripe_subscription_id ?? null,
+            local_status: failing?.status ?? null,
+            amount_due_usd: amountDue,
+            attempt,
+            next_retry: nextTry,
+            ...result,
+          },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e?.message || "send failed" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
       });
     }
