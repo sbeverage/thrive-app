@@ -575,7 +575,13 @@ export async function handleWebhookRoute(
               active: "active",
               past_due: "past_due",
               canceled: "cancelled",
-              unpaid: "past_due",
+              // Stripe's "unpaid" means it has stopped retrying. Mapping it to
+              // past_due overwrote the pause that invoice.payment_failed had
+              // just written, because Stripe fires this event straight after
+              // the final failure. The donor was then told "we'll try again"
+              // when nothing would ever be tried again, and the paused copy in
+              // lib/accountAlerts.ts and lib/dunning.ts never showed.
+              unpaid: "unpaid",
               trialing: "active",
               paused: "paused",
             };
