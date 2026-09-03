@@ -40,6 +40,27 @@ export async function buildAccountAlerts(
 
   const alerts: AccountAlert[] = [];
 
+  // 0) We moved them onto THRIVE because their cause was rejected. Checked
+  //    first, and it has to be checked at all: once reassigned their stored
+  //    charity is THRIVE, which is perfectly healthy, so every other rule
+  //    below goes quiet and the donor would never learn their cause changed.
+  //    `reassignedFrom` is cleared by POST /donations/monthly/redirect, so
+  //    this stops the moment they choose for themselves.
+  const moved = user.preferences?.reassignedFrom;
+  if (moved?.name) {
+    alerts.push({
+      id: `charity_reassigned:${moved.id}:${moved.at || ""}`,
+      type: "charity_rejected",
+      title: `We couldn't verify ${moved.name}`,
+      message:
+        "THRIVE Initiative, Inc. is holding your giving until you choose a new cause — that's why you'll see them as your cause for now. Nothing is paid out to them. Pick any cause and everything held moves straight to them.",
+      ctaLabel: "Choose a new cause",
+      ctaPath: "/beneficiary",
+      dismissible: true,
+    });
+    return alerts;
+  }
+
   // 1) The cause they picked is no longer one we can send money to. First
   //    because their giving is held until they choose again — that blocks
   //    more than a card problem does.

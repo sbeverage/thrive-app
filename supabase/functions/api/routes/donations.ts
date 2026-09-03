@@ -1007,6 +1007,10 @@ export async function handleDonationRoute(
         beneficiary: newBeneficiaryId,
         preferredCharity: newBeneficiaryId,
       };
+      // They have now chosen for themselves, so stop prompting. Set by the
+      // charity-reject path when we parked them on THRIVE; leaving it would
+      // nag a donor who has already done what we asked.
+      delete (newPrefs as any).reassignedFrom;
       await supabase.from("users").update({ preferences: newPrefs }).eq("id", userId);
 
       // If there's anything to release, write the release transaction and

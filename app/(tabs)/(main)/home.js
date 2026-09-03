@@ -445,7 +445,7 @@ export default function MainHome() {
                 <Image
                   source={
                     resolveBeneficiaryHeroImageSource(selectedBeneficiary) ||
-                    require('../../../assets/images/charity-water.jpg')
+                    require('../../../assets/images/pending-charity.png')
                   }
                   style={styles.beneficiaryImage}
                   resizeMode="cover"

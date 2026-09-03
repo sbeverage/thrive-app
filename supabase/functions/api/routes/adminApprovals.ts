@@ -565,6 +565,120 @@ async function notifyCharityDonors(
   return { pushed, emailed, recipients: (recipients || []).length };
 }
 
+/**
+ * THRIVE Initiative, Inc. — the fallback cause.
+ *
+ * Hidden from /api/charities unless includeThrive=true, and there must only
+ * ever be one row for it, so this is pinned by id rather than looked up by
+ * name.
+ */
+const THRIVE_CHARITY_ID = 32;
+
+/**
+ * Move every donor off a rejected charity and onto THRIVE, holding their
+ * giving there until they choose for themselves.
+ *
+ * Without this a rejected charity keeps showing on the donor's profile as
+ * their cause, which is both confusing and untrue — it can never receive
+ * money.
+ *
+ * THRIVE is a *custodian* here, not the recipient: `held_for_donor_choice`
+ * stays true and no release transaction is written, so nothing is actually
+ * paid out to THRIVE. The donor sees a live, honest beneficiary holding their
+ * giving, and it moves the moment they pick a cause. Releasing to THRIVE
+ * instead would route money to the platform that the donor never chose.
+ *
+ * The donor did not choose THRIVE, so the move is recorded in
+ * `preferences.reassignedFrom` — lib/accountAlerts.ts reads that to keep
+ * prompting them, and POST /donations/monthly/redirect clears it once they
+ * choose. Without that record the on-entry prompt would go quiet the moment we
+ * reassigned, because their cause would look perfectly healthy, and they would
+ * never learn it had changed.
+ *
+ * Skipped entirely if THRIVE is missing, so a bad id can never strand a donor
+ * on a dead charity.
+ */
+async function reassignDonorsToThrive(
+  supabase: any,
+  fromCharityId: number,
+  fromCharityName: string,
+): Promise<{ moved: number; heldForChoice: number }> {
+  if (fromCharityId === THRIVE_CHARITY_ID) return { moved: 0, heldForChoice: 0 };
+
+  const { data: thrive } = await supabase
+    .from("charities")
+    .select("id, name")
+    .eq("id", THRIVE_CHARITY_ID)
+    .maybeSingle();
+  if (!thrive) {
+    console.warn(
+      `THRIVE charity ${THRIVE_CHARITY_ID} not found — leaving donors where they are rather than moving them nowhere.`,
+    );
+    return { moved: 0, heldForChoice: 0 };
+  }
+
+  // Same union the notifier uses: a donation row and a stored preference are
+  // two different things, and Team or comped members only ever have the latter.
+  const ids = new Set<number>();
+  const { data: donors } = await supabase
+    .from("monthly_donations")
+    .select("user_id")
+    .eq("beneficiary_id", fromCharityId);
+  for (const d of donors || []) if (d?.user_id) ids.add(d.user_id);
+
+  const { data: prefUsers } = await supabase
+    .from("users")
+    .select("id, preferences")
+    .not("preferences", "is", null);
+  const prefsById = new Map<number, any>();
+  for (const u of prefUsers || []) {
+    prefsById.set(u.id, u.preferences || {});
+    const pick = u?.preferences?.preferredCharity ?? u?.preferences?.beneficiary;
+    if (pick != null && String(pick) === String(fromCharityId)) ids.add(u.id);
+  }
+
+  let moved = 0;
+  let heldForChoice = 0;
+
+  for (const userId of ids) {
+    try {
+      const existing = prefsById.get(userId) || {};
+      await supabase
+        .from("users")
+        .update({
+          preferences: {
+            ...existing,
+            beneficiary: THRIVE_CHARITY_ID,
+            preferredCharity: THRIVE_CHARITY_ID,
+            reassignedFrom: {
+              id: fromCharityId,
+              name: fromCharityName,
+              at: new Date().toISOString(),
+            },
+          },
+        })
+        .eq("id", userId);
+
+      // Point the donation at THRIVE and mark it held. held_for_donor_choice
+      // is what stops this reading as a donation to THRIVE in reporting and
+      // payouts — the money waits for the donor's real pick.
+      const { data: rows } = await supabase
+        .from("monthly_donations")
+        .update({ beneficiary_id: THRIVE_CHARITY_ID, held_for_donor_choice: true })
+        .eq("user_id", userId)
+        .eq("beneficiary_id", fromCharityId)
+        .select("id");
+      heldForChoice += (rows || []).length;
+
+      moved += 1;
+    } catch (e: any) {
+      console.warn(`could not move user ${userId} to THRIVE:`, e?.message || e);
+    }
+  }
+
+  return { moved, heldForChoice };
+}
+
   // POST /admin/approvals/charity/:id/reject
   //
   // The donor keeps their held funds and is asked to pick another cause; the
@@ -620,13 +734,18 @@ async function notifyCharityDonors(
     // The donor's giving stays held and safe, but nothing else would tell
     // them to choose again — so say it plainly, and don't repeat the internal
     // rejection reason to them.
+    // Collect the notice list BEFORE reassigning — once donors are moved onto
+    // THRIVE they no longer match this charity, so notifying afterwards would
+    // find nobody.
     let notified = { pushed: 0, emailed: 0, recipients: 0 };
+    let reassigned = { moved: 0, releasedTotal: 0 };
     try {
       notified = await notifyCharityDonors(supabase, charityId, {
         title: `We couldn't verify ${charity.name}`,
-        pushBody: "Your giving is safe and still set aside — tap to choose another cause.",
+        pushBody:
+          "THRIVE Initiative is holding your giving until you pick a new cause — tap to choose.",
         emailBody:
-          `We weren't able to verify ${charity.name}, so we can't send donations there.\n\nNothing has been lost — your giving is safe and still set aside. Open the THRIVE app and choose another cause, and it will go to them instead.\n\nThank you for your patience while we check that every cause on THRIVE is what it says it is.`,
+          `We weren't able to verify ${charity.name}, so we can't send donations there.\n\nNothing has been lost. Your giving is being held by THRIVE Initiative, Inc. until you choose a new cause — that's why you'll see them as your cause in the app for now. Nothing is paid out to them.\n\nOpen the THRIVE app, pick any cause you like, and everything held moves straight to them.`,
         level: "warning",
         type: "charity_rejected",
       });
@@ -635,11 +754,20 @@ async function notifyCharityDonors(
       console.warn("charity rejected but donor notice failed:", e?.message || e);
     }
 
+    try {
+      reassigned = await reassignDonorsToThrive(supabase, charityId, charity.name);
+    } catch (e: any) {
+      // Same rule: the charity IS rejected. A failed move leaves the donor
+      // held, which is the state they were already in — recoverable, not lost.
+      console.warn("charity rejected but donor reassignment failed:", e?.message || e);
+    }
+
     return json({
       success: true,
       charity: { id: charityId, name: charity.name },
       reason: reason || null,
       donors_notified: notified,
+      donors_held_by_thrive: reassigned,
     });
   }
 

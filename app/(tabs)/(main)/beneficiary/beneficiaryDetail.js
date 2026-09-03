@@ -297,7 +297,7 @@ export default function BeneficiaryDetailScreen() {
               } else if (category === 'Animal Welfare') {
                 return require('../../../../assets/images/humane-society.jpg');
               } else {
-                return require('../../../../assets/images/charity-water.jpg');
+                return require('../../../../assets/images/pending-charity.png');
               }
             }
             

@@ -112,7 +112,7 @@ export default function BeneficiaryPreferences() {
               } else if (charity.category === 'Animal Welfare') {
                 imageSource = require('../../../assets/images/humane-society.jpg');
               } else {
-                imageSource = require('../../../assets/images/charity-water.jpg');
+                imageSource = require('../../../assets/images/pending-charity.png');
               }
             }
 
