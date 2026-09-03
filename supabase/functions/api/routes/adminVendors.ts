@@ -165,13 +165,26 @@ async function provisionVendorPortalAccount(
  * without one. Returns the address unchanged when nothing resolves — a wrong
  * pin is worse than the app's existing fallback.
  */
-async function withGeocodedAddress(address: any): Promise<any> {
+async function withGeocodedAddress(address: any, previous?: any): Promise<any> {
   if (!address || typeof address !== "object") return address;
 
   const lat = Number(address.latitude);
   const lng = Number(address.longitude);
+  const hasCoords =
+    Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0;
+
+  // Existing coordinates are only trustworthy while the address they were
+  // derived from is unchanged. Keeping them across an edit is how a corrected
+  // street keeps its old pin — Warm Waves Coffee sat on South Main for exactly
+  // that reason when it is actually on North Main, 1.5km away.
+  const key = (a: any) =>
+    ["street", "city", "state", "zipCode"]
+      .map((k) => String(a?.[k] ?? "").trim().toLowerCase())
+      .join("|");
+  const addressChanged = previous ? key(address) !== key(previous) : false;
+
   // 0/0 is the Gulf of Guinea, not Georgia — treat it as unset.
-  if (Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0) {
+  if (hasCoords && !addressChanged) {
     return address;
   }
 
@@ -884,7 +897,16 @@ export async function handleAdminVendors(
     // location. withGeocodedAddress keeps coordinates that are already real,
     // so re-saving an unchanged address costs nothing.
     if (address !== undefined) {
-      updateObj.address = address ? await withGeocodedAddress(address) : null;
+      // Pass the stored address so a changed street re-resolves rather than
+      // inheriting the previous pin.
+      const { data: prior } = await supabase
+        .from("vendors")
+        .select("address")
+        .eq("id", vendorId)
+        .maybeSingle();
+      updateObj.address = address
+        ? await withGeocodedAddress(address, prior?.address)
+        : null;
     }
     if (hours !== undefined) updateObj.hours = hours ? normalizeHours(hours) : null;
     if (image_urls !== undefined) {
