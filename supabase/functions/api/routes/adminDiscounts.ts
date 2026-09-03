@@ -394,7 +394,10 @@ export async function handleAdminDiscounts(
           title: `${newDiscount.vendor.name} just added a new discount`,
           body: newDiscount.title || "Tap to see the latest offer from a place you love.",
           data: {
-            path: `/(tabs)/(main)/discounts/${newDiscount.id}`,
+            // Vendor id, not discount id — the [id] route resolves a vendor.
+            // Group-stripped href: (tabs)/(main) are expo-router groups and
+            // are not part of the URL. home.js uses this same form.
+            path: `/discounts/${vendorId}`,
             type: "favorite_new_discount",
             vendor_id: vendorId,
             discount_id: newDiscount.id,

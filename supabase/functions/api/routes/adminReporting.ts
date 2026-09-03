@@ -1041,11 +1041,66 @@ export async function handleAdminReporting(
           continue;
         }
 
+        // ?template=favorite_discount previews the real "your saved vendor
+        // added a discount" notification, word for word, without having to
+        // create a throwaway discount and push it at every favoriter of that
+        // vendor. Copy is duplicated from routes/adminDiscounts.ts and
+        // routes/vendorPortal.ts — if theirs changes, change this too or the
+        // preview stops telling the truth.
+        const template = (url.searchParams.get("template") || "").trim();
+        const vendorName = (url.searchParams.get("vendor") || "THRIVE Coworking").trim();
+        const discountTitle = (url.searchParams.get("discount") || "Free Day Pass").trim();
+
+        // Resolve a real discount so the preview is tappable and lands on a
+        // screen that actually exists. Without a path the tap does nothing,
+        // which makes the preview useless for checking the deep link — the
+        // part most likely to be wrong.
+        let previewVendorId: number | null = null;
+        let previewVendorName = vendorName;
+        let previewDiscountTitle = discountTitle;
+        if (template === "favorite_discount") {
+          const { data: d } = await supabase
+            .from("discounts")
+            .select("id, title, vendor_id, is_active, vendor:vendors!vendor_id (id, name, signup_status)")
+            .eq("is_active", true)
+            .order("id", { ascending: false })
+            .limit(25);
+          const usable = (d || []).find((row: any) =>
+            row.vendor?.signup_status === "approved" &&
+            (!url.searchParams.get("vendor") ||
+              String(row.vendor?.name || "").toLowerCase() === vendorName.toLowerCase()),
+          );
+          if (usable) {
+            previewVendorId = usable.vendor_id;
+            if (!url.searchParams.get("vendor")) previewVendorName = usable.vendor.name;
+            if (!url.searchParams.get("discount")) previewDiscountTitle = usable.title;
+          }
+        }
+
+        const payload = template === "favorite_discount"
+          ? {
+              title: `${previewVendorName} just added a new discount`,
+              body: previewDiscountTitle || "Tap to see the latest offer from a place you love.",
+              data: previewVendorId
+                ? {
+                    // Same shape the real fanout sends: a VENDOR id, since the
+                    // [id] route resolves a vendor, not a discount.
+                    path: `/discounts/${previewVendorId}`,
+                    type: "favorite_new_discount",
+                    vendor_id: previewVendorId,
+                    preview: true,
+                  }
+                : { type: "favorite_new_discount", preview: true },
+            }
+          : {
+              title: "THRIVE test notification",
+              body: "If you can read this, push notifications are working.",
+              data: { type: "test" },
+            };
+
         const ticket = await sendPushWithTicket({
           to: u.expo_push_token,
-          title: "THRIVE test notification",
-          body: "If you can read this, push notifications are working.",
-          data: { type: "test" },
+          ...payload,
         });
 
         results.push({
@@ -1054,6 +1109,9 @@ export async function handleAdminReporting(
           role: u.role,
           push_token_registered: true,
           token_registered_at: u.push_token_updated_at,
+          sent_title: payload.title,
+          sent_body: payload.body,
+          sent_path: (payload.data as any)?.path || null,
           accepted: ticket.accepted,
           expo_status: ticket.status,
           expo_ticket_id: ticket.id,

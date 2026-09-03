@@ -462,7 +462,8 @@ export async function handleAdminApprovals(
           title: `${charity.name} is verified`,
           body: "Your giving is on its way to them. Tap to see your cause.",
           data: {
-            path: "/(tabs)/beneficiary",
+            // Group-stripped href — (tabs)/(main) are expo-router groups.
+            path: "/beneficiary",
             type: "charity_approved",
             charity_id: charityId,
           },
@@ -551,7 +552,8 @@ export async function handleAdminApprovals(
           title: `We couldn't verify ${charity.name}`,
           body: "Your giving is safe and still set aside — tap to choose another cause.",
           data: {
-            path: "/(tabs)/beneficiary",
+            // Group-stripped href — (tabs)/(main) are expo-router groups.
+            path: "/beneficiary",
             type: "charity_rejected",
             charity_id: charityId,
           },
