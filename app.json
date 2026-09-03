@@ -3,7 +3,7 @@
     "owner": "sbeverage",
     "name": "THRIVE",
     "slug": "thrive-app",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/images/piggy-heart.png",
     "scheme": "thriveapp",
@@ -15,7 +15,7 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "buildNumber": "63",
+      "buildNumber": "64",
       "supportsTablet": true,
       "bundleIdentifier": "com.thriveinitiative.app",
       "googleServicesFile": "./GoogleService-Info.plist",

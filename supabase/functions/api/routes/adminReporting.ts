@@ -1,6 +1,7 @@
 import { corsHeaders } from "../lib/cors.ts";
 import { getStripeClient } from "../lib/stripe.ts";
 import { sendPaymentFailureNotice } from "../lib/dunning.ts";
+import { sendPushWithTicket } from "../lib/push.ts";
 
 export async function handleAdminReporting(
   req: Request,
@@ -988,6 +989,91 @@ export async function handleAdminReporting(
       );
     } catch (e: any) {
       return new Response(JSON.stringify({ error: e?.message || "send failed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
+      });
+    }
+  }
+
+  // POST /admin/reporting/test-push?email=... — send one harmless test push.
+  //
+  // The only way to push a single person before this was the payment-failure
+  // notice, which also emails them that their card failed — not something to
+  // fire at yourself to check plumbing.
+  //
+  // Reports the Expo ticket rather than a boolean, because Expo answers 200
+  // even when it drops the message. "accepted: true" here means Expo really
+  // took it; anything else names the reason.
+  if (method === "POST" && route.startsWith("/admin/reporting/test-push")) {
+    try {
+      const url = new URL(req.url);
+      const email = (url.searchParams.get("email") || "").trim();
+      if (!email) {
+        return new Response(JSON.stringify({ error: "email query param is required" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400,
+        });
+      }
+
+      const { data: users } = await supabase
+        .from("users")
+        .select("id, email, role, expo_push_token, push_token_updated_at")
+        .ilike("email", email)
+        .limit(5);
+
+      if (!users || users.length === 0) {
+        return new Response(
+          JSON.stringify({ error: `No user found with email ${email}` }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 404 },
+        );
+      }
+
+      const results = [];
+      for (const u of users) {
+        if (!u.expo_push_token) {
+          results.push({
+            user_id: u.id,
+            email: u.email,
+            role: u.role,
+            push_token_registered: false,
+            accepted: false,
+            reason:
+              "No token on file. Install build 63 or later on a physical device, sign in, and accept the notification prompt — the simulator cannot register for push.",
+          });
+          continue;
+        }
+
+        const ticket = await sendPushWithTicket({
+          to: u.expo_push_token,
+          title: "THRIVE test notification",
+          body: "If you can read this, push notifications are working.",
+          data: { type: "test" },
+        });
+
+        results.push({
+          user_id: u.id,
+          email: u.email,
+          role: u.role,
+          push_token_registered: true,
+          token_registered_at: u.push_token_updated_at,
+          accepted: ticket.accepted,
+          expo_status: ticket.status,
+          expo_ticket_id: ticket.id,
+          expo_error: ticket.error,
+          expo_message: ticket.message,
+          hint:
+            ticket.error === "DeviceNotRegistered"
+              ? "Stale token — the app was deleted or reinstalled. Sign in again on the device to re-register."
+              : ticket.error === "InvalidCredentials"
+                ? "Expo has no valid APNs key for this bundle id. Re-run: eas credentials --platform ios -> Push Notifications."
+                : undefined,
+        });
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, data: { email, results } }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e?.message || "test push failed" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
       });
     }

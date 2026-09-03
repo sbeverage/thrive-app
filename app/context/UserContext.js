@@ -318,6 +318,22 @@ export const UserProvider = ({ children }) => {
         }
         
         setUser(loadedUser);
+
+        // Push registration and favourite sync used to live in
+        // syncWithBackend, which is exported but never called by anything — so
+        // the permission prompt never appeared, no token was ever registered,
+        // and iOS never even created a Notifications entry for the app.
+        // loadUserData is the path that actually runs (login, signup, email
+        // verification, the menu screen), so they belong here.
+        //
+        // Gated on isLoggedIn: registering needs a JWT to POST the token, and
+        // asking a signed-out user for notification permission spends the one
+        // prompt iOS ever gives us on someone with no account yet.
+        if (loadedUser?.isLoggedIn) {
+          registerForPushNotificationsAsync().catch(() => {});
+          syncFavoritesToServer().catch(() => {});
+        }
+
         return loadedUser;
       } else {
         // CRITICAL: Don't overwrite existing user state if storage is empty
@@ -731,11 +747,9 @@ export const UserProvider = ({ children }) => {
 
         // Best-effort: request push permission + register token. Silently
         // no-ops if user declines or runs in a simulator.
-        registerForPushNotificationsAsync().catch(() => {});
-
-        // Favourites picked during signup were stored locally only until
-        // 2026-09-01. Replay them so the new-discount push can find them.
-        syncFavoritesToServer().catch(() => {});
+        // Push registration and favourite sync now run from loadUserData,
+        // which is the function the app actually calls. Deliberately not
+        // duplicated here so they cannot double-fire if this is ever wired up.
 
         console.log('✅ User data synced with backend');
         return mergedUser;
