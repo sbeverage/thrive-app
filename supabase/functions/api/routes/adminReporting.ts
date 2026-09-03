@@ -2,6 +2,7 @@ import { corsHeaders } from "../lib/cors.ts";
 import { getStripeClient } from "../lib/stripe.ts";
 import { sendPaymentFailureNotice } from "../lib/dunning.ts";
 import { sendPushWithTicket } from "../lib/push.ts";
+import { buildAccountAlerts } from "../lib/accountAlerts.ts";
 
 export async function handleAdminReporting(
   req: Request,
@@ -1092,11 +1093,27 @@ export async function handleAdminReporting(
                   }
                 : { type: "favorite_new_discount", preview: true },
             }
-          : {
-              title: "THRIVE test notification",
-              body: "If you can read this, push notifications are working.",
-              data: { type: "test" },
-            };
+          : template === "charity_rejected"
+            ? {
+                // Copy duplicated from routes/adminApprovals.ts. The internal
+                // rejection reason is never shown to the donor.
+                title: `We couldn't verify ${vendorName}`,
+                body: "Your giving is safe and still set aside — tap to choose another cause.",
+                data: { path: "/beneficiary", type: "charity_rejected", preview: true },
+              }
+          : template === "payment_failed"
+            ? {
+                // Copy duplicated from lib/dunning.ts (first-failure wording).
+                // Keep in step with it or this stops previewing the truth.
+                title: "Your THRIVE payment didn't go through",
+                body: "Tap to update your card so we can keep your donation going.",
+                data: { path: "/menu/manageCards", type: "payment_failed", preview: true },
+              }
+            : {
+                title: "THRIVE test notification",
+                body: "If you can read this, push notifications are working.",
+                data: { type: "test" },
+              };
 
         const ticket = await sendPushWithTicket({
           to: u.expo_push_token,
@@ -1132,6 +1149,49 @@ export async function handleAdminReporting(
       );
     } catch (e: any) {
       return new Response(JSON.stringify({ error: e?.message || "test push failed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
+      });
+    }
+  }
+
+  // GET /admin/reporting/alerts-preview?email=... — read-only.
+  //
+  // Exactly what the app would show this donor on launch, produced by the same
+  // lib/accountAlerts.ts the app endpoint calls. Lets an alert be verified
+  // against a real account without signing in as them.
+  if (method === "GET" && route.startsWith("/admin/reporting/alerts-preview")) {
+    try {
+      const url = new URL(req.url);
+      const email = (url.searchParams.get("email") || "").trim();
+      if (!email) {
+        return new Response(JSON.stringify({ error: "email query param is required" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400,
+        });
+      }
+      const { data: users } = await supabase
+        .from("users")
+        .select("id, email, role")
+        .ilike("email", email)
+        .limit(5);
+      if (!users || users.length === 0) {
+        return new Response(JSON.stringify({ error: `No user found with email ${email}` }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 404,
+        });
+      }
+      const results = [];
+      for (const u of users) {
+        results.push({
+          user_id: u.id,
+          email: u.email,
+          role: u.role,
+          alerts: await buildAccountAlerts(supabase, u.id),
+        });
+      }
+      return new Response(JSON.stringify({ success: true, data: { results } }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200,
+      });
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e?.message || "alerts preview failed" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
       });
     }

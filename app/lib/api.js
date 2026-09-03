@@ -1424,6 +1424,19 @@ const API = {
    * Register (or clear) the user's Expo push token with the backend.
    * Call with `null` to clear (e.g. on sign-out).
    */
+  /** GET /api/auth/alerts — things the donor needs to act on right now.
+   *  Conditions and copy live on the server so wording can change without a
+   *  release; OTA updates do not work on this project. Never throws — an
+   *  empty list is the safe answer and this runs on app launch. */
+  getAccountAlerts: async () => {
+    try {
+      const response = await api.get('/api/auth/alerts');
+      return response.data?.alerts || [];
+    } catch (error) {
+      return [];
+    }
+  },
+
   registerPushToken: async (token) => {
     try {
       const response = await api.post('/api/auth/push-token', { token });

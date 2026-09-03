@@ -20,6 +20,7 @@
 import { corsHeaders } from "../lib/cors.ts";
 import { sendVendorEmail } from "../lib/email.ts";
 import { sendPushToUser } from "../lib/push.ts";
+import { sendNotificationEmail } from "../lib/email.ts";
 import { charityProfileGaps } from "../lib/charities.ts";
 
 const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
@@ -452,26 +453,17 @@ export async function handleAdminApprovals(
     // rather than fire-and-forget: an Edge Function isolate can be torn down
     // the moment the response is returned, dropping un-awaited work.
     try {
-      const { data: donors } = await supabase
-        .from("monthly_donations")
-        .select("user_id")
-        .eq("beneficiary_id", charityId);
-      const userIds = [...new Set((donors || []).map((d: any) => d.user_id).filter(Boolean))];
-      for (const uid of userIds) {
-        await sendPushToUser(supabase, uid as number, {
-          title: `${charity.name} is verified`,
-          body: "Your giving is on its way to them. Tap to see your cause.",
-          data: {
-            // Group-stripped href — (tabs)/(main) are expo-router groups.
-            path: "/beneficiary",
-            type: "charity_approved",
-            charity_id: charityId,
-          },
-        });
-      }
+      await notifyCharityDonors(supabase, charityId, {
+        title: `${charity.name} is verified`,
+        pushBody: "Your giving is on its way to them. Tap to see your cause.",
+        emailBody:
+          `Good news — ${charity.name} has cleared our verification checks, so your monthly giving is on its way to them.\n\nYou can see your cause any time in the THRIVE app.`,
+        level: "success",
+        type: "charity_approved",
+      });
     } catch (e: any) {
-      // Approval already succeeded; a failed push must not undo or hide that.
-      console.warn("charity approved but donor push failed:", e?.message || e);
+      // Approval already succeeded; a failed notice must not undo or hide that.
+      console.warn("charity approved but donor notice failed:", e?.message || e);
     }
 
     return json({
@@ -485,6 +477,93 @@ export async function handleAdminApprovals(
       missingFields: gaps,
     });
   }
+
+/**
+ * Tell every donor attached to a charity that its verification status changed.
+ *
+ * Two things this gets right that the previous inline version did not:
+ *
+ * 1. **Who counts as attached.** A donor's chosen cause lives in
+ *    `users.preferences.preferredCharity` (see routes/auth.ts), which is not the
+ *    same as having a `monthly_donations` row. Team and comped members pick a
+ *    cause and are never billed, and a donor can select before their first
+ *    payment settles — querying only monthly_donations silently skipped all of
+ *    them, which is the worst case for a rejection: their app keeps showing a
+ *    cause that no longer exists and nothing ever tells them.
+ *
+ * 2. **Email as well as push.** Push only reaches build 64 and later; earlier
+ *    binaries cannot register a token at all. A push-only notice therefore
+ *    reaches almost nobody today, and this is the one message a donor must not
+ *    miss — their giving is sitting held while they wait to be asked.
+ *
+ * Awaited rather than fire-and-forget: an Edge Function isolate can be torn
+ * down as soon as the response returns, dropping un-awaited work.
+ *
+ * The internal rejection reason is deliberately never passed in here — it is
+ * for the admin record, not the donor.
+ */
+async function notifyCharityDonors(
+  supabase: any,
+  charityId: number,
+  notice: { title: string; pushBody: string; emailBody: string; level: string; type: string },
+): Promise<{ pushed: number; emailed: number; recipients: number }> {
+  const ids = new Set<number>();
+
+  const { data: donors } = await supabase
+    .from("monthly_donations")
+    .select("user_id")
+    .eq("beneficiary_id", charityId);
+  for (const d of donors || []) if (d?.user_id) ids.add(d.user_id);
+
+  // preferences is JSONB and the id may be stored as a number or a string, so
+  // this is compared in JS rather than trusting a ->> cast to match either.
+  const { data: prefUsers } = await supabase
+    .from("users")
+    .select("id, preferences")
+    .not("preferences", "is", null);
+  for (const u of prefUsers || []) {
+    const pick = u?.preferences?.preferredCharity ?? u?.preferences?.beneficiary;
+    if (pick != null && String(pick) === String(charityId)) ids.add(u.id);
+  }
+
+  if (ids.size === 0) return { pushed: 0, emailed: 0, recipients: 0 };
+
+  const { data: recipients } = await supabase
+    .from("users")
+    .select("id, email, first_name")
+    .in("id", [...ids]);
+
+  let pushed = 0;
+  let emailed = 0;
+  for (const u of recipients || []) {
+    try {
+      const ok = await sendPushToUser(supabase, u.id, {
+        title: notice.title,
+        body: notice.pushBody,
+        data: { path: "/beneficiary", type: notice.type, charity_id: charityId },
+      });
+      if (ok) pushed += 1;
+    } catch (e: any) {
+      console.warn(`push to ${u.id} failed:`, e?.message || e);
+    }
+
+    if (!u.email) continue;
+    try {
+      await sendNotificationEmail({
+        to: u.email,
+        name: u.first_name || "there",
+        title: notice.title,
+        message: notice.emailBody,
+        level: notice.level,
+      });
+      emailed += 1;
+    } catch (e: any) {
+      console.warn(`email to ${u.email} failed:`, e?.message || e);
+    }
+  }
+
+  return { pushed, emailed, recipients: (recipients || []).length };
+}
 
   // POST /admin/approvals/charity/:id/reject
   //
@@ -541,32 +620,26 @@ export async function handleAdminApprovals(
     // The donor's giving stays held and safe, but nothing else would tell
     // them to choose again — so say it plainly, and don't repeat the internal
     // rejection reason to them.
+    let notified = { pushed: 0, emailed: 0, recipients: 0 };
     try {
-      const { data: donors } = await supabase
-        .from("monthly_donations")
-        .select("user_id")
-        .eq("beneficiary_id", charityId);
-      const userIds = [...new Set((donors || []).map((d: any) => d.user_id).filter(Boolean))];
-      for (const uid of userIds) {
-        await sendPushToUser(supabase, uid as number, {
-          title: `We couldn't verify ${charity.name}`,
-          body: "Your giving is safe and still set aside — tap to choose another cause.",
-          data: {
-            // Group-stripped href — (tabs)/(main) are expo-router groups.
-            path: "/beneficiary",
-            type: "charity_rejected",
-            charity_id: charityId,
-          },
-        });
-      }
+      notified = await notifyCharityDonors(supabase, charityId, {
+        title: `We couldn't verify ${charity.name}`,
+        pushBody: "Your giving is safe and still set aside — tap to choose another cause.",
+        emailBody:
+          `We weren't able to verify ${charity.name}, so we can't send donations there.\n\nNothing has been lost — your giving is safe and still set aside. Open the THRIVE app and choose another cause, and it will go to them instead.\n\nThank you for your patience while we check that every cause on THRIVE is what it says it is.`,
+        level: "warning",
+        type: "charity_rejected",
+      });
     } catch (e: any) {
-      console.warn("charity rejected but donor push failed:", e?.message || e);
+      // Rejection already succeeded; a failed notice must not undo or hide it.
+      console.warn("charity rejected but donor notice failed:", e?.message || e);
     }
 
     return json({
       success: true,
       charity: { id: charityId, name: charity.name },
       reason: reason || null,
+      donors_notified: notified,
     });
   }
 

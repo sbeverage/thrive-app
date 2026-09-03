@@ -18,6 +18,7 @@ import {
   revokeAppleRefreshToken,
 } from "../lib/apple-revoke.ts";
 import {membershipOf, MEMBERSHIP_COLUMNS} from "../lib/membership.ts";
+import { buildAccountAlerts } from "../lib/accountAlerts.ts";
 
 export type AuthRouteDeps = {
   createReferralRecord: (
@@ -2572,6 +2573,36 @@ export async function handleAuthRoute(
           status: 500,
         },
       );
+    }
+  }
+
+  // GET /auth/alerts — things the donor needs to act on, for the on-entry prompt.
+  //
+  // Push and email both depend on something outside our control: a recent
+  // build with a registered token, or someone reading their inbox. This is the
+  // channel that always lands, because the app asks on launch.
+  //
+  // Rules live in lib/accountAlerts.ts so the admin preview runs the same code.
+  if (method === "GET" && route === "/auth/alerts") {
+    try {
+      const payload: any = await getJwtPayload(getAppAuthHeader(req));
+      const userId = payload?.id || payload?.userId;
+      if (!userId) {
+        return new Response(
+          JSON.stringify({ message: "Authentication required" }),
+          { headers: { "Content-Type": "application/json" }, status: 401 },
+        );
+      }
+      const alerts = await buildAccountAlerts(supabase, userId);
+      return new Response(JSON.stringify({ alerts }), {
+        headers: { "Content-Type": "application/json" }, status: 200,
+      });
+    } catch (e) {
+      // Never break app launch — an empty list is the safe answer.
+      console.error("alerts route error:", e);
+      return new Response(JSON.stringify({ alerts: [] }), {
+        headers: { "Content-Type": "application/json" }, status: 200,
+      });
     }
   }
 
