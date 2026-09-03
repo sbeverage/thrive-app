@@ -3,6 +3,7 @@ import { getStripeClient } from "../lib/stripe.ts";
 import { sendPaymentFailureNotice } from "../lib/dunning.ts";
 import { sendPushWithTicket } from "../lib/push.ts";
 import { buildAccountAlerts } from "../lib/accountAlerts.ts";
+import { geocodeAddress } from "../lib/geocoding.ts";
 
 export async function handleAdminReporting(
   req: Request,
@@ -1192,6 +1193,135 @@ export async function handleAdminReporting(
       });
     } catch (e: any) {
       return new Response(JSON.stringify({ error: e?.message || "alerts preview failed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
+      });
+    }
+  }
+
+  // POST /admin/reporting/backfill-vendor-coordinates
+  //
+  // Vendors are stored with address.latitude/longitude of 0, which the app
+  // reads as "unset" and falls back to geocoding on the device. That is why
+  // the same build shows different pins on different phones: each device
+  // resolves the coordinates itself, subject to its own timing, cache and
+  // rate limits, so clusters split at different places or a vendor vanishes
+  // when a lookup fails.
+  //
+  // Geocoding once and storing the result makes every device agree, and it
+  // takes effect on builds already in the wild — the app prefers stored
+  // coordinates and only geocodes when they are missing.
+  //
+  // Nominatim asks for no more than one request a second, so this paces
+  // itself. Safe to re-run: vendors that already have real coordinates are
+  // skipped unless force=1.
+  if (method === "POST" && route.startsWith("/admin/reporting/backfill-vendor-coordinates")) {
+    try {
+      const url = new URL(req.url);
+      const force = url.searchParams.get("force") === "1";
+
+      const { data: vendors } = await supabase
+        .from("vendors")
+        .select("id, name, address");
+
+      const results: any[] = [];
+      let updated = 0;
+      let skipped = 0;
+      let failed = 0;
+
+      for (const v of vendors || []) {
+        const addr = v.address || {};
+        const lat = Number(addr.latitude);
+        const lng = Number(addr.longitude);
+        // 0/0 is the Gulf of Guinea, not Georgia — treat it as unset.
+        const hasReal =
+          Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0;
+        if (hasReal && !force) {
+          skipped += 1;
+          continue;
+        }
+
+        // Nominatim fails outright on a suite or unit number, and some rows
+        // carry placeholder text like "Location not specified" where the city
+        // should be. Try the exact address first, then a cleaned-up version,
+        // rather than giving up on a perfectly findable street.
+        const clean = (x: any) => (typeof x === "string" ? x.trim() : "");
+        const junk = /^(location not specified|n\/a|none|tbd|unknown)$/i;
+        const street = clean(addr.street);
+        const city = junk.test(clean(addr.city)) ? "" : clean(addr.city);
+        const state = clean(addr.state);
+        const zip = junk.test(clean(addr.zipCode)) ? "" : clean(addr.zipCode);
+        // "10 Roswell St, Suite 100" -> "10 Roswell St"
+        const streetNoUnit = street
+          .replace(/[,]?\s*(suite|ste\.?|unit|apt\.?|#)\s*[\w-]+\s*$/i, "")
+          .trim();
+
+        const candidates = Array.from(
+          new Set(
+            [
+              [street, city, state, zip],
+              [streetNoUnit, city, state, zip],
+              [streetNoUnit, city, state],
+            ]
+              .map((parts) => parts.filter(Boolean).join(", "))
+              .filter((q) => q.length > 0),
+          ),
+        );
+
+        if (candidates.length === 0) {
+          results.push({ id: v.id, name: v.name, status: "no_address" });
+          failed += 1;
+          continue;
+        }
+
+        let geo: { latitude: number | null; longitude: number | null } = {
+          latitude: null, longitude: null,
+        };
+        let query = candidates[0];
+        for (const candidate of candidates) {
+          query = candidate;
+          geo = await geocodeAddress(candidate);
+          if (geo.latitude != null && geo.longitude != null) break;
+          // Pace each attempt, not just each vendor.
+          await new Promise((r) => setTimeout(r, 1100));
+        }
+
+        if (geo.latitude == null || geo.longitude == null) {
+          results.push({
+            id: v.id, name: v.name, status: "not_found", tried: candidates,
+          });
+          failed += 1;
+        } else {
+          const { error } = await supabase
+            .from("vendors")
+            .update({
+              address: { ...addr, latitude: geo.latitude, longitude: geo.longitude },
+            })
+            .eq("id", v.id);
+          if (error) {
+            results.push({ id: v.id, name: v.name, query, status: "write_failed", error: error.message });
+            failed += 1;
+          } else {
+            results.push({
+              id: v.id, name: v.name, query, status: "geocoded",
+              latitude: geo.latitude, longitude: geo.longitude,
+            });
+            updated += 1;
+          }
+        }
+
+        // Be a good Nominatim citizen.
+        await new Promise((r) => setTimeout(r, 1100));
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: { total: (vendors || []).length, updated, skipped, failed, results },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e?.message || "backfill failed" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
       });
     }
