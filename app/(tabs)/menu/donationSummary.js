@@ -858,7 +858,7 @@ export default function DonationSummary() {
             <Image
               source={
                 resolvedBeneficiary?.image ||
-                require("../../../assets/images/child-cancer.jpg")
+                require("../../../assets/images/pending-charity.png")
               }
               style={styles.charityLogo}
             />

@@ -472,7 +472,7 @@ export default function MainHome() {
               activeOpacity={0.9}
             >
               <View style={styles.beneficiaryImageContainer}>
-                <Image source={require('../../../assets/images/child-cancer.jpg')} style={styles.beneficiaryImage} resizeMode="cover" />
+                <Image source={require('../../../assets/images/pending-charity.png')} style={styles.beneficiaryImage} resizeMode="cover" />
                 <LinearGradient
                   colors={['transparent', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.7)']}
                   style={styles.beneficiaryImageOverlay}

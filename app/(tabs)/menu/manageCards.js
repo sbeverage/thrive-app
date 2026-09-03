@@ -116,8 +116,23 @@ export default function CardManagement() {
         }
         return;
       }
-      Alert.alert("Success", "Payment method added successfully!");
       await loadPaymentMethods();
+
+      // Attaching a card is not the same as paying. If a payment is
+      // outstanding, retry it with the card just added — otherwise the donor
+      // sees "added successfully", stays past_due, and waits weeks for
+      // Stripe's next automatic retry. Silent when nothing is owing.
+      const settled = await API.settleFailedPayment(null);
+      if (settled?.settled) {
+        Alert.alert(
+          "Card added and payment complete",
+          `Your card was added and $${Number(settled.amount_paid || 0).toFixed(2)} has gone through. Your giving is back on track.`,
+        );
+      } else if (settled?.success === false && settled?.error) {
+        Alert.alert("Card added, but the payment failed", settled.error);
+      } else {
+        Alert.alert("Success", "Payment method added successfully!");
+      }
     } catch (error) {
       console.error("Error adding payment method:", error);
       Alert.alert("Error", error.message || "Failed to add payment method.");

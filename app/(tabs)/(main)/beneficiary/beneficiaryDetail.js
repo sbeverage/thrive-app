@@ -214,7 +214,7 @@ export default function BeneficiaryDetailScreen() {
               id,
               name: 'API Error',
               category: 'Unknown',
-              image: require('../../../../assets/images/child-cancer.jpg'),
+              image: require('../../../../assets/images/pending-charity.png'),
               likes: 0,
               mutual: 0,
               about: 'Unable to load beneficiary data. The API request failed. Please check your connection and try again.',
@@ -293,9 +293,9 @@ export default function BeneficiaryDetailScreen() {
             // Helper function to get default image
             function getDefaultImage(category) {
               if (category === 'Childhood Illness') {
-                return require('../../../../assets/images/child-cancer.jpg');
+                return require('../../../../assets/images/pending-charity.png');
               } else if (category === 'Animal Welfare') {
-                return require('../../../../assets/images/humane-society.jpg');
+                return require('../../../../assets/images/pending-charity.png');
               } else {
                 return require('../../../../assets/images/pending-charity.png');
               }
@@ -454,7 +454,7 @@ export default function BeneficiaryDetailScreen() {
               id,
               name: 'Unknown Beneficiary',
               category: 'Unknown',
-              image: require('../../../../assets/images/child-cancer.jpg'),
+              image: require('../../../../assets/images/pending-charity.png'),
               likes: 0,
               mutual: 0,
               about: 'Beneficiary information not available. Please check that the beneficiary exists in the system and that the API is returning data correctly.',
@@ -487,7 +487,7 @@ export default function BeneficiaryDetailScreen() {
           id,
           name: 'Error Loading Beneficiary',
           category: 'Unknown',
-          image: require('../../../../assets/images/child-cancer.jpg'),
+          image: require('../../../../assets/images/pending-charity.png'),
           likes: 0,
           mutual: 0,
           about: 'There was an error loading this beneficiary. Please try again.',

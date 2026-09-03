@@ -75,9 +75,9 @@ export default function BeneficiarySearch() {
               imageSource = { uri: charity.imageUrl };
             } else {
               if (charity.category === 'Childhood Illness') {
-                imageSource = require('../assets/images/child-cancer.jpg');
+                imageSource = require('../assets/images/pending-charity.png');
               } else if (charity.category === 'Animal Welfare') {
-                imageSource = require('../assets/images/humane-society.jpg');
+                imageSource = require('../assets/images/pending-charity.png');
               } else {
                 imageSource = require('../assets/images/pending-charity.png');
               }

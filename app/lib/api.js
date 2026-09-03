@@ -1424,6 +1424,22 @@ const API = {
    * Register (or clear) the user's Expo push token with the backend.
    * Call with `null` to clear (e.g. on sign-out).
    */
+  /** POST /api/donations/monthly/settle-payment — retry a failed payment.
+   *  Attaching a card never settled the outstanding invoice, so a donor could
+   *  add a card, be told it worked, and stay past_due. Pass the new payment
+   *  method so the retry uses it rather than the card that already failed. */
+  settleFailedPayment: async (paymentMethodId) => {
+    try {
+      const response = await api.post('/api/donations/monthly/settle-payment', {
+        payment_method_id: paymentMethodId || null,
+      });
+      return response.data;
+    } catch (error) {
+      // 402 means the card was declined again — a real answer, not a crash.
+      return error?.response?.data || { success: false, settled: false };
+    }
+  },
+
   /** GET /api/auth/alerts — things the donor needs to act on right now.
    *  Conditions and copy live on the server so wording can change without a
    *  release; OTA updates do not work on this project. Never throws — an

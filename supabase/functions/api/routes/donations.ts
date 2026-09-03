@@ -1883,6 +1883,169 @@ export async function handleDonationRoute(
     }
   }
 
+  // POST /donations/monthly/settle-payment
+  //
+  // Finish a payment that failed. Manage Cards could attach a card and nothing
+  // else: no default was set and no invoice was retried, so a donor tapped
+  // "update your card", saw a success message, and stayed past_due until
+  // Stripe's next automatic retry weeks later — if it ever used the new card
+  // at all. This is the step that was missing.
+  //
+  // Optional payment_method_id makes the just-added card the default for both
+  // the customer and the subscription before retrying, so the retry uses the
+  // card the donor just entered rather than the one that already failed.
+  if (method === "POST" && route === "/donations/monthly/settle-payment") {
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        headers: { "Content-Type": "application/json" }, status: 401,
+      });
+    }
+    try {
+      const body = await req.json().catch(() => ({}));
+      const paymentMethodId = (body?.payment_method_id || body?.paymentMethodId || "")
+        .toString()
+        .trim();
+
+      const { data: subs } = await supabase
+        .from("monthly_donations")
+        .select("id, status, stripe_subscription_id, stripe_customer_id, amount")
+        .eq("user_id", userId)
+        .in("status", ["past_due", "unpaid", "incomplete"])
+        .order("updated_at", { ascending: false })
+        .limit(1);
+      const sub = (subs || [])[0];
+      if (!sub) {
+        // Nothing owing is a success, not an error — the donor may have been
+        // sent here by a stale notification.
+        return new Response(
+          JSON.stringify({ success: true, settled: false, reason: "no_outstanding_payment" }),
+          { headers: { "Content-Type": "application/json" }, status: 200 },
+        );
+      }
+      if (!sub.stripe_subscription_id) {
+        return new Response(
+          JSON.stringify({ success: false, error: "This subscription has no Stripe record to retry." }),
+          { headers: { "Content-Type": "application/json" }, status: 409 },
+        );
+      }
+
+      const stripe = getStripeClient();
+      const headers = {
+        Authorization: `Bearer ${stripe.secretKey}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      };
+
+      const { data: userRow } = await supabase
+        .from("users")
+        .select("stripe_customer_id")
+        .eq("id", userId)
+        .maybeSingle();
+      const customerId = sub.stripe_customer_id || userRow?.stripe_customer_id;
+
+      // Fall back to the customer's most recently attached card when the
+      // caller doesn't name one. The app adds a card through a Setup Intent
+      // sheet and never learns the resulting id, so without this the retry
+      // would run against the existing default — very often the card that
+      // just failed — and decline again for the same reason.
+      let pmId = paymentMethodId;
+      if (!pmId && customerId) {
+        try {
+          const pmRes = await fetch(
+            `${stripe.baseUrl}/payment_methods?customer=${customerId}&type=card&limit=10`,
+            { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+          );
+          const pmJson = await pmRes.json();
+          const cards = (pmJson?.data || []).slice().sort(
+            (a: any, b: any) => (b.created || 0) - (a.created || 0),
+          );
+          pmId = cards[0]?.id || "";
+        } catch (e) {
+          console.warn("could not list payment methods for settle:", e);
+        }
+      }
+
+      // Point both the customer and the subscription at that card. The
+      // subscription carries its own default_payment_method which overrides
+      // the customer's, so setting only the customer would leave the retry
+      // using the card that just failed.
+      const paymentMethodIdResolved = pmId;
+      if (paymentMethodIdResolved && customerId) {
+        const custForm = new URLSearchParams();
+        custForm.append("invoice_settings[default_payment_method]", paymentMethodIdResolved);
+        await fetch(`${stripe.baseUrl}/customers/${customerId}`, {
+          method: "POST", headers, body: custForm.toString(),
+        });
+
+        const subForm = new URLSearchParams();
+        subForm.append("default_payment_method", paymentMethodIdResolved);
+        await fetch(`${stripe.baseUrl}/subscriptions/${sub.stripe_subscription_id}`, {
+          method: "POST", headers, body: subForm.toString(),
+        });
+      }
+
+      // Retry the open invoice.
+      const invRes = await fetch(
+        `${stripe.baseUrl}/invoices?subscription=${encodeURIComponent(sub.stripe_subscription_id)}&status=open&limit=1`,
+        { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+      );
+      const invJson = await invRes.json();
+      const invoice = (invJson?.data || [])[0];
+      if (!invoice?.id) {
+        return new Response(
+          JSON.stringify({ success: true, settled: false, reason: "no_open_invoice" }),
+          { headers: { "Content-Type": "application/json" }, status: 200 },
+        );
+      }
+
+      const payForm = new URLSearchParams();
+      if (paymentMethodIdResolved) payForm.append("payment_method", paymentMethodIdResolved);
+      const payRes = await fetch(`${stripe.baseUrl}/invoices/${invoice.id}/pay`, {
+        method: "POST", headers, body: payForm.toString(),
+      });
+      const paid = await payRes.json();
+
+      if (!payRes.ok || paid?.status !== "paid") {
+        // Card declined again. Left as-is deliberately: the webhook owns
+        // status transitions, and writing "active" here on a failed retry
+        // would unlock discounts for an unpaid donor.
+        return new Response(
+          JSON.stringify({
+            success: false,
+            settled: false,
+            error:
+              paid?.error?.message ||
+              "That card was declined. Try a different card, or contact your bank.",
+            invoice_status: paid?.status || null,
+          }),
+          { headers: { "Content-Type": "application/json" }, status: 402 },
+        );
+      }
+
+      // Paid. The webhook will also mark this active, but a donor watching the
+      // screen should not have to wait on webhook delivery to see it.
+      await supabase
+        .from("monthly_donations")
+        .update({ status: "active", updated_at: new Date().toISOString() })
+        .eq("id", sub.id);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          settled: true,
+          amount_paid: (paid.amount_paid ?? 0) / 100,
+          invoice_id: invoice.id,
+        }),
+        { headers: { "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (error: any) {
+      console.error("settle-payment error:", error);
+      return new Response(
+        JSON.stringify({ success: false, error: error?.message || "Could not settle payment" }),
+        { headers: { "Content-Type": "application/json" }, status: 500 },
+      );
+    }
+  }
+
   // POST /donations/monthly/subscription/resume — JSON body monthly_donation_id (preferred vs extra path segments)
   if (method === "POST" && route === "/donations/monthly/subscription/resume") {
     if (!userId) {
