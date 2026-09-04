@@ -33,6 +33,18 @@ export default function DonationAmount() {
     user?.coworking === true ||
     routeParams?.flow === "coworking" ||
     routeParams?.isCoworking === "true";
+
+  // A team account has no amount to pick and no card to enter, so it has no
+  // business on this screen. Read from the user record, not just the route
+  // param: a dropped param is exactly how team accounts were reaching Stripe
+  // in the first place, and the record survives a resumed checkpoint too.
+  // externalBilled covers coworking as well, hence the coworking exclusion —
+  // coworking members do legitimately land here to add an amount on top of
+  // what their space sponsors.
+  const isTeamAccount =
+    routeParams?.flow === "team" ||
+    user?.inviteType === "team" ||
+    (user?.externalBilled === true && !isCoworkingUser);
   const MIN_AMOUNT = isCoworkingUser ? 1 : 15;
   const [amount, setAmount] = useState(MIN_AMOUNT);
   const [isEditingAmount, setIsEditingAmount] = useState(false);
@@ -48,6 +60,15 @@ export default function DonationAmount() {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeParamsSnapshot]);
+
+  useEffect(() => {
+    if (!isTeamAccount) return;
+    console.log("🎫 Team account reached donationAmount — skipping payment.");
+    router.replace({
+      pathname: "/signupFlow/teamAccountReady",
+      params: { flow: "team" },
+    });
+  }, [isTeamAccount, router]);
 
   useEffect(() => {
     // Keep slider value valid when coworking flag resolves after initial render.

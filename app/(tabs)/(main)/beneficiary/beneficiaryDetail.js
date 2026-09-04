@@ -535,6 +535,16 @@ export default function BeneficiaryDetailScreen() {
     const inSignup = await resolveSignupNavigation();
     // Detail lives under (tabs), so segments never include "signupFlow" — use param + checkpoint.
     if (inSignup && beneficiary?.id != null) {
+      if (flowParam === "team") {
+        // Team accounts settle outside Stripe: no amount to choose, no card
+        // to add. teamAccountReady is the end of their flow and clears
+        // signupFlowPending itself.
+        router.replace({
+          pathname: "/signupFlow/teamAccountReady",
+          params: { flow: "team" },
+        });
+        return;
+      }
       const next = {
         pathname: "/signupFlow/donationAmount",
         params: {

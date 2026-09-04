@@ -594,7 +594,15 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
     const out = { id: String(beneficiaryId) };
     if (isSignupFlow) {
       out.fromSignup = 'true';
-      if (routeParams?.flow === 'coworking') {
+      // Forward the comped flow onward. Team was absent here, so a team
+      // account that opened a charity's profile instead of picking straight
+      // from the list arrived at the detail screen with no flow at all, and
+      // got routed to the payment step — the one screen a comped account
+      // must never reach. handleConfirmSelection below already branches on
+      // all three; this is the same set.
+      if (routeParams?.flow === 'team') {
+        out.flow = 'team';
+      } else if (routeParams?.flow === 'coworking') {
         out.flow = 'coworking';
         out.sponsorAmount = String(routeParams?.sponsorAmount ?? '15');
       }

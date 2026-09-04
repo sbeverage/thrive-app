@@ -89,6 +89,15 @@ export async function handleAuthRoute(
         coworking,
         inviteType,
         invite_type,
+        // The client sends this when completing a team or coworking
+        // invitation, but it was never destructured here, so it was dropped
+        // on the floor at signup and only ever got set later by /profile or
+        // an admin edit. external_billed is the flag the login onboarding
+        // gate reads to decide an account settles outside Stripe, so leaving
+        // it unset meant a comped account looked unfinished until it happened
+        // to pick a cause.
+        externalBilled,
+        external_billed,
         sponsorAmount,
         extraDonationAmount,
         totalMonthlyDonation,
@@ -670,6 +679,15 @@ export async function handleAuthRoute(
         inviteTypeResolved !== ""
       ) {
         userData.invite_type = inviteTypeResolved;
+      }
+
+      // Persist only what the caller actually stated, the same way the
+      // /profile handler does it — not derived from invite_type, so this
+      // can't silently reclassify a standard signup as comped.
+      const externalBilledSignup = externalBilled ?? external_billed;
+      if (externalBilledSignup !== undefined && externalBilledSignup !== null) {
+        userData.external_billed =
+          externalBilledSignup === true || externalBilledSignup === "true";
       }
 
       // Insert new user

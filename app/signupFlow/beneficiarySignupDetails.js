@@ -229,7 +229,13 @@ export default function BeneficiarySignupDetails() {
 
   const handleModalClose = () => {
     setShowSuccessModal(false);
-    if (params?.flow === 'coworking') {
+    // Nothing currently navigates to this screen — the live signup detail
+    // route is /signupFlow/beneficiaryDetail — but expo-router still exposes
+    // it, so it carries the same three-way branch as the screens that are
+    // reachable rather than a copy that sends comped accounts to Stripe.
+    if (params?.flow === 'team') {
+      router.push({ pathname: '/signupFlow/teamAccountReady', params: { flow: 'team' } });
+    } else if (params?.flow === 'coworking') {
       router.push({
         pathname: '/signupFlow/coworkingDonationPrompt',
         params: { sponsorAmount: params?.sponsorAmount || '15' }
