@@ -92,11 +92,17 @@ export async function sendInvitationEmail({
       ? `${appBaseUrl}/donorInvitationVerify?token=${verificationToken}`
       : `${appBaseUrl}/verify?token=${verificationToken}&email=${encodeURIComponent(to)}`;
 
-    // App store links (update these with your actual app URLs)
+    // App Store id 6759223641, verified against the iTunes lookup API.
+    // The previous id (6744030078) resolved to NO app at all, so every
+    // invitation email sent recipients to a dead App Store page and iOS Mail
+    // refused the link outright with "Unable to verify this link".
+    // NOTE: APP_STORE_IOS_URL overrides this. If that secret is set to the old
+    // id it must be corrected in the Supabase dashboard too — the fallback
+    // below cannot fix it.
     const appStoreLinks = {
       ios:
         Deno.env.get("APP_STORE_IOS_URL") ||
-        "https://apps.apple.com/app/thrive-initiative/id6744030078",
+        "https://apps.apple.com/us/app/thrive-initiative/id6759223641",
       android:
         Deno.env.get("APP_STORE_ANDROID_URL") ||
         "https://play.google.com/store/apps/details?id=com.thriveinitiative.app",
@@ -286,6 +292,11 @@ export async function sendInvitationEmail({
       p, li, ol {
         color: #e8eef0 !important;
       }
+      /* Any inline link inherits a light colour in dark mode. The App Store
+         button sets its own colours inline and is unaffected. */
+      a:not([style*="background-color"]) {
+        color: #f0b072 !important;
+      }
       .highlight {
         color: #f0b072 !important;
       }
@@ -327,7 +338,18 @@ export async function sendInvitationEmail({
             ? `
         <p><strong>${inviteStepsIntro}</strong></p>
         <ol style="color:#333333;font-size:16px;line-height:1.8;padding-left:20px;margin:20px 0;">
-          <li><a href="${appStoreLinks.ios}" style="color:#324E58;font-weight:600;text-decoration:underline;">Download the iOS app</a></li>
+          <li style="margin-bottom:14px;">
+            Get the app, then come back here:<br />
+            <!-- A filled button, not an inline link. The old link carried an
+                 inline color:#324E58 — dark navy — which the dark-mode block
+                 could not override because inline styles win and it only
+                 restyled p, li and ol. On a dark background it was
+                 effectively invisible. Orange on white reads in both schemes. -->
+            <a href="${appStoreLinks.ios}"
+               style="display:inline-block;margin-top:8px;padding:10px 20px;background-color:#DB8633;color:#ffffff;font-weight:700;font-size:15px;text-decoration:none;border-radius:6px;">
+              Download on the App Store
+            </a>
+          </li>
           <li>Come back to this email and tap the button below to verify</li>
           <li>${inviteLastStep}</li>
         </ol>

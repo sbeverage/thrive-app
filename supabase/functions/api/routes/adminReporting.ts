@@ -1388,6 +1388,116 @@ export async function handleAdminReporting(
     }
   }
 
+  // GET /admin/reporting/donated-in?month=YYYY-MM — read-only.
+  //
+  // Which donors actually paid in a given calendar month, so the Donors page
+  // can filter by month.
+  //
+  // Uses the same predicates as the Beneficiary Payouts report — transactions
+  // with status completed and amount > 0 — so the two screens cannot disagree.
+  // The Donors page previously filtered on last_donation_date, a single date,
+  // which answers a different question: it finds donors whose LAST EVER
+  // payment fell in that month, i.e. people who lapsed afterwards. Someone who
+  // paid in both August and September was invisible in August.
+  //
+  // Both monthly donations and one-time gifts count, since either makes
+  // somebody a donor that month.
+  if (method === "GET" && route.startsWith("/admin/reporting/donated-in")) {
+    try {
+      const url = new URL(req.url);
+      const month = (url.searchParams.get("month") || "").trim();
+      if (!/^\d{4}-\d{2}$/.test(month)) {
+        return new Response(
+          JSON.stringify({ error: "month must be YYYY-MM" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+
+      const [y, m] = month.split("-").map(Number);
+      const start = new Date(Date.UTC(y, m - 1, 1)).toISOString();
+      // First instant of the next month, used with lt so the boundary day is
+      // never double-counted or dropped.
+      const end = new Date(Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 1)).toISOString();
+
+      const { data: txns, error } = await supabase
+        .from("transactions")
+        .select("user_id, amount, type, created_at")
+        .in("type", ["monthly_donation", "gift"])
+        .eq("status", "completed")
+        .gt("amount", 0)
+        .gte("created_at", start)
+        .lt("created_at", end);
+      if (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
+        });
+      }
+
+      const byUser = new Map<number, { count: number; total: number }>();
+      for (const t of txns || []) {
+        if (!t.user_id) continue;
+        const cur = byUser.get(t.user_id) || { count: 0, total: 0 };
+        cur.count += 1;
+        cur.total = Math.round((cur.total + Number(t.amount || 0)) * 100) / 100;
+        byUser.set(t.user_id, cur);
+      }
+
+      const donors = [...byUser.entries()].map(([user_id, v]) => ({
+        user_id,
+        donation_count: v.count,
+        total_collected: v.total,
+      }));
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            month,
+            start,
+            end,
+            donor_count: donors.length,
+            donation_count: (txns || []).length,
+            user_ids: donors.map((d) => d.user_id),
+            donors,
+          },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e?.message || "donated-in failed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
+      });
+    }
+  }
+
+  // GET /admin/reporting/email-links — read-only.
+  //
+  // Which store URL the invitation email will actually use. APP_STORE_IOS_URL
+  // overrides the code default, so a stale secret silently beats a fix in the
+  // source — which is how invitation emails kept pointing at App Store id
+  // 6744030078, an id that resolves to no app and which iOS Mail refuses with
+  // "Unable to verify this link". Store URLs are public, so reporting the
+  // resolved value leaks nothing.
+  if (method === "GET" && route.startsWith("/admin/reporting/email-links")) {
+    const iosEnv = Deno.env.get("APP_STORE_IOS_URL");
+    const androidEnv = Deno.env.get("APP_STORE_ANDROID_URL");
+    const resolvedIos =
+      iosEnv || "https://apps.apple.com/us/app/thrive-initiative/id6759223641";
+    return new Response(
+      JSON.stringify({
+        success: true,
+        data: {
+          ios_env_set: !!iosEnv,
+          ios_resolved: resolvedIos,
+          ios_looks_correct: resolvedIos.includes("6759223641"),
+          android_env_set: !!androidEnv,
+          app_base_url: Deno.env.get("APP_BASE_URL") || "(default)",
+        },
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+    );
+  }
+
   // GET /admin/reporting/push-health — read-only.
   //
   // How many people can actually receive a push. Every notification feature —
