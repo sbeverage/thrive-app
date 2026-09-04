@@ -65,22 +65,38 @@ export async function sendInvitationEmail({
     const isTeamInvite = membership === "team";
     const isCoworkingInvite = membership === "coworking";
 
-    // What the account actually is, in the recipient's terms.
+    // What the account actually is, in the recipient's terms. Plain sentences
+    // now, not markup — the template wraps them itself.
     const inviteIntro = isTeamInvite
-      ? `<p>You've been given a <span class="highlight">${appName}</span> team account. It works exactly like a donor account so you can see what donors see — with no payment required and nothing charged.</p>`
+      ? `You've been given a ${appName} team account. It works exactly like a donor account so you can see what donors see — with no payment required and nothing charged.`
       : isCoworkingInvite
-        ? `<p>Your <span class="highlight">${appName}</span> membership is included with your coworking space, so there's nothing to pay — you just choose the cause your monthly giving supports.</p>`
-        : `<p>You've been invited to join <span class="highlight">${appName}</span> as a donor! We're excited to have you join our community of changemakers.</p>`;
+        ? `Your ${appName} membership is included with your coworking space, so there's nothing to pay — you just choose the cause your monthly giving supports.`
+        : `You've been invited to join ${appName} as a donor, and we're glad you're here.`;
 
-    // Neither comped type is asked for a card, so don't imply otherwise.
-    const inviteStepsIntro = isTeamInvite || isCoworkingInvite
-      ? "Here's how to get started — no payment details needed:"
-      : "Here's how to get started — just 3 steps:";
+    // What happens once both steps are done. Neither comped type is asked for
+    // a card, so don't imply otherwise.
     const inviteLastStep = isTeamInvite
-      ? "Pick a cause and you're in — discounts included 🎉"
+      ? "pick a cause and you're in — discounts included."
       : isCoworkingInvite
-        ? "Choose the cause your giving supports 🎉"
-        : "Done! 🎉";
+        ? "choose the cause your giving supports."
+        : "choose your cause and set up your monthly gift.";
+
+    const heroSub = isTeamInvite || isCoworkingInvite
+      ? "Two steps and you're in — no payment details needed."
+      : "Two steps and you're in. That's it.";
+
+    /**
+     * White wordmark — the same asset the app's home tab renders, so the email
+     * and the app open on the same image. Must be an absolute URL: a bundled
+     * require() asset has no meaning once the HTML is in someone's inbox.
+     */
+    const logoUrl =
+      Deno.env.get("EMAIL_LOGO_URL") ||
+      "https://mdqgndyhzlnwojtubouh.supabase.co/storage/v1/object/public/app-assets/assets/logos/initiative-logo-no-web-white.png";
+
+    /** Repeated inline on every text node — see the note above emailHtml. */
+    const font =
+      "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif";
 
     // Build verification link - Use Universal Link (Vercel frontend URL) so iOS intercepts it
     // and opens the app directly instead of showing a web page in Safari.
@@ -113,280 +129,174 @@ export async function sendInvitationEmail({
     const emailSubject = isInvitation
       ? `Welcome to ${appName} - Verify Your Email`
       : `Verify Your ${appName} Account`;
+    // Recipients were tapping "Verify Email & Open App" first, before
+    // installing anything. The universal link then had no app to open, fell
+    // through to the browser, and looked broken — so the invitation's job is
+    // now to make the ORDER the loudest thing in it: two numbered cards, step
+    // one holding the only bright button, and step two saying outright that it
+    // does nothing until step one is done.
+    //
+    // Table layout with inline styles on every node. Outlook renders through
+    // Word (no flexbox, no divs it respects for layout) and Gmail's web client
+    // strips <style> blocks, so anything that only exists in CSS is a colour
+    // or a position that some fraction of recipients will not get.
     const emailHtml = `
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- Tells the client the design handles both schemes, so it applies our
-       dark-mode block instead of force-inverting the palette itself. -->
   <meta name="color-scheme" content="light dark">
   <meta name="supported-color-schemes" content="light dark">
   <title>${emailSubject}</title>
   <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      line-height: 1.6;
-      color: #333333;
-      max-width: 600px;
-      margin: 0 auto;
-      padding: 0;
-      /* Same ordering rule as .header: solid first, gradient as an upgrade. */
-      background-color: #f5f5f5;
-      background: #f5f5f5 linear-gradient(135deg, #4a6b7a 0%, #324E58 100%);
-    }
-    .email-wrapper {
-      padding: 40px 20px;
-    }
-    .container {
-      background-color: #ffffff;
-      border-radius: 12px;
-      padding: 0;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      overflow: hidden;
-    }
-    .header {
-      /* Solid colour FIRST, gradient second. Outlook and several other
-         clients drop CSS gradients — with no fallback the header had no
-         background at all and the white logo and h1 rendered white-on-white,
-         so the title was invisible. Only the 👋 survived, because emoji
-         ignore text colour. */
-      background-color: #324E58;
-      background: #324E58 linear-gradient(135deg, #4a6b7a 0%, #324E58 100%);
-      padding: 40px 30px;
-      text-align: center;
-      color: #ffffff;
-    }
-    .logo {
-      font-size: 28px;
-      font-weight: bold;
-      color: #ffffff;
-      margin-bottom: 10px;
-      letter-spacing: 0.5px;
-    }
-    h1 {
-      color: #ffffff;
-      font-size: 26px;
-      margin: 10px 0;
-      font-weight: 600;
-    }
-    .content {
-      padding: 30px;
-    }
-    p {
-      color: #333333;
-      font-size: 16px;
-      margin-bottom: 20px;
-      line-height: 1.7;
-    }
-    .button-container {
-      text-align: center;
-      margin: 35px 0;
-    }
-    .button {
-      display: inline-block;
-      background-color: #DB8633;
-      color: #ffffff !important;
-      padding: 16px 32px;
-      text-decoration: none;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 16px;
-      margin: 10px 0;
-      box-shadow: 0 4px 12px rgba(219, 134, 51, 0.3);
-      transition: all 0.3s ease;
-    }
-    .button:hover {
-      background-color: #c97527;
-      box-shadow: 0 6px 16px rgba(219, 134, 51, 0.4);
-      transform: translateY(-2px);
-    }
-    .app-links {
-      margin-top: 30px;
-      padding-top: 25px;
-      border-top: 2px solid #f0f0f0;
-      text-align: center;
-      background-color: #fafafa;
-      padding: 25px 30px;
-      margin: 30px -30px -30px -30px;
-    }
-    .app-links p {
-      color: #324E58;
-      font-weight: 600;
-      margin-bottom: 15px;
-      font-size: 15px;
-    }
-    .app-links a {
-      display: inline-block;
-      margin: 0 12px;
-      color: #324E58;
-      text-decoration: none;
-      font-size: 14px;
-      font-weight: 500;
-      padding: 8px 16px;
-      border-radius: 6px;
-      background-color: #fff;
-      border: 1px solid #324E58;
-      transition: all 0.2s ease;
-    }
-    .app-links a:hover {
-      background-color: #324E58;
-      color: #ffffff;
-    }
-    .app-links span {
-      color: #ddd;
-      margin: 0 5px;
-    }
-    .footer {
-      margin-top: 30px;
-      padding-top: 25px;
-      border-top: 2px solid #f0f0f0;
-      text-align: center;
-      color: #999;
-      font-size: 13px;
-      background-color: #fafafa;
-      padding: 25px 30px;
-      margin: 30px -30px -30px -30px;
-    }
-    .footer p {
-      color: #999;
-      font-size: 13px;
-      margin-bottom: 8px;
-    }
-    .footer a {
-      color: #324E58;
-      text-decoration: none;
-    }
-    .token-link {
-      word-break: break-all;
-      color: #666;
-      font-size: 12px;
-      margin-top: 20px;
-      padding: 12px;
-      background-color: #f9f9f9;
-      border-radius: 6px;
-      border-left: 3px solid #324E58;
-    }
-    .highlight {
-      color: #324E58;
-      font-weight: 600;
-    }
-
-    /* Dark mode. Clients that honour prefers-color-scheme get deliberate
-       colours instead of an automatic inversion, which is what turns a
-       carefully chosen palette into unreadable mud. Clients that ignore it
-       keep the light design, which is why every colour above is explicit
-       rather than inherited. */
+    /* The design is light on purpose, so dark-mode clients darken only the
+       backdrop behind the cards. The cards stay white with dark text, which
+       reads correctly either way — and every one of those colours is set
+       inline as well, for the clients that never see this block. */
     @media (prefers-color-scheme: dark) {
-      body {
-        background-color: #1c2b31 !important;
-        background: #1c2b31 !important;
-        color: #e8eef0 !important;
-      }
-      .container {
-        background-color: #24363d !important;
-      }
-      /* Header keeps its dark brand colour — white on #324E58 reads well in
-         either scheme, so it does not need inverting. */
-      p, li, ol {
-        color: #e8eef0 !important;
-      }
-      /* Any inline link inherits a light colour in dark mode. The App Store
-         button sets its own colours inline and is unaffected. */
-      a:not([style*="background-color"]) {
-        color: #f0b072 !important;
-      }
-      .highlight {
-        color: #f0b072 !important;
-      }
-      .app-links {
-        background-color: #1f3038 !important;
-        border-top-color: #35505a !important;
-      }
-      .app-links p {
-        color: #e8eef0 !important;
-      }
-      .footer {
-        background-color: #1c2b31 !important;
-        color: #b9c7cc !important;
-      }
-      /* The CTA is already high-contrast orange on white text. */
-      .button {
-        background-color: #DB8633 !important;
-        color: #ffffff !important;
-      }
+      .backdrop { background-color: #16242a !important; }
+      /* Text on the backdrop, not on a card. Its inline colours are tuned for
+         the light backdrop and go unreadable against the dark one. */
+      .on-backdrop { color: #c3d1d6 !important; }
+      .on-backdrop a { color: #f0b072 !important; }
+    }
+    @media only screen and (max-width: 480px) {
+      .hero-pad { padding: 30px 22px !important; }
+      .card-pad { padding: 22px 20px !important; }
+      .h1 { font-size: 24px !important; }
+      .cta { display: block !important; text-align: center !important; }
     }
   </style>
 </head>
-<body>
-  <div class="email-wrapper">
-    <div class="container">
-      <div class="header" style="background-color:#324E58;padding:40px 30px;text-align:center;color:#ffffff;">
-        <div class="logo" style="font-size:28px;font-weight:bold;color:#ffffff;margin-bottom:10px;letter-spacing:0.5px;">${appName}</div>
-        <h1 style="color:#ffffff;font-size:26px;margin:10px 0;font-weight:600;">Welcome, ${name}! 👋</h1>
-      </div>
-      <div class="content">
+<body style="margin:0;padding:0;background-color:#eef3f5;font-family:${font};">
+  <!-- Preheader: the grey line inbox lists show beside the subject. It gets
+       the ordering across before the email is even opened. -->
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Step 1 &mdash; get the app. Step 2 &mdash; verify your email. In that order.</div>
 
-        ${
-          isInvitation
-            ? inviteIntro
-            : `<p>Thank you for signing up for <span class="highlight">${appName}</span>! We're thrilled to have you on board.</p>`
-        }
-        ${
-          isInvitation
-            ? `
-        <p><strong>${inviteStepsIntro}</strong></p>
-        <ol style="color:#333333;font-size:16px;line-height:1.8;padding-left:20px;margin:20px 0;">
-          <li style="margin-bottom:14px;">
-            Get the app, then come back here:<br />
-            <!-- A filled button, not an inline link. The old link carried an
-                 inline color:#324E58 — dark navy — which the dark-mode block
-                 could not override because inline styles win and it only
-                 restyled p, li and ol. On a dark background it was
-                 effectively invisible. Orange on white reads in both schemes. -->
-            <a href="${appStoreLinks.ios}"
-               style="display:inline-block;margin-top:8px;padding:10px 20px;background-color:#DB8633;color:#ffffff;font-weight:700;font-size:15px;text-decoration:none;border-radius:6px;">
-              Download on the App Store
-            </a>
-          </li>
-          <li>Come back to this email and tap the button below to verify</li>
-          <li>${inviteLastStep}</li>
-        </ol>
+  <table role="presentation" class="backdrop" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#eef3f5;">
+    <tr>
+      <td align="center" style="padding:26px 12px 34px 12px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
 
-        <div class="button-container">
-          <a href="${verificationLink}" class="button">Verify Email &amp; Open App</a>
-        </div>
-        `
-            : `
-        <p>Click the button below to verify your email address and get started:</p>
+          <!-- Gradient hero, the same #2C3E50 → #4CA1AF the app's home tab
+               uses. Solid colour first and gradient second: clients that drop
+               CSS gradients still get a background, so the white wordmark is
+               never white-on-white. -->
+          <tr>
+            <td class="hero-pad" align="center" style="background-color:#2C3E50;background:#2C3E50 linear-gradient(135deg,#2C3E50 0%,#4CA1AF 100%);border-radius:18px;padding:36px 32px;">
+              <img src="${logoUrl}" width="200" alt="${appName}" style="display:block;width:200px;max-width:74%;height:auto;border:0;outline:none;text-decoration:none;margin:0 auto 20px auto;" />
+              <div class="h1" style="color:#ffffff;font-family:${font};font-size:27px;line-height:1.25;font-weight:700;">Welcome, ${name}!</div>
+              <div style="color:#dceff3;font-family:${font};font-size:16px;line-height:1.55;margin-top:10px;">${
+                isInvitation ? heroSub : "One step and your account is ready."
+              }</div>
+            </td>
+          </tr>
 
-        <div class="button-container">
-          <a href="${verificationLink}" class="button">Verify Email</a>
-        </div>
+          <tr><td style="height:20px;line-height:20px;font-size:0;">&nbsp;</td></tr>
+${
+  isInvitation
+    ? `
+          <!-- Intro card -->
+          <tr>
+            <td class="card-pad" style="background-color:#ffffff;border-radius:16px;padding:24px 26px;">
+              <div style="color:#22333B;font-family:${font};font-size:16px;line-height:1.65;">${inviteIntro}</div>
+              <div style="color:#2C3E50;font-family:${font};font-size:16px;line-height:1.65;font-weight:700;margin-top:14px;">It takes 2 steps &mdash; in this order:</div>
+            </td>
+          </tr>
 
-        <p style="font-size: 14px; color: #666; text-align: center;">
-          This link will open in the ${appName} app to verify your email and continue with signup.
-        </p>
+          <tr><td style="height:14px;line-height:14px;font-size:0;">&nbsp;</td></tr>
 
-        <p style="font-size: 14px; color: #666; text-align: center;">
-          If the app doesn't open automatically, tap the button above or paste this link into your browser:<br>
-          <span style="font-size: 12px; color: #999; word-break: break-all;">${verificationLink}</span>
-        </p>
-        `
-        }
-      </div>
+          <!-- STEP 1 — the only bright button in the email -->
+          <tr>
+            <td class="card-pad" style="background-color:#ffffff;border-radius:16px;border-left:5px solid #DB8633;padding:26px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td width="48" valign="top" style="width:48px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td align="center" valign="middle" width="34" height="34" style="width:34px;height:34px;background-color:#DB8633;border-radius:17px;color:#ffffff;font-family:${font};font-size:17px;font-weight:700;line-height:34px;text-align:center;">1</td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td valign="top">
+                    <div style="color:#DB8633;font-family:${font};font-size:12px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;">Do this first</div>
+                    <div style="color:#22333B;font-family:${font};font-size:20px;font-weight:700;line-height:1.3;margin-top:5px;">First, click here to get the app</div>
+                    <div style="color:#5A7079;font-family:${font};font-size:15px;line-height:1.6;margin-top:9px;">Install THRIVE from the App Store &mdash; it's free. Then come back to this email.</div>
+                    <div style="margin-top:18px;">
+                      <a href="${appStoreLinks.ios}" class="cta" style="display:inline-block;background-color:#DB8633;color:#ffffff;font-family:${font};font-size:16px;font-weight:700;text-decoration:none;padding:14px 28px;border-radius:8px;">Download the App</a>
+                    </div>
+                    <div style="color:#8a9ba1;font-family:${font};font-size:13px;line-height:1.5;margin-top:12px;">Already installed it? Go straight to step 2.</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-      <div class="footer">
-        ${
-          isInvitation
-            ? `<p style="color:#555;">Not on an iPhone? Reply to this email or contact your community manager and we'll help you get set up.</p>`
-            : `<p>If you didn't request this account, you can safely ignore this email.</p>`
-        }
-        <p>Need help? Contact <a href="mailto:info@jointhriveinitiative.org">info@jointhriveinitiative.org</a></p>
-      </div>
-    </div>
-  </div>
+          <tr><td style="height:14px;line-height:14px;font-size:0;">&nbsp;</td></tr>
+
+          <!-- STEP 2 — deliberately the quieter of the two buttons -->
+          <tr>
+            <td class="card-pad" style="background-color:#ffffff;border-radius:16px;border-left:5px solid #4CA1AF;padding:26px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td width="48" valign="top" style="width:48px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td align="center" valign="middle" width="34" height="34" style="width:34px;height:34px;background-color:#31788A;border-radius:17px;color:#ffffff;font-family:${font};font-size:17px;font-weight:700;line-height:34px;text-align:center;">2</td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td valign="top">
+                    <div style="color:#31788A;font-family:${font};font-size:12px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;">Then do this</div>
+                    <div style="color:#22333B;font-family:${font};font-size:20px;font-weight:700;line-height:1.3;margin-top:5px;">Then, click here to verify</div>
+                    <div style="color:#5A7079;font-family:${font};font-size:15px;line-height:1.6;margin-top:9px;">Come back to this email and tap below. It confirms your address and opens the app to your account.</div>
+                    <div style="background-color:#FDF3E4;border-radius:8px;padding:12px 14px;margin-top:14px;color:#8a5a1a;font-family:${font};font-size:14px;line-height:1.5;">
+                      Tapping this <strong>before</strong> the app is installed won't work &mdash; that's why it's step 2.
+                    </div>
+                    <div style="margin-top:18px;">
+                      <a href="${verificationLink}" class="cta" style="display:inline-block;background-color:#31788A;color:#ffffff;font-family:${font};font-size:16px;font-weight:700;text-decoration:none;padding:14px 28px;border-radius:8px;">Verify My Email</a>
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding:22px 26px 0 26px;">
+              <div class="on-backdrop" style="color:#5A7079;font-family:${font};font-size:15px;line-height:1.6;">Once you've verified, ${inviteLastStep}</div>
+            </td>
+          </tr>
+`
+    : `
+          <tr>
+            <td class="card-pad" style="background-color:#ffffff;border-radius:16px;padding:26px;">
+              <div style="color:#22333B;font-family:${font};font-size:16px;line-height:1.65;">Thanks for signing up for ${appName}. Confirm your email address and you're ready to go.</div>
+              <div style="margin-top:20px;">
+                <a href="${verificationLink}" class="cta" style="display:inline-block;background-color:#DB8633;color:#ffffff;font-family:${font};font-size:16px;font-weight:700;text-decoration:none;padding:14px 28px;border-radius:8px;">Verify My Email</a>
+              </div>
+              <div style="color:#8a9ba1;font-family:${font};font-size:13px;line-height:1.6;margin-top:16px;">This opens the ${appName} app to finish your signup. If nothing happens, paste this into your browser:<br /><span style="color:#8a9ba1;font-size:12px;word-break:break-all;">${verificationLink}</span></div>
+            </td>
+          </tr>
+`
+}
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding:24px 26px 0 26px;">
+              ${
+                isInvitation
+                  ? `<div class="on-backdrop" style="color:#7d8f96;font-family:${font};font-size:13px;line-height:1.6;">Not on an iPhone? Reply to this email or contact your community manager and we'll get you set up.</div>`
+                  : `<div class="on-backdrop" style="color:#7d8f96;font-family:${font};font-size:13px;line-height:1.6;">If you didn't create this account, you can safely ignore this email.</div>`
+              }
+              <div class="on-backdrop" style="color:#7d8f96;font-family:${font};font-size:13px;line-height:1.6;margin-top:8px;">Need help? <a href="mailto:info@jointhriveinitiative.org" style="color:#31788A;text-decoration:underline;">info@jointhriveinitiative.org</a></div>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>
     `;
@@ -395,18 +305,20 @@ export async function sendInvitationEmail({
       ? `
 Welcome to ${appName}, ${name}!
 
-You've been invited to join as a donor. We're excited to have you join our community of changemakers.
+${inviteIntro}
 
-Here's how to get started — just 3 steps:
+It takes 2 steps — in this order:
 
-  1. Download the iOS app: ${appStoreLinks.ios}
-  2. Come back to this email and tap the link below to verify
-  3. Done!
+STEP 1 — First, get the app:
+${appStoreLinks.ios}
 
-Verify your email and open the app:
+STEP 2 — Then, verify your email.
+Tapping this before the app is installed won't work, which is why it's second:
 ${verificationLink}
 
-Not on an iPhone? Reply to this email or contact your community manager and we'll help you get set up.
+Once you've verified, ${inviteLastStep}
+
+Not on an iPhone? Reply to this email or contact your community manager and we'll get you set up.
 
 Need help? Contact info@jointhriveinitiative.org
     `.trim()
