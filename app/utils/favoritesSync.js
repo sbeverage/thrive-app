@@ -29,21 +29,18 @@ export async function syncFavoritesToServer() {
     const local = new Set((raw ? JSON.parse(raw) : []).map(String));
     if (local.size === 0) return 0;
 
-    const remote = await API.getMyFavoriteVendors();
-    // Signed-out donors get { vendors: [] } — indistinguishable from "none
-    // saved". Retrying next login is harmless; guessing here is not.
-    const known = new Set(
-      (remote?.vendors || []).map((v) => String(v.id ?? v.vendor_id)),
-    );
-
-    const missing = [...local].filter((id) => !known.has(id));
-    for (const id of missing) {
-      await API.toggleVendorFavorite(id);
+    // Assert each local favourite directly. This used to diff against the
+    // server list and send a toggle for anything missing, which was unsafe in
+    // both directions: the toggle could flip a favourite off, and a donor's own
+    // tap racing this sync cancelled it out. Setting the state explicitly is
+    // idempotent, so re-running it costs nothing and can never undo a tap.
+    for (const id of local) {
+      await API.setVendorFavorite(id, true);
     }
-    if (missing.length) {
-      console.log(`✅ Synced ${missing.length} local favorite(s) to server`);
+    if (local.size) {
+      console.log(`✅ Asserted ${local.size} local favorite(s) on the server`);
     }
-    return missing.length;
+    return local.size;
   } catch (e) {
     // Never block login on this.
     console.warn("syncFavoritesToServer failed:", e?.message || e);

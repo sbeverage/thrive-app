@@ -127,7 +127,52 @@ export async function handleVendorRoute(
     }
   }
 
+  // PUT /vendors/:id/favorite — favourite it. DELETE — unfavourite it.
+  //
+  // Explicit state rather than a flip. The app keeps optimistic local state and
+  // the old POST route flipped whatever the server happened to hold, so the two
+  // could silently disagree: on 2026-09-04 favoritesSync inserted a row from
+  // local storage and the donor's own tap immediately deleted it again, leaving
+  // the app showing a favourite the server did not have — and the
+  // favourite-vendor push with nobody to notify.
+  //
+  // Idempotent: favouriting twice leaves it favourited, and a replayed sync can
+  // never cancel a tap. POST is kept below, unchanged, because builds 66 and
+  // earlier use it for both directions.
+  const favSetMatch = route.match(/^\/vendors\/(\d+)\/favorite$/);
+  if ((method === "PUT" || method === "DELETE") && favSetMatch) {
+    const vendorId = parseInt(favSetMatch[1], 10);
+    const userId = await getUserIdFromJwt(req);
+    if (!userId) return json({ error: "Authentication required" }, 401);
+
+    if (method === "DELETE") {
+      const { error } = await supabase
+        .from("vendor_favorites")
+        .delete()
+        .eq("vendor_id", vendorId)
+        .eq("user_id", userId);
+      if (error) {
+        console.error("favorite delete error:", error);
+        return json({ error: "Could not remove favorite" }, 500);
+      }
+      return json({ favorited: false });
+    }
+
+    // Insert-if-absent. The unique constraint on (vendor_id, user_id) makes a
+    // duplicate harmless, so a conflict is treated as already-favourited
+    // rather than an error.
+    const { error } = await supabase
+      .from("vendor_favorites")
+      .insert({ vendor_id: vendorId, user_id: userId });
+    if (error && error.code !== "23505") {
+      console.error("favorite insert error:", error);
+      return json({ error: "Could not save favorite" }, 500);
+    }
+    return json({ favorited: true });
+  }
+
   // POST /vendors/:id/favorite — toggle favorite. Requires auth.
+  // Retained for builds 66 and earlier, which send POST for both directions.
   const favMatch = route.match(/^\/vendors\/(\d+)\/favorite$/);
   if (method === "POST" && favMatch) {
     const vendorId = parseInt(favMatch[1], 10);

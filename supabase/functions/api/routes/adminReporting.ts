@@ -1327,6 +1327,67 @@ export async function handleAdminReporting(
     }
   }
 
+  // POST /admin/reporting/test-favorite?email=...&vendor_id=... — diagnostic.
+  //
+  // Performs the same insert as POST /vendors/:id/favorite, using the same
+  // service-role client, and returns the raw error. Both call sites in the app
+  // swallow failures silently, so this is the only way to see whether the
+  // write itself is being rejected or the request never arrives.
+  if (method === "POST" && route.startsWith("/admin/reporting/test-favorite")) {
+    try {
+      const url = new URL(req.url);
+      const email = (url.searchParams.get("email") || "").trim();
+      const vendorId = parseInt(url.searchParams.get("vendor_id") || "0", 10);
+      if (!email || !vendorId) {
+        return new Response(
+          JSON.stringify({ error: "email and vendor_id are required" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+
+      const { data: user } = await supabase
+        .from("users")
+        .select("id, email")
+        .ilike("email", email)
+        .maybeSingle();
+      if (!user) {
+        return new Response(JSON.stringify({ error: `no user ${email}` }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 404,
+        });
+      }
+
+      const read = await supabase
+        .from("vendor_favorites")
+        .select("id, vendor_id, user_id, created_at")
+        .eq("user_id", user.id);
+
+      const write = await supabase
+        .from("vendor_favorites")
+        .insert({ vendor_id: vendorId, user_id: user.id })
+        .select("id")
+        .maybeSingle();
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            user_id: user.id,
+            read_error: read.error ? read.error.message : null,
+            existing_rows: read.data || [],
+            insert_error: write.error ? write.error.message : null,
+            insert_code: (write.error as any)?.code ?? null,
+            inserted_id: write.data?.id ?? null,
+          },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e?.message || "failed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
+      });
+    }
+  }
+
   // GET /admin/reporting/push-health — read-only.
   //
   // How many people can actually receive a push. Every notification feature —

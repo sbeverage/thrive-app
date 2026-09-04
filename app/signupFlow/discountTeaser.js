@@ -191,12 +191,12 @@ export default function DiscountTeaser() {
         AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify([...next])).catch(
           () => {},
         );
-        // Mirror to the server. Favourites saved here are the ones that drive
-        // the "your saved vendor added a discount" push, and a local-only
-        // write leaves vendor_favorites empty — the fanout then has nobody to
-        // notify. Fire-and-forget: mid-signup the donor may not hold a token
-        // yet, and syncFavoritesToServer replays anything missed at login.
-        API.toggleVendorFavorite(id);
+        // Mirror the intended state to the server. Favourites saved here drive
+        // the "your saved vendor added a discount" push, and a local-only write
+        // leaves vendor_favorites empty — the fanout then has nobody to notify.
+        // Explicit state rather than a toggle, so a replayed sync cannot undo
+        // it. Fire-and-forget: mid-signup the donor may hold no token yet.
+        API.setVendorFavorite(id, !wasFavorited);
         return next;
       });
     },

@@ -225,17 +225,25 @@ export default function DiscountsScreen() {
   }, [vendors]);
 
   const toggleFavorite = (vendorId) => {
+    const key = String(vendorId);
+    // Decide the intended state up front so the same value drives both the
+    // local write and the server call. Deriving it inside the setter left the
+    // server call with nothing to send but "flip it", which is how local and
+    // server state drifted apart.
+    const willFavorite = !favorites.has(key);
+
     setFavorites(prev => {
       const next = new Set(prev);
-      const key = String(vendorId);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (willFavorite) next.add(key);
+      else next.delete(key);
       AsyncStorage.setItem('@thrive_favorites', JSON.stringify([...next]));
       return next;
     });
-    // Mirror to server so the vendor portal can track real "saved by donors"
-    // counts. Logged-out users get a silent 401 — local state still updated.
-    API.toggleVendorFavorite(vendorId);
+
+    // Mirror the intended state, not a flip, so favoritesSync replaying local
+    // storage can never undo a tap. Logged-out donors get a silent 401 and
+    // keep local state only.
+    API.setVendorFavorite(vendorId, willFavorite);
   };
 
 

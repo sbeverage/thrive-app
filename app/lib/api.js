@@ -367,7 +367,28 @@ const API = {
     }
   },
 
-  /** POST /api/vendors/:id/favorite — toggle the donor's save on a vendor. */
+  /** PUT/DELETE /api/vendors/:id/favorite — set the donor's save explicitly.
+   *
+   *  Replaces the toggle. The screens hold optimistic local state and the old
+   *  POST flipped whatever the server happened to hold, so the two could
+   *  disagree: a replayed sync inserted a row and the donor's own tap deleted
+   *  it, leaving the app showing a favourite the server did not have and the
+   *  favourite-vendor push with nobody to notify. Sending the desired state is
+   *  idempotent, so a tap and a sync can no longer cancel each other. */
+  setVendorFavorite: async (vendorId, favorited) => {
+    try {
+      const path = `/api/vendors/${vendorId}/favorite`;
+      const response = favorited
+        ? await api.put(path)
+        : await api.delete(path);
+      return response.data;
+    } catch (error) {
+      console.warn('setVendorFavorite failed:', error?.message || error);
+      return null;
+    }
+  },
+
+  /** @deprecated Toggle kept only so an older cached bundle keeps working. */
   toggleVendorFavorite: async (vendorId) => {
     try {
       const response = await api.post(`/api/vendors/${vendorId}/favorite`);

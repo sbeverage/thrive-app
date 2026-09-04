@@ -354,6 +354,15 @@ export async function handleAdminSettings(
             name: member.name,
             email: member.email,
             role: member.role,
+            // The admin panel gates Team Management on this. It was reading
+            // response.data.is_super_admin, which this endpoint never sent, so
+            // it stored "false" for everyone and the "Add Team Member" button
+            // rendered for nobody — the feature was unreachable.
+            // Derived from role rather than stored separately, so there is one
+            // source of truth. Compared case-insensitively because the column
+            // holds display text ("Super Admin").
+            is_super_admin:
+              String(member.role || "").trim().toLowerCase() === "super admin",
           },
         }),
         {

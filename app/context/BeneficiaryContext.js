@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import API from '../lib/api';
+import { sizedImageUrl, IMAGE_WIDTH } from '../utils/imageUrl';
 
 /** First non-empty string (trimmed); ignores null / undefined / "". */
 export function pickFirstNonEmptyString(...values) {
@@ -44,7 +45,9 @@ export function resolveBeneficiaryHeroImageSource(beneficiary) {
     beneficiary.logoUrl,
     beneficiary.logo_url,
   );
-  if (uri) return { uri };
+  // Hero art fills the screen width, so ask for it at that size rather than
+  // whatever was uploaded. Non-Supabase URLs pass through untouched.
+  if (uri) return { uri: sizedImageUrl(uri, IMAGE_WIDTH.hero) };
   // Checked before the raw `image` passthrough below. A rehydrated
   // beneficiary carries `image: null` (no URL to store), and a live one can
   // carry a require() module id — a number that is only valid for the bundle
@@ -70,7 +73,9 @@ export function resolveBeneficiaryLogoSource(beneficiary) {
     beneficiary.imageUrl,
     beneficiary.image_url,
   );
-  if (uri) return { uri };
+  // A logo renders in a small circle; requesting the full upload wasted most
+  // of the bytes.
+  if (uri) return { uri: sizedImageUrl(uri, IMAGE_WIDTH.logo) };
   if (beneficiary.isPendingVerification || beneficiary.is_pending_verification) {
     return require('../../assets/images/pending-charity-logo.png');
   }

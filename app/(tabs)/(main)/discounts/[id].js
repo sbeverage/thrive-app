@@ -80,12 +80,12 @@ export default function VendorDetails() {
     } catch {
       // Local write failed — server call below is still authoritative.
     }
-    // Mirror to server so vendor stats + push-notification fanout see the
-    // save. Silent failure for logged-out users (they just get local state).
+    // Mirror the *intended* state to the server, not a flip. A toggle could be
+    // undone by favoritesSync replaying local storage on the next launch.
     try {
-      await API.toggleVendorFavorite(vendorId);
+      await API.setVendorFavorite(vendorId, nextFav);
     } catch {
-      // ignore
+      // ignore — logged-out donors keep local state only
     }
   };
 
