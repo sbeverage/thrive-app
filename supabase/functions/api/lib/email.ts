@@ -146,20 +146,20 @@ export async function sendInvitationEmail({
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="light dark">
-  <meta name="supported-color-schemes" content="light dark">
+  <!-- Light only, deliberately. Declaring "light dark" tells the client the
+       design handles both schemes, which invites it to apply its own dark
+       treatment — and this email is meant to stay light. -->
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
   <title>${emailSubject}</title>
   <style>
-    /* The design is light on purpose, so dark-mode clients darken only the
-       backdrop behind the cards. The cards stay white with dark text, which
-       reads correctly either way — and every one of those colours is set
-       inline as well, for the clients that never see this block. */
-    @media (prefers-color-scheme: dark) {
-      .backdrop { background-color: #16242a !important; }
-      /* Text on the backdrop, not on a card. Its inline colours are tuned for
-         the light backdrop and go unreadable against the dark one. */
-      .on-backdrop { color: #c3d1d6 !important; }
-      .on-backdrop a { color: #f0b072 !important; }
+    /* Apple Mail and Outlook honour this and skip their own dark restyling.
+       A client that force-inverts anyway will still darken the email — no
+       markup prevents that — but every colour here is set inline too, so
+       nothing depends on this block being read at all. */
+    :root {
+      color-scheme: light;
+      supported-color-schemes: light;
     }
     @media only screen and (max-width: 480px) {
       .hero-pad { padding: 30px 22px !important; }
@@ -184,7 +184,7 @@ export async function sendInvitationEmail({
                CSS gradients still get a background, so the white wordmark is
                never white-on-white. -->
           <tr>
-            <td class="hero-pad" align="center" style="background-color:#2C3E50;background:#2C3E50 linear-gradient(135deg,#2C3E50 0%,#4CA1AF 100%);border-radius:18px;padding:36px 32px;">
+            <td class="hero-pad" align="center" style="background-color:#3D7C8A;background:#3D7C8A linear-gradient(135deg,#2C3E50 0%,#4CA1AF 100%);background-image:linear-gradient(135deg,#2C3E50 0%,#4CA1AF 100%);border-radius:18px;padding:36px 32px;">
               <img src="${logoUrl}" width="200" alt="${appName}" style="display:block;width:200px;max-width:74%;height:auto;border:0;outline:none;text-decoration:none;margin:0 auto 20px auto;" />
               <div class="h1" style="color:#ffffff;font-family:${font};font-size:27px;line-height:1.25;font-weight:700;">Welcome, ${name}!</div>
               <div style="color:#dceff3;font-family:${font};font-size:16px;line-height:1.55;margin-top:10px;">${
@@ -265,7 +265,7 @@ ${
 
           <tr>
             <td align="center" style="padding:22px 26px 0 26px;">
-              <div class="on-backdrop" style="color:#5A7079;font-family:${font};font-size:15px;line-height:1.6;">Once you've verified, ${inviteLastStep}</div>
+              <div style="color:#5A7079;font-family:${font};font-size:15px;line-height:1.6;">Once you've verified, ${inviteLastStep}</div>
             </td>
           </tr>
 `
@@ -286,10 +286,10 @@ ${
             <td align="center" style="padding:24px 26px 0 26px;">
               ${
                 isInvitation
-                  ? `<div class="on-backdrop" style="color:#7d8f96;font-family:${font};font-size:13px;line-height:1.6;">Not on an iPhone? Reply to this email or contact your community manager and we'll get you set up.</div>`
-                  : `<div class="on-backdrop" style="color:#7d8f96;font-family:${font};font-size:13px;line-height:1.6;">If you didn't create this account, you can safely ignore this email.</div>`
+                  ? `<div style="color:#7d8f96;font-family:${font};font-size:13px;line-height:1.6;">Not on an iPhone? Reply to this email or contact your community manager and we'll get you set up.</div>`
+                  : `<div style="color:#7d8f96;font-family:${font};font-size:13px;line-height:1.6;">If you didn't create this account, you can safely ignore this email.</div>`
               }
-              <div class="on-backdrop" style="color:#7d8f96;font-family:${font};font-size:13px;line-height:1.6;margin-top:8px;">Need help? <a href="mailto:info@jointhriveinitiative.org" style="color:#31788A;text-decoration:underline;">info@jointhriveinitiative.org</a></div>
+              <div style="color:#7d8f96;font-family:${font};font-size:13px;line-height:1.6;margin-top:8px;">Need help? <a href="mailto:info@jointhriveinitiative.org" style="color:#31788A;text-decoration:underline;">info@jointhriveinitiative.org</a></div>
             </td>
           </tr>
 
