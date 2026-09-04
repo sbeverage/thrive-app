@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SystemUI from 'expo-system-ui';
 import { BeneficiaryProvider } from './context/BeneficiaryContext';
 import { UserProvider } from './context/UserContext';
+import { notificationTargetPath } from './utils/notificationRoute';
 import { BeneficiaryFilterProvider } from './context/BeneficiaryFilterContext';
 import { LocationProvider } from './context/LocationContext';
 import { DiscountProvider } from './context/DiscountContext';
@@ -175,25 +176,14 @@ function Layout() {
   //   "/menu/donationSummary"  — monthly donation receipt
   //   "/menu/manageCards"      — payment failed (update card)
   //   "/(tabs)/discounts"      — new discount from favorited vendor
+  // Normalisation lives in utils/notificationRoute.js so that tapping a row
+  // in the notification centre resolves to the same route as tapping the
+  // push banner for that same event.
   const handleNotificationTap = React.useCallback((response) => {
     const data = response?.notification?.request?.content?.data || {};
-    const path = (data.path || data.url || '').toString();
-    if (!path) return;
+    const target = notificationTargetPath(data);
+    if (!target) return;
     try {
-      // Strip optional scheme + host so we always route within the app.
-      const withoutHost = path
-        .replace(/^thrive:\/\//, '')
-        .replace(/^https?:\/\/[^/]+/, '');
-      // Drop expo-router group segments. Parenthesised folders like (tabs) and
-      // (main) are organisational and never appear in a URL, so an href such
-      // as "/(tabs)/(main)/discounts/10" does not resolve — router.push falls
-      // through and the app sits on the default tab. Every push payload
-      // carried that form until 2026-09-02. The senders are fixed, but
-      // stripping here means a future one cannot break the deep link.
-      const cleaned = withoutHost.replace(/\(([^)]+)\)\/?/g, '');
-      const normalised = cleaned.replace(/\/{2,}/g, '/');
-      const target = normalised.startsWith('/') ? normalised : `/${normalised}`;
-      if (target === '/' ) return;
       router.push(target);
     } catch (e) {
       console.warn('Notification tap routing failed:', e);

@@ -76,12 +76,32 @@ export default function MainHome() {
   const { location: userLocation, locationAddress, locationPermission, checkLocationPermission } = useLocation();
   const { vendors, discounts, loadDiscounts } = useDiscount();
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [topDiscounts, setTopDiscounts] = useState([]);
   const [favoriteVendorIds, setFavoriteVendorIds] = useState(new Set());
 
   // Hydrate favorites from the same AsyncStorage key the discounts list +
   // vendor detail use, so a heart flipped elsewhere shows up on the
   // "Discounts Near You" cards as soon as the donor lands on Home.
+  // Badge count only — deliberately not the rows. Home doesn't render the
+  // feed, so pulling notifications here would be wasted payload on every
+  // focus. The feed screen fetches its own.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      API.getUnreadNotificationCount()
+        .then((count) => {
+          if (!cancelled) setUnreadNotifications(count);
+        })
+        .catch(() => {
+          /* ambient UI — a failed count just leaves the badge as it was */
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
+
   useFocusEffect(
     useCallback(() => {
       AsyncStorage.getItem('@thrive_favorites')
@@ -353,6 +373,31 @@ export default function MainHome() {
                   />
                 </View>
                 <View style={styles.rightIcons}>
+                  <TouchableOpacity
+                    style={styles.iconButton}
+                    onPress={() => router.push('/menu/notificationCenter')}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      unreadNotifications > 0
+                        ? `Notifications, ${unreadNotifications} unread`
+                        : 'Notifications'
+                    }
+                  >
+                    <View>
+                      <Image
+                        source={require('../../../assets/icons/notification.png')}
+                        style={styles.iconWhite}
+                      />
+                      {unreadNotifications > 0 && (
+                        <View style={styles.notificationBadge}>
+                          <Text style={styles.notificationBadgeText}>
+                            {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.iconButton}
                     onPress={() => router.push('/menu')}
@@ -702,6 +747,28 @@ const styles = StyleSheet.create({
   rightIcons: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
   iconButton: { marginLeft: 12 },
   iconWhite: { width: 22, height: 22, resizeMode: 'contain', tintColor: 'white' },
+  notificationBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -7,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 8.5,
+    backgroundColor: '#DB8633',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    // The gradient behind this runs dark navy to teal, so the badge needs its
+    // own edge to stay legible wherever it lands on that ramp.
+    borderWidth: 1.5,
+    borderColor: '#2C3E50',
+  },
+  notificationBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    lineHeight: 13,
+  },
   profileRow: {
     flexDirection: 'row',
     alignItems: 'center',

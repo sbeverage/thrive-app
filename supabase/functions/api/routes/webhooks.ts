@@ -1,5 +1,5 @@
 import { getStripeClient } from "../lib/stripe.ts";
-import { sendPushToUser } from "../lib/push.ts";
+import { notifyUser } from "../lib/notifications.ts";
 import { sendPaymentFailureNotice } from "../lib/dunning.ts";
 
 // ─── Stripe API-shape compatibility ──────────────────────────────────────
@@ -455,11 +455,18 @@ export async function handleWebhookRoute(
                   .maybeSingle();
                 const charityName = beneficiary?.name || "your chosen charity";
                 const amountStr = `$${amount.toFixed(2).replace(/\.00$/, "")}`;
-                sendPushToUser(supabase, donation.user_id, {
+                notifyUser(supabase, donation.user_id, {
+                  type: "donation_success",
                   title: "Thanks for thriving 💝",
                   body: `Your ${amountStr} monthly donation just went to ${charityName}.`,
                   data: { path: "/menu/donationSummary", type: "donation_success" },
-                }).catch((e) => console.warn("donation success push failed:", e));
+                  // Stripe redelivers invoice.payment_succeeded on any non-2xx,
+                  // and without a key the receipt would land in the donor's
+                  // feed once per redelivery.
+                  dedupeKey: invoice?.id
+                    ? `donation_success:${invoice.id}`
+                    : undefined,
+                }).catch((e) => console.warn("donation success notify failed:", e));
               } catch (pushErr) {
                 console.warn("donation success push setup failed:", pushErr);
               }
@@ -557,6 +564,7 @@ export async function handleWebhookRoute(
             isFinal,
             amountDue,
             nextTry,
+            invoiceId: invoice.id,
           }).catch((e) => console.warn("dunning notice failed:", e?.message || e));
           break;
         }

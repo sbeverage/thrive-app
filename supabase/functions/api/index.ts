@@ -41,6 +41,9 @@ import { handleDataDeletionRoute } from "./routes/dataDeletion.ts";
 import { handleAuthRoute } from "./routes/auth.ts";
 import { handleAdminStorageRoute } from "./routes/adminStorage.ts";
 import { handleAdminNotifications } from "./routes/adminNotifications.ts";
+// Donor-facing notification centre. Distinct from adminNotifications
+// above, which serves the admin panel from a different table.
+import { handleNotificationsRoute } from "./routes/notifications.ts";
 import { handleAdminSettings } from "./routes/adminSettings.ts";
 import { handleAdminOneTimeGifts } from "./routes/adminOneTimeGifts.ts";
 import { handleAdminCharities } from "./routes/adminCharities.ts";
@@ -693,6 +696,10 @@ serve(async (req) => {
     // Payment methods routes
     else if (route.startsWith("/payment-methods")) {
       response = await handlePaymentMethodRoute(req, supabase, route, method);
+    }
+    // Donor notification centre (feed, unread badge, per-category switches)
+    else if (route.startsWith("/notifications")) {
+      response = await handleNotificationsRoute(req, supabase, route, method);
     }
     // User points routes
     else if (route.startsWith("/user/points")) {

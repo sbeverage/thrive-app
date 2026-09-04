@@ -375,6 +375,73 @@ const API = {
    *  it, leaving the app showing a favourite the server did not have and the
    *  favourite-vendor push with nobody to notify. Sending the desired state is
    *  idempotent, so a tap and a sync can no longer cancel each other. */
+  // ---------------------------------------------------------------
+  // Notification centre. Backed by user_notifications; see
+  // supabase/functions/api/routes/notifications.ts. Every method swallows
+  // its error and returns a neutral value — the bell and the feed are
+  // ambient UI, and neither should ever surface an alert or block a screen
+  // because the network hiccuped.
+  // ---------------------------------------------------------------
+
+  getNotifications: async ({ limit = 30, offset = 0, unreadOnly = false } = {}) => {
+    try {
+      const response = await api.get('/api/notifications', {
+        params: { limit, offset, ...(unreadOnly ? { unreadOnly: 'true' } : {}) },
+      });
+      return {
+        notifications: response.data?.notifications || [],
+        unreadCount: response.data?.unreadCount ?? 0,
+      };
+    } catch (error) {
+      console.warn('getNotifications failed:', error?.message || error);
+      return { notifications: [], unreadCount: 0 };
+    }
+  },
+
+  /** Just the badge number, so a foreground refresh doesn't pull rows. */
+  getUnreadNotificationCount: async () => {
+    try {
+      const response = await api.get('/api/notifications/unread-count');
+      return response.data?.unreadCount ?? 0;
+    } catch (error) {
+      console.warn('getUnreadNotificationCount failed:', error?.message || error);
+      return 0;
+    }
+  },
+
+  /** Pass ids to mark specific rows, or all: true to clear the badge. */
+  markNotificationsRead: async ({ ids = null, all = false } = {}) => {
+    try {
+      const body = all ? { all: true } : { ids: ids || [] };
+      const response = await api.post('/api/notifications/read', body);
+      return response.data?.unreadCount ?? 0;
+    } catch (error) {
+      console.warn('markNotificationsRead failed:', error?.message || error);
+      return null;
+    }
+  },
+
+  getNotificationPreferences: async () => {
+    try {
+      const response = await api.get('/api/notifications/preferences');
+      return response.data?.preferences || null;
+    } catch (error) {
+      console.warn('getNotificationPreferences failed:', error?.message || error);
+      return null;
+    }
+  },
+
+  /** Partial update — send only the categories that changed. */
+  setNotificationPreferences: async (prefs) => {
+    try {
+      const response = await api.put('/api/notifications/preferences', prefs);
+      return response.data?.preferences || null;
+    } catch (error) {
+      console.warn('setNotificationPreferences failed:', error?.message || error);
+      return null;
+    }
+  },
+
   setVendorFavorite: async (vendorId, favorited) => {
     try {
       const path = `/api/vendors/${vendorId}/favorite`;

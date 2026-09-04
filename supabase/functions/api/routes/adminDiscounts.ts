@@ -1,5 +1,5 @@
 import { corsHeaders } from "../lib/cors.ts";
-import { sendPushToVendorFavoriters } from "../lib/push.ts";
+import { notifyUsers, favoriterUserIds } from "../lib/notifications.ts";
 
 /**
  * Donor-facing card limits, mirrored from app/utils/discountDisplay.js and
@@ -390,19 +390,34 @@ export async function handleAdminDiscounts(
         .eq("id", vendorId)
         .maybeSingle();
       if (v?.signup_status === "approved") {
-        sendPushToVendorFavoriters(supabase, vendorId, {
-          title: `${newDiscount.vendor.name} just added a new discount`,
-          body: newDiscount.title || "Tap to see the latest offer from a place you love.",
-          data: {
-            // Vendor id, not discount id — the [id] route resolves a vendor.
-            // Group-stripped href: (tabs)/(main) are expo-router groups and
-            // are not part of the URL. home.js uses this same form.
-            path: `/discounts/${vendorId}`,
-            type: "favorite_new_discount",
-            vendor_id: vendorId,
-            discount_id: newDiscount.id,
-          },
-        }).catch((e) => console.warn("favorite-vendor new-discount push failed:", e));
+        // Two steps rather than the old one-shot helper: the notification
+        // centre needs a row per donor, and the previous fanout selected
+        // push tokens only and discarded the user_ids, so there was nothing
+        // to attach a record to.
+        favoriterUserIds(supabase, vendorId)
+          .then((userIds) =>
+            notifyUsers(supabase, userIds, {
+              type: "favorite_new_discount",
+              title: `${newDiscount.vendor.name} just added a new discount`,
+              body: newDiscount.title || "Tap to see the latest offer from a place you love.",
+              data: {
+                // Vendor id, not discount id — the [id] route resolves a vendor.
+                // Group-stripped href: (tabs)/(main) are expo-router groups and
+                // are not part of the URL. home.js uses this same form.
+                path: `/discounts/${vendorId}`,
+                type: "favorite_new_discount",
+                vendor_id: vendorId,
+                discount_id: newDiscount.id,
+              },
+              // Keyed on the discount so re-saving it doesn't notify the same
+              // donors again. Editing a discount is common; re-announcing it
+              // to everyone who favourited the vendor is not wanted.
+              dedupeKey: `favorite_new_discount:discount:${newDiscount.id}`,
+            }),
+          )
+          .catch((e) =>
+            console.warn("favorite-vendor new-discount notify failed:", e?.message || e),
+          );
       }
     }
 

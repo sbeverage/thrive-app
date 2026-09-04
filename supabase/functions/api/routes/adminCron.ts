@@ -5,7 +5,7 @@
 
 import { corsHeaders } from "../lib/cors.ts";
 import { sendVendorEmail } from "../lib/email.ts";
-import { sendPushBatch } from "../lib/push.ts";
+import { notifyUsers, favoriterUserIds } from "../lib/notifications.ts";
 
 const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: jsonHeaders });
@@ -115,25 +115,11 @@ async function handleExpiringDiscountReminder(supabase: any): Promise<Response> 
 
   let totalSent = 0;
   for (const d of liveDiscounts) {
-    const { data: favs } = await supabase
-      .from("vendor_favorites")
-      .select("user_id")
-      .eq("vendor_id", d.vendor_id);
-    const userIds = (favs || []).map((f: any) => f.user_id).filter(Boolean);
+    const userIds = await favoriterUserIds(supabase, d.vendor_id);
     if (userIds.length === 0) continue;
 
-    const { data: users } = await supabase
-      .from("users")
-      .select("id, expo_push_token")
-      .in("id", userIds)
-      .not("expo_push_token", "is", null);
-    const tokens = (users || [])
-      .map((u: any) => u.expo_push_token)
-      .filter((t: string) => !!t);
-    if (tokens.length === 0) continue;
-
-    const messages = tokens.map((to: string) => ({
-      to,
+    const result = await notifyUsers(supabase, userIds, {
+      type: "favorite_expiring_discount",
       title: `${d.vendor.name} — discount expiring soon`,
       body: `${d.title} ends ${d.end_date}. Tap to use it before it's gone.`,
       data: {
@@ -144,9 +130,12 @@ async function handleExpiringDiscountReminder(supabase: any): Promise<Response> 
         vendor_id: d.vendor_id,
         discount_id: d.id,
       },
-    }));
-    await sendPushBatch(messages);
-    totalSent += tokens.length;
+      // This runs on a schedule. Without a key, every run inside the expiry
+      // window would remind the same donors about the same discount again —
+      // the dedupe is what makes the sweep safe to run daily.
+      dedupeKey: `favorite_expiring_discount:discount:${d.id}`,
+    });
+    totalSent += result.pushed;
   }
 
   return json({ sent: totalSent, discounts: liveDiscounts.length });

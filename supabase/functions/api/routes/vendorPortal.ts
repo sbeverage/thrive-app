@@ -22,7 +22,7 @@ import { corsHeaders } from "../lib/cors.ts";
 import { normalizeCategory, normalizeTags } from "../lib/categories.ts";
 import { getAppAuthHeader } from "../lib/jwt-app.ts";
 import { sendVendorEmail } from "../lib/email.ts";
-import { sendPushBatch } from "../lib/push.ts";
+import { notifyUsers, favoriterUserIds } from "../lib/notifications.ts";
 import { normalizeHours } from "../lib/vendorHours.ts";
 
 type JSONResponse = Response;
@@ -455,29 +455,17 @@ async function notifyFavoritersOfNewDiscount(supabase: any, vendorId: number, di
     .maybeSingle();
   if (!vendor || vendor.signup_status !== "approved") return;
 
-  const { data: favs } = await supabase
-    .from("vendor_favorites")
-    .select("user_id")
-    .eq("vendor_id", vendorId);
-  const userIds = (favs || []).map((f: any) => f.user_id).filter(Boolean);
+  // Goes through notifyUsers so each donor gets a notification-centre row,
+  // not just a push. This is the same fanout as the admin-created path in
+  // routes/adminDiscounts.ts — a discount added in the vendor portal and one
+  // added by an admin have to notify identically.
+  const userIds = await favoriterUserIds(supabase, vendorId);
   if (userIds.length === 0) return;
 
-  const { data: users } = await supabase
-    .from("users")
-    .select("id, expo_push_token")
-    .in("id", userIds)
-    .not("expo_push_token", "is", null);
-  const tokens = (users || [])
-    .map((u: any) => u.expo_push_token)
-    .filter((t: string) => !!t);
-  if (tokens.length === 0) return;
-
-  const title = `${vendor.name} just added a new discount`;
-  const body = discount?.title || "Tap to see the latest offer from a place you love.";
-  const messages = tokens.map((to: string) => ({
-    to,
-    title,
-    body,
+  await notifyUsers(supabase, userIds, {
+    type: "favorite_new_discount",
+    title: `${vendor.name} just added a new discount`,
+    body: discount?.title || "Tap to see the latest offer from a place you love.",
     data: {
       // Vendor id, not discount id — the [id] route resolves a vendor.
       // Group-stripped href: (tabs)/(main) are expo-router groups and are
@@ -487,8 +475,10 @@ async function notifyFavoritersOfNewDiscount(supabase: any, vendorId: number, di
       vendor_id: vendorId,
       discount_id: discount.id,
     },
-  }));
-  await sendPushBatch(messages);
+    // Deliberately the same key the admin path uses, so one discount can
+    // only ever be announced once even if it is touched from both surfaces.
+    dedupeKey: `favorite_new_discount:discount:${discount.id}`,
+  });
 }
 
 async function handleDiscountUpdate(

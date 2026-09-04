@@ -19,7 +19,7 @@
 
 import { corsHeaders } from "../lib/cors.ts";
 import { sendVendorEmail } from "../lib/email.ts";
-import { sendPushToUser } from "../lib/push.ts";
+import { notifyUser } from "../lib/notifications.ts";
 import { sendNotificationEmail } from "../lib/email.ts";
 import { charityProfileGaps } from "../lib/charities.ts";
 
@@ -537,12 +537,16 @@ async function notifyCharityDonors(
   let emailed = 0;
   for (const u of recipients || []) {
     try {
-      const ok = await sendPushToUser(supabase, u.id, {
+      const outcome = await notifyUser(supabase, u.id, {
+        type: notice.type,
         title: notice.title,
         body: notice.pushBody,
         data: { path: "/beneficiary", type: notice.type, charity_id: charityId },
+        // One notice per donor per charity decision. An admin re-running an
+        // approval shouldn't refill everyone's feed with the same news.
+        dedupeKey: `${notice.type}:charity:${charityId}`,
       });
-      if (ok) pushed += 1;
+      if (outcome.pushSent) pushed += 1;
     } catch (e: any) {
       console.warn(`push to ${u.id} failed:`, e?.message || e);
     }

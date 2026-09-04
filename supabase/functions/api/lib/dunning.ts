@@ -5,7 +5,7 @@
 // manual nudge and the automatic one can't drift apart, which is how a donor
 // ends up reading two different accounts of the same problem.
 
-import { sendPushToUser } from "./push.ts";
+import { notifyUser } from "./notifications.ts";
 import { sendNotificationEmail } from "./email.ts";
 
 export type FailureNoticeStage = {
@@ -21,6 +21,13 @@ export type FailureNoticeStage = {
    * this flow shipped, who would otherwise never receive one.
    */
   forcePush?: boolean;
+  /**
+   * Stripe invoice id, when the caller has one. Keys the notification so a
+   * redelivered invoice.payment_failed doesn't append a second identical row
+   * to the donor's feed. The admin's manual nudge omits it, because there
+   * sending again is the entire point.
+   */
+  invoiceId?: string;
 };
 
 export type FailureNoticeResult = {
@@ -43,7 +50,7 @@ export async function sendPaymentFailureNotice(
   userId: number,
   stage: FailureNoticeStage,
 ): Promise<FailureNoticeResult> {
-  const { attempt, isFinal, amountDue, nextTry, forcePush } = stage;
+  const { attempt, isFinal, amountDue, nextTry, forcePush, invoiceId } = stage;
 
   const title = isFinal
     ? "Your monthly giving is paused"
@@ -63,27 +70,36 @@ export async function sendPaymentFailureNotice(
 
   if (attempt <= 1 || isFinal || forcePush) {
     try {
-      // sendPushToUser returns false when the user has no expo_push_token —
-      // it does not throw. Treating "didn't throw" as "delivered" reported
-      // success for a notification that never left the building.
-      const delivered = await sendPushToUser(supabase, userId, {
+      // notifyUser records the notice in the donor's feed first and pushes
+      // second, so a donor with no registered token still finds out — that
+      // silent case is how a payment-failure notice previously vanished
+      // while being reported as sent.
+      const type = isFinal ? "payment_paused" : "payment_failed";
+      const outcome = await notifyUser(supabase, userId, {
+        type,
         title: isFinal
           ? "Your giving is paused"
           : "Your THRIVE payment didn't go through",
         body: isFinal
           ? "We couldn't process your card after several tries. Update it to start giving again."
           : "Tap to update your card so we can keep your donation going.",
-        data: { path: "/menu/manageCards", type: "payment_failed" },
+        data: { path: "/menu/manageCards", type },
+        dedupeKey: invoiceId ? `${type}:${invoiceId}:${attempt}` : undefined,
+        // A donor cannot mute the notice that their giving has stopped —
+        // there is nothing they can act on if they never hear about it.
+        ignorePrefs: isFinal,
       });
-      result.pushSent = delivered;
-      if (!delivered) {
-        result.reason = "no push token registered for this user";
+      result.pushSent = outcome.pushSent;
+      if (!outcome.pushSent) {
+        result.reason = outcome.reason;
         console.warn(
-          `⚠️ No expo_push_token for user ${userId} — payment-failure push not delivered.`,
+          `⚠️ Payment-failure push to user ${userId} not delivered: ${outcome.reason}`,
         );
       }
     } catch (e: any) {
-      console.warn("payment failure push failed:", e?.message || e);
+      // notifyUser is written not to throw; this is belt-and-braces so a
+      // notification can never fail the webhook that triggered it.
+      console.warn("payment failure notice failed:", e?.message || e);
     }
   }
 
