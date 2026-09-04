@@ -1492,6 +1492,11 @@ export async function handleAdminReporting(
           ios_looks_correct: resolvedIos.includes("6759223641"),
           android_env_set: !!androidEnv,
           app_base_url: Deno.env.get("APP_BASE_URL") || "(default)",
+          // Where the admin temp-password email tells a new team member to
+          // sign in. Used by both the add-member and reset-password flows.
+          admin_portal_url:
+            Deno.env.get("ADMIN_PORTAL_URL") ||
+            "https://admin.forpurposetechnologies.com",
         },
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },

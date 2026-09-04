@@ -644,6 +644,8 @@ export async function sendReferralReminderEmail({
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
   <title>${emailSubject}</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
@@ -752,6 +754,14 @@ export async function sendAdminTempPasswordEmail({
     const appName = "THRIVE Initiative";
     const fromEmail = Deno.env.get("EMAIL_FROM") || "noreply@yourapp.com";
 
+    // Where they actually sign in. The email previously gave a temporary
+    // password and no URL at all, so a new team member had a credential and
+    // nowhere to use it. Overridable, because the panel answers on several
+    // hostnames and one of them (admin.jointhriveinitiative.org) does not
+    // resolve — verified 2026-09-04 that this one serves the panel.
+    const portalUrl =
+      Deno.env.get("ADMIN_PORTAL_URL") || "https://admin.forpurposetechnologies.com";
+
     const emailSubject = `${appName} Admin Access - Temporary Password`;
     const emailHtml = `
 <!DOCTYPE html>
@@ -798,15 +808,55 @@ export async function sendAdminTempPasswordEmail({
       color: #666;
       font-size: 14px;
     }
+    .cta {
+      display: inline-block;
+      margin: 8px 0 4px;
+      padding: 12px 24px;
+      background-color: #DB8633;
+      color: #ffffff !important;
+      font-weight: 700;
+      font-size: 15px;
+      text-decoration: none;
+      border-radius: 8px;
+    }
+    .field {
+      background: #f7f9fa;
+      border: 1px solid #e4e9eb;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 15px;
+      margin: 8px 0;
+      word-break: break-all;
+    }
+    /* Colours are set explicitly so a client that switches to dark mode does
+       not leave dark text on a dark card — the same failure that made the
+       donor invitation's download link invisible. */
+    @media (prefers-color-scheme: dark) {
+      body { background: #1c2b31 !important; color: #e8eef0 !important; }
+      .container { background-color: #24363d !important; }
+      p, .title { color: #e8eef0 !important; }
+      .hint { color: #b8c6cc !important; }
+      .field { background: #1f3038 !important; border-color: #2f4650 !important; color: #e8eef0 !important; }
+      .password-box { background: #33240f !important; border-color: #6b4a20 !important; color: #f0b072 !important; }
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="title">Hi ${name},</div>
     <p>You have been added to the ${appName} admin team.</p>
-    <p>Use the temporary password below to sign in:</p>
+
+    <p style="margin-bottom:4px;"><strong>Sign in here:</strong></p>
+    <a href="${portalUrl}" class="cta">Open the admin portal</a>
+    <div class="field">${portalUrl}</div>
+
+    <p style="margin-bottom:4px;"><strong>Your username</strong> is this email address:</p>
+    <div class="field">${to}</div>
+
+    <p style="margin-bottom:4px;"><strong>Temporary password:</strong></p>
     <div class="password-box">${tempPassword}</div>
-    <p class="hint">For security, please change this password after your first login.</p>
+
+    <p class="hint">For security, please change this password after your first login — Settings &rarr; Profile.</p>
   </div>
 </body>
 </html>`;
@@ -815,9 +865,11 @@ export async function sendAdminTempPasswordEmail({
 
 You have been added to the ${appName} admin team.
 
+Sign in here: ${portalUrl}
+Username: ${to}
 Temporary password: ${tempPassword}
 
-For security, please change this password after your first login.`;
+For security, please change this password after your first login (Settings > Profile).`;
 
     if (emailService === "resend") {
       const resendApiKey = Deno.env.get("RESEND_API_KEY");
