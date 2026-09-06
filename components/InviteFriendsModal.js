@@ -213,7 +213,7 @@ export default function InviteFriendsModal({ visible, onClose }) {
               </View>
               <Text style={styles.progressText}>
                 {allTiersDone
-                  ? 'Thank you—your invites help us keep donations focused on real impact.'
+                  ? 'Thank you! Your invites help us keep donations focused on real impact.'
                   : `${Math.max(0, nextMilestone.count - paidFriendsCount)} more ${nextMilestone.count - paidFriendsCount === 1 ? 'active friend' : 'active friends'} to unlock ${nextMilestone.reward}.`}
               </Text>
             </View>

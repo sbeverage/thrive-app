@@ -80,7 +80,7 @@ export default function SuggestCard({ type = 'vendor', searchQuery = '', onSubmi
           <>
             We couldn't find{' '}
             <Text style={styles.highlight}>"{searchQuery}"</Text>
-            {' '}— suggest it and we'll add it!
+            . Suggest it and we'll add it!
           </>
         ) : isVendor ? (
           'Help grow the THRIVE network. Suggest a local business and we\'ll reach out to bring them on board.'

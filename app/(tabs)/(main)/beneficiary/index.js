@@ -35,6 +35,7 @@ import SuggestPrompt from '../../../../components/SuggestPrompt';
 import { Asset } from 'expo-asset';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { IMAGE_ASSETS } from '../../../utils/assetConstants';
+import { causeMatchesQuery, causeMatchScore } from '../../../utils/causeSearch';
 import { beneficiaryLocationMatches } from '../../../utils/beneficiaryLocationMatch';
 import { clusterVendors, isCoLocated, regionForCluster, sharedAddressLabel } from '../../../utils/mapClustering';
 import { readSignupFlowPending } from '../../../utils/signupFlowCheckpoint';
@@ -479,9 +480,11 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
 
   const filteredBeneficiaries = beneficiaries.filter(b => {
     // Search text filter
-    const matchesSearch =
-      b.name.toLowerCase().includes(searchText.toLowerCase()) ||
-      (b.location && b.location.toLowerCase().includes(searchText.toLowerCase()));
+    // Matches name, description, category and location, plus a synonym
+    // map, so somebody typing what they care about actually finds it.
+    // This was name-and-location only: "children" returned nothing at
+    // all while thirteen charities served children. See causeSearch.js.
+    const matchesSearch = causeMatchesQuery(b, searchText);
 
     /*
      * Cause (filter screen) + chips: do not AND a chip category with modal cause — that produced
@@ -555,7 +558,14 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
   );
 
   /** Pin selected cause to top of list when it appears in current filters (no duplicate). */
-  let listOrderedWithSelectedFirst = filteredBeneficiaries;
+  // With a search query, rank by how well each charity matches instead
+  // of leaving them alphabetical, so the closest answer is the first
+  // thing seen rather than whichever name starts with a digit.
+  let listOrderedWithSelectedFirst = searchText.trim()
+    ? [...filteredBeneficiaries].sort(
+        (a, b) => causeMatchScore(b, searchText) - causeMatchScore(a, searchText),
+      )
+    : filteredBeneficiaries;
   if (selectedBeneficiary?.id != null && filteredBeneficiaries.length > 0) {
     const selId = selectedBeneficiary.id;
     const idx = filteredBeneficiaries.findIndex(
@@ -965,8 +975,8 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
 
         {isSignupFlow ? (
           <>
-            <Text style={styles.signupHeaderTitle}>Select a Beneficiary</Text>
-            <Text style={styles.signupHeaderSubtitle}>Pick a cause and make a real impact</Text>
+            <Text style={styles.signupHeaderTitle}>Who do you want to help?</Text>
+            <Text style={styles.signupHeaderSubtitle}>You can change your cause anytime</Text>
           </>
         ) : (
           <Image
@@ -1372,7 +1382,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                       </TouchableOpacity>
                       <View style={styles.beneficiaryCardContent}>
                         <View style={styles.beneficiaryNameRow}>
-                          <Text style={styles.beneficiaryName} numberOfLines={1}>
+                          <Text style={styles.beneficiaryName} numberOfLines={2}>
                             {b.name}
                           </Text>
                           {(b.isPendingVerification || b.is_pending_verification) && (
@@ -1386,6 +1396,11 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                           )}
                         </View>
                         <Text style={styles.beneficiaryCategory}>{b.category}</Text>
+                        {!!b.description && (
+                          <Text style={styles.beneficiaryBlurb} numberOfLines={2}>
+                            {b.description}
+                          </Text>
+                        )}
                         {!isSignupFlow && (
                           <View style={styles.beneficiaryLocation}>
                             <Ionicons name="location" size={14} color="#8E9BAE" />
@@ -1480,7 +1495,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                     </TouchableOpacity>
                     <View style={styles.beneficiaryCardContent}>
                       <View style={styles.beneficiaryNameRow}>
-                        <Text style={styles.beneficiaryName} numberOfLines={1}>
+                        <Text style={styles.beneficiaryName} numberOfLines={2}>
                           {b.name}
                         </Text>
                         {(b.isPendingVerification || b.is_pending_verification) && (
@@ -1494,6 +1509,11 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                         )}
                       </View>
                       <Text style={styles.beneficiaryCategory}>{b.category}</Text>
+                      {!!b.description && (
+                        <Text style={styles.beneficiaryBlurb} numberOfLines={2}>
+                          {b.description}
+                        </Text>
+                      )}
                       {!isSignupFlow && (
                         <View style={styles.beneficiaryLocation}>
                           <Ionicons name="location" size={14} color="#8E9BAE" />
@@ -1709,13 +1729,13 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
             </Text>
             <Text style={styles.modalText}>
               {pendingBeneficiary?._saveMySpot
-                ? "You're starting your monthly gift today. No rush — we'll hold it with THRIVE until you find a cause you love to give to."
+                ? "You're starting your monthly gift today. No rush, we'll hold it with THRIVE until you find a cause you love."
                 : isThriveCause(pendingBeneficiary)
                 ? 'Your monthly donation will go directly toward growing the platform and reaching more donors and cities.'
                 : pendingBeneficiary?.isPendingVerification ||
                   pendingBeneficiary?.is_pending_verification
-                ? `"${pendingBeneficiary?.name}" comes from the IRS registry and our team hasn't verified them yet. We'll set your giving aside until they're approved — and if we can't verify them, you can choose another cause. Nothing is lost either way.`
-                : `Set "${pendingBeneficiary?.name}" as your monthly beneficiary?`}
+                ? `"${pendingBeneficiary?.name}" comes from the IRS registry and our team hasn't verified them yet. We'll set your giving aside until they're approved. If we can't verify them, you can choose another cause. Nothing is lost either way.`
+                : `Give to "${pendingBeneficiary?.name}" every month?`}
             </Text>
             <View style={styles.modalActions}>
               <TouchableOpacity onPress={handleConfirmBeneficiary} style={styles.confirmBtn}>
@@ -2283,6 +2303,12 @@ const styles = StyleSheet.create({
     // right: 8, size ~20) so long charity names wrap on their own line
     // instead of running under the icon.
     paddingRight: 32,
+  },
+  beneficiaryBlurb: {
+    fontSize: 12.5,
+    lineHeight: 17,
+    color: '#7A8B92',
+    marginTop: 3,
   },
   beneficiaryCategory: {
     fontSize: 13,

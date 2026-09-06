@@ -657,7 +657,7 @@ export default function MainHome() {
               <View style={styles.inviteProgressContainer}>
                 <Text style={styles.inviteProgressText}>
                   {paidFriendsCount >= REFERRAL_TIERS[REFERRAL_TIERS.length - 1].count
-                    ? '🎉 All recognition tiers unlocked — thank you!'
+                    ? '🎉 All recognition tiers unlocked. Thank you!'
                     : `${Math.max(0, nextMilestone.count - paidFriendsCount)} more active friend${nextMilestone.count - paidFriendsCount === 1 ? '' : 's'} to unlock ${nextMilestone.reward}`}
                 </Text>
                 <View style={styles.inviteProgressBar}>

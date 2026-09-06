@@ -39,7 +39,7 @@ const CATEGORIES = [
   {
     key: 'causes',
     label: 'Your cause',
-    hint: 'Updates about the charity you support — approvals and changes.',
+    hint: 'Updates about the charity you support, including approvals and changes.',
   },
   {
     key: 'payment',
@@ -137,9 +137,9 @@ export default function NotificationSettings() {
             your notification list, so nothing gets lost.
           </Text>
           <Text style={styles.footnote}>
-            One exception: if we can't process your card after several tries and
-            your giving is paused, we'll always let you know — there's nothing
-            you can act on if you never hear about it.
+            One exception. If we can't process your card after several tries
+            and your giving is paused, we'll always let you know. There's
+            nothing you can act on if you never hear about it.
           </Text>
         </>
       )}

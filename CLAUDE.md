@@ -40,6 +40,44 @@ The `.env` file contains real API keys. It is gitignored. Never stage or commit 
 
 ---
 
+## Copy rules (user-facing text)
+
+These govern every string a donor, vendor, or admin reads: screens, buttons, empty
+states, error messages, push notifications, emails, and the website. They do not
+govern code comments or commit messages.
+
+### 1. No em dashes or en dashes
+Never use `—` or `–` in user-facing copy. It is the clearest tell that AI wrote
+the text, and THRIVE's copy has to read as if the team wrote it. Use a comma, a
+full stop, a colon, or "and". If the dash was joining two ideas, split the
+sentence.
+
+```
+BANNED   "Your gift is on its way — thanks for thriving"
+INSTEAD  "Your gift is on its way. Thanks for thriving!"
+```
+
+### 2. Warm and conversational, never legal or cold
+THRIVE asks people to give money to strangers and trust that discounts follow.
+Formal copy makes a warm idea feel like paperwork, which is a large part of why
+new users don't understand the model.
+
+- **Never say "beneficiary" to a user.** It is an insurance word. Say "cause",
+  "charity", or ask "Who do you want to help?"
+- **Errors say what happened and what to do**, and never open with "Error" or
+  "Failed". Not `"Error: Failed to save"` but `"That didn't save. Give it
+  another try?"`
+- **Write from the user's side of the screen.** They have a "monthly gift", not
+  a "recurring donation record".
+- **Buttons say what happens.** "Choose this cause", not "Submit".
+
+### 3. Say when something is reversible
+Anywhere the app asks for a commitment, say it can be changed. The cause picker
+is the important one: people stall there because nothing tells them the choice
+isn't permanent.
+
+---
+
 ## Architecture reminders
 
 - **Backend**: Supabase Edge Functions only. `BACKEND_URL = https://mdqgndyhzlnwojtubouh.supabase.co/functions/v1`

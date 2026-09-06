@@ -251,7 +251,7 @@ export default function DonorInvitationVerifyScreen() {
         Alert.alert(
           '🎉 Welcome to THRIVE!',
           inviteType === 'team'
-            ? 'Your team account is ready. Next, pick a cause so you can see the full donor experience — nothing will be charged.'
+            ? 'Your team account is ready. Next, pick a cause so you can see what donors see. Nothing will be charged.'
             : coworking
               ? 'Your account is ready. Next, choose a charity for your coworking-sponsored donation.'
               : 'Your account has been successfully created. You can now access all features of the app.',

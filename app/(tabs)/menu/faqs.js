@@ -35,7 +35,7 @@ const FAQ_ITEMS = [
   {
     question: 'What is Grow Your Impact?',
     answer:
-      'Invite friends with your personal referral link. When they sign up and become active donors, you unlock recognition badges—and at higher tiers, a chance to be featured on our website.',
+      'Invite friends with your personal referral link. When they sign up and become active donors, you unlock recognition badges, and at higher tiers, a chance to be featured on our website.',
   },
   {
     question: 'Why was I asked to enter my bill and savings after redeeming a discount?',

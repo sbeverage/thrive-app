@@ -324,7 +324,7 @@ export default function EditDonationAmount() {
                   <Text style={styles.infoIcon}>ⓘ</Text>
                 </TouchableOpacity>
               </View>
-              <Text style={styles.feeNote}>3.5% — goes directly to card network</Text>
+              <Text style={styles.feeNote}>3.5% goes straight to the card network</Text>
             </View>
             <View style={styles.toggleRight}>
               <Text

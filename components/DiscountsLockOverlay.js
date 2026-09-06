@@ -19,7 +19,7 @@ export default function DiscountsLockOverlay({ status, onChooseAmount, onUpdateP
 
   const title = neverStarted ? 'Unlock your discounts' : 'Your giving is paused';
   const body = neverStarted
-    ? 'Choose a monthly amount and add a payment method to start giving — your discounts unlock as soon as your first donation is active.'
+    ? 'Choose a monthly amount and add a payment method to start giving. Your discounts unlock as soon as your first donation is active.'
     : 'Your monthly donation isn’t active right now, so discounts are locked. Update your payment method to pick things back up.';
   const ctaLabel = neverStarted ? 'Choose my amount' : 'Update payment method';
   const onPrimary = neverStarted ? onChooseAmount : onUpdatePayment;

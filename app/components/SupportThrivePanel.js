@@ -11,7 +11,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 
-// `allowPickLater` gates the "Start now — pick later" CTA. Holding a gift
+// `allowPickLater` gates the "Start now, pick later" CTA. Holding a gift
 // while you decide only makes sense during signup, before any monthly
 // donation exists. An established donor switching causes already gives every
 // month, so offering to "start now" reads as nonsense there — and tapping it
@@ -32,7 +32,7 @@ export default function SupportThrivePanel({
       </Text>
       <Text style={styles.body}>
         {allowPickLater
-          ? 'No pressure — start your monthly gift now and pick a cause anytime.'
+          ? 'No pressure. Start your monthly gift now and pick a cause anytime.'
           : 'Your giving can go toward growing the platform and reaching more cities.'}
       </Text>
 
@@ -46,7 +46,7 @@ export default function SupportThrivePanel({
           {isLoading ? (
             <ActivityIndicator color="#fff" size="small" />
           ) : (
-            <Text style={styles.primaryBtnText}>Start now — pick later  →</Text>
+            <Text style={styles.primaryBtnText}>Start now, pick later  →</Text>
           )}
         </TouchableOpacity>
       )}
