@@ -11,28 +11,45 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 
-export default function SupportThrivePanel({ thriveCharity, isLoading, onPickGrow, onPickHold }) {
+// `allowPickLater` gates the "Start now — pick later" CTA. Holding a gift
+// while you decide only makes sense during signup, before any monthly
+// donation exists. An established donor switching causes already gives every
+// month, so offering to "start now" reads as nonsense there — and tapping it
+// would move their live subscription into held mode.
+export default function SupportThrivePanel({
+  thriveCharity,
+  isLoading,
+  onPickGrow,
+  onPickHold,
+  allowPickLater = true,
+}) {
   const disabled = !thriveCharity || isLoading;
 
   return (
     <View style={styles.wrapper}>
-      <Text style={styles.headline}>Need more time to decide?</Text>
+      <Text style={styles.headline}>
+        {allowPickLater ? 'Need more time to decide?' : 'Want to support THRIVE directly?'}
+      </Text>
       <Text style={styles.body}>
-        No pressure — start your monthly gift now and pick a cause anytime.
+        {allowPickLater
+          ? 'No pressure — start your monthly gift now and pick a cause anytime.'
+          : 'Your giving can go toward growing the platform and reaching more cities.'}
       </Text>
 
-      <TouchableOpacity
-        style={[styles.primaryBtn, disabled && styles.disabled]}
-        activeOpacity={0.85}
-        onPress={() => thriveCharity && onPickHold?.(thriveCharity)}
-        disabled={disabled}
-      >
-        {isLoading ? (
-          <ActivityIndicator color="#fff" size="small" />
-        ) : (
-          <Text style={styles.primaryBtnText}>Start now — pick later  →</Text>
-        )}
-      </TouchableOpacity>
+      {allowPickLater && (
+        <TouchableOpacity
+          style={[styles.primaryBtn, disabled && styles.disabled]}
+          activeOpacity={0.85}
+          onPress={() => thriveCharity && onPickHold?.(thriveCharity)}
+          disabled={disabled}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text style={styles.primaryBtnText}>Start now — pick later  →</Text>
+          )}
+        </TouchableOpacity>
+      )}
 
       <TouchableOpacity
         activeOpacity={0.6}

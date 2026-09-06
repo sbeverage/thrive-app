@@ -39,6 +39,8 @@ export default function DonorInvitationVerifyScreen() {
   const [phone, setPhone] = useState('');
   const [profileImage, setProfileImage] = useState(null);
   const [coworking, setCoworking] = useState(false);
+  // 'standard' | 'coworking' | 'team'
+  const [inviteType, setInviteType] = useState('standard');
   const [sponsorAmount, setSponsorAmount] = useState(0);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -82,10 +84,18 @@ export default function DonorInvitationVerifyScreen() {
         setEmail(response.user.email || '');
         setName(response.user.name || response.user.firstName || '');
         setPhone(response.user.phone || '');
-        const isCoworkingInvite = response.user.coworking === true || response.user.inviteType === 'coworking';
+        const invitedType = String(response.user.inviteType || '').toLowerCase();
+        const isTeamInvite = invitedType === 'team';
+        const isCoworkingInvite =
+          !isTeamInvite &&
+          (response.user.coworking === true || invitedType === 'coworking');
         const rawSponsor = parseFloat(response.user.sponsorAmount || 0);
+        setInviteType(isTeamInvite ? 'team' : isCoworkingInvite ? 'coworking' : 'standard');
         setCoworking(isCoworkingInvite);
-        setSponsorAmount(isCoworkingInvite ? (rawSponsor || 15) : rawSponsor);
+        // Team accounts are not billed by anyone, so there is no sponsor
+        // amount to carry — leaving it at 0 keeps the Home card from showing
+        // a monthly figure nobody is paying.
+        setSponsorAmount(isTeamInvite ? 0 : isCoworkingInvite ? (rawSponsor || 15) : rawSponsor);
         setVerified(true);
         setVerifying(false);
         
@@ -208,8 +218,11 @@ export default function DonorInvitationVerifyScreen() {
         phone: phone,
         profileImageUrl: uploadedProfileUrl,
         coworking: coworking,
-        inviteType: coworking ? 'coworking' : 'standard',
-        sponsorAmount: sponsorAmount || 0
+        inviteType: inviteType,
+        sponsorAmount: sponsorAmount || 0,
+        // Team and coworking both settle outside Stripe, so the signup flow
+        // skips the payment step and /auth/login treats onboarding as done.
+        externalBilled: inviteType === 'team' || coworking,
       });
       
       if (response.success) {
@@ -226,6 +239,8 @@ export default function DonorInvitationVerifyScreen() {
           profileImage: uploadedProfileUrl || null,
           profileImageUrl: uploadedProfileUrl || null,
           coworking: coworking,
+          inviteType: inviteType,
+          externalBilled: inviteType === 'team' || coworking,
           sponsorAmount: sponsorAmount || 0,
           monthlyDonation: coworking ? (sponsorAmount || 15) : undefined,
           isLoggedIn: true,
@@ -235,25 +250,33 @@ export default function DonorInvitationVerifyScreen() {
         // Show success message
         Alert.alert(
           '🎉 Welcome to THRIVE!',
-          coworking
-            ? 'Your account is ready. Next, choose a charity for your coworking-sponsored donation.'
-            : 'Your account has been successfully created. You can now access all features of the app.',
+          inviteType === 'team'
+            ? 'Your team account is ready. Next, pick a cause so you can see the full donor experience — nothing will be charged.'
+            : coworking
+              ? 'Your account is ready. Next, choose a charity for your coworking-sponsored donation.'
+              : 'Your account has been successfully created. You can now access all features of the app.',
           [
             {
               text: 'Get Started',
               onPress: async () => {
-                if (coworking) {
+                if (inviteType === 'team' || coworking) {
+                  // Both comped types run the same shape of flow: explainer →
+                  // pick a cause → done, with no payment step. The `flow`
+                  // param is what the beneficiary screen reads to decide
+                  // where to send them after the pick.
+                  const flow = inviteType === 'team' ? 'team' : 'coworking';
+                  const params =
+                    flow === 'team'
+                      ? { flow }
+                      : { flow, sponsorAmount: (sponsorAmount || 15).toString() };
                   // Persist the pending flow so the user resumes here if they close the app
                   try {
                     await AsyncStorage.setItem('signupFlowPending', JSON.stringify({
                       route: '/signupFlow/explainerDonate',
-                      params: { flow: 'coworking', sponsorAmount: (sponsorAmount || 15).toString() }
+                      params,
                     }));
                   } catch (_) {}
-                  router.replace({
-                    pathname: '/signupFlow/explainerDonate',
-                    params: { flow: 'coworking', sponsorAmount: (sponsorAmount || 15).toString() }
-                  });
+                  router.replace({ pathname: '/signupFlow/explainerDonate', params });
                 } else {
                   router.replace('/(tabs)/home');
                 }

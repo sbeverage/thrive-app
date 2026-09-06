@@ -29,6 +29,7 @@ import { persistSignupFlowCheckpointFromParams } from '../utils/signupFlowCheckp
 import { useLocation } from '../context/LocationContext';
 import { useDiscountFilter } from '../context/DiscountFilterContext';
 import { calculateDistance } from '../utils/locationService';
+import SuggestPrompt from '../../components/SuggestPrompt';
 
 // Preload the piggy artwork at module load so it's decoded into memory by
 // the time the screen mounts. Without this, RN's Image lazily decodes the
@@ -190,6 +191,12 @@ export default function DiscountTeaser() {
         AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify([...next])).catch(
           () => {},
         );
+        // Mirror the intended state to the server. Favourites saved here drive
+        // the "your saved vendor added a discount" push, and a local-only write
+        // leaves vendor_favorites empty — the fanout then has nobody to notify.
+        // Explicit state rather than a toggle, so a replayed sync cannot undo
+        // it. Fire-and-forget: mid-signup the donor may hold no token yet.
+        API.setVendorFavorite(id, !wasFavorited);
         return next;
       });
     },
@@ -289,7 +296,12 @@ export default function DiscountTeaser() {
       : 'Detecting location...');
 
   const handleContinue = () => {
-    if (params?.flow === 'coworking') {
+    if (params?.flow === 'team') {
+      router.push({
+        pathname: '/signupFlow/beneficiarySignupCause',
+        params: { flow: 'team' },
+      });
+    } else if (params?.flow === 'coworking') {
       router.push({
         pathname: '/signupFlow/beneficiarySignupCause',
         params: { flow: 'coworking', sponsorAmount: params?.sponsorAmount || '15' },
@@ -482,7 +494,7 @@ export default function DiscountTeaser() {
         {loading
           ? [0, 1, 2, 3].map((i) => <SkeletonCard key={i} />)
           : visible.length === 0
-            ? <EmptyState filters={filters} />
+            ? <EmptyState filters={filters} searchQuery={searchQuery} />
             : visible.map((v) => (
                 <LockedVoucherCard
                   key={v.id}
@@ -548,7 +560,7 @@ export default function DiscountTeaser() {
         >
           <Text style={styles.continueButtonText}>
             {milestoneHit
-              ? '🔥 Pick a cause to save them →'
+              ? 'Pick a cause to save them →'
               : 'Pick Your Cause →'}
           </Text>
         </TouchableOpacity>
@@ -649,7 +661,7 @@ function SkeletonCard() {
   );
 }
 
-function EmptyState({ filters }) {
+function EmptyState({ filters, searchQuery = '' }) {
   const isFavoritesEmpty = filters?.showFavorites;
   return (
     <View style={styles.emptyState}>
@@ -661,6 +673,18 @@ function EmptyState({ filters }) {
           ? 'Tap the heart on any card to save your favorite stores. They\'ll be waiting for you after signup.'
           : 'Try clearing your filters to see more options.'}
       </Text>
+
+      {/* Same compact request card as the live Discounts and Beneficiary
+          tabs — a donor part-way through signup is exactly who knows a
+          business worth adding. Favorites-empty is a different situation
+          (nothing saved yet), so the prompt only shows on a real miss. */}
+      {!isFavoritesEmpty && (
+        <SuggestPrompt
+          type="vendor"
+          searchQuery={searchQuery}
+          onSubmit={({ name, website }) => API.submitVendorRequest({ name, website })}
+        />
+      )}
     </View>
   );
 }

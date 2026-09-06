@@ -547,6 +547,15 @@ export async function handleDonationRoute(
       // Sanity: only meaningful when the chosen beneficiary IS THRIVE itself;
       // otherwise we silently ignore the flag.
       const heldForDonorChoiceRaw = body.held_for_donor_choice === true || body.heldForDonorChoice === true;
+      // Whether the donor opted to gross-up their charge to cover Stripe's cut.
+      // Persisted on monthly_donations so admin reporting can show the correct
+      // fee-absorption pill and so the payouts endpoint knows whether the fee
+      // came out of the beneficiary's share (donor did NOT cover) or the donor's
+      // extra top-up (donor DID cover).
+      const userCoveredFees =
+        body.user_covered_fees === true ||
+        body.userCoveredFees === true ||
+        body.coverFees === true;
 
       if (!beneficiary_id || !amount) {
         return new Response(
@@ -652,7 +661,38 @@ export async function handleDonationRoute(
             );
           }
 
-          if (paymentDetails.clientSecret) {
+          // Only resume a payment that can still be completed. Stripe hands
+          // back a client_secret even for a canceled PaymentIntent, so the old
+          // `if (clientSecret)` test sent the app off to confirm a dead
+          // payment — Apple Pay would return without an error and nothing was
+          // ever collected, which is exactly how a donor got stuck retrying.
+          // Anything not resumable falls through to the orphan branch below,
+          // which drops the row and builds a fresh subscription.
+          const RESUMABLE_PI = new Set([
+            "requires_payment_method",
+            "requires_confirmation",
+            "requires_action",
+            "processing",
+          ]);
+          const RESUMABLE_SUB = new Set(["incomplete", "past_due", "unpaid"]);
+          const piStatus = String(
+            paymentDetails.paymentIntentStatus || "",
+          ).toLowerCase();
+          const subStatus = String(
+            paymentDetails.subscriptionStatus || "",
+          ).toLowerCase();
+          const canResume =
+            !!paymentDetails.clientSecret &&
+            RESUMABLE_PI.has(piStatus) &&
+            (!subStatus || RESUMABLE_SUB.has(subStatus));
+
+          if (!canResume && paymentDetails.clientSecret) {
+            console.log(
+              `ℹ️ Not resuming subscription ${existing.stripe_subscription_id}: sub=${subStatus || "?"}, pi=${piStatus || "?"} — starting fresh instead`,
+            );
+          }
+
+          if (canResume) {
             let customerEphemeralKeySecret: string | null = null;
             try {
               const stripe = getStripeClient();
@@ -762,6 +802,7 @@ export async function handleDonationRoute(
             status: subscription.status === "incomplete" ? "pending" : "active",
             next_payment_date: nextPaymentDate.toISOString().split("T")[0],
             held_for_donor_choice: heldForDonorChoice,
+            user_covered_fees: userCoveredFees,
           },
         ])
         .select()
@@ -966,6 +1007,10 @@ export async function handleDonationRoute(
         beneficiary: newBeneficiaryId,
         preferredCharity: newBeneficiaryId,
       };
+      // They have now chosen for themselves, so stop prompting. Set by the
+      // charity-reject path when we parked them on THRIVE; leaving it would
+      // nag a donor who has already done what we asked.
+      delete (newPrefs as any).reassignedFrom;
       await supabase.from("users").update({ preferences: newPrefs }).eq("id", userId);
 
       // If there's anything to release, write the release transaction and
@@ -1235,6 +1280,98 @@ export async function handleDonationRoute(
             status: 500,
           },
         );
+      }
+
+      // ── Self-heal a stale local status ────────────────────────────────
+      // This is the endpoint the app's discounts gate reads, so a row stuck at
+      // "pending" while Stripe has actually collected shows the donor "your
+      // giving is paused" indefinitely.
+      //
+      // POST /donations/monthly/sync-status already repairs exactly this, but
+      // it is only ever called from the signup payment screen
+      // (signupFlow/stripeIntegration.js) — so a donor who paid, or who later
+      // changed their amount, had no way back. PUT
+      // /donations/monthly/amount doesn't touch status either.
+      //
+      // Doing it here fixes every affected donor without an app release. Only
+      // reached when a row is in a repairable state and carries a Stripe
+      // subscription id, so an already-active donor costs no extra call, and
+      // any failure leaves the rows exactly as they were.
+      try {
+        const REPAIRABLE = new Set([
+          "pending",
+          "incomplete",
+          "past_due",
+          "unpaid",
+        ]);
+        const PAID = new Set(["active", "trialing"]);
+        const list = subscriptions || [];
+        const anyPaid = list.some((r: any) =>
+          PAID.has(String(r.status || "").toLowerCase()),
+        );
+
+        if (!anyPaid) {
+          const stale = list.find(
+            (r: any) =>
+              REPAIRABLE.has(String(r.status || "").toLowerCase()) &&
+              r.stripe_subscription_id,
+          );
+
+          if (stale) {
+            const details = await getStripeSubscriptionInvoicePaymentDetails(
+              stale.stripe_subscription_id,
+            );
+            const subSt = String(details.subscriptionStatus || "").toLowerCase();
+            const piSt = String(details.paymentIntentStatus || "").toLowerCase();
+            const paidOnStripe =
+              PAID.has(subSt) || piSt === "succeeded" || piSt === "processing";
+
+            if (paidOnStripe) {
+              const nextStatus = PAID.has(subSt) ? subSt : "active";
+              const today = new Date().toISOString().split("T")[0];
+              const nextMonth = new Date();
+              nextMonth.setMonth(nextMonth.getMonth() + 1);
+              const payload: Record<string, any> = {
+                status: nextStatus,
+                last_payment_date: today,
+                next_payment_date: nextMonth.toISOString().split("T")[0],
+              };
+              const amt = details.paymentIntentAmountUsd
+                ? parseFloat(details.paymentIntentAmountUsd)
+                : null;
+              if (amt != null && !Number.isNaN(amt)) {
+                payload.last_payment_amount = amt;
+              }
+              const {error: healErr} = await supabase
+                .from("monthly_donations")
+                .update(payload)
+                .eq("id", stale.id);
+              if (healErr) {
+                console.warn(
+                  "⚠️ Could not heal stale subscription status:",
+                  healErr.message,
+                );
+              } else {
+                console.log(
+                  `✅ Healed monthly_donations ${stale.id} for user ${userId}: ${stale.status} -> ${nextStatus} (Stripe sub ${subSt}, PI ${piSt})`,
+                );
+                stale.status = nextStatus;
+                stale.last_payment_date = payload.last_payment_date;
+                stale.next_payment_date = payload.next_payment_date;
+                if (payload.last_payment_amount != null) {
+                  stale.last_payment_amount = payload.last_payment_amount;
+                }
+              }
+            } else {
+              console.log(
+                `ℹ️ Subscription ${stale.id} still unpaid on Stripe (sub ${subSt || "?"}, PI ${piSt || "?"}) — leaving as ${stale.status}`,
+              );
+            }
+          }
+        }
+      } catch (e: any) {
+        // Never fail the read because a repair attempt failed.
+        console.warn("⚠️ Subscription self-heal skipped:", e?.message || e);
       }
 
       return new Response(
@@ -1557,6 +1694,38 @@ export async function handleDonationRoute(
         });
       }
 
+      // ── Refuse to "change the amount" of a subscription that never paid ──
+      // Below, this endpoint DELETES the Stripe subscription and creates a new
+      // one, which starts `incomplete` with a fresh unpaid invoice. For a donor
+      // whose first invoice was never paid that was a destructive no-op loop:
+      // the old unpaid subscription was cancelled, a new unpaid one took its
+      // place, the row was written back as "pending", and the client reported
+      // "Donation updated — applies on your next invoice". Nothing was ever
+      // collected, so the discounts gate kept saying giving was paused, and
+      // each retry destroyed and recreated the subscription again.
+      //
+      // 409 is what the client already expects for this: editDonationAmount.js
+      // maps it to "Payment setup required — complete first payment setup
+      // before changing amount," which is the truth.
+      {
+        const st = String(existing.status || "").toLowerCase();
+        const PAID = new Set(["active", "trialing"]);
+        if (!PAID.has(st)) {
+          console.warn(
+            `⚠️ Refusing amount change on unpaid subscription ${existing.id} (status ${st || "unknown"}) for user ${userId}`,
+          );
+          return new Response(
+            JSON.stringify({
+              error:
+                "This subscription hasn't completed its first payment yet, so the amount can't be changed. Finish payment setup first.",
+              code: "payment_setup_required",
+              subscription_status: st || "unknown",
+            }),
+            {headers: {"Content-Type": "application/json"}, status: 409},
+          );
+        }
+      }
+
       // Cancel old Stripe subscription
       if (existing.stripe_subscription_id) {
         const stripe = getStripeClient();
@@ -1711,6 +1880,169 @@ export async function handleDonationRoute(
         headers: {"Content-Type": "application/json"},
         status: 500,
       });
+    }
+  }
+
+  // POST /donations/monthly/settle-payment
+  //
+  // Finish a payment that failed. Manage Cards could attach a card and nothing
+  // else: no default was set and no invoice was retried, so a donor tapped
+  // "update your card", saw a success message, and stayed past_due until
+  // Stripe's next automatic retry weeks later — if it ever used the new card
+  // at all. This is the step that was missing.
+  //
+  // Optional payment_method_id makes the just-added card the default for both
+  // the customer and the subscription before retrying, so the retry uses the
+  // card the donor just entered rather than the one that already failed.
+  if (method === "POST" && route === "/donations/monthly/settle-payment") {
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        headers: { "Content-Type": "application/json" }, status: 401,
+      });
+    }
+    try {
+      const body = await req.json().catch(() => ({}));
+      const paymentMethodId = (body?.payment_method_id || body?.paymentMethodId || "")
+        .toString()
+        .trim();
+
+      const { data: subs } = await supabase
+        .from("monthly_donations")
+        .select("id, status, stripe_subscription_id, stripe_customer_id, amount")
+        .eq("user_id", userId)
+        .in("status", ["past_due", "unpaid", "incomplete"])
+        .order("updated_at", { ascending: false })
+        .limit(1);
+      const sub = (subs || [])[0];
+      if (!sub) {
+        // Nothing owing is a success, not an error — the donor may have been
+        // sent here by a stale notification.
+        return new Response(
+          JSON.stringify({ success: true, settled: false, reason: "no_outstanding_payment" }),
+          { headers: { "Content-Type": "application/json" }, status: 200 },
+        );
+      }
+      if (!sub.stripe_subscription_id) {
+        return new Response(
+          JSON.stringify({ success: false, error: "This subscription has no Stripe record to retry." }),
+          { headers: { "Content-Type": "application/json" }, status: 409 },
+        );
+      }
+
+      const stripe = getStripeClient();
+      const headers = {
+        Authorization: `Bearer ${stripe.secretKey}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      };
+
+      const { data: userRow } = await supabase
+        .from("users")
+        .select("stripe_customer_id")
+        .eq("id", userId)
+        .maybeSingle();
+      const customerId = sub.stripe_customer_id || userRow?.stripe_customer_id;
+
+      // Fall back to the customer's most recently attached card when the
+      // caller doesn't name one. The app adds a card through a Setup Intent
+      // sheet and never learns the resulting id, so without this the retry
+      // would run against the existing default — very often the card that
+      // just failed — and decline again for the same reason.
+      let pmId = paymentMethodId;
+      if (!pmId && customerId) {
+        try {
+          const pmRes = await fetch(
+            `${stripe.baseUrl}/payment_methods?customer=${customerId}&type=card&limit=10`,
+            { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+          );
+          const pmJson = await pmRes.json();
+          const cards = (pmJson?.data || []).slice().sort(
+            (a: any, b: any) => (b.created || 0) - (a.created || 0),
+          );
+          pmId = cards[0]?.id || "";
+        } catch (e) {
+          console.warn("could not list payment methods for settle:", e);
+        }
+      }
+
+      // Point both the customer and the subscription at that card. The
+      // subscription carries its own default_payment_method which overrides
+      // the customer's, so setting only the customer would leave the retry
+      // using the card that just failed.
+      const paymentMethodIdResolved = pmId;
+      if (paymentMethodIdResolved && customerId) {
+        const custForm = new URLSearchParams();
+        custForm.append("invoice_settings[default_payment_method]", paymentMethodIdResolved);
+        await fetch(`${stripe.baseUrl}/customers/${customerId}`, {
+          method: "POST", headers, body: custForm.toString(),
+        });
+
+        const subForm = new URLSearchParams();
+        subForm.append("default_payment_method", paymentMethodIdResolved);
+        await fetch(`${stripe.baseUrl}/subscriptions/${sub.stripe_subscription_id}`, {
+          method: "POST", headers, body: subForm.toString(),
+        });
+      }
+
+      // Retry the open invoice.
+      const invRes = await fetch(
+        `${stripe.baseUrl}/invoices?subscription=${encodeURIComponent(sub.stripe_subscription_id)}&status=open&limit=1`,
+        { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+      );
+      const invJson = await invRes.json();
+      const invoice = (invJson?.data || [])[0];
+      if (!invoice?.id) {
+        return new Response(
+          JSON.stringify({ success: true, settled: false, reason: "no_open_invoice" }),
+          { headers: { "Content-Type": "application/json" }, status: 200 },
+        );
+      }
+
+      const payForm = new URLSearchParams();
+      if (paymentMethodIdResolved) payForm.append("payment_method", paymentMethodIdResolved);
+      const payRes = await fetch(`${stripe.baseUrl}/invoices/${invoice.id}/pay`, {
+        method: "POST", headers, body: payForm.toString(),
+      });
+      const paid = await payRes.json();
+
+      if (!payRes.ok || paid?.status !== "paid") {
+        // Card declined again. Left as-is deliberately: the webhook owns
+        // status transitions, and writing "active" here on a failed retry
+        // would unlock discounts for an unpaid donor.
+        return new Response(
+          JSON.stringify({
+            success: false,
+            settled: false,
+            error:
+              paid?.error?.message ||
+              "That card was declined. Try a different card, or contact your bank.",
+            invoice_status: paid?.status || null,
+          }),
+          { headers: { "Content-Type": "application/json" }, status: 402 },
+        );
+      }
+
+      // Paid. The webhook will also mark this active, but a donor watching the
+      // screen should not have to wait on webhook delivery to see it.
+      await supabase
+        .from("monthly_donations")
+        .update({ status: "active", updated_at: new Date().toISOString() })
+        .eq("id", sub.id);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          settled: true,
+          amount_paid: (paid.amount_paid ?? 0) / 100,
+          invoice_id: invoice.id,
+        }),
+        { headers: { "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (error: any) {
+      console.error("settle-payment error:", error);
+      return new Response(
+        JSON.stringify({ success: false, error: error?.message || "Could not settle payment" }),
+        { headers: { "Content-Type": "application/json" }, status: 500 },
+      );
     }
   }
 

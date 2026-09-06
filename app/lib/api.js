@@ -355,10 +355,11 @@ const API = {
     }
   },
 
-  /** GET /vendors/me/favorites — list vendors this donor has saved. */
+  /** GET /api/vendors/me/favorites — list vendors this donor has saved.
+   *  Missing /api prefix was 404-ing every favorites hydration. */
   getMyFavoriteVendors: async () => {
     try {
-      const response = await api.get('/vendors/me/favorites');
+      const response = await api.get('/api/vendors/me/favorites');
       return response.data;
     } catch (error) {
       // Anonymous or signed-out donors get a 401 — silent.
@@ -366,20 +367,41 @@ const API = {
     }
   },
 
-  /** POST /vendors/:id/favorite — toggle the donor's save on a vendor. */
+  /** PUT/DELETE /api/vendors/:id/favorite — set the donor's save explicitly.
+   *
+   *  Replaces the toggle. The screens hold optimistic local state and the old
+   *  POST flipped whatever the server happened to hold, so the two could
+   *  disagree: a replayed sync inserted a row and the donor's own tap deleted
+   *  it, leaving the app showing a favourite the server did not have and the
+   *  favourite-vendor push with nobody to notify. Sending the desired state is
+   *  idempotent, so a tap and a sync can no longer cancel each other. */
+  setVendorFavorite: async (vendorId, favorited) => {
+    try {
+      const path = `/api/vendors/${vendorId}/favorite`;
+      const response = favorited
+        ? await api.put(path)
+        : await api.delete(path);
+      return response.data;
+    } catch (error) {
+      console.warn('setVendorFavorite failed:', error?.message || error);
+      return null;
+    }
+  },
+
+  /** @deprecated Toggle kept only so an older cached bundle keeps working. */
   toggleVendorFavorite: async (vendorId) => {
     try {
-      const response = await api.post(`/vendors/${vendorId}/favorite`);
+      const response = await api.post(`/api/vendors/${vendorId}/favorite`);
       return response.data;
     } catch (error) {
       return null;
     }
   },
 
-  /** POST /vendors/:id/view — fire-and-forget profile view tracking. */
+  /** POST /api/vendors/:id/view — fire-and-forget profile view tracking. */
   trackVendorView: async (vendorId) => {
     try {
-      await api.post(`/vendors/${vendorId}/view`);
+      await api.post(`/api/vendors/${vendorId}/view`);
     } catch (error) {
       // Analytics — never surface to the user.
     }
@@ -576,7 +598,13 @@ const API = {
    */
   verifyEmail: async (token, email) => {
     try {
-      const response = await api.get(`/api/auth/verify-email?token=${encodeURIComponent(token)}`);
+      // Send the email too: if the token was rotated by a resend, or this link
+      // was already used, the backend falls back to an already-verified check
+      // on the address instead of failing the user.
+      const query = `token=${encodeURIComponent(token)}${
+        email ? `&email=${encodeURIComponent(email)}` : ''
+      }`;
+      const response = await api.get(`/api/auth/verify-email?${query}`);
       // Guard: backend returned HTML instead of JSON (e.g. server error page)
       if (typeof response.data === 'string' && response.data.trim().startsWith('<')) {
         console.error("Email verification: server returned HTML instead of JSON");
@@ -1317,14 +1345,26 @@ const API = {
       );
       return response.data;
     } catch (error) {
-      // Log error but don't throw - let the component handle it gracefully
+      const status = error.response?.status;
+      const data = error.response?.data || {};
       console.warn(
-        "⚠️ Redeem discount API failed (will use local fallback):",
-        error.response?.status || error.message,
+        "⚠️ Redeem discount API failed:",
+        status || error.message,
+        data.code || data.error,
       );
-      throw new Error(
-        error.response?.data?.message || "Failed to redeem discount.",
+      // Preserve status + backend error `code` so the calling component
+      // can distinguish `subscription_required` (donor's monthly is
+      // paused / cancelled) from a transient network failure. Without
+      // this the component's generic try/catch treats every failure —
+      // including "you need to reactivate" — as a silent success.
+      const err = new Error(
+        data.error || data.message || "Failed to redeem discount.",
       );
+      err.status = status;
+      err.code = data.code || null;
+      err.subscriptionStatus = data.subscription_status || null;
+      err.responseData = data;
+      throw err;
     }
   },
 
@@ -1405,6 +1445,35 @@ const API = {
    * Register (or clear) the user's Expo push token with the backend.
    * Call with `null` to clear (e.g. on sign-out).
    */
+  /** POST /api/donations/monthly/settle-payment — retry a failed payment.
+   *  Attaching a card never settled the outstanding invoice, so a donor could
+   *  add a card, be told it worked, and stay past_due. Pass the new payment
+   *  method so the retry uses it rather than the card that already failed. */
+  settleFailedPayment: async (paymentMethodId) => {
+    try {
+      const response = await api.post('/api/donations/monthly/settle-payment', {
+        payment_method_id: paymentMethodId || null,
+      });
+      return response.data;
+    } catch (error) {
+      // 402 means the card was declined again — a real answer, not a crash.
+      return error?.response?.data || { success: false, settled: false };
+    }
+  },
+
+  /** GET /api/auth/alerts — things the donor needs to act on right now.
+   *  Conditions and copy live on the server so wording can change without a
+   *  release; OTA updates do not work on this project. Never throws — an
+   *  empty list is the safe answer and this runs on app launch. */
+  getAccountAlerts: async () => {
+    try {
+      const response = await api.get('/api/auth/alerts');
+      return response.data?.alerts || [];
+    } catch (error) {
+      return [];
+    }
+  },
+
   registerPushToken: async (token) => {
     try {
       const response = await api.post('/api/auth/push-token', { token });

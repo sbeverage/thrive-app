@@ -1,5 +1,6 @@
 import { verify as verifyJWT } from "https://deno.land/x/djwt@v2.9/mod.ts";
 import { getAppAuthHeader } from "../lib/jwt-app.ts";
+import { isCompedAccount, MEMBERSHIP_COLUMNS } from "../lib/membership.ts";
 
 // Public discounts routes handler (for mobile app)
 export async function handleDiscountRoute(
@@ -36,15 +37,22 @@ export async function handleDiscountRoute(
             image_urls,
             address,
             hours,
-            signup_status
+            signup_status,
+            deactivated_at
           )
         `,
         )
         .neq("is_active", false);
 
-      // Filter by active and not expired
+      // Filter by active and in-window.
+      //
+      // A null end_date means the offer runs continuously, so it must pass the
+      // expiry test rather than be filtered out. A start_date in the future
+      // means it hasn't opened yet — previously ignored entirely, which made a
+      // scheduled discount visible and redeemable the moment it was saved.
       const today = new Date().toISOString().split("T")[0];
       query = query.or(`end_date.is.null,end_date.gte.${today}`);
+      query = query.or(`start_date.is.null,start_date.lte.${today}`);
 
       // Filter by category
       if (category && category !== "All") {
@@ -74,10 +82,14 @@ export async function handleDiscountRoute(
         );
       }
 
-      // Hide discounts whose owning vendor isn't approved yet — keeps the
-      // donor app in sync with /vendors which is also approved-only.
+      // Hide discounts whose owning vendor isn't approved OR has been
+      // deactivated. Keeps the donor app in sync with /vendors, which is
+      // also approved-and-active only.
       const discounts = (rawDiscounts || []).filter(
-        (d: any) => d.vendor && d.vendor.signup_status === "approved",
+        (d: any) =>
+          d.vendor &&
+          d.vendor.signup_status === "approved" &&
+          !d.vendor.deactivated_at,
       );
 
       // Try to get user ID from JWT token (optional - discounts are public)
@@ -241,7 +253,9 @@ export async function handleDiscountRoute(
             logo_url,
             image_urls,
             address,
-            hours
+            hours,
+            signup_status,
+            deactivated_at
           )
         `,
         )
@@ -263,6 +277,19 @@ export async function handleDiscountRoute(
             status: 500,
           },
         );
+      }
+
+      // Hide discounts owned by deactivated or unapproved vendors — mirrors
+      // the /discounts list filter so donors can't deep-link into them either.
+      if (
+        !discount?.vendor ||
+        discount.vendor.signup_status !== "approved" ||
+        discount.vendor.deactivated_at
+      ) {
+        return new Response(JSON.stringify({ error: "Discount not found" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 404,
+        });
       }
 
       // Calculate remaining uses if user is authenticated
@@ -490,6 +517,98 @@ export async function handleDiscountRoute(
         );
       }
 
+      // 1a. Gate on subscription status — only donors with a live monthly
+      // subscription can redeem discounts. Cancelled / past_due /
+      // incomplete_expired / no-subscription accounts get a specific
+      // `subscription_required` error code so the mobile client can prompt
+      // them to reactivate (add a card, restart their monthly donation)
+      // instead of showing a generic failure.
+      {
+        // Comped accounts (team, coworking) never create a subscription, so
+        // gating them on monthly_donations would lock them out of the exact
+        // feature they exist to exercise. Checked before the subscription
+        // lookup so a comped donor costs one query instead of two.
+        const { data: memberRow, error: memberErr } = await supabase
+          .from("users")
+          .select(MEMBERSHIP_COLUMNS)
+          .eq("id", userId)
+          .maybeSingle();
+
+        if (memberErr) {
+          // Don't fail the redemption over this — fall through to the normal
+          // subscription check, which is the stricter path.
+          console.warn(
+            "⚠️ Could not read membership for redeem gate:",
+            memberErr.message,
+          );
+        } else if (isCompedAccount(memberRow)) {
+          console.log(
+            `✅ Comped account (${memberRow?.invite_type || "external_billed"}) — skipping subscription gate`,
+          );
+        } else {
+
+          // Ordering column is not guaranteed to exist on this table, and the
+          // previous version discarded the error — so a failed query looked
+          // identical to "this donor has no subscription" and returned 402 to
+          // everyone. Try updated_at, fall back to created_at, and if BOTH
+          // fail say so honestly instead of asserting they aren't subscribed.
+          const fetchLatest = async (orderBy: string) =>
+            await supabase
+              .from("monthly_donations")
+              .select("status")
+              .eq("user_id", userId)
+              .order(orderBy, { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+          let { data: sub, error: subError } = await fetchLatest("updated_at");
+          if (subError) {
+            console.warn(
+              "⚠️ monthly_donations order by updated_at failed, retrying on created_at:",
+              subError.message,
+            );
+            ({ data: sub, error: subError } = await fetchLatest("created_at"));
+          }
+
+          if (subError) {
+            console.error(
+              "❌ Could not read subscription status — refusing to guess:",
+              subError.message,
+            );
+            return new Response(
+              JSON.stringify({
+                error:
+                  "We couldn't verify your monthly donation just now. Please try again in a moment.",
+                code: "subscription_check_failed",
+              }),
+              {
+                headers: { "Content-Type": "application/json" },
+                status: 503,
+              },
+            );
+          }
+
+          const status = String(sub?.status || "").toLowerCase();
+          const ALLOWED = new Set(["active", "trialing"]);
+          if (!ALLOWED.has(status)) {
+            return new Response(
+              JSON.stringify({
+                error: sub
+                  ? "Your monthly donation is paused — reactivate to keep redeeming discounts."
+                  : "Add a monthly donation to start redeeming discounts.",
+                code: "subscription_required",
+                subscription_status: status || "no_subscription",
+              }),
+              {
+                headers: { "Content-Type": "application/json" },
+                // 402 Payment Required — Stripe uses this for similar states.
+                status: 402,
+              },
+            );
+          }
+        }
+      }
+
       // 2. Parse request body (optional fields)
       let requestBody: any = {};
       try {
@@ -541,7 +660,8 @@ export async function handleDiscountRoute(
         });
       }
 
-      // Check if discount has expired
+      // Check if discount has expired. A null end_date is a continuous offer
+      // and never expires.
       if (discount.end_date) {
         const endDate = new Date(discount.end_date);
         const now = new Date();
@@ -550,6 +670,19 @@ export async function handleDiscountRoute(
             headers: { "Content-Type": "application/json" },
             status: 400,
           });
+        }
+      }
+
+      // And that it has actually started. The listing hides future-dated
+      // offers, but a donor holding a deep link or a stale list could still
+      // reach redemption directly.
+      if (discount.start_date) {
+        const startDate = new Date(discount.start_date);
+        if (startDate > new Date()) {
+          return new Response(
+            JSON.stringify({ error: "This discount hasn't started yet" }),
+            { headers: { "Content-Type": "application/json" }, status: 400 },
+          );
         }
       }
 

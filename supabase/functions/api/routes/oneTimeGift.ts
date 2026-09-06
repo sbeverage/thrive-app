@@ -3,6 +3,8 @@ import { getAppAuthHeader } from "../lib/jwt-app.ts";
 import {
   createStripePaymentIntent,
   getStripePaymentIntent,
+  createOrGetStripeCustomer,
+  getStripeClient,
 } from "../lib/stripe.ts";
 
 export type CalculateProcessingFeeFn = (
@@ -134,6 +136,60 @@ export async function handleOneTimeGiftRoute(
       const feeCalculation = calculateProcessingFee(amount, user_covered_fees);
 
       // Create Stripe PaymentIntent
+      // Attach the donor's Stripe customer so the gift is not created as a
+      // "Guest" payment. Without it the charge is unlinked from the customer:
+      // their saved card can't be used, the gift is invisible in their Stripe
+      // history, and every gift re-asks for card details. Created on demand if
+      // they don't have one yet, the same way /payment-methods now does.
+      let giftCustomerId: string | null = null;
+      try {
+        const {data: giftUser} = await supabase
+          .from("users")
+          .select("email, stripe_customer_id")
+          .eq("id", userId)
+          .maybeSingle();
+        giftCustomerId = giftUser?.stripe_customer_id || null;
+        if (!giftCustomerId && giftUser?.email) {
+          const customer = await createOrGetStripeCustomer(giftUser.email, userId);
+          giftCustomerId = customer.id;
+          await supabase
+            .from("users")
+            .update({stripe_customer_id: giftCustomerId})
+            .eq("id", userId);
+        }
+      } catch (e: any) {
+        // Fall back to a guest payment rather than blocking the gift.
+        console.warn("⚠️ Could not resolve Stripe customer for gift:", e?.message);
+      }
+
+      // Ephemeral key for the Payment Sheet's saved-card list. Best-effort —
+      // a gift must not fail because this call did.
+      let giftEphemeralKeySecret: string | null = null;
+      if (giftCustomerId) {
+        try {
+          const stripe = getStripeClient();
+          const form = new URLSearchParams();
+          form.append("customer", giftCustomerId);
+          const ekRes = await fetch(`${stripe.baseUrl}/ephemeral_keys`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${stripe.secretKey}`,
+              "Content-Type": "application/x-www-form-urlencoded",
+              "Stripe-Version": "2024-06-20",
+            },
+            body: form.toString(),
+          });
+          if (ekRes.ok) {
+            const ek = await ekRes.json();
+            giftEphemeralKeySecret = ek.secret || null;
+          } else {
+            console.warn("⚠️ Gift ephemeral key failed:", ekRes.status);
+          }
+        } catch (e: any) {
+          console.warn("⚠️ Gift ephemeral key threw:", e?.message);
+        }
+      }
+
       const paymentIntent = await createStripePaymentIntent(
         feeCalculation.totalAmount,
         currency.toLowerCase(),
@@ -142,6 +198,7 @@ export async function handleOneTimeGiftRoute(
           user_id: userId.toString(),
           beneficiary_id: beneficiary_id.toString(),
         },
+        giftCustomerId,
       );
 
       // Create one-time gift record
@@ -179,6 +236,13 @@ export async function handleOneTimeGiftRoute(
       return new Response(
         JSON.stringify({
           success: true,
+          // The Payment Sheet can only offer the donor's saved cards when it is
+          // initialised with their customer id and an ephemeral key. Without
+          // these the sheet asks for card details on every gift even though a
+          // card is already on file. Client-side, oneTimeGift.js already reads
+          // both keys off this response if present.
+          customerId: giftCustomerId,
+          customerEphemeralKeySecret: giftEphemeralKeySecret,
           payment_intent: {
             id: paymentIntent.id,
             client_secret: paymentIntent.client_secret,

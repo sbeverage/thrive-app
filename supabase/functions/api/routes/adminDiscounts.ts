@@ -1,4 +1,41 @@
 import { corsHeaders } from "../lib/cors.ts";
+import { sendPushToVendorFavoriters } from "../lib/push.ts";
+
+/**
+ * Donor-facing card limits, mirrored from app/utils/discountDisplay.js and
+ * routes/vendorPortal.ts. A title longer than the coupon band can show on
+ * one line is rejected here rather than truncated in the app.
+ */
+const TITLE_MAX = 26;
+const DESCRIPTION_MAX = 140;
+const TERMS_MAX = 200;
+const AVAILABILITY_VALUES = ["in-store", "online", "both"];
+
+/** Returns an error message, or null when the discount is presentable. */
+function validateDiscountCopy(v: {
+  title?: unknown; description?: unknown; terms?: unknown; availability?: unknown;
+}): string | null {
+  const len = (x: unknown) => (typeof x === "string" ? x.trim().length : 0);
+  // A card with a headline and nothing else gives the donor nothing to act on.
+  if (len(v.description) === 0) {
+    return "Description is required — tell donors what the offer includes.";
+  }
+  if (len(v.title) > TITLE_MAX) {
+    return `Title must be ${TITLE_MAX} characters or fewer — it has to fit on one line of the discount card.`;
+  }
+  if (len(v.description) > DESCRIPTION_MAX) {
+    return `Description must be ${DESCRIPTION_MAX} characters or fewer.`;
+  }
+  if (len(v.terms) > TERMS_MAX) {
+    return `Terms must be ${TERMS_MAX} characters or fewer.`;
+  }
+  if (v.availability != null && v.availability !== "") {
+    if (!AVAILABILITY_VALUES.includes(String(v.availability))) {
+      return `availability must be one of: ${AVAILABILITY_VALUES.join(", ")}`;
+    }
+  }
+  return null;
+}
 
 export async function handleAdminDiscounts(
   req: Request,
@@ -237,6 +274,13 @@ export async function handleAdminDiscounts(
       availability,
     } = body;
 
+    const copyError = validateDiscountCopy({ title, description, terms, availability });
+    if (copyError) {
+      return new Response(JSON.stringify({ error: copyError }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400,
+      });
+    }
+
     if (!vendorId || !title) {
       return new Response(
         JSON.stringify({
@@ -287,7 +331,10 @@ export async function handleAdminDiscounts(
       end_date: endDate || null,
       is_active: isActive !== undefined ? isActive : true,
       terms: terms || null,
-      availability: availability || null,
+      // Defaults to in-store rather than null: the card shows a pill only when
+      // this is set, and an unset value leaves donors guessing. In-store is the
+      // safe assumption — it never wrongly promises an online redemption.
+      availability: availability || "in-store",
     };
 
     // Explicitly remove any fields that don't exist in the database
@@ -330,6 +377,34 @@ export async function handleAdminDiscounts(
       ...newDiscount,
       vendor_name: newDiscount.vendor?.name || null,
     };
+
+    // Push to donors who favorited this vendor — same "new discount from
+    // your favorite" moment the vendor-portal path already fires. Only
+    // sends when the vendor row is approved so pending vendors don't leak
+    // pushes before they're live. Fire-and-forget: never block the
+    // admin's Save on a slow push service.
+    if (newDiscount.is_active !== false && newDiscount.vendor?.name) {
+      const { data: v } = await supabase
+        .from("vendors")
+        .select("signup_status")
+        .eq("id", vendorId)
+        .maybeSingle();
+      if (v?.signup_status === "approved") {
+        sendPushToVendorFavoriters(supabase, vendorId, {
+          title: `${newDiscount.vendor.name} just added a new discount`,
+          body: newDiscount.title || "Tap to see the latest offer from a place you love.",
+          data: {
+            // Vendor id, not discount id — the [id] route resolves a vendor.
+            // Group-stripped href: (tabs)/(main) are expo-router groups and
+            // are not part of the URL. home.js uses this same form.
+            path: `/discounts/${vendorId}`,
+            type: "favorite_new_discount",
+            vendor_id: vendorId,
+            discount_id: newDiscount.id,
+          },
+        }).catch((e) => console.warn("favorite-vendor new-discount push failed:", e));
+      }
+    }
 
     return new Response(
       JSON.stringify({
@@ -414,6 +489,13 @@ export async function handleAdminDiscounts(
       terms,
       availability,
     } = body;
+
+    const putCopyError = validateDiscountCopy({ title, description, terms, availability });
+    if (putCopyError) {
+      return new Response(JSON.stringify({ error: putCopyError }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400,
+      });
+    }
 
     // Ensure tags is array for JSONB
     let tagsArray = null;

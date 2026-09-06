@@ -137,7 +137,9 @@ async function handleExpiringDiscountReminder(supabase: any): Promise<Response> 
       title: `${d.vendor.name} — discount expiring soon`,
       body: `${d.title} ends ${d.end_date}. Tap to use it before it's gone.`,
       data: {
-        path: `/(tabs)/(main)/discounts/${d.id}`,
+        // Vendor id, not discount id — the [id] route resolves a vendor.
+        // Group-stripped href — see routes/adminDiscounts.ts.
+        path: `/discounts/${d.vendor_id}`,
         type: "favorite_expiring_discount",
         vendor_id: d.vendor_id,
         discount_id: d.id,

@@ -382,8 +382,9 @@ export async function presentSignupWalletCheckout(stripe, apiResponse, options =
     );
   }
 
+  // Falling back from a failed wallet attempt is exactly when a saved card is
+  // most useful, so the customer is passed through rather than stripped.
   return presentMonthlySubscriptionPaymentSheet(sheetStripe, apiResponse, {
     cardOnly: false,
-    skipSavedPaymentMethods: true,
   });
 }

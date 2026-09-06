@@ -47,9 +47,6 @@ export const IMAGE_ASSETS = {
   HEART: `${SUPABASE_STORAGE_BASE}/assets/icons/heart.png`,
   
   // Default beneficiary images
-  CHILD_CANCER: `${SUPABASE_STORAGE_BASE}/assets/images/child-cancer.jpg`,
-  HUMANE_SOCIETY: `${SUPABASE_STORAGE_BASE}/assets/images/humane-society.jpg`,
-  CHARITY_WATER: `${SUPABASE_STORAGE_BASE}/assets/images/charity-water.jpg`,
 };
 
 /**

@@ -39,11 +39,19 @@ export async function sendInvitationEmail({
   name,
   verificationToken,
   donorId,
+  inviteType = "standard",
 }: {
   to: string;
   name: string;
   verificationToken: string;
   donorId: number;
+  /**
+   * 'standard' | 'coworking' | 'team'. Previously absent, so a coworking
+   * member and an internal team account both received "you've been invited to
+   * join as a donor" and were told to set up a payment method they will never
+   * be asked for.
+   */
+  inviteType?: string;
 }): Promise<void> {
   try {
     // Get email service configuration from environment variables
@@ -52,6 +60,27 @@ export async function sendInvitationEmail({
 
     // Determine if this is an invitation (64-char token) or self-signup
     const isInvitationToken = verificationToken.length === 64;
+
+    const membership = String(inviteType || "standard").trim().toLowerCase();
+    const isTeamInvite = membership === "team";
+    const isCoworkingInvite = membership === "coworking";
+
+    // What the account actually is, in the recipient's terms.
+    const inviteIntro = isTeamInvite
+      ? `<p>You've been given a <span class="highlight">${appName}</span> team account. It works exactly like a donor account so you can see what donors see — with no payment required and nothing charged.</p>`
+      : isCoworkingInvite
+        ? `<p>Your <span class="highlight">${appName}</span> membership is included with your coworking space, so there's nothing to pay — you just choose the cause your monthly giving supports.</p>`
+        : `<p>You've been invited to join <span class="highlight">${appName}</span> as a donor! We're excited to have you join our community of changemakers.</p>`;
+
+    // Neither comped type is asked for a card, so don't imply otherwise.
+    const inviteStepsIntro = isTeamInvite || isCoworkingInvite
+      ? "Here's how to get started — no payment details needed:"
+      : "Here's how to get started — just 3 steps:";
+    const inviteLastStep = isTeamInvite
+      ? "Pick a cause and you're in — discounts included 🎉"
+      : isCoworkingInvite
+        ? "Choose the cause your giving supports 🎉"
+        : "Done! 🎉";
 
     // Build verification link - Use Universal Link (Vercel frontend URL) so iOS intercepts it
     // and opens the app directly instead of showing a web page in Safari.
@@ -63,11 +92,17 @@ export async function sendInvitationEmail({
       ? `${appBaseUrl}/donorInvitationVerify?token=${verificationToken}`
       : `${appBaseUrl}/verify?token=${verificationToken}&email=${encodeURIComponent(to)}`;
 
-    // App store links (update these with your actual app URLs)
+    // App Store id 6759223641, verified against the iTunes lookup API.
+    // The previous id (6744030078) resolved to NO app at all, so every
+    // invitation email sent recipients to a dead App Store page and iOS Mail
+    // refused the link outright with "Unable to verify this link".
+    // NOTE: APP_STORE_IOS_URL overrides this. If that secret is set to the old
+    // id it must be corrected in the Supabase dashboard too — the fallback
+    // below cannot fix it.
     const appStoreLinks = {
       ios:
         Deno.env.get("APP_STORE_IOS_URL") ||
-        "https://apps.apple.com/app/thrive-initiative/id6744030078",
+        "https://apps.apple.com/us/app/thrive-initiative/id6759223641",
       android:
         Deno.env.get("APP_STORE_ANDROID_URL") ||
         "https://play.google.com/store/apps/details?id=com.thriveinitiative.app",
@@ -84,17 +119,22 @@ export async function sendInvitationEmail({
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Tells the client the design handles both schemes, so it applies our
+       dark-mode block instead of force-inverting the palette itself. -->
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
   <title>${emailSubject}</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
       line-height: 1.6;
-      color: #333;
+      color: #333333;
       max-width: 600px;
       margin: 0 auto;
       padding: 0;
-      background: linear-gradient(135deg, #4a6b7a 0%, #324E58 100%);
+      /* Same ordering rule as .header: solid first, gradient as an upgrade. */
       background-color: #f5f5f5;
+      background: #f5f5f5 linear-gradient(135deg, #4a6b7a 0%, #324E58 100%);
     }
     .email-wrapper {
       padding: 40px 20px;
@@ -107,7 +147,13 @@ export async function sendInvitationEmail({
       overflow: hidden;
     }
     .header {
-      background: linear-gradient(135deg, #4a6b7a 0%, #324E58 100%);
+      /* Solid colour FIRST, gradient second. Outlook and several other
+         clients drop CSS gradients — with no fallback the header had no
+         background at all and the white logo and h1 rendered white-on-white,
+         so the title was invisible. Only the 👋 survived, because emoji
+         ignore text colour. */
+      background-color: #324E58;
+      background: #324E58 linear-gradient(135deg, #4a6b7a 0%, #324E58 100%);
       padding: 40px 30px;
       text-align: center;
       color: #ffffff;
@@ -129,7 +175,7 @@ export async function sendInvitationEmail({
       padding: 30px;
     }
     p {
-      color: #555;
+      color: #333333;
       font-size: 16px;
       margin-bottom: 20px;
       line-height: 1.7;
@@ -226,30 +272,86 @@ export async function sendInvitationEmail({
       color: #324E58;
       font-weight: 600;
     }
+
+    /* Dark mode. Clients that honour prefers-color-scheme get deliberate
+       colours instead of an automatic inversion, which is what turns a
+       carefully chosen palette into unreadable mud. Clients that ignore it
+       keep the light design, which is why every colour above is explicit
+       rather than inherited. */
+    @media (prefers-color-scheme: dark) {
+      body {
+        background-color: #1c2b31 !important;
+        background: #1c2b31 !important;
+        color: #e8eef0 !important;
+      }
+      .container {
+        background-color: #24363d !important;
+      }
+      /* Header keeps its dark brand colour — white on #324E58 reads well in
+         either scheme, so it does not need inverting. */
+      p, li, ol {
+        color: #e8eef0 !important;
+      }
+      /* Any inline link inherits a light colour in dark mode. The App Store
+         button sets its own colours inline and is unaffected. */
+      a:not([style*="background-color"]) {
+        color: #f0b072 !important;
+      }
+      .highlight {
+        color: #f0b072 !important;
+      }
+      .app-links {
+        background-color: #1f3038 !important;
+        border-top-color: #35505a !important;
+      }
+      .app-links p {
+        color: #e8eef0 !important;
+      }
+      .footer {
+        background-color: #1c2b31 !important;
+        color: #b9c7cc !important;
+      }
+      /* The CTA is already high-contrast orange on white text. */
+      .button {
+        background-color: #DB8633 !important;
+        color: #ffffff !important;
+      }
+    }
   </style>
 </head>
 <body>
   <div class="email-wrapper">
     <div class="container">
-      <div class="header">
-        <div class="logo">${appName}</div>
-        <h1>Welcome, ${name}! 👋</h1>
+      <div class="header" style="background-color:#324E58;padding:40px 30px;text-align:center;color:#ffffff;">
+        <div class="logo" style="font-size:28px;font-weight:bold;color:#ffffff;margin-bottom:10px;letter-spacing:0.5px;">${appName}</div>
+        <h1 style="color:#ffffff;font-size:26px;margin:10px 0;font-weight:600;">Welcome, ${name}! 👋</h1>
       </div>
       <div class="content">
 
         ${
           isInvitation
-            ? `<p>You've been invited to join <span class="highlight">${appName}</span> as a donor! We're excited to have you join our community of changemakers.</p>`
+            ? inviteIntro
             : `<p>Thank you for signing up for <span class="highlight">${appName}</span>! We're thrilled to have you on board.</p>`
         }
         ${
           isInvitation
             ? `
-        <p><strong>Here's how to get started — just 3 steps:</strong></p>
-        <ol style="color:#555;font-size:16px;line-height:1.8;padding-left:20px;margin:20px 0;">
-          <li><a href="${appStoreLinks.ios}" style="color:#324E58;font-weight:600;text-decoration:underline;">Download the iOS app</a></li>
+        <p><strong>${inviteStepsIntro}</strong></p>
+        <ol style="color:#333333;font-size:16px;line-height:1.8;padding-left:20px;margin:20px 0;">
+          <li style="margin-bottom:14px;">
+            Get the app, then come back here:<br />
+            <!-- A filled button, not an inline link. The old link carried an
+                 inline color:#324E58 — dark navy — which the dark-mode block
+                 could not override because inline styles win and it only
+                 restyled p, li and ol. On a dark background it was
+                 effectively invisible. Orange on white reads in both schemes. -->
+            <a href="${appStoreLinks.ios}"
+               style="display:inline-block;margin-top:8px;padding:10px 20px;background-color:#DB8633;color:#ffffff;font-weight:700;font-size:15px;text-decoration:none;border-radius:6px;">
+              Download on the App Store
+            </a>
+          </li>
           <li>Come back to this email and tap the button below to verify</li>
-          <li>Done! 🎉</li>
+          <li>${inviteLastStep}</li>
         </ol>
 
         <div class="button-container">
@@ -542,6 +644,8 @@ export async function sendReferralReminderEmail({
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
   <title>${emailSubject}</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
@@ -650,6 +754,14 @@ export async function sendAdminTempPasswordEmail({
     const appName = "THRIVE Initiative";
     const fromEmail = Deno.env.get("EMAIL_FROM") || "noreply@yourapp.com";
 
+    // Where they actually sign in. The email previously gave a temporary
+    // password and no URL at all, so a new team member had a credential and
+    // nowhere to use it. Overridable, because the panel answers on several
+    // hostnames and one of them (admin.jointhriveinitiative.org) does not
+    // resolve — verified 2026-09-04 that this one serves the panel.
+    const portalUrl =
+      Deno.env.get("ADMIN_PORTAL_URL") || "https://admin.forpurposetechnologies.com";
+
     const emailSubject = `${appName} Admin Access - Temporary Password`;
     const emailHtml = `
 <!DOCTYPE html>
@@ -696,15 +808,55 @@ export async function sendAdminTempPasswordEmail({
       color: #666;
       font-size: 14px;
     }
+    .cta {
+      display: inline-block;
+      margin: 8px 0 4px;
+      padding: 12px 24px;
+      background-color: #DB8633;
+      color: #ffffff !important;
+      font-weight: 700;
+      font-size: 15px;
+      text-decoration: none;
+      border-radius: 8px;
+    }
+    .field {
+      background: #f7f9fa;
+      border: 1px solid #e4e9eb;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 15px;
+      margin: 8px 0;
+      word-break: break-all;
+    }
+    /* Colours are set explicitly so a client that switches to dark mode does
+       not leave dark text on a dark card — the same failure that made the
+       donor invitation's download link invisible. */
+    @media (prefers-color-scheme: dark) {
+      body { background: #1c2b31 !important; color: #e8eef0 !important; }
+      .container { background-color: #24363d !important; }
+      p, .title { color: #e8eef0 !important; }
+      .hint { color: #b8c6cc !important; }
+      .field { background: #1f3038 !important; border-color: #2f4650 !important; color: #e8eef0 !important; }
+      .password-box { background: #33240f !important; border-color: #6b4a20 !important; color: #f0b072 !important; }
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="title">Hi ${name},</div>
     <p>You have been added to the ${appName} admin team.</p>
-    <p>Use the temporary password below to sign in:</p>
+
+    <p style="margin-bottom:4px;"><strong>Sign in here:</strong></p>
+    <a href="${portalUrl}" class="cta">Open the admin portal</a>
+    <div class="field">${portalUrl}</div>
+
+    <p style="margin-bottom:4px;"><strong>Your username</strong> is this email address:</p>
+    <div class="field">${to}</div>
+
+    <p style="margin-bottom:4px;"><strong>Temporary password:</strong></p>
     <div class="password-box">${tempPassword}</div>
-    <p class="hint">For security, please change this password after your first login.</p>
+
+    <p class="hint">For security, please change this password after your first login — Settings &rarr; Profile.</p>
   </div>
 </body>
 </html>`;
@@ -713,9 +865,11 @@ export async function sendAdminTempPasswordEmail({
 
 You have been added to the ${appName} admin team.
 
+Sign in here: ${portalUrl}
+Username: ${to}
 Temporary password: ${tempPassword}
 
-For security, please change this password after your first login.`;
+For security, please change this password after your first login (Settings > Profile).`;
 
     if (emailService === "resend") {
       const resendApiKey = Deno.env.get("RESEND_API_KEY");
@@ -1050,7 +1204,7 @@ If you did not request this, you can ignore this email.`;
 // Vendor Portal transactional emails (submission, approval, rejection, rotation)
 // ============================================================================
 
-type VendorEmailKind = "submitted" | "approved" | "rejected" | "rotation_reminder" | "verify_email" | "portal_invite";
+type VendorEmailKind = "submitted" | "approved" | "rejected" | "rotation_reminder" | "verify_email" | "portal_invite" | "reactivated" | "reactivation_denied" | "deactivated";
 
 function vendorPortalUrl(): string {
   return Deno.env.get("VENDOR_PORTAL_URL") || "https://thrive-vendor-portal.vercel.app";
@@ -1100,6 +1254,30 @@ function vendorEmailContent(kind: VendorEmailKind, name: string, businessName: s
         title: "Verify your email",
         body: `Thanks for submitting <strong>${businessName}</strong>! Click the button below to confirm this is your email address. This helps us reach you about your approval status, code rotations, and important updates.`,
         cta: { href: extras.verifyUrl || `${portal}`, label: "Verify email" },
+      };
+    case "deactivated":
+      return {
+        subject: `${businessName} — your THRIVE profile has been paused`,
+        title: "Your profile is paused on THRIVE",
+        body: `<p>Hi ${name || "there"} — we wanted to let you know that <strong>${businessName}</strong> has been paused on the THRIVE app. Donors won't see your profile or your discounts for now.</p>
+${extras.reason ? `<p><strong>Why:</strong> <em>${extras.reason}</em></p>` : ''}
+<p>When you're ready to come back, log into the vendor portal and click <strong>Request reactivation</strong>. Our team will review and re-enable your profile.</p>`,
+        cta: { href: `${portal}/dashboard`, label: "Open the vendor portal" },
+      };
+    case "reactivated":
+      return {
+        subject: `${businessName} is back on THRIVE 🎉`,
+        title: "You're live on THRIVE again",
+        body: `<p>Good news — we've reviewed your reactivation request and <strong>${businessName}</strong> is live on the THRIVE app again. Donors can now find you and redeem your discounts.</p>
+<p>Head to your dashboard to make sure your discounts, hours and photos are still current.</p>`,
+        cta: { href: `${portal}/dashboard`, label: "Open your dashboard" },
+      };
+    case "reactivation_denied":
+      return {
+        subject: `THRIVE Vendor Portal — Update on your reactivation request`,
+        title: "We couldn't reactivate your profile yet",
+        body: `We reviewed your reactivation request for <strong>${businessName}</strong> and couldn't reinstate the profile at this time:<br><br><em>"${extras.reason || "Please review your profile and reach out with any questions."}"</em><br><br>You can update your profile in the portal and request reactivation again once the issue is resolved.`,
+        cta: { href: `${portal}/dashboard`, label: "Open your dashboard" },
       };
     case "portal_invite":
       return {

@@ -19,12 +19,23 @@ export async function createStripePaymentIntent(
   amount: number,
   currency: string = "usd",
   metadata: Record<string, string> = {},
+  // Attaching the customer is what stops these showing up in Stripe as
+  // "Guest" payments — unlinked to any customer record, so the donor's saved
+  // card can't be offered, nothing appears in their Stripe payment history,
+  // and receipts aren't tied to the customer. Optional so existing callers
+  // that genuinely have no customer still work.
+  customerId?: string | null,
 ): Promise<{ id: string; client_secret: string; status: string }> {
   const stripe = getStripeClient();
 
   const formData = new URLSearchParams();
   formData.append("amount", Math.round(amount * 100).toString());
   formData.append("currency", currency);
+  if (customerId) {
+    formData.append("customer", customerId);
+    // Save the card for reuse, so a second gift doesn't re-ask for details.
+    formData.append("setup_future_usage", "off_session");
+  }
 
   formData.append("automatic_payment_methods[enabled]", "true");
   formData.append("payment_method_types[]", "card");

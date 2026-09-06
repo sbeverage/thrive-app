@@ -23,7 +23,7 @@ function nteeToCategory(nteeCode: string | null | undefined): string | null {
     case "Q": return "Community";
     case "R": case "S": case "T": case "U": return "Community";
     case "V": case "W": return "Community";
-    case "X": return "Community";
+    case "X": return "Religion";
     case "Y": return "Veterans";
     case "Z": return "Community";
     default: return null;
@@ -157,6 +157,20 @@ export async function handleCharityRoute(
   // POST /charities (requires auth - will be handled by middleware)
   if (method === "POST" && route === "/charities") {
     try {
+      // ── Auth ──────────────────────────────────────────────────────────
+      // is_active defaults to true below, so without this anyone holding the
+      // anon key could publish a live, donor-selectable charity with any name
+      // and EIN. Nothing legitimate calls this route: the app never posts
+      // here and the admin panel uses POST /admin/charities.
+      const adminSecret = req.headers.get("x-admin-secret");
+      const expectedSecret = Deno.env.get("ADMIN_SECRET_KEY");
+      if (!expectedSecret || adminSecret !== expectedSecret) {
+        return new Response(
+          JSON.stringify({error: "Unauthorized"}),
+          {headers: {"Content-Type": "application/json"}, status: 401},
+        );
+      }
+
       const body = await req.json();
       const {
         name,
@@ -243,6 +257,21 @@ export async function handleCharityRoute(
   const deleteCharityMatch = route.match(/^\/charities\/(\d+)$/);
   if (method === "DELETE" && deleteCharityMatch) {
     try {
+      // ── Auth ──────────────────────────────────────────────────────────
+      // This is a HARD delete, and /charities is in index.ts's publicRoutes,
+      // so it was reachable by anyone holding the anon key — which ships in
+      // the mobile app. Note the contrast with DELETE /admin/charities/:id,
+      // which only soft-deletes by setting is_active = false; this route is
+      // the only way to actually remove a row, so it needs the stronger gate.
+      const adminSecret = req.headers.get("x-admin-secret");
+      const expectedSecret = Deno.env.get("ADMIN_SECRET_KEY");
+      if (!expectedSecret || adminSecret !== expectedSecret) {
+        return new Response(
+          JSON.stringify({error: "Unauthorized"}),
+          {headers: {"Content-Type": "application/json"}, status: 401},
+        );
+      }
+
       const charityId = deleteCharityMatch[1];
 
       const {error} = await supabase

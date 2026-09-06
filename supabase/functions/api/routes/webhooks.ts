@@ -1,5 +1,42 @@
 import { getStripeClient } from "../lib/stripe.ts";
 import { sendPushToUser } from "../lib/push.ts";
+import { sendPaymentFailureNotice } from "../lib/dunning.ts";
+
+// ─── Stripe API-shape compatibility ──────────────────────────────────────
+// The webhook endpoint is pinned to 2025-10-29.clover. Stripe removed
+// `invoice.subscription` in 2025-04-30 (moved under
+// invoice.parent.subscription_details) and removed `invoice.charge` in the
+// same release. The handlers below read the old field names, so every
+// invoice.payment_succeeded event arrived with an undefined subscription id,
+// skipped its whole block and returned 200 — Stripe recorded a successful
+// delivery while nothing was written. 16 paid invoices totalling $299.43 went
+// unrecorded before this was found.
+//
+// Read both shapes so this keeps working across versions in either direction.
+
+function invoiceSubscriptionId(invoice: any): string | null {
+  const candidates = [
+    invoice?.subscription,
+    invoice?.parent?.subscription_details?.subscription,
+    invoice?.lines?.data?.[0]?.parent?.subscription_item_details?.subscription,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c) return c;
+    if (c && typeof c === "object" && typeof c.id === "string") return c.id;
+  }
+  return null;
+}
+
+function invoiceChargeId(invoice: any): string | null {
+  if (typeof invoice?.charge === "string") return invoice.charge;
+  if (invoice?.charge?.id) return invoice.charge.id;
+  // 2025-04-30+: the charge hangs off the invoice's payments collection.
+  const payment = invoice?.payments?.data?.[0]?.payment;
+  if (typeof payment?.charge === "string") return payment.charge;
+  if (payment?.charge?.id) return payment.charge.id;
+  return null;
+}
+
 
 /** Injected from index.ts to avoid circular imports with referral helpers. */
 export type UpdateReferralStatusFn = (
@@ -286,7 +323,12 @@ export async function handleWebhookRoute(
 
         case "invoice.payment_succeeded": {
           const invoice = event.data.object;
-          const subscriptionId = invoice.subscription;
+          const subscriptionId = invoiceSubscriptionId(invoice);
+          if (!subscriptionId) {
+            console.error(
+              `❌ invoice.payment_succeeded ${invoice.id}: no subscription id in any known shape — payment NOT recorded. Check the endpoint's Stripe API version.`,
+            );
+          }
 
           if (subscriptionId) {
             // Find monthly donation by subscription ID
@@ -303,10 +345,7 @@ export async function handleWebhookRoute(
 
               // Best-effort: capture the real Stripe processing fee for this
               // invoice so admin reporting can show what Stripe took.
-              const chargeId =
-                typeof invoice.charge === "string"
-                  ? invoice.charge
-                  : invoice.charge?.id;
+              const chargeId = invoiceChargeId(invoice);
               const processingFee = chargeId
                 ? await fetchStripeFeeUsd(chargeId)
                 : null;
@@ -327,26 +366,70 @@ export async function handleWebhookRoute(
                 .update(updatePayload)
                 .eq("id", donation.id);
 
-              // Create transaction record — upsert on stripe_invoice_id to be idempotent.
+              // Create transaction record — upsert on reference_id to be idempotent.
               // Inherits the subscription's "Save my spot" flag so we can later
               // release these specific charges to the donor's chosen cause.
-              await supabase.from("transactions").upsert(
-                [
-                  {
+              // processing_fee/user_covered_fees are stored per-invoice so the
+              // payouts report can sum the exact Stripe cut on the specific
+              // invoices that landed in the payout window.
+              // `upsert(..., {onConflict: "reference_id"})` was used here for
+              // idempotency, but transactions.reference_id has no unique
+              // constraint — so Postgres rejected every one of these with
+              // "no unique or exclusion constraint matching the ON CONFLICT
+              // specification". Combined with the API-shape bug above, that is
+              // why 16 collected invoices totalling $299.43 were never
+              // recorded. Check-then-insert keeps idempotency without
+              // depending on a constraint that isn't there.
+              const {data: existingTxn} = await supabase
+                .from("transactions")
+                .select("id")
+                .eq("stripe_invoice_id", invoice.id)
+                .maybeSingle();
+
+              const txnRow =
+                {
                     user_id: donation.user_id,
                     type: "monthly_donation",
                     amount: amount,
                     description: `Monthly donation to beneficiary ${donation.beneficiary_id}`,
-                    reference_id: invoice.id,
+                    // MUST stay null. Two unique indexes cover this column:
+                    // transactions_reference_id_uidx (all rows, where not
+                    // null) and formerly a monthly_donation partial one. Both
+                    // assume reference_id holds a unique EXTERNAL id, but it
+                    // is an INTEGER column so a Stripe invoice id cannot go in
+                    // it, and a local donation id repeats across that
+                    // subscription's monthly charges. Identity for these rows
+                    // is stripe_invoice_id, enforced by
+                    // transactions_monthly_stripe_invoice_unique.
+                    reference_id: null,
                     reference_type: "donation",
                     donation_id: donation.id,
                     beneficiary_id: donation.beneficiary_id,
                     status: "completed",
                     held_for_donor_choice: !!donation.held_for_donor_choice,
-                  },
-                ],
-                { onConflict: "reference_id", ignoreDuplicates: true },
-              );
+                    processing_fee: processingFee,
+                    user_covered_fees: !!donation.user_covered_fees,
+                    stripe_invoice_id: invoice.id,
+                    stripe_charge_id: chargeId ?? null,
+                  };
+
+              const {error: txnErr} = existingTxn
+                ? await supabase
+                    .from("transactions")
+                    .update(txnRow)
+                    .eq("id", existingTxn.id)
+                : await supabase.from("transactions").insert([txnRow]);
+              if (txnErr) {
+                // Loud: a silent failure here loses the record of real money.
+                console.error(
+                  `❌ Could not record monthly_donation for invoice ${invoice.id}:`,
+                  txnErr.message,
+                );
+              } else {
+                console.log(
+                  `✅ Recorded monthly_donation ${amount} for invoice ${invoice.id}`,
+                );
+              }
 
               // Safety net: sync user.total_monthly_donation so the admin donors
               // list reflects this donor's active monthly amount even if the
@@ -406,34 +489,75 @@ export async function handleWebhookRoute(
 
         case "invoice.payment_failed": {
           const invoice = event.data.object;
-          const subscriptionId = invoice.subscription;
+          const subscriptionId = invoiceSubscriptionId(invoice);
 
-          if (subscriptionId) {
-            const {data: donation} = await supabase
-              .from("monthly_donations")
-              .select("id, user_id")
-              .eq("stripe_subscription_id", subscriptionId)
-              .single();
-
-            if (donation) {
-              await supabase
-                .from("monthly_donations")
-                .update({
-                  status: "past_due",
-                })
-                .eq("id", donation.id);
-
-              console.log("❌ Monthly donation payment failed:", donation.id);
-
-              // Retention-critical push: a failed charge is the most common
-              // churn vector. Get them back into Manage Cards ASAP.
-              sendPushToUser(supabase, donation.user_id, {
-                title: "Your THRIVE payment didn't go through",
-                body: "Tap to update your card so we can keep your donation going.",
-                data: { path: "/menu/manageCards", type: "payment_failed" },
-              }).catch((e) => console.warn("payment failed push failed:", e));
-            }
+          if (!subscriptionId) {
+            console.error(
+              `❌ invoice.payment_failed ${invoice.id}: no subscription id in any known shape.`,
+            );
+            break;
           }
+
+          const {data: donation} = await supabase
+            .from("monthly_donations")
+            .select("id, user_id, amount, beneficiary_id")
+            .eq("stripe_subscription_id", subscriptionId)
+            .maybeSingle();
+
+          if (!donation) {
+            // A subscription Stripe is billing that we never mirrored. The
+            // donor gets no warning at all in that state, so make it loud.
+            console.error(
+              `❌ payment failed for UNTRACKED subscription ${subscriptionId} — no monthly_donations row, donor cannot be notified. Link it with POST /admin/reporting/link-subscription.`,
+            );
+            break;
+          }
+
+          // ── Dunning ────────────────────────────────────────────────────
+          // Stripe's Smart Retries drive the schedule: it re-attempts a failed
+          // invoice roughly four times over two to three weeks and fires this
+          // event each time, so the "few emails spread out" come from Stripe's
+          // cadence rather than a scheduler of our own. `next_payment_attempt`
+          // is null once Stripe has given up, which is the only reliable
+          // signal that this was the last try.
+          const attempt = Number(invoice.attempt_count || 1);
+          const isFinal = !invoice.next_payment_attempt;
+          const amountDue = (invoice.amount_due || 0) / 100;
+          const nextTry = invoice.next_payment_attempt
+            ? new Date(invoice.next_payment_attempt * 1000).toLocaleDateString("en-US", {
+                month: "long",
+                day: "numeric",
+              })
+            : null;
+
+          // Paused, not cancelled. Cancelling would destroy the subscription
+          // and force a full re-signup to recover; "unpaid" keeps their chosen
+          // cause and history so updating a card is enough to resume. The
+          // discounts gate already treats anything non-active as locked.
+          await supabase
+            .from("monthly_donations")
+            .update({ status: isFinal ? "unpaid" : "past_due" })
+            .eq("id", donation.id);
+
+          console.log(
+            `❌ Monthly donation ${donation.id} payment failed (attempt ${attempt}${isFinal ? ", FINAL — paused" : `, next ${nextTry}`})`,
+          );
+
+          const {data: donor} = await supabase
+            .from("users")
+            .select("email, first_name")
+            .eq("id", donation.user_id)
+            .maybeSingle();
+          const donorName = donor?.first_name || "there";
+
+          // Copy and volume live in lib/dunning.ts so the automatic notice and
+          // an admin's manual one stay identical.
+          sendPaymentFailureNotice(supabase, donation.user_id, {
+            attempt,
+            isFinal,
+            amountDue,
+            nextTry,
+          }).catch((e) => console.warn("dunning notice failed:", e?.message || e));
           break;
         }
 
@@ -451,7 +575,13 @@ export async function handleWebhookRoute(
               active: "active",
               past_due: "past_due",
               canceled: "cancelled",
-              unpaid: "past_due",
+              // Stripe's "unpaid" means it has stopped retrying. Mapping it to
+              // past_due overwrote the pause that invoice.payment_failed had
+              // just written, because Stripe fires this event straight after
+              // the final failure. The donor was then told "we'll try again"
+              // when nothing would ever be tried again, and the paused copy in
+              // lib/accountAlerts.ts and lib/dunning.ts never showed.
+              unpaid: "unpaid",
               trialing: "active",
               paused: "paused",
             };
@@ -477,7 +607,7 @@ export async function handleWebhookRoute(
 
           const {data: donation} = await supabase
             .from("monthly_donations")
-            .select("id")
+            .select("id, user_id")
             .eq("stripe_subscription_id", subscription.id)
             .single();
 
@@ -488,6 +618,14 @@ export async function handleWebhookRoute(
                 status: "cancelled",
               })
               .eq("id", donation.id);
+
+            // Zero the denormalized monthly amount on the user row so the
+            // Donors admin list stops showing a cancelled donor's old amount.
+            // Historic totals live on transactions/one_time_gifts, not this field.
+            await supabase
+              .from("users")
+              .update({ total_monthly_donation: 0 })
+              .eq("id", donation.user_id);
 
             console.log("🗑️ Subscription cancelled:", subscription.id);
           }

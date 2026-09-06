@@ -184,7 +184,12 @@ export const LocationProvider = ({ children }) => {
         if (locationWithAddress) {
           const { city, state, zipCode, country, street, ...coords } = locationWithAddress;
           setLocation(coords);
-          setLocationAddress({ city, state, zipCode, country, street });
+          const address = { city, state, zipCode, country, street };
+          setLocationAddress(address);
+          // Return it as well: a caller awaiting this still holds the old
+          // locationAddress in its closure until the next render, so state
+          // alone is not enough for "use my current location" to work.
+          return address;
         }
       } catch (error) {
         console.error('Error refreshing location:', error);
@@ -192,6 +197,7 @@ export const LocationProvider = ({ children }) => {
         setIsLoadingLocation(false);
       }
     }
+    return null;
   };
 
   const clearLocation = () => {

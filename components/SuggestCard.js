@@ -9,7 +9,10 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
-export default function SuggestCard({ type = 'vendor', searchQuery = '', onSubmit }) {
+// `embedded` drops the standalone card chrome (margins, radius, shadow) for
+// when this is rendered inside a popup that already provides them — otherwise
+// you get a card inside a card.
+export default function SuggestCard({ type = 'vendor', searchQuery = '', onSubmit, embedded = false }) {
   const [name, setName] = useState('');
   const [website, setWebsite] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -42,7 +45,7 @@ export default function SuggestCard({ type = 'vendor', searchQuery = '', onSubmi
 
   if (submitted) {
     return (
-      <View style={styles.card}>
+      <View style={[styles.card, embedded && styles.cardEmbedded]}>
         <Image
           source={require('../assets/images/piggy-confetti.png')}
           style={styles.icon}
@@ -57,7 +60,7 @@ export default function SuggestCard({ type = 'vendor', searchQuery = '', onSubmi
   }
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, embedded && styles.cardEmbedded]}>
       <Image
         source={
           isVendor
@@ -154,6 +157,15 @@ export default function SuggestCard({ type = 'vendor', searchQuery = '', onSubmi
 }
 
 const styles = StyleSheet.create({
+  cardEmbedded: {
+    marginHorizontal: 0,
+    marginVertical: 0,
+    borderRadius: 0,
+    paddingVertical: 22,
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
+  },
   card: {
     backgroundColor: '#fff',
     borderRadius: 24,

@@ -1,4 +1,5 @@
 import { corsHeaders } from "../lib/cors.ts";
+import { isTeamMember } from "../lib/membership.ts";
 
 export type AdminAnalyticsDeps = {
   sendReferralReminderEmail: (args: {
@@ -16,6 +17,144 @@ export async function handleAdminAnalytics(
   deps: AdminAnalyticsDeps,
 ) {
   const { sendReferralReminderEmail } = deps;
+
+  // GET /admin/analytics/donor-cohort?type=new|lost&period=weekly|monthly|quarterly|yearly
+  //
+  // The donors behind the New Donors and Lost Donors cards, so clicking a card
+  // can show who they actually are.
+  //
+  // The predicates below are deliberately identical to the ones donor-overview
+  // counts with, because a list that disagrees with the number on the card is
+  // worse than no list — it makes both look wrong and there is no way to tell
+  // which. Kept in this file, next to that handler, so they are edited
+  // together; the response returns `count` alongside the rows so a drift shows
+  // up immediately rather than silently.
+  //
+  //   new  — the donor's FIRST donation falls in the window. First donation is
+  //          the earliest of monthly_donations.last_payment_date and a
+  //          completed one_time_gifts.created_at.
+  //   lost — a monthly_donations row moved to cancelled / past_due / unpaid and
+  //          its updated_at falls in the window.
+  //
+  // Team members are excluded, matching donor-overview: they are never billed
+  // so they can be neither gained nor lost.
+  if (method === "GET" && route.startsWith("/admin/analytics/donor-cohort")) {
+    try {
+      const url = new URL(req.url);
+      const type = (url.searchParams.get("type") || "new").toLowerCase();
+      const period = (url.searchParams.get("period") || "monthly").toLowerCase();
+      if (!["new", "lost"].includes(type)) {
+        return new Response(JSON.stringify({ error: "type must be new or lost" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400,
+        });
+      }
+
+      const DAYS: Record<string, number> = {
+        weekly: 7, monthly: 30, quarterly: 90, yearly: 365,
+      };
+      const days = DAYS[period];
+      if (!days) {
+        return new Response(
+          JSON.stringify({ error: "period must be weekly, monthly, quarterly or yearly" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 },
+        );
+      }
+      const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+      const { data: donorRows } = await supabase
+        .from("users")
+        .select("id, email, first_name, last_name, created_at, invite_type, coworking")
+        .eq("role", "donor");
+      const donors = (donorRows || []).filter((d: any) => !isTeamMember(d));
+      const byId = new Map<number, any>(donors.map((d: any) => [d.id, d]));
+      const donorIds = donors.map((d: any) => d.id);
+
+      const rows: any[] = [];
+
+      if (type === "new") {
+        const [{ data: monthly }, { data: oneTime }] = await Promise.all([
+          supabase
+            .from("monthly_donations")
+            .select("user_id, last_payment_date, amount")
+            .in("user_id", donorIds.length ? donorIds : [0])
+            .not("last_payment_date", "is", null),
+          supabase
+            .from("one_time_gifts")
+            .select("user_id, created_at, amount")
+            .in("user_id", donorIds.length ? donorIds : [0])
+            .eq("status", "completed"),
+        ]);
+
+        // Earliest donation per donor, exactly as donor-overview computes it.
+        const first = new Map<number, string>();
+        for (const r of monthly || []) {
+          const ts = `${r.last_payment_date}T00:00:00Z`;
+          const cur = first.get(r.user_id);
+          if (!cur || ts < cur) first.set(r.user_id, ts);
+        }
+        for (const r of oneTime || []) {
+          if (!r.created_at) continue;
+          const cur = first.get(r.user_id);
+          if (!cur || r.created_at < cur) first.set(r.user_id, r.created_at);
+        }
+
+        for (const [userId, ts] of first) {
+          if (ts < sinceIso) continue;
+          const u = byId.get(userId);
+          if (!u) continue; // excluded donor (team) or non-donor role
+          rows.push({
+            user_id: userId,
+            name: [u.first_name, u.last_name].filter(Boolean).join(" ") || null,
+            email: u.email,
+            first_donation_at: ts,
+            joined_at: u.created_at,
+          });
+        }
+        rows.sort((a, b) => String(b.first_donation_at).localeCompare(String(a.first_donation_at)));
+      } else {
+        const { data: lostRows } = await supabase
+          .from("monthly_donations")
+          .select("user_id, status, updated_at, amount")
+          .in("status", ["cancelled", "past_due", "unpaid"])
+          .gte("updated_at", sinceIso);
+
+        // One row per donor, keeping the most recent change — a donor with two
+        // lapsed rows is one lost donor, which is how the card counts them.
+        const seen = new Map<number, any>();
+        for (const r of lostRows || []) {
+          if (!r.updated_at) continue;
+          const u = byId.get(r.user_id);
+          if (!u) continue;
+          const prev = seen.get(r.user_id);
+          if (!prev || r.updated_at > prev.lost_at) {
+            seen.set(r.user_id, {
+              user_id: r.user_id,
+              name: [u.first_name, u.last_name].filter(Boolean).join(" ") || null,
+              email: u.email,
+              status: r.status,
+              lost_at: r.updated_at,
+              amount: r.amount,
+            });
+          }
+        }
+        rows.push(...seen.values());
+        rows.sort((a, b) => String(b.lost_at).localeCompare(String(a.lost_at)));
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: { type, period, since: sinceIso, count: rows.length, donors: rows },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (err: any) {
+      console.error("donor-cohort error:", err);
+      return new Response(JSON.stringify({ error: err?.message || "donor-cohort failed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
+      });
+    }
+  }
 
   // GET /admin/analytics/donor-overview
   // Powers the Dashboard's Donor Overview section. Returns:
@@ -57,10 +196,16 @@ export async function handleAdminAnalytics(
       const ninetyDaysAgo = cur.quarterly;
 
       // All donor users — we'll classify each as active/inactive below.
-      const { data: donors, error: donorsError } = await supabase
+      // Team accounts are internal and comped, so they are dropped before any
+      // counting. Filtered in JS rather than with .neq("invite_type","team"):
+      // invite_type is null on every pre-existing donor, and in SQL
+      // NULL != 'team' is NULL, not true — a .neq would have silently excluded
+      // every real donor instead of just the team.
+      const { data: allDonorRows, error: donorsError } = await supabase
         .from("users")
-        .select("id, created_at")
+        .select("id, created_at, invite_type, coworking")
         .eq("role", "donor");
+      const donors = (allDonorRows || []).filter((d: any) => !isTeamMember(d));
 
       if (donorsError) {
         console.error("donor-overview: users query failed", donorsError);
@@ -398,12 +543,14 @@ export async function handleAdminAnalytics(
   if (method === "GET" && route === "/admin/analytics/donor-charts") {
     try {
       // ---- Donors snapshot (used by multiple charts) ----
-      const { data: donors, error: donorsError } = await supabase
+      const { data: allDonorRows, error: donorsError } = await supabase
         .from("users")
         .select(
-          "id, created_at, city, state, invite_type",
+          "id, created_at, city, state, invite_type, coworking",
         )
         .eq("role", "donor");
+      // Internal team accounts stay out of every donor chart.
+      const donors = (allDonorRows || []).filter((d: any) => !isTeamMember(d));
       if (donorsError) {
         console.error("donor-charts: users query failed", donorsError);
         return new Response(
@@ -737,10 +884,16 @@ export async function handleAdminAnalytics(
       }));
 
       // --- Most Selected Beneficiary (counts of users.preferences.preferredCharity) ---
-      const { data: donorsForSelect } = await supabase
+      // This is the chart the exclusion matters most for: a team member picks
+      // a cause purely to exercise the app, and counting it would overstate
+      // real donor demand for that charity.
+      const { data: donorsForSelectRaw } = await supabase
         .from("users")
-        .select("id, preferences, city, state")
+        .select("id, preferences, city, state, invite_type, coworking")
         .eq("role", "donor");
+      const donorsForSelect = (donorsForSelectRaw || []).filter(
+        (d: any) => !isTeamMember(d),
+      );
       const selectionCount: Record<number, number> = {};
       for (const d of donorsForSelect || []) {
         const prefId =

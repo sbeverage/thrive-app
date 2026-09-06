@@ -7,7 +7,10 @@ import { useLocalSearchParams, useRouter, useSegments } from 'expo-router';
 import BeneficiaryDetailCard from '../../../../components/BeneficiaryDetailCard';
 import SuccessModal from '../../../../components/SuccessModal';
 import ConfettiCannon from 'react-native-confetti-cannon';
-import { useBeneficiary } from '../../../context/BeneficiaryContext';
+import {
+  useBeneficiary,
+  isThriveCause,
+} from '../../../context/BeneficiaryContext';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import API from '../../../lib/api';
@@ -211,7 +214,7 @@ export default function BeneficiaryDetailScreen() {
               id,
               name: 'API Error',
               category: 'Unknown',
-              image: require('../../../../assets/images/child-cancer.jpg'),
+              image: require('../../../../assets/images/pending-charity.png'),
               likes: 0,
               mutual: 0,
               about: 'Unable to load beneficiary data. The API request failed. Please check your connection and try again.',
@@ -290,19 +293,31 @@ export default function BeneficiaryDetailScreen() {
             // Helper function to get default image
             function getDefaultImage(category) {
               if (category === 'Childhood Illness') {
-                return require('../../../../assets/images/child-cancer.jpg');
+                return require('../../../../assets/images/pending-charity.png');
               } else if (category === 'Animal Welfare') {
-                return require('../../../../assets/images/humane-society.jpg');
+                return require('../../../../assets/images/pending-charity.png');
               } else {
-                return require('../../../../assets/images/charity-water.jpg');
+                return require('../../../../assets/images/pending-charity.png');
               }
             }
             
             // Handle main image (imageUrl) - for the large banner image
             let imageSource;
             const imageUrl = foundBeneficiary.imageUrl || foundBeneficiary.image_url || null;
-            
-            if (imageUrl && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
+
+            const detailIsPending = !!(
+              foundBeneficiary.isPendingVerification ||
+              foundBeneficiary.is_pending_verification
+            );
+
+            if (detailIsPending) {
+              imageSource = require('../../../../assets/images/pending-charity.png');
+            } else if (isThriveCause(foundBeneficiary)) {
+              // THRIVE-as-a-cause uses the bundled photo rather than the row's
+              // brand mark — matches resolveBeneficiaryHeroImageSource, which
+              // drives the My Beneficiary card on Home.
+              imageSource = require('../../../../assets/images/pending-charity.png');
+            } else if (imageUrl && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
               if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
                 console.log('✅ Using main image URL from backend:', imageUrl);
                 imageSource = { uri: imageUrl };
@@ -362,6 +377,8 @@ export default function BeneficiaryDetailScreen() {
               name: foundBeneficiary.name,
               category: foundBeneficiary.category,
               type: foundBeneficiary.type,
+              isThrive: isThriveCause(foundBeneficiary),
+              isPendingVerification: detailIsPending,
               image: imageSource, // Main banner image (from imageUrl)
               logoUrl: logoSource, // Logo image (from logoUrl, falls back to main image)
               location: foundBeneficiary.location,
@@ -374,6 +391,13 @@ export default function BeneficiaryDetailScreen() {
               website: foundBeneficiary.website || '',
               phone: foundBeneficiary.phone || '',
               social: foundBeneficiary.social || '',
+              // Photo gallery + video. This transform whitelists fields, so
+              // anything not listed here never reaches the card — which is why
+              // media saved in the admin panel wasn't showing up.
+              imageUrls: Array.isArray(foundBeneficiary.imageUrls)
+                ? foundBeneficiary.imageUrls
+                : (Array.isArray(foundBeneficiary.image_urls) ? foundBeneficiary.image_urls : []),
+              videoUrl: foundBeneficiary.videoUrl ?? foundBeneficiary.video_url ?? null,
               // Impact metrics - pass BOTH camelCase and snake_case to ensure component can read either
               livesImpacted: finalLivesImpacted,
               lives_impacted: foundBeneficiary.lives_impacted ?? foundBeneficiary.livesImpacted ?? finalLivesImpacted,
@@ -430,7 +454,7 @@ export default function BeneficiaryDetailScreen() {
               id,
               name: 'Unknown Beneficiary',
               category: 'Unknown',
-              image: require('../../../../assets/images/child-cancer.jpg'),
+              image: require('../../../../assets/images/pending-charity.png'),
               likes: 0,
               mutual: 0,
               about: 'Beneficiary information not available. Please check that the beneficiary exists in the system and that the API is returning data correctly.',
@@ -463,7 +487,7 @@ export default function BeneficiaryDetailScreen() {
           id,
           name: 'Error Loading Beneficiary',
           category: 'Unknown',
-          image: require('../../../../assets/images/child-cancer.jpg'),
+          image: require('../../../../assets/images/pending-charity.png'),
           likes: 0,
           mutual: 0,
           about: 'There was an error loading this beneficiary. Please try again.',
@@ -526,6 +550,13 @@ export default function BeneficiaryDetailScreen() {
     }
 
     if (segments.includes("(tabs)")) {
+      // Route to wherever the donor came from. Home passes `from=home` when
+      // they tap the "My Beneficiary" card so back feels like a return trip
+      // instead of a jump to the (unrelated) Beneficiary list.
+      if (params?.from === "home") {
+        router.replace("/(tabs)/(main)/home");
+        return;
+      }
       router.replace("/(tabs)/beneficiary");
       return;
     }

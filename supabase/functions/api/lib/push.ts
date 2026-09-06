@@ -58,6 +58,95 @@ export async function sendPush(message: PushMessage): Promise<boolean> {
 }
 
 /**
+ * Ticket returned by the Expo Push API for a single message.
+ *
+ * Expo answers 200 even when a message is rejected — the verdict lives in the
+ * per-message ticket, not the HTTP status. `sendPush` returning true therefore
+ * means "Expo accepted the request", not "the phone got it". Anything that
+ * needs to know the difference (a test, a diagnostic) has to read the ticket.
+ *
+ * Errors worth recognising:
+ *   DeviceNotRegistered — token is stale; the app was deleted or reinstalled
+ *   InvalidCredentials  — the APNs key is missing or wrong for this bundle id
+ *   MessageTooBig       — payload over 4KB
+ *   MessageRateExceeded — throttled, retry later
+ */
+export interface PushTicket {
+  accepted: boolean;
+  status?: string;
+  id?: string;
+  message?: string;
+  error?: string;
+  httpStatus?: number;
+  raw?: unknown;
+}
+
+/**
+ * Send one push and report what Expo actually said about it.
+ *
+ * Same wire call as sendPush, but the ticket is parsed and returned instead of
+ * being flattened to a boolean. Use this when a caller needs to distinguish
+ * "delivered" from "accepted then dropped".
+ */
+export async function sendPushWithTicket(message: PushMessage): Promise<PushTicket> {
+  if (!message.to || (Array.isArray(message.to) && message.to.length === 0)) {
+    return { accepted: false, error: "NoToken", message: "No push token supplied" };
+  }
+  try {
+    const res = await fetch(EXPO_PUSH_URL, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Accept-encoding": "gzip, deflate",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ...message,
+        sound: message.sound === null ? null : (message.sound || "default"),
+        channelId: message.channelId || "default",
+      }),
+    });
+
+    const text = await res.text();
+    let body: any = null;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return {
+        accepted: false,
+        httpStatus: res.status,
+        error: "UnparseableResponse",
+        message: text.slice(0, 300),
+      };
+    }
+
+    if (!res.ok) {
+      return {
+        accepted: false,
+        httpStatus: res.status,
+        error: "HttpError",
+        message: JSON.stringify(body).slice(0, 300),
+        raw: body,
+      };
+    }
+
+    const ticket = Array.isArray(body?.data) ? body.data[0] : body?.data;
+    const status = ticket?.status;
+    return {
+      accepted: status === "ok",
+      status,
+      id: ticket?.id,
+      message: ticket?.message,
+      error: ticket?.details?.error,
+      httpStatus: res.status,
+      raw: body,
+    };
+  } catch (e: any) {
+    return { accepted: false, error: "NetworkError", message: e?.message || String(e) };
+  }
+}
+
+/**
  * Send the same notification (different recipients) in one Expo Push API call.
  * Expo accepts up to 100 messages per request; we chunk above that.
  */
@@ -110,4 +199,47 @@ export async function sendPushToUser(
   const token = user?.expo_push_token;
   if (!token) return false;
   return sendPush({ ...message, to: token });
+}
+
+/**
+ * Fanout push notification to every donor who favorited this vendor. Used
+ * when a vendor adds a new discount or has one expiring soon — the "why
+ * did I favorite this" payoff moment for the donor.
+ *
+ * Silently drops donors without a push token on file. Callers should NOT
+ * await this on the request path — fire-and-forget so a slow push doesn't
+ * add latency to the vendor's Create Discount save.
+ */
+export async function sendPushToVendorFavoriters(
+  supabase: any,
+  vendorId: number,
+  message: Omit<PushMessage, "to">,
+): Promise<void> {
+  if (!vendorId) return;
+  const { data: favs } = await supabase
+    .from("vendor_favorites")
+    .select("user_id")
+    .eq("vendor_id", vendorId);
+  const userIds = Array.from(
+    new Set((favs || []).map((f: any) => f.user_id).filter(Boolean)),
+  );
+  if (userIds.length === 0) return;
+
+  const { data: users } = await supabase
+    .from("users")
+    .select("expo_push_token")
+    .in("id", userIds);
+  const tokens = (users || [])
+    .map((u: any) => u.expo_push_token)
+    .filter((t: any) => typeof t === "string" && t.length > 0);
+  if (tokens.length === 0) return;
+
+  // Expo's push API accepts up to 100 recipients per POST. Chunk to be
+  // safe for vendors with a large favoriter base.
+  const CHUNK = 90;
+  const batches: PushMessage[] = [];
+  for (let i = 0; i < tokens.length; i += CHUNK) {
+    batches.push({ ...message, to: tokens.slice(i, i + CHUNK) });
+  }
+  await sendPushBatch(batches);
 }

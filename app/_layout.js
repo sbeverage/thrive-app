@@ -181,8 +181,19 @@ function Layout() {
     if (!path) return;
     try {
       // Strip optional scheme + host so we always route within the app.
-      const cleaned = path.replace(/^thrive:\/\//, '').replace(/^https?:\/\/[^/]+/, '');
-      const target = cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
+      const withoutHost = path
+        .replace(/^thrive:\/\//, '')
+        .replace(/^https?:\/\/[^/]+/, '');
+      // Drop expo-router group segments. Parenthesised folders like (tabs) and
+      // (main) are organisational and never appear in a URL, so an href such
+      // as "/(tabs)/(main)/discounts/10" does not resolve — router.push falls
+      // through and the app sits on the default tab. Every push payload
+      // carried that form until 2026-09-02. The senders are fixed, but
+      // stripping here means a future one cannot break the deep link.
+      const cleaned = withoutHost.replace(/\(([^)]+)\)\/?/g, '');
+      const normalised = cleaned.replace(/\/{2,}/g, '/');
+      const target = normalised.startsWith('/') ? normalised : `/${normalised}`;
+      if (target === '/' ) return;
       router.push(target);
     } catch (e) {
       console.warn('Notification tap routing failed:', e);

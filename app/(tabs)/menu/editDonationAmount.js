@@ -20,6 +20,7 @@ import { Feather } from "@expo/vector-icons";
 import { useUser } from "../../context/UserContext";
 import { useBeneficiary } from "../../context/BeneficiaryContext";
 import API from "../../lib/api";
+import { paymentRecoveryRoute } from '../../utils/paymentRecovery';
 
 const SERVICE_FEE = 3.0;
 const CREDIT_CARD_FEE_RATE = 0.035;
@@ -136,12 +137,25 @@ export default function EditDonationAmount() {
           apiSucceeded = true;
         } catch (err) {
           if (err?.status === 409) {
+            // The server refuses an amount change while the subscription
+            // hasn't been paid. Telling the donor to "complete first payment
+            // setup" was a dead end — nothing in the app took them there.
             Alert.alert(
-              "Payment setup required",
-              "Complete first payment setup before changing amount."
+              "Payment needed first",
+              "Your monthly gift hasn't been paid yet, so the amount can't change until it goes through. Finish the payment and you can change it right after.",
+              [
+                { text: "Not now", style: "cancel" },
+                {
+                  text: "Finish payment",
+                  onPress: () => router.push(paymentRecoveryRoute(user)),
+                },
+              ]
             );
             return;
           }
+          // Anything else is a real failure. It used to fall through silently
+          // and report "saved locally", which read like success.
+          throw err;
         }
       } else if (beneficiaryId) {
         try {
@@ -158,13 +172,16 @@ export default function EditDonationAmount() {
       await saveUserData({ monthlyDonation: donation });
 
       if (apiSucceeded) {
-        const nextInvoice =
-          response?.change?.timing === "next_invoice" || !!subscription;
+        // Only claim "next invoice" when the server actually said so. It used
+        // to say it whenever a subscription row existed, so a donor with an
+        // unpaid or paused subscription was promised a next invoice that was
+        // never going to arrive.
+        const nextInvoice = response?.change?.timing === "next_invoice";
         Alert.alert(
           "Donation Updated",
           nextInvoice
             ? `Your monthly donation has been updated to $${donation.toFixed(2)} and will apply on your next invoice.`
-            : `Your monthly donation has been set to $${donation.toFixed(2)}.`,
+            : `Your monthly donation is now $${donation.toFixed(2)}.`,
           [{ text: "OK", onPress: () => router.replace("/(tabs)/menu") }]
         );
       } else if (!beneficiaryId) {

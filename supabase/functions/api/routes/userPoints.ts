@@ -70,6 +70,16 @@ export async function handleUserPointsRoute(
   // POST /user/points/add
   if (method === "POST" && route === "/user/points/add") {
     try {
+      // userId comes from the JWT decoded at the top of this handler. Without
+      // this guard an unauthenticated call wrote a row with user_id null —
+      // harmless but it accumulated orphan records.
+      if (!userId) {
+        return new Response(
+          JSON.stringify({error: "Authentication required"}),
+          {headers: {"Content-Type": "application/json"}, status: 401},
+        );
+      }
+
       const body = await req.json();
       const {
         points,

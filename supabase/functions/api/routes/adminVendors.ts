@@ -1,4 +1,6 @@
 import { corsHeaders } from "../lib/cors.ts";
+import { normalizeCategory } from "../lib/categories.ts";
+import { geocodeAddress } from "../lib/geocoding.ts";
 import { bcryptHash } from "../lib/password.ts";
 import { sendVendorEmail } from "../lib/email.ts";
 import { normalizeHours } from "../lib/vendorHours.ts";
@@ -147,6 +149,79 @@ async function provisionVendorPortalAccount(
   }).catch((e) => console.error("portal_invite email failed:", e));
 
   return { user: newUser, tempPassword };
+}
+
+/**
+ * Fill in an address's coordinates before it is stored.
+ *
+ * Vendors were saved with latitude/longitude of 0, which the app reads as
+ * "unset" and works around by geocoding on the device. That made the map
+ * device-dependent: each phone resolved the coordinates itself, subject to its
+ * own timing, cache and rate limits, so clusters split in different places and
+ * a vendor could vanish when a lookup failed. Resolving once, here, makes every
+ * device agree.
+ *
+ * Nominatim gives up on a suite or unit number, so the street is retried
+ * without one. Returns the address unchanged when nothing resolves — a wrong
+ * pin is worse than the app's existing fallback.
+ */
+async function withGeocodedAddress(address: any, previous?: any): Promise<any> {
+  if (!address || typeof address !== "object") return address;
+
+  const lat = Number(address.latitude);
+  const lng = Number(address.longitude);
+  const hasCoords =
+    Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0;
+
+  // Existing coordinates are only trustworthy while the address they were
+  // derived from is unchanged. Keeping them across an edit is how a corrected
+  // street keeps its old pin — Warm Waves Coffee sat on South Main for exactly
+  // that reason when it is actually on North Main, 1.5km away.
+  const key = (a: any) =>
+    ["street", "city", "state", "zipCode"]
+      .map((k) => String(a?.[k] ?? "").trim().toLowerCase())
+      .join("|");
+  const addressChanged = previous ? key(address) !== key(previous) : false;
+
+  // 0/0 is the Gulf of Guinea, not Georgia — treat it as unset.
+  if (hasCoords && !addressChanged) {
+    return address;
+  }
+
+  const clean = (x: any) => (typeof x === "string" ? x.trim() : "");
+  const junk = /^(location not specified|n\/a|none|tbd|unknown)$/i;
+  const street = clean(address.street);
+  const city = junk.test(clean(address.city)) ? "" : clean(address.city);
+  const state = clean(address.state);
+  const zip = junk.test(clean(address.zipCode)) ? "" : clean(address.zipCode);
+  const streetNoUnit = street
+    .replace(/[,]?\s*(suite|ste\.?|unit|apt\.?|#)\s*[\w-]+\s*$/i, "")
+    .trim();
+
+  const candidates = Array.from(
+    new Set(
+      [
+        [street, city, state, zip],
+        [streetNoUnit, city, state, zip],
+        [streetNoUnit, city, state],
+      ]
+        .map((parts) => parts.filter(Boolean).join(", "))
+        .filter((q) => q.length > 0),
+    ),
+  );
+
+  for (const candidate of candidates) {
+    try {
+      const geo = await geocodeAddress(candidate);
+      if (geo.latitude != null && geo.longitude != null) {
+        return { ...address, latitude: geo.latitude, longitude: geo.longitude };
+      }
+    } catch (e) {
+      console.warn("vendor geocode failed for", candidate, e);
+    }
+  }
+  console.warn("could not geocode vendor address:", candidates.join(" | "));
+  return address;
 }
 
 export async function handleAdminVendors(
@@ -652,12 +727,12 @@ export async function handleAdminVendors(
       .insert([
         {
           name,
-          category: category || null,
+          category: normalizeCategory(category),
           description: description || null,
           website: website || null,
           phone: phone || null,
           social_links: socialLinks || null,
-          address: address || null,
+          address: address ? await withGeocodedAddress(address) : null,
           hours: hours ? normalizeHours(hours) : null,
           logo_url: logoUrlValue || null,
           // Admin-created vendors are pre-vetted — skip the pending queue so
@@ -778,6 +853,11 @@ export async function handleAdminVendors(
       image_urls,
       status,
       is_enabled,
+      // Optional note the admin can leave when deactivating — surfaced back
+      // to the vendor in the portal's deactivated banner. Camel + snake
+      // accepted so either payload shape works.
+      deactivationReason,
+      deactivation_reason,
       // Primary contact + login email live on the linked users row, not the
       // vendors table. The admin UI sends these alongside vendor fields, and
       // we route them to users.* below.
@@ -812,7 +892,22 @@ export async function handleAdminVendors(
     if (website !== undefined) updateObj.website = website || null;
     if (phone !== undefined) updateObj.phone = phone || null;
     if (socialLinks !== undefined) updateObj.social_links = socialLinks || null;
-    if (address !== undefined) updateObj.address = address || null;
+    // Geocode on edit too: an admin correcting a street would otherwise leave
+    // the old coordinates in place, pinning the vendor at its previous
+    // location. withGeocodedAddress keeps coordinates that are already real,
+    // so re-saving an unchanged address costs nothing.
+    if (address !== undefined) {
+      // Pass the stored address so a changed street re-resolves rather than
+      // inheriting the previous pin.
+      const { data: prior } = await supabase
+        .from("vendors")
+        .select("address")
+        .eq("id", vendorId)
+        .maybeSingle();
+      updateObj.address = address
+        ? await withGeocodedAddress(address, prior?.address)
+        : null;
+    }
     if (hours !== undefined) updateObj.hours = hours ? normalizeHours(hours) : null;
     if (image_urls !== undefined) {
       if (!Array.isArray(image_urls)) {
@@ -849,9 +944,31 @@ export async function handleAdminVendors(
       updateObj.contact_name = vendorContactName || null;
     }
     if (logoUrlValue !== undefined) updateObj.logo_url = logoUrlValue || null;
-    // Active/inactive toggle - vendors table uses is_active (not status)
+    // Active / inactive toggle. When flipping to inactive we stamp
+    // deactivated_at and store the optional reason; when flipping back to
+    // active we clear the whole deactivation + reactivation-request block
+    // so the vendor's portal banner and the admin's reactivation queue both
+    // reset cleanly.
     if (status !== undefined) {
-      updateObj.is_active = status === "active";
+      const nextActive = status === "active";
+      updateObj.is_active = nextActive;
+      if (nextActive) {
+        updateObj.deactivated_at = null;
+        updateObj.deactivation_reason = null;
+        updateObj.reactivation_requested_at = null;
+        updateObj.reactivation_message = null;
+      } else {
+        updateObj.deactivated_at = new Date().toISOString();
+        const resolvedReason = deactivationReason ?? deactivation_reason;
+        if (resolvedReason !== undefined) {
+          updateObj.deactivation_reason = String(resolvedReason || "").trim() || null;
+        }
+        // A deactivated vendor's earlier reactivation request is no longer
+        // relevant — reset it so the vendor can request again after the
+        // fresh deactivation.
+        updateObj.reactivation_requested_at = null;
+        updateObj.reactivation_message = null;
+      }
     }
     // is_enabled for enable/disable toggle (if vendors table has this column)
     if (is_enabled !== undefined) {
@@ -959,6 +1076,28 @@ export async function handleAdminVendors(
               "Vendor saved, but the contact info on the linked account couldn't be updated.";
           }
         }
+      }
+    }
+
+    // If this PUT flipped the vendor from active → inactive, send them a
+    // heads-up email pointing them at the portal's Request Reactivation
+    // button. Fire-and-forget so an email hiccup can't fail the save.
+    const didJustDeactivate =
+      status !== undefined && status !== "active" && updatedVendor.auth_user_id;
+    if (didJustDeactivate) {
+      const { data: ownerUser } = await supabase
+        .from("users")
+        .select("email, first_name, last_name")
+        .eq("id", updatedVendor.auth_user_id)
+        .maybeSingle();
+      if (ownerUser?.email) {
+        sendVendorEmail({
+          to: ownerUser.email,
+          name: [ownerUser.first_name, ownerUser.last_name].filter(Boolean).join(" "),
+          businessName: updatedVendor.name,
+          kind: "deactivated",
+          reason: updatedVendor.deactivation_reason || "",
+        }).catch((e) => console.error("deactivated email failed:", e));
       }
     }
 

@@ -12,6 +12,7 @@ import API from '../lib/api';
 import { pickFirstNonEmptyString } from './BeneficiaryContext';
 import { extractIsVerifiedFromApiProfile } from '../utils/extractIsVerifiedFromApiProfile';
 import { registerForPushNotificationsAsync, clearPushTokenOnServer } from '../utils/pushNotifications';
+import { syncFavoritesToServer } from '../utils/favoritesSync';
 
 const UserContext = createContext();
 
@@ -33,6 +34,8 @@ const LOGGED_OUT_USER_STATE = {
   profileImage: null,
   profileImageUrl: null,
   coworking: false,
+  inviteType: 'standard',
+  externalBilled: false,
   sponsorAmount: 0,
   extraDonationAmount: 0,
   totalMonthlyDonation: 0,
@@ -89,8 +92,31 @@ async function persistSelectedBeneficiaryToStorage(raw) {
     typeof raw.image?.uri === 'string' ? raw.image.uri : null,
   );
 
+  // Preserve the placeholder flags across a profile sync. GET /auth/profile
+  // selects a fixed column list that does not include them, so `raw` almost
+  // never carries them — falling back to `existing` is what stops this write
+  // from stomping a record that already knows it is pending. When neither
+  // source knows, the key is omitted rather than written as false, so
+  // BeneficiaryContext's backfill can still repair it on the next launch.
+  const rawPending = raw.isPendingVerification ?? raw.is_pending_verification;
+  const rawThrive = raw.isThrive ?? raw.is_thrive;
+  const knownPending =
+    rawPending != null
+      ? !!rawPending
+      : sameId && existing?.isPendingVerification != null
+        ? !!existing.isPendingVerification
+        : undefined;
+  const knownThrive =
+    rawThrive != null
+      ? !!rawThrive
+      : sameId && existing?.isThrive != null
+        ? !!existing.isThrive
+        : undefined;
+
   const normalized = {
     id: raw.id,
+    ...(knownPending !== undefined ? { isPendingVerification: knownPending } : {}),
+    ...(knownThrive !== undefined ? { isThrive: knownThrive } : {}),
     name: raw.name || existing?.name || '',
     category: raw.category ?? existing?.category ?? '',
     description: raw.description ?? existing?.description ?? null,
@@ -138,6 +164,8 @@ export const UserProvider = ({ children }) => {
     profileImage: null,
     profileImageUrl: null,
     coworking: false,
+    inviteType: 'standard',
+    externalBilled: false,
     sponsorAmount: 0,
     extraDonationAmount: 0,
     totalMonthlyDonation: 0,
@@ -229,6 +257,14 @@ export const UserProvider = ({ children }) => {
                   // IMPORTANT: Prioritize backend profile image to ensure it's loaded
                   profileImage: profileData.profileImage || profileData.profileImageUrl || loadedUser.profileImage || null,
                   profileImageUrl: profileData.profileImageUrl || profileData.profileImage || loadedUser.profileImageUrl || null,
+                  // Membership type — 'standard' | 'coworking' | 'team'.
+                  // The discounts gate and the Home donation card read this,
+                  // so it has to survive a cold start, not just the invite
+                  // screen that first set it.
+                  inviteType: profileData.inviteType || loadedUser.inviteType || 'standard',
+                  coworking: profileData.coworking ?? loadedUser.coworking ?? false,
+                  sponsorAmount: profileData.sponsorAmount ?? loadedUser.sponsorAmount ?? 0,
+                  externalBilled: profileData.externalBilled ?? loadedUser.externalBilled ?? false,
                   // Beneficiary from backend (keeps Donation Summary / home in sync with API)
                   ...(backendBeneficiary
                     ? {
@@ -282,6 +318,22 @@ export const UserProvider = ({ children }) => {
         }
         
         setUser(loadedUser);
+
+        // Push registration and favourite sync used to live in
+        // syncWithBackend, which is exported but never called by anything — so
+        // the permission prompt never appeared, no token was ever registered,
+        // and iOS never even created a Notifications entry for the app.
+        // loadUserData is the path that actually runs (login, signup, email
+        // verification, the menu screen), so they belong here.
+        //
+        // Gated on isLoggedIn: registering needs a JWT to POST the token, and
+        // asking a signed-out user for notification permission spends the one
+        // prompt iOS ever gives us on someone with no account yet.
+        if (loadedUser?.isLoggedIn) {
+          registerForPushNotificationsAsync().catch(() => {});
+          syncFavoritesToServer().catch(() => {});
+        }
+
         return loadedUser;
       } else {
         // CRITICAL: Don't overwrite existing user state if storage is empty
@@ -384,6 +436,8 @@ export const UserProvider = ({ children }) => {
         points: pointsToSet,
         monthlyDonation: userData.monthlyDonation ?? existingData.monthlyDonation ?? user.monthlyDonation ?? 15,
         coworking: userData.coworking ?? existingData.coworking ?? user.coworking ?? false,
+        inviteType: userData.inviteType ?? existingData.inviteType ?? user.inviteType ?? 'standard',
+        externalBilled: userData.externalBilled ?? existingData.externalBilled ?? user.externalBilled ?? false,
         sponsorAmount: userData.sponsorAmount ?? existingData.sponsorAmount ?? user.sponsorAmount ?? 0,
         extraDonationAmount: userData.extraDonationAmount ?? existingData.extraDonationAmount ?? user.extraDonationAmount ?? 0,
         totalMonthlyDonation: userData.totalMonthlyDonation ?? existingData.totalMonthlyDonation ?? user.totalMonthlyDonation ?? 0,
@@ -659,6 +713,10 @@ export const UserProvider = ({ children }) => {
           lastName: (profileData.lastName && profileData.lastName.trim()) ? profileData.lastName : localUser.lastName || '',
           email: (profileData.email && profileData.email.trim()) ? profileData.email : localUser.email || '',
           phone: (profileData.phone && profileData.phone.trim()) ? profileData.phone : localUser.phone || '',
+          inviteType: profileData.inviteType || localUser.inviteType || 'standard',
+          coworking: profileData.coworking ?? localUser.coworking ?? false,
+          sponsorAmount: profileData.sponsorAmount ?? localUser.sponsorAmount ?? 0,
+          externalBilled: profileData.externalBilled ?? localUser.externalBilled ?? false,
           profileImage: profileData.profileImage || profileData.profileImageUrl || localUser.profileImage || localUser.profileImageUrl || null,
           profileImageUrl: profileData.profileImageUrl || profileData.profileImage || localUser.profileImageUrl || localUser.profileImage || null,
           ...(backendBeneficiary
@@ -689,7 +747,9 @@ export const UserProvider = ({ children }) => {
 
         // Best-effort: request push permission + register token. Silently
         // no-ops if user declines or runs in a simulator.
-        registerForPushNotificationsAsync().catch(() => {});
+        // Push registration and favourite sync now run from loadUserData,
+        // which is the function the app actually calls. Deliberately not
+        // duplicated here so they cannot double-fire if this is ever wired up.
 
         console.log('✅ User data synced with backend');
         return mergedUser;

@@ -1,4 +1,5 @@
 import { corsHeaders } from "../lib/cors.ts";
+import { getAppAuthHeader, getJwtPayload } from "../lib/jwt-app.ts";
 
 // Data deletion request handler (partial data deletion)
 export async function handleDataDeletionRoute(
@@ -85,6 +86,69 @@ export async function handleDataDeletionRoute(
     try {
       const body = await req.json();
       const { email, deletionType, dataTypes } = body;
+
+      // ── Auth ──────────────────────────────────────────────────────────
+      // This route nulls a user's name, phone, full address and coordinates
+      // and deletes their profile picture, keyed off an email in the body.
+      // Unauthenticated, anyone who knew a donor's address could wipe their
+      // profile — verified reachable with no apikey and no Authorization
+      // header at all.
+      //
+      // It exists for Google Play's data-deletion requirement, so it has to
+      // stay usable by someone who is not signed in. Resolution: a request
+      // from an unauthenticated caller is acknowledged but performs NO
+      // mutation, and is pointed at a route that does work. Only the account
+      // owner (or an admin) can actually trigger the deletion.
+      let authorisedForDeletion = false;
+      if (email) {
+        const adminSecret = req.headers.get("x-admin-secret");
+        const expectedSecret = Deno.env.get("ADMIN_SECRET_KEY");
+        if (expectedSecret && adminSecret === expectedSecret) {
+          authorisedForDeletion = true;
+        } else {
+          const payload: any = await getJwtPayload(getAppAuthHeader(req));
+          const target = String(email).trim().toLowerCase();
+          if (payload) {
+            const claimEmail = String(payload?.email || "").trim().toLowerCase();
+            if (claimEmail && claimEmail === target) {
+              authorisedForDeletion = true;
+            } else {
+              // The JWT may not carry an email — fall back to the id.
+              const callerId = payload?.id ?? payload?.userId;
+              if (callerId != null) {
+                const { data: self } = await supabase
+                  .from("users")
+                  .select("email")
+                  .eq("id", callerId)
+                  .maybeSingle();
+                authorisedForDeletion =
+                  String(self?.email || "").trim().toLowerCase() === target;
+              }
+            }
+          }
+        }
+      }
+
+      if (!authorisedForDeletion) {
+        console.warn(
+          "⚠️ Unauthenticated data-deletion request — acknowledged, nothing mutated",
+        );
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message:
+              "Request received. To complete a data deletion we need to confirm " +
+              "you own this account: sign in to the THRIVE app and submit the " +
+              "request from Settings, or email support@jointhriveinitiative.org " +
+              "and our team will process it for you.",
+            requiresVerification: true,
+          }),
+          {
+            status: 202,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
 
       // Validate required fields
       if (!email) {

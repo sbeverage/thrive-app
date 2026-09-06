@@ -4,6 +4,8 @@ import { Stack, useRouter, usePathname } from 'expo-router';
 import { View, TouchableOpacity, Image, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BeneficiaryProvider } from '../context/BeneficiaryContext';
+import { useUser } from '../context/UserContext';
+import AccountAlertModal from '../../components/AccountAlertModal';
 
 /**
  * Outer stack: `(main)` (Tabs, 3 roots kept alive) + sibling routes like `menu/*`.
@@ -24,6 +26,9 @@ const INACTIVE_ICON_SLOT = 33;
 
 export default function TabsRootLayout() {
   const router = useRouter();
+  // Only ask the server for alerts once we know who the donor is — the
+  // endpoint is authenticated and a signed-out launch has nothing to show.
+  const { user } = useUser();
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const bottomInset = insets.bottom ?? 0;
@@ -129,6 +134,10 @@ export default function TabsRootLayout() {
               </View>
             </View>
           )}
+          {/* Reaches donors that push and email cannot: no token needed, no
+              inbox needed. Renders nothing unless the server says something
+              needs their attention. */}
+          <AccountAlertModal enabled={!!user?.isLoggedIn && !user?.isLoading} />
         </View>
       </BeneficiaryProvider>
     </GestureHandlerRootView>

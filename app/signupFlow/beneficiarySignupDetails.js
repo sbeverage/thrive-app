@@ -77,11 +77,11 @@ export default function BeneficiarySignupDetails() {
             // Helper function to get default image
             function getDefaultImage(category) {
               if (category === 'Childhood Illness') {
-                return require('../../assets/images/child-cancer.jpg');
+                return require('../../assets/images/pending-charity.png');
               } else if (category === 'Animal Welfare') {
-                return require('../../assets/images/humane-society.jpg');
+                return require('../../assets/images/pending-charity.png');
               } else {
-                return require('../../assets/images/charity-water.jpg');
+                return require('../../assets/images/pending-charity.png');
               }
             }
             
@@ -167,7 +167,7 @@ export default function BeneficiarySignupDetails() {
             setBeneficiary({
               id,
               name: 'Unknown Beneficiary',
-              image: require('../../assets/images/child-cancer.jpg'),
+              image: require('../../assets/images/pending-charity.png'),
               likes: 0,
               mutual: 0,
               about: 'Beneficiary information not available.',
@@ -182,7 +182,7 @@ export default function BeneficiarySignupDetails() {
           setBeneficiary({
             id,
             name: 'Unknown Beneficiary',
-            image: require('../../assets/images/child-cancer.jpg'),
+            image: require('../../assets/images/pending-charity.png'),
             likes: 0,
             mutual: 0,
             about: 'Beneficiary information not available.',
@@ -197,7 +197,7 @@ export default function BeneficiarySignupDetails() {
         setBeneficiary({
           id,
           name: 'Unknown Beneficiary',
-          image: require('../../assets/images/child-cancer.jpg'),
+          image: require('../../assets/images/pending-charity.png'),
           likes: 0,
           mutual: 0,
           about: 'Unable to load beneficiary data. Please check your connection and try again.',

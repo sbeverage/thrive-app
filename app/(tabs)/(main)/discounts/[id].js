@@ -15,13 +15,17 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { AntDesign, Feather } from '@expo/vector-icons';
+import { AntDesign, Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useDiscount } from '../../../context/DiscountContext';
 import { useUser } from '../../../context/UserContext';
 import API from '../../../lib/api';
+import { availabilityLabel } from '../../../utils/discountDisplay';
+import { paymentRecoveryRoute } from '../../../utils/paymentRecovery';
 import { useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DiscountsLockOverlay from '../../../../components/DiscountsLockOverlay';
+import useSubscriptionGate from '../../../../hooks/useSubscriptionGate';
 
 const { height } = Dimensions.get('window');
 
@@ -30,6 +34,13 @@ export default function VendorDetails() {
   const { id: vendorId } = useLocalSearchParams();
   const { vendors, discounts, redeemDiscount, isLoading } = useDiscount();
   const { addSavings, user } = useUser();
+
+  // Gated the same way as the discounts tab. The home screen's "Discounts
+  // Near You" carousel links straight here (home.js pushes /discounts/:id),
+  // so locking only the tab left this route wide open.
+  const { isActive: subscriptionActive, status: subscriptionStatus } =
+    useSubscriptionGate({ enabled: !!user?.isLoggedIn, user });
+  const discountsLocked = subscriptionActive === false;
   const redemptionCountsKey = user?.email ? `redemptionCounts:${user.email}` : 'redemptionCounts';
   
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -38,6 +49,45 @@ export default function VendorDetails() {
   const [vendor, setVendor] = useState(null);
   const [vendorDiscounts, setVendorDiscounts] = useState([]);
   const [redemptionCounts, setRedemptionCounts] = useState({}); // { discountId: count }
+  const [isFavorited, setIsFavorited] = useState(false);
+
+  // Hydrate the favorite flag for this vendor from the same AsyncStorage
+  // key the discounts list uses, so the heart stays in sync between the
+  // list and this detail screen. `vendorId` is aliased from the URL param
+  // `id` — see the useLocalSearchParams destructure at the top of the
+  // component (previously mis-referenced as `id` and crashed the screen).
+  useEffect(() => {
+    if (!vendorId) return;
+    AsyncStorage.getItem('@thrive_favorites')
+      .then((stored) => {
+        if (!stored) return;
+        const ids = new Set(JSON.parse(stored));
+        setIsFavorited(ids.has(String(vendorId)));
+      })
+      .catch(() => {});
+  }, [vendorId]);
+
+  const toggleFavorite = async () => {
+    if (!vendorId) return;
+    const nextFav = !isFavorited;
+    setIsFavorited(nextFav);
+    try {
+      const raw = await AsyncStorage.getItem('@thrive_favorites');
+      const ids = new Set(raw ? JSON.parse(raw) : []);
+      if (nextFav) ids.add(String(vendorId));
+      else ids.delete(String(vendorId));
+      await AsyncStorage.setItem('@thrive_favorites', JSON.stringify([...ids]));
+    } catch {
+      // Local write failed — server call below is still authoritative.
+    }
+    // Mirror the *intended* state to the server, not a flip. A toggle could be
+    // undone by favoritesSync replaying local storage on the next launch.
+    try {
+      await API.setVendorFavorite(vendorId, nextFav);
+    } catch {
+      // ignore — logged-out donors keep local state only
+    }
+  };
 
   // Load vendor and discounts
   useEffect(() => {
@@ -142,22 +192,55 @@ export default function VendorDetails() {
 
   const handleRedeem = async () => {
     if (!selectedDiscount) return;
-    
+
     try {
       setIsRedeeming(true);
       setShowConfirmModal(false);
-      
+
       // Redeem the discount - handle API errors gracefully
       let result;
       try {
         result = await redeemDiscount(selectedDiscount.id);
       } catch (redeemError) {
-        // If API fails, still allow redemption with local data
+        // Backend gates redemption on an active monthly subscription. A 402
+        // + code:'subscription_required' means the donor's sub is paused,
+        // cancelled, or never completed — surface a prompt to reactivate
+        // rather than silently letting the redemption go through offline.
+        if (redeemError?.code === 'subscription_required' || redeemError?.status === 402) {
+          setIsRedeeming(false);
+          const isCancelled =
+            redeemError?.subscriptionStatus === 'canceled'
+            || redeemError?.subscriptionStatus === 'cancelled';
+          const msg = redeemError?.message
+            || (isCancelled
+              ? 'Your monthly donation is cancelled. Reactivate to keep redeeming discounts.'
+              : 'You need an active monthly donation to redeem discounts.');
+          Alert.alert(
+            'Reactivate to redeem',
+            msg,
+            [
+              { text: 'Not now', style: 'cancel' },
+              {
+                text: 'Reactivate',
+                onPress: () => {
+                  // Route to the subscription flow — the same signup path new
+                  // donors go through creates a fresh Stripe subscription for
+                  // cancelled / expired accounts.
+                  router.push('/signupFlow/stripeIntegration');
+                },
+              },
+            ],
+          );
+          return;
+        }
+        // Non-402 errors — network hiccup, server error — keep the older
+        // "still let them see the code" fallback so a working donor isn't
+        // blocked by a transient blip.
         console.warn('⚠️ API redemption failed, using local data:', redeemError);
         result = {
           discountCode: selectedDiscount.discountCode || 'N/A',
           success: true,
-          message: 'Discount redeemed successfully (offline mode)'
+          message: 'Discount redeemed successfully (offline mode)',
         };
       }
       
@@ -324,6 +407,8 @@ export default function VendorDetails() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
+        // Inert behind the lock so a tap can't reach Redeem underneath it.
+        pointerEvents={discountsLocked ? 'none' : 'auto'}
         style={styles.scroll}
         contentContainerStyle={{ paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}
@@ -339,6 +424,17 @@ export default function VendorDetails() {
             <Image
               source={require('../../../../assets/icons/arrow-left.png')}
               style={{ width: 20, height: 20, tintColor: '#fff' }}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.favoriteButton}
+            onPress={toggleFavorite}
+            hitSlop={{ top: 12, right: 12, bottom: 12, left: 12 }}
+          >
+            <Ionicons
+              name={isFavorited ? 'heart' : 'heart-outline'}
+              size={22}
+              color={isFavorited ? '#FF6B7A' : '#fff'}
             />
           </TouchableOpacity>
           <View style={styles.headerLogoWrap}>
@@ -381,17 +477,6 @@ export default function VendorDetails() {
                 };
                 return isReached(a) - isReached(b);
               }).map(discount => {
-                const formatDiscountAmount = () => {
-                  if (!discount.discountType) return null;
-                  if (discount.discountType === 'free') return 'Free Item';
-                  if (discount.discountType === 'bogo') return 'Buy one, get one';
-                  if (!discount.discountValue) return null;
-                  const value = discount.discountValue;
-                  if (discount.discountType === 'percentage') return `${value}% off`;
-                  if (discount.discountType === 'fixed') return `$${value} off`;
-                  return null;
-                };
-
                 let rawUsageLimit = discount.usageLimit || discount.usage_limit || null;
                 let usageLimit = null;
                 if (rawUsageLimit !== null && rawUsageLimit !== undefined && rawUsageLimit !== '') {
@@ -426,7 +511,7 @@ export default function VendorDetails() {
                   usageText = 'Unlimited uses';
                 }
 
-                const discountAmount = formatDiscountAmount();
+                const availability = availabilityLabel(discount.availability);
 
                 return (
                   <View key={discount.id} style={[styles.discountCard, isLimitReached && styles.discountCardDisabled]}>
@@ -437,27 +522,30 @@ export default function VendorDetails() {
                       end={{ x: 1, y: 0 }}
                       style={styles.discountBand}
                     >
-                      {discountAmount ? (
-                        <Text style={styles.bandAmount}>{discountAmount}</Text>
-                      ) : (
-                        <Text style={styles.bandTitle} numberOfLines={1}>{discount.title}</Text>
-                      )}
-                      {isLimitReached && (
-                        <View style={styles.limitBadge}>
-                          <Text style={styles.limitBadgeText}>Limit Reached</Text>
+                      {/* One line, truncated with an ellipsis. TITLE_MAX keeps
+                          titles short enough that this rarely fires, but a
+                          wide 45-character title can still overrun the band —
+                          and legacy rows predate the cap. Deliberately not
+                          adjustsFontSizeToFit: shrinking to fit is what made
+                          these unreadable in the first place. */}
+                      <Text
+                        style={styles.bandTitle}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
+                        {discount.title}
+                      </Text>
+                      {availability && (
+                        <View style={styles.availabilityPill}>
+                          <Text style={styles.availabilityPillText}>{availability}</Text>
                         </View>
                       )}
                     </LinearGradient>
 
                     {/* Card body */}
                     <View style={styles.discountBody}>
-                      {discountAmount && (
-                        <Text style={[styles.discountTitle, isLimitReached && styles.discountTextDisabled]}>
-                          {discount.title}
-                        </Text>
-                      )}
                       {discount.description && discount.description !== discount.terms && (
-                        <Text style={[styles.discountAppliesTo, isLimitReached && styles.discountTextDisabled]} numberOfLines={2}>
+                        <Text style={[styles.discountAppliesTo, isLimitReached && styles.discountTextDisabled]} numberOfLines={3}>
                           {discount.description}
                         </Text>
                       )}
@@ -664,6 +752,19 @@ export default function VendorDetails() {
         </View>
       </ScrollView>
 
+      {/* Declared AFTER the ScrollView on purpose. React Native paints later
+          siblings on top regardless of absolute positioning, and this overlay
+          has no zIndex — placed before the content it rendered *behind* the
+          opaque page, so a locked donor saw a normal vendor screen where
+          nothing responded. discounts/index.js already ordered it this way. */}
+      {discountsLocked && (
+        <DiscountsLockOverlay
+          status={subscriptionStatus}
+          onChooseAmount={() => router.push(paymentRecoveryRoute(user))}
+          onUpdatePayment={() => router.push(paymentRecoveryRoute(user))}
+        />
+      )}
+
       {/* Confirmation Modal */}
       <Modal visible={showConfirmModal} transparent animationType="fade">
         <View style={styles.modalBackground}>
@@ -779,6 +880,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     borderRadius: 12,
   },
+  favoriteButton: {
+    position: 'absolute',
+    top: 16,
+    right: 20,
+    padding: 10,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 12,
+  },
   headerLogoWrap: {
     width: 110,
     height: 110,
@@ -878,41 +987,34 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 18,
   },
-  // Coupon band typography — kept identical for both branches (amount vs
-  // fallback title) so the banner reads consistently whether the discount
-  // has a computed value like "10% off" or falls back to its title.
-  bandAmount: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#fff',
-    letterSpacing: 0.5,
-  },
+  // The band carries the offer itself. 18pt rather than 20 buys roughly five
+  // more characters at the same legibility, and TITLE_MAX is enforced when the
+  // discount is written so this never has to shrink to fit.
   bandTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     color: '#fff',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
     flex: 1,
+    marginRight: 10,
   },
-  limitBadge: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
+  // Where the offer can be redeemed — in-store, online, or both. Sits opposite
+  // the title so a donor can tell at a glance whether a trip is involved.
+  availabilityPill: {
+    backgroundColor: 'rgba(255,255,255,0.22)',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 20,
+    flexShrink: 0,
   },
-  limitBadgeText: {
+  availabilityPillText: {
     fontSize: 11,
     fontWeight: '700',
     color: '#fff',
+    letterSpacing: 0.2,
   },
   discountBody: {
     padding: 16,
-  },
-  discountTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#324E58',
-    marginBottom: 6,
   },
   discountAppliesTo: {
     fontSize: 13,

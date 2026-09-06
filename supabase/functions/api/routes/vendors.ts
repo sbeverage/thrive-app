@@ -54,14 +54,41 @@ export async function handleVendorRoute(
   route: string,
   method: string,
 ) {
-  // GET /vendors (public — approved-only)
+  // GET /vendors (public — approved AND not deactivated)
+  //
+  // Deactivating a vendor stamps `deactivated_at` but leaves signup_status
+  // alone (so it can be restored on reactivation without re-approval).
+  // Excluding deactivated_at IS NOT NULL rows here makes the mobile app
+  // treat those vendors as removed until they request reactivation.
   if (method === "GET" && route === "/vendors") {
     try {
-      const { data: vendors, error } = await supabase
+      // `let` because the fallback below may reassign both.
+      let { data: vendors, error } = await supabase
         .from("vendors")
         .select("*")
         .eq("signup_status", "approved")
+        .is("deactivated_at", null)
         .order("name", { ascending: true });
+
+      // deactivated_at comes from a migration this project applies by hand, so
+      // a deploy that lands ahead of the migration would 500 the whole donor
+      // Discounts tab rather than degrade. Retry without the filter in that one
+      // case: showing a deactivated vendor is far better than showing none.
+      if (error && /deactivated_at/i.test(error.message || "")) {
+        console.warn(
+          "⚠️ vendors.deactivated_at missing — apply migration 20260728000000. " +
+            "Serving without the deactivation filter.",
+        );
+        const retry = await supabase
+          .from("vendors")
+          .select("*")
+          .eq("signup_status", "approved")
+          .order("name", { ascending: true });
+        if (!retry.error) {
+          vendors = retry.data;
+          error = null;
+        }
+      }
 
       if (error) {
         console.error("Error fetching vendors:", error);
@@ -100,7 +127,52 @@ export async function handleVendorRoute(
     }
   }
 
+  // PUT /vendors/:id/favorite — favourite it. DELETE — unfavourite it.
+  //
+  // Explicit state rather than a flip. The app keeps optimistic local state and
+  // the old POST route flipped whatever the server happened to hold, so the two
+  // could silently disagree: on 2026-09-04 favoritesSync inserted a row from
+  // local storage and the donor's own tap immediately deleted it again, leaving
+  // the app showing a favourite the server did not have — and the
+  // favourite-vendor push with nobody to notify.
+  //
+  // Idempotent: favouriting twice leaves it favourited, and a replayed sync can
+  // never cancel a tap. POST is kept below, unchanged, because builds 66 and
+  // earlier use it for both directions.
+  const favSetMatch = route.match(/^\/vendors\/(\d+)\/favorite$/);
+  if ((method === "PUT" || method === "DELETE") && favSetMatch) {
+    const vendorId = parseInt(favSetMatch[1], 10);
+    const userId = await getUserIdFromJwt(req);
+    if (!userId) return json({ error: "Authentication required" }, 401);
+
+    if (method === "DELETE") {
+      const { error } = await supabase
+        .from("vendor_favorites")
+        .delete()
+        .eq("vendor_id", vendorId)
+        .eq("user_id", userId);
+      if (error) {
+        console.error("favorite delete error:", error);
+        return json({ error: "Could not remove favorite" }, 500);
+      }
+      return json({ favorited: false });
+    }
+
+    // Insert-if-absent. The unique constraint on (vendor_id, user_id) makes a
+    // duplicate harmless, so a conflict is treated as already-favourited
+    // rather than an error.
+    const { error } = await supabase
+      .from("vendor_favorites")
+      .insert({ vendor_id: vendorId, user_id: userId });
+    if (error && error.code !== "23505") {
+      console.error("favorite insert error:", error);
+      return json({ error: "Could not save favorite" }, 500);
+    }
+    return json({ favorited: true });
+  }
+
   // POST /vendors/:id/favorite — toggle favorite. Requires auth.
+  // Retained for builds 66 and earlier, which send POST for both directions.
   const favMatch = route.match(/^\/vendors\/(\d+)\/favorite$/);
   if (method === "POST" && favMatch) {
     const vendorId = parseInt(favMatch[1], 10);
@@ -139,22 +211,44 @@ export async function handleVendorRoute(
     if (error) return json({ error: error.message }, 500);
     const vendors = (data || [])
       .map((row: any) => row.vendor)
-      .filter((v: any) => v && v.signup_status === "approved")
+      .filter(
+        (v: any) =>
+          v && v.signup_status === "approved" && !v.deactivated_at,
+      )
       .map(formatVendor);
     return json({ vendors });
   }
 
-  // GET /vendors/:id (public — approved-only)
+  // GET /vendors/:id (public — approved AND not deactivated)
   const vendorIdMatch = route.match(/^\/vendors\/(\d+)$/);
   if (method === "GET" && vendorIdMatch) {
     try {
       const vendorId = vendorIdMatch[1];
-      const { data: vendor, error } = await supabase
+      let { data: vendor, error } = await supabase
         .from("vendors")
         .select("*")
         .eq("id", vendorId)
         .eq("signup_status", "approved")
+        .is("deactivated_at", null)
         .single();
+
+      // Same guard as the list route: don't 500 the vendor detail screen just
+      // because a deploy landed ahead of migration 20260728000000.
+      if (error && /deactivated_at/i.test(error.message || "")) {
+        console.warn(
+          "⚠️ vendors.deactivated_at missing on detail route — apply migration 20260728000000.",
+        );
+        const retry = await supabase
+          .from("vendors")
+          .select("*")
+          .eq("id", vendorId)
+          .eq("signup_status", "approved")
+          .single();
+        if (!retry.error) {
+          vendor = retry.data;
+          error = null;
+        }
+      }
 
       if (error) {
         if (error.code === "PGRST116") return json({ error: "Vendor not found" }, 404);
