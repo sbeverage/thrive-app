@@ -1,99 +1,50 @@
 // file: app/index.js
-import React, { useState, useRef } from 'react';
+//
+// The landing screen. One screen, no swiping.
+//
+// This used to be a three slide horizontal carousel: GIVE, then SHOP, then
+// SAVE, one word and one sentence per slide, each behind a swipe. But THRIVE
+// only makes sense as all three at once, and a carousel is the one layout that
+// guarantees nobody sees the whole thing. Someone who tapped Sign Up without
+// swiping had read exactly one sentence, "Donate monthly to any charity you
+// love", which describes a plain donation app and leaves the discounts to
+// arrive later as a surprise. That is most of the confusion new users report.
+//
+// Now the exchange is stated once, in full, above the fold, and the animation
+// shows the loop without asking anyone to tap or wait. It also drops three
+// looping video downloads from first launch.
+import React, { useEffect } from 'react';
 import {
   SafeAreaView,
+  ScrollView,
   View,
   Text,
   Image,
   StyleSheet,
   TouchableOpacity,
-  FlatList,
-  Dimensions,
-  Animated,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { resumeSignupFlowPendingIfAny } from './utils/signupFlowResume';
 import { StatusBar } from 'expo-status-bar';
-import { Video, ResizeMode } from 'expo-av';
-import { VIDEO_ASSETS } from './utils/assetConstants';
+import ThriveLoop from './components/ThriveLoop';
 
-const { width } = Dimensions.get('window');
+const SUPABASE_STORAGE_BASE =
+  'https://mdqgndyhzlnwojtubouh.supabase.co/storage/v1/object/public/app-assets';
 
-// Supabase Storage Base URL
-const SUPABASE_STORAGE_BASE = 'https://mdqgndyhzlnwojtubouh.supabase.co/storage/v1/object/public/app-assets';
-
-const slides = [
-  {
-    key: '1',
-    title: 'GIVE',
-    description: 'Donate monthly to any charity you love.',
-    image: { uri: `${SUPABASE_STORAGE_BASE}/assets/images/slider-image-3.png` },
-    video: { uri: VIDEO_ASSETS.GIVE_LOOP }, // Using Supabase URL
-  },
-  {
-    key: '2',
-    title: 'SHOP',
-    description: 'Unlock exclusive deals from local and online partners.',
-    image: { uri: `${SUPABASE_STORAGE_BASE}/assets/images/slider-image-1.png` },
-    video: { uri: VIDEO_ASSETS.SHOP_LOOP }, // Using Supabase URL
-  },
-  {
-    key: '3',
-    title: 'SAVE',
-    description: 'Redeem discounts that can save you more than you give.',
-    image: { uri: `${SUPABASE_STORAGE_BASE}/assets/images/slider-image-2.png` },
-    video: { uri: VIDEO_ASSETS.SAVE_LOOP }, // Using Supabase URL
-  },
-];
+// Kept together and named so the wording is a one line change. Both rules from
+// CLAUDE.md apply here: no long dashes, and warm rather than institutional.
+// "Give" leads and "Get" follows on purpose. Lead with the discount and this
+// reads like a coupon app that happens to donate, which is backwards.
+const HEADLINE_LINE_1 = 'Give to a cause you love.';
+const HEADLINE_LINE_2 = 'Get discounts where you already shop.';
+const SUBLINE = '$15/month or more, 100% goes to your cause.';
 
 export default function Index() {
   const router = useRouter();
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const flatListRef = useRef(null);
-  const videoRefs = useRef([]);
-  const [videoLoading, setVideoLoading] = useState({});
 
-  const handleScroll = (event) => {
-    const index = Math.round(event.nativeEvent.contentOffset.x / width);
-    setCurrentIndex(index);
-  };
-
-  const onVideoLoad = (index) => {
-    // Video loaded successfully
-    console.log(`Video ${index + 1} loaded`);
-    setVideoLoading(prev => ({ ...prev, [index]: false }));
-  };
-
-  const onVideoError = (index, error) => {
-    // Fallback to static image if video fails to load
-    console.log(`Video ${index + 1} error:`, error);
-    setVideoLoading(prev => ({ ...prev, [index]: false }));
-  };
-
-  // Set initial loading state for videos and add timeout fallback
-  React.useEffect(() => {
-    const initialLoading = {};
-    slides.forEach((_, index) => {
-      initialLoading[index] = true;
-    });
-    setVideoLoading(initialLoading);
-
-    // Add timeout fallback to hide loading after 3 seconds
-    const timeoutIds = slides.map((_, index) => 
-      setTimeout(() => {
-        setVideoLoading(prev => ({ ...prev, [index]: false }));
-      }, 3000)
-    );
-
-    // Cleanup timeouts
-    return () => {
-      timeoutIds.forEach(id => clearTimeout(id));
-    };
-  }, []);
-  
-  // Auto-redirect if already logged in
-  React.useEffect(() => {
+  // Already signed in, or part way through signup: skip the pitch.
+  useEffect(() => {
     const checkUserStatus = async () => {
       try {
         const token = await AsyncStorage.getItem('authToken');
@@ -114,103 +65,60 @@ export default function Index() {
     checkUserStatus();
   }, []);
 
-
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" backgroundColor="#ffffff" />
 
-      {/* Decorative Half Circles */}
-      <Image source={{ uri: `${SUPABASE_STORAGE_BASE}/assets/images/half-circle-left.png` }} style={styles.leftCircle} />
-      <Image source={{ uri: `${SUPABASE_STORAGE_BASE}/assets/images/half-circle-right.png` }} style={styles.rightCircle} />
-
-      <Text style={styles.welcomeText}>Welcome to</Text>
+      {/* Decorative half circles */}
       <Image
-        source={{ uri: `${SUPABASE_STORAGE_BASE}/assets/logos/initiative-logo-no-web.png` }}
-        style={styles.headerLogo}
-        resizeMode="contain"
+        source={{ uri: `${SUPABASE_STORAGE_BASE}/assets/images/half-circle-left.png` }}
+        style={styles.leftCircle}
       />
-      <Text style={styles.nonprofitText}>501 (c)(3) non profit organization</Text>
-
-      <FlatList
-        ref={flatListRef}
-        data={slides}
-        keyExtractor={(item) => item.key}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onScroll={handleScroll}
-        renderItem={({ item, index }) => (
-          <View style={styles.slide}>
-            <View style={styles.circleWrapper}>
-              {item.video ? (
-                <View style={styles.videoContainer}>
-                  <Video
-                    ref={(ref) => (videoRefs.current[index] = ref)}
-                    source={item.video}
-                    style={styles.circleVideo}
-                    resizeMode={ResizeMode.COVER}
-                    shouldPlay={true}
-                    isLooping={true}
-                    isMuted={true}
-                    onLoad={() => onVideoLoad(index)}
-                    onError={(error) => onVideoError(index, error)}
-                    onPlaybackStatusUpdate={(status) => {
-                      if (status.isLoaded && status.isPlaying) {
-                        // Video is loaded and playing, hide loading
-                        setVideoLoading(prev => ({ ...prev, [index]: false }));
-                      }
-                    }}
-                    useNativeControls={false}
-                  />
-                  {videoLoading[index] && (
-                    <View style={styles.videoLoadingOverlay}>
-                      <Text style={styles.videoLoadingText}>Loading...</Text>
-                    </View>
-                  )}
-                </View>
-              ) : (
-                // Fallback to static image if video is not available
-                <Image 
-                  source={item.image} 
-                  style={styles.circleVideo} 
-                  resizeMode="contain"
-                />
-              )}
-            </View>
-            <Text style={styles.slideTitle}>{item.title}</Text>
-            <Text style={styles.slideDescription}>{item.description}</Text>
-          </View>
-        )}
+      <Image
+        source={{ uri: `${SUPABASE_STORAGE_BASE}/assets/images/half-circle-right.png` }}
+        style={styles.rightCircle}
       />
 
-      <View style={styles.dotsContainer}>
-        {slides.map((_, index) => (
-          <View
-            key={index}
-            style={[
-              styles.dot,
-              currentIndex === index && styles.activeDot,
-            ]}
-          />
-        ))}
-      </View>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        <Text style={styles.welcomeText}>Welcome to</Text>
+        <Image
+          source={{ uri: `${SUPABASE_STORAGE_BASE}/assets/logos/initiative-logo-no-web.png` }}
+          style={styles.headerLogo}
+          resizeMode="contain"
+        />
+        <Text style={styles.nonprofitText}>501 (c)(3) non profit organization</Text>
 
-      <View style={styles.buttonsWrapper}>
-        <TouchableOpacity
-          style={styles.primaryButton}
-          onPress={() => router.push('/signup')}
-        >
-          <Text style={styles.primaryText}>Sign Up</Text>
-        </TouchableOpacity>
+        {/* The whole exchange, before anything asks for a tap. */}
+        <View style={styles.pitch}>
+          <Text style={styles.headline}>{HEADLINE_LINE_1}</Text>
+          <Text style={styles.headline}>{HEADLINE_LINE_2}</Text>
+          <Text style={styles.subline}>{SUBLINE}</Text>
+        </View>
 
-        <TouchableOpacity
-          style={styles.outlineButton}
-          onPress={() => router.push('/login')}
-        >
-          <Text style={styles.outlineText}>Login</Text>
-        </TouchableOpacity>
-      </View>
+        <ThriveLoop style={styles.loop} />
+
+        <View style={styles.buttonsWrapper}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => router.push('/signup')}
+            accessibilityRole="button"
+          >
+            <Text style={styles.primaryText}>Sign Up</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.outlineButton}
+            onPress={() => router.push('/login')}
+            accessibilityRole="button"
+          >
+            <Text style={styles.outlineText}>Login</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -219,106 +127,56 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  scrollContent: {
     alignItems: 'center',
-    paddingTop: 60,
+    paddingTop: 24,
+    paddingBottom: 32,
+    paddingHorizontal: 24,
   },
   welcomeText: {
     fontSize: 22,
     color: '#6d6e72',
     marginBottom: 5,
-    marginTop: 60,
+    marginTop: 24,
   },
   headerLogo: {
     width: 310,
+    maxWidth: '100%',
     height: 30,
     marginBottom: 8,
   },
   nonprofitText: {
     fontSize: 12,
     color: '#6d6e72',
-    marginBottom: 60,
+    marginBottom: 28,
     fontWeight: '400',
   },
-  slide: {
-    width: width,
+  pitch: {
     alignItems: 'center',
-    paddingHorizontal: 30,
-  },
-  circleWrapper: {
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: '#DADADA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    marginBottom: 30,
-    overflow: 'hidden', // Ensure video stays within circle bounds
-  },
-      circleVideo: {
-      width: 300,
-      height: 300,
-      borderRadius: 150,
-    },
-    videoContainer: {
-      position: 'relative',
-      width: 300,
-      height: 300,
-      borderRadius: 150,
-    },
-    videoLoadingOverlay: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-      justifyContent: 'center',
-      alignItems: 'center',
-      borderRadius: 150,
-    },
-    videoLoadingText: {
-      color: '#fff',
-      fontSize: 16,
-      fontWeight: '600',
-    },
-    circleImage: {
-      width: 400,
-      height: 400,
-    },
-  slideTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#2F4E58',
     marginBottom: 8,
   },
-  slideDescription: {
-    fontSize: 16,
+  headline: {
+    fontSize: 23,
+    lineHeight: 30,
+    fontWeight: '700',
     color: '#2F4E58',
     textAlign: 'center',
-    paddingHorizontal: 20,
   },
-  dotsContainer: {
-    flexDirection: 'row',
-    marginTop: 20,
+  subline: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#6d6e72',
+    textAlign: 'center',
+    marginTop: 10,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#e0e0e0',
-    marginHorizontal: 5,
-  },
-  activeDot: {
-    backgroundColor: '#2F4E58',
+  loop: {
+    marginTop: 4,
+    marginBottom: 8,
   },
   buttonsWrapper: {
     flexDirection: 'row',
-    marginTop: 30,
-    marginBottom: 40,
+    marginTop: 12,
     justifyContent: 'center',
     gap: 16,
   },
@@ -326,7 +184,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#db8633',
     borderRadius: 12,
     height: 48,
-    paddingHorizontal: 50,
+    paddingHorizontal: 42,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -344,7 +202,7 @@ const styles = StyleSheet.create({
     borderColor: '#db8633',
     borderRadius: 12,
     height: 48,
-    paddingHorizontal: 50,
+    paddingHorizontal: 42,
     justifyContent: 'center',
     alignItems: 'center',
   },
