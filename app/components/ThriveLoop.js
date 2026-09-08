@@ -1,51 +1,112 @@
 /**
- * The THRIVE Loop: an explainer that plays by itself.
+ * The THRIVE Loop: the three step explainer, told with THRIVE's own artwork.
  *
- * A coin drops into the piggy, a heart goes out to the cause, and a discount
- * comes back from a local shop. Three beats on a nine second loop.
+ * The first version of this file drew the piggy, the heart and the coin by
+ * hand in SVG paths. It was close but off brand, which is fair: an
+ * approximation of a brand illustration is not the brand illustration. This
+ * version composites the real assets instead and draws nothing.
  *
- * Why this and not a video. The explainer screen used to lead with a Watch
- * Video button, which asks for a tap and a download before anyone learns
- * anything, and the people dropping out of signup are exactly the ones who
- * will not do that. This starts the moment the screen mounts, weighs nothing,
- * and works with no signal.
+ * Three scenes, three seconds each, cross-fading on a nine second loop:
  *
- * The step labels are rendered by the parent and stay on screen the whole
- * time. That is deliberate: the old landing carousel meant most people only
- * ever read step one, so the model was being explained a third at a time.
+ *   1. piggy-with-coin      the gift going in
+ *   2. piggy-app-icon       flowers growing out of it, the gift becoming
+ *                           something, which is a better picture of "100% goes
+ *                           to your cause" than a heart was
+ *   3. piggy-confetti       the thank you coming back
  *
- * Layout is driven off the measured container width so every offset scales
- * with the device. One SVG unit is width/520 pixels on both axes, because the
- * container holds the viewBox aspect ratio.
+ * Cross-fading whole scenes rather than moving parts around also sidesteps a
+ * real problem with the asset set: the illustrations do not all face the same
+ * way, so a single character animated across all three beats would flip
+ * direction halfway through.
+ *
+ * Why not a video. The explainer screen used to lead with a Watch Video
+ * button, which asks for a tap and a download before anyone learns anything,
+ * and the people dropping out of signup are exactly the ones who will not do
+ * that. This starts on mount and needs no network.
+ *
+ * showSteps controls the labels. The landing screen leaves them off because
+ * its headline already states the whole exchange in words and repeating it
+ * three more times underneath is just noise. The explainer screen turns them
+ * on, where all three stay readable at once. That last part matters: the old
+ * landing carousel meant most people only ever read step one.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
+  Text,
   Animated,
   Easing,
   StyleSheet,
   AccessibilityInfo,
   Platform,
 } from 'react-native';
-import Svg, { Circle, Ellipse, Path, Rect, Text as SvgText, G } from 'react-native-svg';
 
-const VB_W = 520;
-const VB_H = 340;
 const LOOP_MS = 9000;
+const FADE = 0.038; // fraction of the loop spent cross-fading
 
-const NAVY = '#2C3E50';
-const TEAL = '#4CA1AF';
-const ORANGE = '#DB8633';
-const MINT = '#9BD3A8';
-const COIN = '#F2C14E';
-const LABEL = '#4C636C';
+const SCENES = [
+  {
+    key: 'give',
+    source: require('../../assets/images/piggy-with-coin.png'),
+    step: 'STEP 1',
+    headline: 'Give $15 a month or more',
+    sub: 'You pick the amount.',
+    // Nudges the piggy to a similar apparent size across scenes, since the
+    // three illustrations crop differently.
+    fit: 1,
+  },
+  {
+    key: 'cause',
+    source: require('../../assets/images/piggy-app-icon.png'),
+    step: 'STEP 2',
+    headline: '100% goes to your cause',
+    sub: 'Our costs ride on top, never out of your gift.',
+    fit: 1.12,
+  },
+  {
+    key: 'thanks',
+    source: require('../../assets/images/piggy-confetti.png'),
+    step: 'STEP 3',
+    headline: 'Shops and restaurants thank you',
+    sub: 'Discounts you can redeem, right in the app.',
+    fit: 1.02,
+  },
+];
 
-/** SVG units to pixels, given the measured width. */
-const u = (n, width) => (n * width) / VB_W;
+const THIRD = 1 / SCENES.length;
 
-export default function ThriveLoop({ style }) {
-  const [width, setWidth] = useState(0);
+/** Opacity ramp for the scene that owns [start, start + 1/3) of the loop. */
+function sceneOpacity(clock, index) {
+  const start = index * THIRD;
+  const end = start + THIRD;
+
+  // The first scene also has to fade back in as the last one fades out, so it
+  // is visible at both ends of the loop.
+  if (index === 0) {
+    return clock.interpolate({
+      inputRange: [0, end - FADE, end, 1 - FADE, 1],
+      outputRange: [1, 1, 0, 0, 1],
+    });
+  }
+  return clock.interpolate({
+    inputRange: [0, start - FADE, start, end - FADE, end, 1],
+    outputRange: [0, 0, 1, 1, 0, 0],
+  });
+}
+
+/** A slow drift across the scene's own window, so it never sits dead still. */
+function sceneScale(clock, index, fit) {
+  const start = index * THIRD;
+  const end = start + THIRD;
+  return clock.interpolate({
+    inputRange: [0, Math.max(0, start - FADE), end, 1],
+    outputRange: [fit * 0.975, fit * 0.975, fit * 1.025, fit * 1.025],
+  });
+}
+
+export default function ThriveLoop({ style, showSteps = false }) {
   const [reduceMotion, setReduceMotion] = useState(false);
+  const [active, setActive] = useState(0);
   const clock = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -57,9 +118,8 @@ export default function ThriveLoop({ style }) {
       .catch(() => {
         /* if we cannot tell, animate */
       });
-    const sub = AccessibilityInfo.addEventListener?.(
-      'reduceMotionChanged',
-      (on) => setReduceMotion(!!on),
+    const sub = AccessibilityInfo.addEventListener?.('reduceMotionChanged', (on) =>
+      setReduceMotion(!!on),
     );
     return () => {
       cancelled = true;
@@ -68,239 +128,123 @@ export default function ThriveLoop({ style }) {
   }, []);
 
   useEffect(() => {
-    if (reduceMotion || width === 0) return undefined;
+    if (reduceMotion) return undefined;
     clock.setValue(0);
     const anim = Animated.loop(
       Animated.timing(clock, {
         toValue: 1,
         duration: LOOP_MS,
         easing: Easing.linear,
-        // The animated pieces are plain Views over the artwork, so transform
-        // and opacity can run on the native thread.
         useNativeDriver: Platform.OS !== 'web',
       }),
     );
     anim.start();
     return () => anim.stop();
-  }, [clock, reduceMotion, width]);
+  }, [clock, reduceMotion]);
 
-  const scene = (
-    <Svg width="100%" height="100%" viewBox={`0 0 ${VB_W} ${VB_H}`}>
-      {/* ground */}
-      <Ellipse cx={262} cy={292} rx={96} ry={13} fill={TEAL} opacity={0.13} />
-
-      {/* your cause, top left. Where the gift goes. */}
-      <Circle cx={105} cy={98} r={40} fill={MINT} opacity={0.22} />
-      <Circle cx={105} cy={98} r={40} fill="none" stroke={TEAL} strokeWidth={4} />
-      <Path
-        d="M105 82 c-7 -10 -23 -8 -23 5 c0 10 13 18 23 26 c10 -8 23 -16 23 -26 c0 -13 -16 -15 -23 -5 z"
-        fill={MINT}
-        stroke={NAVY}
-        strokeWidth={3.5}
-        strokeLinejoin="round"
-      />
-      <SvgText x={105} y={158} textAnchor="middle" fontSize={14} fontWeight="700" fill={LABEL}>
-        your cause
-      </SvgText>
-
-      {/* local shops, bottom left. Where the discount comes back from. */}
-      <Path d="M62 206 l14 -20 h58 l14 20 z" fill={ORANGE} opacity={0.55} />
-      <Rect x={70} y={206} width={70} height={46} rx={6} fill={ORANGE} opacity={0.2} />
-      <Rect x={70} y={206} width={70} height={46} rx={6} fill="none" stroke={ORANGE} strokeWidth={4} />
-      <Rect x={95} y={226} width={20} height={26} rx={3} fill={ORANGE} opacity={0.5} />
-      <SvgText x={105} y={276} textAnchor="middle" fontSize={13} fontWeight="700" fill={LABEL}>
-        local shops
-      </SvgText>
-
-      {/* the piggy */}
-      <G>
-        <Path
-          d="M260 92 c-9 -13 -30 -11 -30 6 c0 13 17 24 30 34 c13 -10 30 -21 30 -34 c0 -17 -21 -19 -30 -6 z"
-          fill={MINT}
-          stroke={NAVY}
-          strokeWidth={4}
-          strokeLinejoin="round"
-        />
-        <Rect x={212} y={246} width={22} height={34} rx={8} fill={ORANGE} stroke={NAVY} strokeWidth={4} />
-        <Rect x={290} y={246} width={22} height={34} rx={8} fill={ORANGE} stroke={NAVY} strokeWidth={4} />
-        <Ellipse cx={262} cy={204} rx={86} ry={62} fill={ORANGE} stroke={NAVY} strokeWidth={5} />
-        <Path
-          d="M226 152 q-6 -26 18 -30 q6 14 4 30 z"
-          fill={ORANGE}
-          stroke={NAVY}
-          strokeWidth={4}
-          strokeLinejoin="round"
-        />
-        <Ellipse cx={188} cy={212} rx={24} ry={19} fill={ORANGE} stroke={NAVY} strokeWidth={4} />
-        <Circle cx={182} cy={212} r={3.4} fill={NAVY} />
-        <Circle cx={194} cy={212} r={3.4} fill={NAVY} />
-        <Path d="M214 186 q9 -9 18 0" fill="none" stroke={NAVY} strokeWidth={4.5} strokeLinecap="round" />
-        <Path d="M346 194 q18 -8 12 -24" fill="none" stroke={NAVY} strokeWidth={4.5} strokeLinecap="round" />
-        <Rect x={240} y={150} width={46} height={8} rx={4} fill={NAVY} />
-      </G>
-    </Svg>
-  );
-
-  // Interpolations are only meaningful once we know how wide we are.
-  const hasSize = width > 0;
-
-  const coinStyle = hasSize && {
-    opacity: clock.interpolate({
-      inputRange: [0, 0.02, 0.24, 0.28, 1],
-      outputRange: [0, 1, 1, 0, 0],
-    }),
-    transform: [
-      {
-        translateY: clock.interpolate({
-          inputRange: [0, 0.24, 1],
-          outputRange: [-u(74, width), u(8, width), u(8, width)],
-        }),
-      },
-    ],
-  };
-
-  // Piggy heart sits at about (212, 210); the cause badge at (105, 98).
-  const heartStyle = hasSize && {
-    opacity: clock.interpolate({
-      inputRange: [0, 0.335, 0.37, 0.62, 0.66, 1],
-      outputRange: [0, 0, 1, 1, 0, 0],
-    }),
-    transform: [
-      {
-        translateX: clock.interpolate({
-          inputRange: [0, 0.335, 0.64, 1],
-          outputRange: [0, 0, -u(107, width), -u(107, width)],
-        }),
-      },
-      {
-        translateY: clock.interpolate({
-          inputRange: [0, 0.335, 0.64, 1],
-          outputRange: [0, 0, -u(112, width), -u(112, width)],
-        }),
-      },
-    ],
-  };
-
-  // The discount travels the other way: from the shopfront back to you. It ran
-  // outward in the first draft, which told the story backwards.
-  const tagStyle = hasSize && {
-    opacity: clock.interpolate({
-      inputRange: [0, 0.665, 0.71, 0.94, 0.99, 1],
-      outputRange: [0, 0, 1, 1, 0, 0],
-    }),
-    transform: [
-      {
-        translateX: clock.interpolate({
-          inputRange: [0, 0.665, 0.96, 1],
-          outputRange: [-u(120, width), -u(120, width), 0, 0],
-        }),
-      },
-      {
-        translateY: clock.interpolate({
-          inputRange: [0, 0.665, 0.96, 1],
-          outputRange: [-u(6, width), -u(6, width), 0, 0],
-        }),
-      },
-    ],
-  };
-
-  // With motion reduced, park all three where they read as one picture rather
-  // than freezing on whichever beat happened to be showing.
-  const restingCoin = { opacity: 1, transform: [{ translateY: -u(40, width) }] };
-  const restingHeart = {
-    opacity: 1,
-    transform: [{ translateX: -u(62, width) }, { translateY: -u(66, width) }],
-  };
-  const restingTag = {
-    opacity: 1,
-    transform: [{ translateX: -u(64, width) }, { translateY: -u(4, width) }],
-  };
+  // Drives which label is emphasised. Kept off the animation itself so the
+  // opacity work can stay on the native thread.
+  useEffect(() => {
+    if (reduceMotion || !showSteps) return undefined;
+    setActive(0);
+    const step = LOOP_MS / SCENES.length;
+    const id = setInterval(() => {
+      setActive((i) => (i + 1) % SCENES.length);
+    }, step);
+    return () => clearInterval(id);
+  }, [reduceMotion, showSteps]);
 
   return (
-    <View
-      style={[styles.wrap, style]}
-      onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
-      accessible
-      accessibilityRole="image"
-      accessibilityLabel="A piggy bank takes a coin, sends a heart to your cause, and a discount comes back from a local shop."
-    >
-      {scene}
-
-      {hasSize && (
-        <>
-          {/* the coin */}
-          <Animated.View
-            pointerEvents="none"
+    <View style={style}>
+      <View
+        style={styles.stage}
+        accessible
+        accessibilityRole="image"
+        accessibilityLabel="Give monthly, all of it reaches your cause, and local shops thank you with discounts."
+      >
+        {SCENES.map((scene, i) => (
+          <Animated.Image
+            key={scene.key}
+            source={scene.source}
+            resizeMode="contain"
             style={[
-              styles.piece,
-              { left: u(246, width), top: u(131, width), width: u(34, width), height: u(34, width) },
-              reduceMotion ? restingCoin : coinStyle,
+              styles.art,
+              reduceMotion
+                ? { opacity: i === 0 ? 1 : 0, transform: [{ scale: scene.fit }] }
+                : {
+                    opacity: sceneOpacity(clock, i),
+                    transform: [{ scale: sceneScale(clock, i, scene.fit) }],
+                  },
             ]}
-          >
-            <Svg width="100%" height="100%" viewBox="0 0 34 34">
-              <Circle cx={17} cy={17} r={15} fill={COIN} stroke={NAVY} strokeWidth={4} />
-              <SvgText x={17} y={23} textAnchor="middle" fontSize={16} fontWeight="700" fill={NAVY}>
-                $
-              </SvgText>
-            </Svg>
-          </Animated.View>
+          />
+        ))}
+      </View>
 
-          {/* the gift on its way out */}
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.piece,
-              { left: u(189, width), top: u(190, width), width: u(46, width), height: u(40, width) },
-              reduceMotion ? restingHeart : heartStyle,
-            ]}
-          >
-            <Svg width="100%" height="100%" viewBox="0 0 46 40">
-              <Path
-                d="M23 8 c-7 -10 -23 -8 -23 5 c0 10 13 18 23 26 c10 -8 23 -16 23 -26 c0 -13 -16 -15 -23 -5 z"
-                fill={MINT}
-                stroke={NAVY}
-                strokeWidth={3.5}
-                strokeLinejoin="round"
-              />
-            </Svg>
-          </Animated.View>
-
-          {/* the thank you coming back */}
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.piece,
-              { left: u(192, width), top: u(214, width), width: u(70, width), height: u(40, width) },
-              reduceMotion ? restingTag : tagStyle,
-            ]}
-          >
-            <Svg width="100%" height="100%" viewBox="0 0 70 40">
-              <Path
-                d="M14 2 h48 a8 8 0 0 1 8 8 v20 a8 8 0 0 1 -8 8 h-48 l-14 -18 z"
-                fill={ORANGE}
-                stroke={NAVY}
-                strokeWidth={3.5}
-                strokeLinejoin="round"
-              />
-              <Circle cx={12} cy={20} r={4} fill={NAVY} />
-              <SvgText x={40} y={25} textAnchor="middle" fontSize={13} fontWeight="700" fill="#FFFFFF">
-                10% off
-              </SvgText>
-            </Svg>
-          </Animated.View>
-        </>
+      {showSteps && (
+        <View style={styles.steps}>
+          {SCENES.map((scene, i) => {
+            const on = reduceMotion || i === active;
+            return (
+              <View key={scene.key} style={[styles.step, on && styles.stepOn]}>
+                <Text style={styles.stepLabel}>{scene.step}</Text>
+                <Text style={styles.stepHeadline}>{scene.headline}</Text>
+                <Text style={styles.stepSub}>{scene.sub}</Text>
+              </View>
+            );
+          })}
+        </View>
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: {
+  stage: {
     width: '100%',
-    aspectRatio: VB_W / VB_H,
+    aspectRatio: 1,
+    maxHeight: 300,
+    alignSelf: 'center',
     position: 'relative',
   },
-  piece: {
-    position: 'absolute',
+  art: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  steps: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  step: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: '#E1EAEC',
+    borderRadius: 13,
+    backgroundColor: '#fff',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+  },
+  stepOn: {
+    borderColor: '#DB8633',
+  },
+  stepLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: '#B96C1F',
+    marginBottom: 3,
+  },
+  stepHeadline: {
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 17,
+    color: '#2F4E58',
+  },
+  stepSub: {
+    fontSize: 11.5,
+    lineHeight: 15,
+    color: '#7A8B92',
+    marginTop: 3,
   },
 });
