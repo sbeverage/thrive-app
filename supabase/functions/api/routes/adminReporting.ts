@@ -1327,6 +1327,141 @@ export async function handleAdminReporting(
     }
   }
 
+  // POST /admin/reporting/backfill-charity-coordinates
+  //
+  // The vendor twin of this lives above. Charities have the same problem and
+  // it was never fixed for them: only 7 of 52 have stored coordinates, so the
+  // charity map geocodes on the device for the other 45 and different phones
+  // disagree about where a charity is, or drop it when a lookup fails.
+  //
+  // It also blocks any ordering better than alphabetical in the cause picker,
+  // which currently opens on whichever name sorts first. Today that is
+  // "70x7 Foundation Inc", by virtue of starting with a digit.
+  //
+  // Charities carry one free-text `location` string rather than the structured
+  // address vendors use, so the candidates are built by peeling parts off the
+  // front: the whole thing, then without a suite or unit number, then the
+  // city and state alone. A city-level pin beats no pin.
+  //
+  // Nominatim asks for one request a second, so this paces itself. Safe to
+  // re-run: charities with real coordinates are skipped unless force=1.
+  if (
+    method === "POST" &&
+    route.startsWith("/admin/reporting/backfill-charity-coordinates")
+  ) {
+    try {
+      const url = new URL(req.url);
+      const force = url.searchParams.get("force") === "1";
+
+      const { data: charities, error: readError } = await supabase
+        .from("charities")
+        .select("id, name, location, latitude, longitude");
+
+      if (readError) {
+        return new Response(
+          JSON.stringify({ error: readError.message }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 },
+        );
+      }
+
+      const results: any[] = [];
+      let updated = 0;
+      let skipped = 0;
+      let failed = 0;
+
+      for (const c of charities || []) {
+        const lat = Number(c.latitude);
+        const lng = Number(c.longitude);
+        // 0/0 is the Gulf of Guinea, not Georgia. Treat it as unset.
+        const hasReal =
+          Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0;
+        if (hasReal && !force) {
+          skipped += 1;
+          continue;
+        }
+
+        const raw = typeof c.location === "string" ? c.location.trim() : "";
+        const junk = /^(location not specified|n\/a|none|tbd|unknown|not provided)$/i;
+        if (!raw || junk.test(raw)) {
+          results.push({ id: c.id, name: c.name, status: "no_address" });
+          failed += 1;
+          continue;
+        }
+
+        const parts = raw.split(",").map((s: string) => s.trim()).filter(Boolean);
+        const withoutUnit = parts.length
+          ? [
+              parts[0].replace(/[,]?\s*(suite|ste\.?|unit|apt\.?|bldg|building|#)\s*[\w-]+\s*$/i, "").trim(),
+              ...parts.slice(1),
+            ]
+          : [];
+
+        const candidates = Array.from(
+          new Set(
+            [
+              parts.join(", "),
+              withoutUnit.join(", "),
+              // City and state only, dropping the street entirely.
+              parts.slice(1).join(", "),
+            ]
+              .map((q) => q.trim())
+              .filter((q) => q.length > 0),
+          ),
+        );
+
+        let geo: { latitude: number | null; longitude: number | null } = {
+          latitude: null,
+          longitude: null,
+        };
+        let query = candidates[0];
+        for (const candidate of candidates) {
+          query = candidate;
+          geo = await geocodeAddress(candidate);
+          if (geo.latitude != null && geo.longitude != null) break;
+          // Pace every attempt, not just every charity.
+          await new Promise((r) => setTimeout(r, 1100));
+        }
+
+        if (geo.latitude == null || geo.longitude == null) {
+          results.push({ id: c.id, name: c.name, status: "not_found", tried: candidates });
+          failed += 1;
+        } else {
+          const { error } = await supabase
+            .from("charities")
+            .update({ latitude: geo.latitude, longitude: geo.longitude })
+            .eq("id", c.id);
+          if (error) {
+            results.push({
+              id: c.id, name: c.name, query, status: "write_failed", error: error.message,
+            });
+            failed += 1;
+          } else {
+            results.push({
+              id: c.id, name: c.name, query, status: "geocoded",
+              latitude: geo.latitude, longitude: geo.longitude,
+            });
+            updated += 1;
+          }
+        }
+
+        await new Promise((r) => setTimeout(r, 1100));
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: { total: (charities || []).length, updated, skipped, failed, results },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
+      );
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e?.message || "backfill failed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500,
+      });
+    }
+  }
+
+
   // POST /admin/reporting/test-favorite?email=...&vendor_id=... — diagnostic.
   //
   // Performs the same insert as POST /vendors/:id/favorite, using the same
