@@ -38,6 +38,8 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import API from '../lib/api';
 import {
@@ -47,6 +49,7 @@ import {
 import { persistSignupFlowCheckpointFromParams } from '../utils/signupFlowCheckpoint';
 import ChoosingAnimation from '../components/ChoosingAnimation';
 import { pickTrio, hasUnseen, blurbFor } from '../utils/causePicker';
+import { IMAGE_ASSETS } from '../utils/assetConstants';
 import { categoryKey, categoryLabel, orderCategoryKeys } from '../utils/categories';
 
 // Same key the beneficiary list screen uses, so a heart tapped here shows as
@@ -65,6 +68,7 @@ const FAVORITES_KEY = 'beneficiaryFavorites';
  */
 export default function ChooseCause({ preview = false } = {}) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const { setSelectedBeneficiary, setHoldingForChoice } = useBeneficiary();
 
@@ -283,6 +287,83 @@ export default function ChooseCause({ preview = false } = {}) {
     );
   }
 
+  /**
+   * Styled after the home tab: the same #2C3E50 to #4CA1AF gradient with a
+   * 24pt bottom radius, a white card lifted up into it by a negative margin,
+   * and #F5F5F5 behind. Its own return rather than a branch inside the shared
+   * ScrollView, because the gradient has to run full bleed and the shared
+   * container has 24pt of horizontal padding.
+   */
+  if (phase === 'categories') {
+    return (
+      <View style={styles.gradientPage}>
+        <ScrollView
+          contentContainerStyle={styles.gradientScroll}
+          showsVerticalScrollIndicator={false}
+        >
+          <LinearGradient
+            colors={['#2C3E50', '#4CA1AF']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.gradientHeader, { paddingTop: insets.top + 18 }]}
+          >
+            <Image
+              source={{ uri: IMAGE_ASSETS.INITIATIVE_LOGO_NO_WEB_WHITE }}
+              style={styles.gradientLogo}
+              resizeMode="contain"
+            />
+            <Text style={styles.gradientTitle}>What matters to you?</Text>
+            <Text style={styles.gradientSub}>
+              Pick as many as you like and we will find causes that fit.
+            </Text>
+          </LinearGradient>
+
+          <View style={styles.overlapCard}>
+            <View style={styles.chips}>
+              {categories.map((c) => {
+                const on = picked.includes(c.key);
+                return (
+                  <TouchableOpacity
+                    key={c.key}
+                    style={[styles.chip, on && styles.chipOn]}
+                    onPress={() => togglePicked(c.key)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: on }}
+                    accessibilityLabel={c.label}
+                  >
+                    <Text style={[styles.chipText, on && styles.chipTextOn]}>{c.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Sits well clear of the card so the choice and the commit are not
+              crowded into each other. */}
+          <View style={styles.ctaWrap}>
+            <TouchableOpacity
+              style={[styles.primaryBtn, picked.length === 0 && styles.btnDisabled]}
+              onPress={() => showTrio(picked)}
+              disabled={picked.length === 0}
+              accessibilityRole="button"
+            >
+              <Text style={styles.primaryBtnText}>Show me causes</Text>
+              <Text style={styles.primaryBtnSub}>
+                {picked.length === 0
+                  ? 'Pick at least one to continue'
+                  : 'A few at a time, so it stays easy'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => showTrio([])} accessibilityRole="button">
+              <Text style={styles.quietLink}>Not sure yet, surprise me</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {phase === 'entry' && (
@@ -328,51 +409,6 @@ export default function ChooseCause({ preview = false } = {}) {
 
           <TouchableOpacity onPress={browseAll} accessibilityRole="button">
             <Text style={styles.quietLink}>Or browse all causes</Text>
-          </TouchableOpacity>
-        </>
-      )}
-
-      {phase === 'categories' && (
-        <>
-          <Text style={styles.title}>What matters to you?</Text>
-          <Text style={styles.sub}>
-            Pick as many as you like and we will find causes that fit.
-          </Text>
-
-          <View style={styles.chips}>
-            {categories.map((c) => {
-              const on = picked.includes(c.key);
-              return (
-                <TouchableOpacity
-                  key={c.key}
-                  style={[styles.chip, on && styles.chipOn]}
-                  onPress={() => togglePicked(c.key)}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: on }}
-                  accessibilityLabel={c.label}
-                >
-                  <Text style={[styles.chipText, on && styles.chipTextOn]}>{c.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <TouchableOpacity
-            style={[styles.primaryBtn, picked.length === 0 && styles.btnDisabled]}
-            onPress={() => showTrio(picked)}
-            disabled={picked.length === 0}
-            accessibilityRole="button"
-          >
-            <Text style={styles.primaryBtnText}>Show me causes</Text>
-            <Text style={styles.primaryBtnSub}>
-              {picked.length === 0
-                ? 'Pick at least one to continue'
-                : 'A few at a time, so it stays easy'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => showTrio([])} accessibilityRole="button">
-            <Text style={styles.quietLink}>Not sure yet, surprise me</Text>
           </TouchableOpacity>
         </>
       )}
@@ -529,23 +565,71 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
 
+  // ---- the home tab treatment, for the categories step ----
+  gradientPage: { flex: 1, backgroundColor: '#F5F5F5' },
+  gradientScroll: { paddingBottom: 40 },
+  gradientHeader: {
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    paddingHorizontal: 28,
+    // Deep enough that the card below can lift into it without covering
+    // the heading.
+    paddingBottom: 120,
+    overflow: 'hidden',
+  },
+  gradientLogo: {
+    width: 190,
+    maxWidth: '70%',
+    height: 22,
+    alignSelf: 'center',
+    marginBottom: 26,
+  },
+  gradientTitle: {
+    fontSize: 27,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    lineHeight: 34,
+  },
+  gradientSub: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#DCEFF3',
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  overlapCard: {
+    marginTop: -92,
+    marginHorizontal: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingVertical: 22,
+    paddingHorizontal: 18,
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  ctaWrap: { marginTop: 28, paddingHorizontal: 24 },
+
   chips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    gap: 9,
-    marginBottom: 26,
+    gap: 8,
   },
   chip: {
     borderWidth: 1.5,
     borderColor: '#D8E4E7',
     borderRadius: 999,
-    paddingVertical: 9,
-    paddingHorizontal: 15,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     backgroundColor: '#F7FBFC',
   },
   chipOn: { borderColor: '#DB8633', backgroundColor: '#DB8633' },
-  chipText: { fontSize: 14, fontWeight: '600', color: '#2F4E58' },
+  chipText: { fontSize: 13, fontWeight: '600', color: '#2F4E58' },
   chipTextOn: { color: '#fff' },
 
   heartBtn: { paddingLeft: 10, paddingTop: 2 },
