@@ -610,13 +610,17 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
    * between the two without either screen losing its place.
    */
   const goToPicker = () => {
-    const next = { pathname: '/signupFlow/chooseCause', params: {} };
-    if (routeParams?.flow === 'team') next.params = { flow: 'team' };
+    // start=categories skips the picker's entry screen. Tapping Help me
+    // choose here has already answered the question that screen asks, so
+    // showing it again is a tap for nothing.
+    const next = {
+      pathname: '/signupFlow/chooseCause',
+      params: { start: 'categories' },
+    };
+    if (routeParams?.flow === 'team') next.params.flow = 'team';
     else if (routeParams?.flow === 'coworking') {
-      next.params = {
-        flow: 'coworking',
-        sponsorAmount: String(routeParams?.sponsorAmount ?? '15'),
-      };
+      next.params.flow = 'coworking';
+      next.params.sponsorAmount = String(routeParams?.sponsorAmount ?? '15');
     }
     router.push(next);
   };

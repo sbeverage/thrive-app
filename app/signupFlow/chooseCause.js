@@ -73,8 +73,17 @@ export default function ChooseCause({ preview = false } = {}) {
   const sponsorAmount = Array.isArray(params?.sponsorAmount)
     ? params.sponsorAmount[0]
     : params?.sponsorAmount;
+  /**
+   * Which step to open on. The full list's "Help me choose" sends
+   * start=categories, because someone who tapped Help me choose there has
+   * already made that choice. Landing them on a screen offering Help me
+   * choose again is a tap that answers a question they just answered.
+   */
+  const startParam = Array.isArray(params?.start) ? params.start[0] : params?.start;
 
-  const [phase, setPhase] = useState('entry'); // entry | categories | trio
+  const [phase, setPhase] = useState(
+    startParam === 'categories' ? 'categories' : 'entry',
+  ); // entry | categories | trio
   const [charities, setCharities] = useState([]);
   const [trio, setTrio] = useState([]);
   const [seen, setSeen] = useState(() => new Set());
