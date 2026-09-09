@@ -311,8 +311,8 @@ export default function ChooseCause({ preview = false } = {}) {
                 multi-select invitation and the warmth in one line, which the
                 two-sentence version needed two goes at. */}
             <Text style={styles.gradientSub}>
-              Choose as many categories that mean the most to you and that you'd
-              love to support.
+              Select as many categories you care about to discover charities
+              you'd like to donate to.
             </Text>
           </LinearGradient>
 
