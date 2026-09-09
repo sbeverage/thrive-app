@@ -101,6 +101,20 @@ export default function Index() {
 
         <ThriveLoop style={styles.loop} />
 
+        {/* Development builds only. Jumps past signup and email verification
+            straight into any screen of the flow. __DEV__ is false in a
+            release build, so this never renders for a donor, and devMenu
+            itself refuses to render outside development as well. */}
+        {__DEV__ && (
+          <TouchableOpacity
+            style={styles.devButton}
+            onPress={() => router.push('/devMenu')}
+            accessibilityRole="button"
+          >
+            <Text style={styles.devButtonText}>Dev: jump into the flow</Text>
+          </TouchableOpacity>
+        )}
+
         <View style={styles.buttonsWrapper}>
           <TouchableOpacity
             style={styles.primaryButton}
@@ -211,6 +225,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 16,
   },
+  devButton: {
+    borderWidth: 1,
+    borderColor: '#B9C7CC',
+    borderStyle: 'dashed',
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    marginTop: 4,
+  },
+  devButtonText: { color: '#7A9099', fontSize: 13, fontWeight: '600' },
   leftCircle: {
     position: 'absolute',
     top: 80,

@@ -295,19 +295,22 @@ export default function DiscountTeaser() {
       ? 'Location not available'
       : 'Detecting location...');
 
+  // Goes to chooseCause, not straight to the 52 item list. That screen
+  // offers "help me choose" and "start now, pick later" first, and keeps a
+  // quiet link through to the full list for donors who already know.
   const handleContinue = () => {
     if (params?.flow === 'team') {
       router.push({
-        pathname: '/signupFlow/beneficiarySignupCause',
+        pathname: '/signupFlow/chooseCause',
         params: { flow: 'team' },
       });
     } else if (params?.flow === 'coworking') {
       router.push({
-        pathname: '/signupFlow/beneficiarySignupCause',
+        pathname: '/signupFlow/chooseCause',
         params: { flow: 'coworking', sponsorAmount: params?.sponsorAmount || '15' },
       });
     } else {
-      router.push('/signupFlow/beneficiarySignupCause');
+      router.push('/signupFlow/chooseCause');
     }
   };
 
