@@ -307,8 +307,14 @@ export default function ChooseCause({ preview = false } = {}) {
             style={[styles.gradientHeader, { paddingTop: insets.top + 20 }]}
           >
             <Text style={styles.gradientTitle}>What matters to you?</Text>
+            {/* Warmer than "we will find causes that fit", which read like a
+                search engine. "Close to your heart" is Stephanie's own
+                phrasing for what a donor is looking for. The second sentence
+                stays because multi-select is not obvious from the chips
+                alone, so the invitation to pick more than one has to be
+                said out loud. */}
             <Text style={styles.gradientSub}>
-              Pick as many as you like and we will find causes that fit.
+              Tap anything close to your heart. Pick as many as you like.
             </Text>
           </LinearGradient>
 
