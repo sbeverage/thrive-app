@@ -258,6 +258,32 @@ export default function ChooseCause({ preview = false } = {}) {
     }
   }, [continueAfterPick, holdBusy, setHoldingForChoice, setSelectedBeneficiary]);
 
+  /**
+   * The full profile. Each charity has whyThisMatters, a success story and
+   * impact statements filled in, and the card shows none of them, so three
+   * truncated lines is thin grounds for committing to a monthly gift.
+   *
+   * Params match detailParamsFor in the list screen, including forwarding the
+   * comped flow. Without `flow` a team account arrives at the detail screen
+   * indistinguishable from a standard donor and gets routed to the payment
+   * step, which is exactly the bug fixed in 30349c6.
+   */
+  const learnMore = useCallback(
+    (charity) => {
+      const next = {
+        pathname: '/signupFlow/beneficiaryDetail',
+        params: { id: String(charity.id), fromSignup: 'true' },
+      };
+      if (flow === 'team') next.params.flow = 'team';
+      else if (flow === 'coworking') {
+        next.params.flow = 'coworking';
+        next.params.sponsorAmount = String(sponsorAmount ?? '15');
+      }
+      router.push(next);
+    },
+    [flow, router, sponsorAmount],
+  );
+
   const browseAll = useCallback(() => {
     const next = { pathname: '/signupFlow/beneficiarySignupCause', params: {} };
     if (flow === 'team') next.params = { flow: 'team' };
@@ -451,6 +477,19 @@ export default function ChooseCause({ preview = false } = {}) {
                 </Text>
               )}
 
+              {/* A link rather than a second button, on purpose. Two equal
+                  buttons per card is six buttons on this screen, which
+                  quietly rebuilds the paralysis the screen exists to remove.
+                  One obvious action, one quiet way to read more. */}
+              <TouchableOpacity
+                onPress={() => learnMore(c)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="link"
+                accessibilityLabel={`Learn more about ${c.name}`}
+              >
+                <Text style={styles.learnMore}>Learn more</Text>
+              </TouchableOpacity>
+
               <TouchableOpacity
                 style={[styles.chooseBtn, busyId === c.id && styles.btnDisabled]}
                 onPress={() => choose(c)}
@@ -621,12 +660,19 @@ const styles = StyleSheet.create({
   cardCat: { fontSize: 12.5, color: '#8a9ba1', marginTop: 2 },
   cardBlurb: { fontSize: 13.5, lineHeight: 19, color: '#6d6e72', marginTop: 10 },
 
+  learnMore: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#31788A',
+    marginTop: 10,
+    textDecorationLine: 'underline',
+  },
   chooseBtn: {
     backgroundColor: '#DB8633',
     borderRadius: 10,
     paddingVertical: 12,
     alignItems: 'center',
-    marginTop: 14,
+    marginTop: 12,
   },
   chooseBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
