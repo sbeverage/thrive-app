@@ -19,6 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Video, ResizeMode, Audio } from 'expo-av';
 import { VIDEO_ASSETS } from '../utils/assetConstants';
 import { persistSignupFlowCheckpointFromParams } from '../utils/signupFlowCheckpoint';
+import { useUser } from '../context/UserContext';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -27,6 +28,41 @@ const DONATION_VIDEO_URL = VIDEO_ASSETS.DONATION_EXPLAINER;
 
 export default function ExplainerDonate() {
   const router = useRouter();
+  const { logout } = useUser();
+
+  /**
+   * Back out of the first screen of the signup flow.
+   *
+   * Every route into this screen uses router.replace, so there is nothing
+   * behind it on the stack. router.back() was therefore either a no-op or an
+   * eject to the root, with no warning either way, and an account already
+   * exists by the time a donor is standing here.
+   *
+   * So ask, and then actually do what the answer says. Confirming used to be
+   * impossible to express; leaving now signs out properly through the same
+   * logout the menu uses, which also clears signupFlowPending so the next
+   * launch does not try to resume a flow nobody is signed in for.
+   *
+   * Kept as a question rather than removing the arrow: a screen with no way
+   * out is its own problem, and some people genuinely do want to stop.
+   */
+  const confirmLeaveSignup = () => {
+    Alert.alert(
+      'Leave setup?',
+      "Your account is saved, but you'll need to log in again to finish setting up your giving.",
+      [
+        { text: 'Keep going', style: 'cancel' },
+        {
+          text: 'Log out',
+          style: 'destructive',
+          onPress: async () => {
+            await logout();
+            router.replace('/');
+          },
+        },
+      ],
+    );
+  };
   const params = useLocalSearchParams();
   const [showVideo, setShowVideo] = useState(false);
   const videoRef = useRef(null);
@@ -126,7 +162,7 @@ export default function ExplainerDonate() {
       </View>
 
       {/* Back Navigation */}
-      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+      <TouchableOpacity style={styles.backButton} onPress={confirmLeaveSignup}>
         <Image 
           source={require('../../assets/icons/arrow-left.png')} 
           style={{ width: 24, height: 24, tintColor: '#324E58' }} 
