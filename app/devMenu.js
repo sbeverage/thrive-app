@@ -18,7 +18,7 @@
  * __DEV__ is true, and this screen refuses to render anything useful when
  * __DEV__ is false, so a deep link into a release build finds nothing.
  */
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -27,6 +27,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Everything under app/signupFlow/ is behind that folder's layout guard,
 // which bounces anyone without a session back to the welcome screen. That
@@ -37,7 +38,7 @@ import { useRouter } from 'expo-router';
 const DESTINATIONS = [
   {
     label: 'Choose a cause (the new picker)',
-    hint: 'Help me choose, the piggy animation, three cards, shake the piggy',
+    hint: 'Help me choose, categories, the piggy animation, three cards, hearts',
     path: '/devChooseCause',
     works: 'full',
   },
@@ -82,6 +83,29 @@ const BADGE = {
 
 export default function DevMenu() {
   const router = useRouter();
+  const [cleared, setCleared] = useState('');
+
+  /**
+   * The reason the app keeps landing on Verify Your Email is
+   * `signupFlowPending`, the checkpoint that resumes an unfinished signup.
+   * It is doing its job, and per CLAUDE.md the guard that reads it stays, so
+   * the way past it is to clear the marker rather than disable the resume.
+   * Development only, and it writes nothing: it only removes keys.
+   */
+  const clearCheckpoint = async () => {
+    await AsyncStorage.removeItem('signupFlowPending');
+    setCleared('Signup checkpoint cleared. Restart the app to land on the welcome screen.');
+  };
+
+  const clearSession = async () => {
+    await AsyncStorage.multiRemove([
+      'signupFlowPending',
+      'authToken',
+      'userData',
+      'selectedBeneficiary',
+    ]);
+    setCleared('Session and checkpoint cleared. Restart the app for a clean start.');
+  };
 
   if (!__DEV__) {
     return (
@@ -122,6 +146,24 @@ export default function DevMenu() {
         );
       })}
 
+      <Text style={styles.groupLabel}>Get unstuck</Text>
+
+      <TouchableOpacity style={styles.utilBtn} onPress={clearCheckpoint} accessibilityRole="button">
+        <Text style={styles.utilBtnText}>Clear the signup checkpoint</Text>
+        <Text style={styles.utilBtnHint}>
+          Stops the app resuming to Verify Your Email on launch
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.utilBtn} onPress={clearSession} accessibilityRole="button">
+        <Text style={styles.utilBtnText}>Clear session and checkpoint</Text>
+        <Text style={styles.utilBtnHint}>
+          Signs out locally and forgets the half-finished signup
+        </Text>
+      </TouchableOpacity>
+
+      {!!cleared && <Text style={styles.clearedNote}>{cleared}</Text>}
+
       <TouchableOpacity onPress={() => router.replace('/')} accessibilityRole="button">
         <Text style={styles.back}>Back to the start</Text>
       </TouchableOpacity>
@@ -158,6 +200,35 @@ const styles = StyleSheet.create({
   rowHint: { fontSize: 13, lineHeight: 18, color: '#6d6e72', marginTop: 5 },
   rowPath: { fontSize: 11, color: '#a8b7bd', marginTop: 6, fontVariant: ['tabular-nums'] },
 
+  groupLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    color: '#8a9ba1',
+    textTransform: 'uppercase',
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  utilBtn: {
+    borderWidth: 1,
+    borderColor: '#E1EAEC',
+    borderRadius: 12,
+    padding: 13,
+    marginBottom: 8,
+    backgroundColor: '#F7FBFC',
+  },
+  utilBtnText: { fontSize: 14.5, fontWeight: '700', color: '#2F4E58' },
+  utilBtnHint: { fontSize: 12.5, color: '#6d6e72', marginTop: 3, lineHeight: 17 },
+  clearedNote: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#2C6B58',
+    backgroundColor: '#E7F2EE',
+    borderRadius: 10,
+    padding: 11,
+    marginTop: 4,
+    marginBottom: 4,
+  },
   back: {
     textAlign: 'center',
     color: '#DB8633',
