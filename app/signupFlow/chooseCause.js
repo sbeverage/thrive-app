@@ -25,7 +25,7 @@
  * knowing exactly what they care about should not be made to play a game, and
  * search now matches descriptions and categories so browsing works for them.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -80,6 +80,17 @@ export default function ChooseCause({ preview = false } = {}) {
    * choose again is a tap that answers a question they just answered.
    */
   const startParam = Array.isArray(params?.start) ? params.start[0] : params?.start;
+
+  /**
+   * The reroll button sits at the bottom of the page and the new cards render
+   * at the top, so without this the cards change where the donor cannot see
+   * them and the tap reads as doing nothing. The loading beat used to hide
+   * this by remounting the ScrollView; removing it exposed the problem.
+   */
+  const scrollRef = useRef(null);
+  const scrollToTop = useCallback(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, []);
 
   const [phase, setPhase] = useState(
     startParam === 'categories' ? 'categories' : 'entry',
@@ -225,8 +236,9 @@ export default function ChooseCause({ preview = false } = {}) {
       if (charities.length === 0) return;
       rollTrio(withCategories);
       setPhase('trio');
+      scrollToTop();
     },
-    [charities.length, picked, rollTrio],
+    [charities.length, picked, rollTrio, scrollToTop],
   );
 
   // Rerolling swaps the three cards in place. There is no loading beat: the
@@ -242,10 +254,12 @@ export default function ChooseCause({ preview = false } = {}) {
       const next = pickTrio(pool, new Set(), 3);
       setTrio(next);
       setSeen(new Set(next.map((c) => c.id)));
+      scrollToTop();
       return;
     }
     rollTrio();
-  }, [exhausted, pool, rollTrio]);
+    scrollToTop();
+  }, [exhausted, pool, rollTrio, scrollToTop]);
 
   const choose = useCallback(
     async (charity) => {
@@ -351,6 +365,7 @@ export default function ChooseCause({ preview = false } = {}) {
   const shell = (title, sub, children) => (
     <View style={styles.gradientPage}>
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.gradientScroll}
         showsVerticalScrollIndicator={false}
       >
