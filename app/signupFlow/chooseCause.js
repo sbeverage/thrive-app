@@ -49,7 +49,6 @@ import {
 import { persistSignupFlowCheckpointFromParams } from '../utils/signupFlowCheckpoint';
 import ChoosingAnimation from '../components/ChoosingAnimation';
 import { pickTrio, hasUnseen, blurbFor } from '../utils/causePicker';
-import { IMAGE_ASSETS } from '../utils/assetConstants';
 import { categoryKey, categoryLabel, orderCategoryKeys } from '../utils/categories';
 
 // Same key the beneficiary list screen uses, so a heart tapped here shows as
@@ -305,13 +304,8 @@ export default function ChooseCause({ preview = false } = {}) {
             colors={['#2C3E50', '#4CA1AF']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[styles.gradientHeader, { paddingTop: insets.top + 18 }]}
+            style={[styles.gradientHeader, { paddingTop: insets.top + 20 }]}
           >
-            <Image
-              source={{ uri: IMAGE_ASSETS.INITIATIVE_LOGO_NO_WEB_WHITE }}
-              style={styles.gradientLogo}
-              resizeMode="contain"
-            />
             <Text style={styles.gradientTitle}>What matters to you?</Text>
             <Text style={styles.gradientSub}>
               Pick as many as you like and we will find causes that fit.
@@ -574,15 +568,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     // Deep enough that the card below can lift into it without covering
     // the heading.
-    paddingBottom: 120,
+    paddingBottom: 104,
     overflow: 'hidden',
-  },
-  gradientLogo: {
-    width: 190,
-    maxWidth: '70%',
-    height: 22,
-    alignSelf: 'center',
-    marginBottom: 26,
   },
   gradientTitle: {
     fontSize: 27,
@@ -599,12 +586,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   overlapCard: {
-    marginTop: -92,
+    marginTop: -80,
     marginHorizontal: 16,
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    paddingVertical: 22,
-    paddingHorizontal: 18,
+    paddingVertical: 30,
+    paddingHorizontal: 22,
     zIndex: 10,
     shadowColor: '#000',
     shadowOpacity: 0.08,
@@ -612,20 +599,20 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
   },
-  ctaWrap: { marginTop: 28, paddingHorizontal: 24 },
+  ctaWrap: { marginTop: 24, paddingHorizontal: 24 },
 
   chips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    gap: 8,
+    gap: 11,
   },
   chip: {
     borderWidth: 1.5,
     borderColor: '#D8E4E7',
     borderRadius: 999,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
     backgroundColor: '#F7FBFC',
   },
   chipOn: { borderColor: '#DB8633', backgroundColor: '#DB8633' },
