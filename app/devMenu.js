@@ -28,49 +28,48 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 
+// Everything under app/signupFlow/ is behind that folder's layout guard,
+// which bounces anyone without a session back to the welcome screen. That
+// guard is deliberate and stays. So the picker is previewed through
+// /devChooseCause, an unguarded route that renders the same component, and
+// the guarded paths are listed honestly as needing a login rather than
+// pretending they will open.
 const DESTINATIONS = [
   {
     label: 'Choose a cause (the new picker)',
     hint: 'Help me choose, the piggy animation, three cards, shake the piggy',
-    path: '/signupFlow/chooseCause',
+    path: '/devChooseCause',
     works: 'full',
   },
   {
     label: 'Choose a cause, as a team account',
     hint: 'Same screen, comped path. Should never reach a card form',
-    path: '/signupFlow/chooseCause',
+    path: '/devChooseCause',
     params: { flow: 'team' },
     works: 'full',
   },
   {
     label: 'Browse all causes',
-    hint: 'The 52 item list, with the new search and card descriptions',
+    hint: 'The 52 item list. Behind the signup guard, so it needs a session',
     path: '/signupFlow/beneficiarySignupCause',
-    works: 'full',
-  },
-  {
-    label: 'Explainer',
-    hint: 'How your donation makes a difference',
-    path: '/signupFlow/explainerDonate',
-    works: 'full',
-  },
-  {
-    label: 'Discounts teaser',
-    hint: 'Real local discounts. Needs location permission to sort by distance',
-    path: '/signupFlow/discountTeaser',
-    works: 'mostly',
-  },
-  {
-    label: 'Donation amount',
-    hint: 'The slider. Reads your profile, so amounts fall back to defaults',
-    path: '/signupFlow/donationAmount',
     works: 'partial',
   },
   {
-    label: 'Team account ready',
-    hint: 'The end of the comped flow',
-    path: '/signupFlow/teamAccountReady',
-    params: { flow: 'team' },
+    label: 'Explainer',
+    hint: 'How your donation makes a difference. Behind the signup guard',
+    path: '/signupFlow/explainerDonate',
+    works: 'partial',
+  },
+  {
+    label: 'Discounts teaser',
+    hint: 'Real local discounts. Behind the signup guard',
+    path: '/signupFlow/discountTeaser',
+    works: 'partial',
+  },
+  {
+    label: 'Donation amount',
+    hint: 'The slider. Behind the signup guard',
+    path: '/signupFlow/donationAmount',
     works: 'partial',
   },
 ];
@@ -96,9 +95,10 @@ export default function DevMenu() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Jump into the flow</Text>
       <Text style={styles.sub}>
-        Development builds only. Skips signup and email verification by going
-        straight to a screen. Nothing signs you in, so anything needing a donor
-        account is marked below.
+        Development builds only. Nothing signs you in. Everything under
+        signupFlow is guarded and will bounce back to the welcome screen
+        without a session, so the new picker is previewed through its own
+        unguarded route instead.
       </Text>
 
       {DESTINATIONS.map((d, i) => {

@@ -39,7 +39,16 @@ import { persistSignupFlowCheckpointFromParams } from '../utils/signupFlowCheckp
 import ChoosingAnimation from '../components/ChoosingAnimation';
 import { pickTrio, hasUnseen, blurbFor } from '../utils/causePicker';
 
-export default function ChooseCause() {
+/**
+ * `preview` is for the development-only route outside signupFlow/. That stack
+ * is guarded by its own layout, which sends anyone without a session back to
+ * the welcome screen, so the picker cannot be reviewed in place without
+ * signing in. Rendering this component from an unguarded dev route is the way
+ * to look at it without weakening that guard. In preview it also skips writing
+ * a signup checkpoint, which would otherwise leave a resume marker behind and
+ * redirect the next launch.
+ */
+export default function ChooseCause({ preview = false } = {}) {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { setSelectedBeneficiary, setHoldingForChoice } = useBeneficiary();
@@ -60,9 +69,10 @@ export default function ChooseCause() {
 
   const paramsKey = JSON.stringify(params ?? {});
   useEffect(() => {
+    if (preview) return;
     persistSignupFlowCheckpointFromParams('/signupFlow/chooseCause', params);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paramsKey]);
+  }, [paramsKey, preview]);
 
   useEffect(() => {
     let cancelled = false;
