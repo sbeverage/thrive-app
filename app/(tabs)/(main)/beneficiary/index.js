@@ -600,6 +600,27 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
   const detailRoute = isSignupFlow
     ? '/signupFlow/beneficiaryDetail'
     : '/(tabs)/beneficiary/beneficiaryDetail';
+  /**
+   * Back into the guided picker from the full list. Anyone reading the panel
+   * at the foot of this list has scrolled the whole thing without choosing,
+   * which is the exact person Help me choose was built for.
+   *
+   * push, not replace, so this list stays underneath. The picker's own
+   * "Or browse all causes" link pushes here in turn, so a donor can move
+   * between the two without either screen losing its place.
+   */
+  const goToPicker = () => {
+    const next = { pathname: '/signupFlow/chooseCause', params: {} };
+    if (routeParams?.flow === 'team') next.params = { flow: 'team' };
+    else if (routeParams?.flow === 'coworking') {
+      next.params = {
+        flow: 'coworking',
+        sponsorAmount: String(routeParams?.sponsorAmount ?? '15'),
+      };
+    }
+    router.push(next);
+  };
+
   const detailParamsFor = (beneficiaryId) => {
     const out = { id: String(beneficiaryId) };
     if (isSignupFlow) {
@@ -1587,6 +1608,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                   // Signup only — an existing donor already gives monthly, so
                   // "start now, pick later" doesn't apply to them.
                   allowPickLater={isSignupFlow}
+                  onHelpMeChoose={goToPicker}
                   onPickGrow={(c) => {
                     setHoldingForChoice(false);
                     setPendingBeneficiary({ ...c, image: resolveBeneficiaryHeroImageSource(c) });
@@ -1638,6 +1660,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                   // Signup only — an existing donor already gives monthly, so
                   // "start now, pick later" doesn't apply to them.
                   allowPickLater={isSignupFlow}
+                  onHelpMeChoose={goToPicker}
                   onPickGrow={(c) => {
                     setHoldingForChoice(false);
                     setPendingBeneficiary({ ...c, image: resolveBeneficiaryHeroImageSource(c) });
