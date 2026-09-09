@@ -14,7 +14,6 @@
  *
  *   entry       the two choices, with nothing competing with them
  *   categories  pick as many as matter to you, then we filter
- *   animating   the coin and the bloom, while the picking happens
  *   trio        three causes, rerollable
  *
  * Deliberately no counts anywhere. Not "52 causes", not "6 in Animal
@@ -47,7 +46,6 @@ import {
   resolveBeneficiaryLogoSource,
 } from '../context/BeneficiaryContext';
 import { persistSignupFlowCheckpointFromParams } from '../utils/signupFlowCheckpoint';
-import ChoosingAnimation from '../components/ChoosingAnimation';
 import { pickTrio, hasUnseen, blurbFor } from '../utils/causePicker';
 import { categoryKey, categoryLabel, orderCategoryKeys } from '../utils/categories';
 
@@ -76,14 +74,13 @@ export default function ChooseCause({ preview = false } = {}) {
     ? params.sponsorAmount[0]
     : params?.sponsorAmount;
 
-  const [phase, setPhase] = useState('entry'); // entry | categories | animating | trio
+  const [phase, setPhase] = useState('entry'); // entry | categories | trio
   const [charities, setCharities] = useState([]);
   const [trio, setTrio] = useState([]);
   const [seen, setSeen] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
   const [holdBusy, setHoldBusy] = useState(false);
-  const [rerolled, setRerolled] = useState(false);
   const [favorites, setFavorites] = useState([]);
   // Any number of categories. Empty means "anything".
   const [picked, setPicked] = useState([]);
@@ -198,16 +195,16 @@ export default function ChooseCause({ preview = false } = {}) {
     (withCategories = picked) => {
       if (charities.length === 0) return;
       rollTrio(withCategories);
-      setRerolled(false);
-      setPhase('animating');
+      setPhase('trio');
     },
     [charities.length, picked, rollTrio],
   );
 
+  // Rerolling swaps the three cards in place. There is no loading beat: the
+  // charities are already in memory, so anything shown between the tap and
+  // the cards would be a delay we invented rather than one we have.
   const reroll = useCallback(() => {
     rollTrio();
-    setRerolled(true);
-    setPhase('animating');
   }, [rollTrio]);
 
   const choose = useCallback(
@@ -271,20 +268,6 @@ export default function ChooseCause({ preview = false } = {}) {
   }, [flow, router, sponsorAmount]);
 
   // ------------------------------------------------------------- rendering
-
-  if (phase === 'animating') {
-    return (
-      <View style={styles.container}>
-        <View style={styles.centreFill}>
-          <ChoosingAnimation
-            quick={rerolled}
-            label={rerolled ? 'Three more coming up' : 'Finding causes for you'}
-            onDone={() => setPhase('trio')}
-          />
-        </View>
-      </View>
-    );
-  }
 
   /**
    * Styled after the home tab: the same #2C3E50 to #4CA1AF gradient with a
