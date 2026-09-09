@@ -270,90 +270,42 @@ export default function ChooseCause({ preview = false } = {}) {
   // ------------------------------------------------------------- rendering
 
   /**
-   * Styled after the home tab: the same #2C3E50 to #4CA1AF gradient with a
-   * 24pt bottom radius, a white card lifted up into it by a negative margin,
-   * and #F5F5F5 behind. Its own return rather than a branch inside the shared
-   * ScrollView, because the gradient has to run full bleed and the shared
-   * container has 24pt of horizontal padding.
+   * Every phase wears the home tab's shell: the #2C3E50 to #4CA1AF gradient
+   * with a 24pt bottom radius, over an #F5F5F5 ground, with the content
+   * lifted up into the gradient. Numbers taken from home.js so the screens
+   * match rather than merely resemble each other.
+   *
+   * A plain function, not a component. As a component this would be a new
+   * type on every render and React would unmount and remount the whole
+   * subtree, losing chip selections and scroll position on every keystroke
+   * of state.
    */
-  if (phase === 'categories') {
-    return (
-      <View style={styles.gradientPage}>
-        <ScrollView
-          contentContainerStyle={styles.gradientScroll}
-          showsVerticalScrollIndicator={false}
+  const shell = (title, sub, children) => (
+    <View style={styles.gradientPage}>
+      <ScrollView
+        contentContainerStyle={styles.gradientScroll}
+        showsVerticalScrollIndicator={false}
+      >
+        <LinearGradient
+          colors={['#2C3E50', '#4CA1AF']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.gradientHeader, { paddingTop: insets.top + 20 }]}
         >
-          <LinearGradient
-            colors={['#2C3E50', '#4CA1AF']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.gradientHeader, { paddingTop: insets.top + 20 }]}
-          >
-            <Text style={styles.gradientTitle}>What matters to you?</Text>
-            {/* Stephanie's wording, used as written. It carries the
-                multi-select invitation and the warmth in one line, which the
-                two-sentence version needed two goes at. */}
-            <Text style={styles.gradientSub}>
-              Select as many categories you care about to discover charities
-              you'd like to donate to.
-            </Text>
-          </LinearGradient>
+          <Text style={styles.gradientTitle}>{title}</Text>
+          <Text style={styles.gradientSub}>{sub}</Text>
+        </LinearGradient>
+        {children}
+      </ScrollView>
+    </View>
+  );
 
-          <View style={styles.overlapCard}>
-            <View style={styles.chips}>
-              {categories.map((c) => {
-                const on = picked.includes(c.key);
-                return (
-                  <TouchableOpacity
-                    key={c.key}
-                    style={[styles.chip, on && styles.chipOn]}
-                    onPress={() => togglePicked(c.key)}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: on }}
-                    accessibilityLabel={c.label}
-                  >
-                    <Text style={[styles.chipText, on && styles.chipTextOn]}>{c.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-
-          {/* Sits well clear of the card so the choice and the commit are not
-              crowded into each other. */}
-          <View style={styles.ctaWrap}>
-            <TouchableOpacity
-              style={[styles.primaryBtn, picked.length === 0 && styles.btnDisabled]}
-              onPress={() => showTrio(picked)}
-              disabled={picked.length === 0}
-              accessibilityRole="button"
-            >
-              <Text style={styles.primaryBtnText}>Show me causes</Text>
-              <Text style={styles.primaryBtnSub}>
-                {picked.length === 0
-                  ? 'Pick at least one to continue'
-                  : 'A few at a time, so it stays easy'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => showTrio([])} accessibilityRole="button">
-              <Text style={styles.quietLink}>Not sure yet, surprise me</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </View>
-    );
-  }
-
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {phase === 'entry' && (
-        <>
-          <Text style={styles.title}>Who do you want to help?</Text>
-          <Text style={styles.sub}>
-            You can change your cause anytime, so there is no wrong answer here.
-          </Text>
-
+  if (phase === 'entry') {
+    return shell(
+      'Who do you want to help?',
+      'You can change your cause anytime, so there is no wrong answer here.',
+      <>
+        <View style={styles.overlapCard}>
           <TouchableOpacity
             style={[styles.primaryBtn, loading && styles.btnDisabled]}
             onPress={() => setPhase('categories')}
@@ -387,127 +339,165 @@ export default function ChooseCause({ preview = false } = {}) {
               </>
             )}
           </TouchableOpacity>
+        </View>
 
+        <View style={styles.ctaWrap}>
           <TouchableOpacity onPress={browseAll} accessibilityRole="button">
             <Text style={styles.quietLink}>Or browse all causes</Text>
           </TouchableOpacity>
-        </>
-      )}
+        </View>
+      </>,
+    );
+  }
 
-      {phase === 'trio' && (
-        <>
-          <Text style={styles.title}>How about one of these?</Text>
-          <Text style={styles.sub}>
-            Tap the heart to save one for later, or choose it now.
-          </Text>
-
-          {trio.map((c) => {
-            const blurb = blurbFor(c);
-            const saved = favorites.includes(c.id);
-            return (
-              <View key={c.id} style={styles.card}>
-                <View style={styles.cardTop}>
-                  <Image
-                    source={resolveBeneficiaryLogoSource(c)}
-                    style={styles.logo}
-                    resizeMode="contain"
-                  />
-                  <View style={styles.cardHead}>
-                    <Text style={styles.cardName} numberOfLines={2}>
-                      {c.name}
-                    </Text>
-                    {!!c.category && <Text style={styles.cardCat}>{c.category}</Text>}
-                  </View>
-                  <TouchableOpacity
-                    style={styles.heartBtn}
-                    onPress={() => toggleFavorite(c.id)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      saved ? `Remove ${c.name} from saved` : `Save ${c.name} for later`
-                    }
-                  >
-                    <Image
-                      source={
-                        saved
-                          ? require('../../assets/images/heart.png')
-                          : require('../../assets/icons/heart.png')
-                      }
-                      style={[styles.heartIcon, { tintColor: saved ? '#DB8633' : '#C3D1D6' }]}
-                    />
-                  </TouchableOpacity>
-                </View>
-
-                {!!blurb && (
-                  <Text style={styles.cardBlurb} numberOfLines={3}>
-                    {blurb}
-                  </Text>
-                )}
-
+  if (phase === 'categories') {
+    return shell(
+      'What matters to you?',
+      "Select as many categories you care about to discover charities you'd like to donate to.",
+      <>
+        <View style={styles.overlapCard}>
+          <View style={styles.chips}>
+            {categories.map((c) => {
+              const on = picked.includes(c.key);
+              return (
                 <TouchableOpacity
-                  style={[styles.chooseBtn, busyId === c.id && styles.btnDisabled]}
-                  onPress={() => choose(c)}
-                  disabled={!!busyId}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Choose ${c.name}`}
+                  key={c.key}
+                  style={[styles.chip, on && styles.chipOn]}
+                  onPress={() => togglePicked(c.key)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: on }}
+                  accessibilityLabel={c.label}
                 >
-                  {busyId === c.id ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <Text style={styles.chooseBtnText}>Choose this cause</Text>
-                  )}
+                  <Text style={[styles.chipText, on && styles.chipTextOn]}>{c.label}</Text>
                 </TouchableOpacity>
-              </View>
-            );
-          })}
+              );
+            })}
+          </View>
+        </View>
 
+        {/* Sits well clear of the card so the choice and the commit are not
+            crowded into each other. */}
+        <View style={styles.ctaWrap}>
           <TouchableOpacity
-            style={styles.rerollBtn}
-            onPress={reroll}
-            disabled={!!busyId}
+            style={[styles.primaryBtn, picked.length === 0 && styles.btnDisabled]}
+            onPress={() => showTrio(picked)}
+            disabled={picked.length === 0}
             accessibilityRole="button"
           >
-            <Text style={styles.rerollText}>Show me 3 more</Text>
-            <Text style={styles.rerollSub}>
-              {hasUnseen(charities, seen, 3)
-                ? 'Different causes each time'
-                : 'Back to the start of the list'}
+            <Text style={styles.primaryBtnText}>Show me causes</Text>
+            <Text style={styles.primaryBtnSub}>
+              {picked.length === 0
+                ? 'Pick at least one to continue'
+                : 'A few at a time, so it stays easy'}
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => setPhase('categories')} accessibilityRole="button">
-            <Text style={styles.quietLink}>Change what matters to you</Text>
+          <TouchableOpacity onPress={() => showTrio([])} accessibilityRole="button">
+            <Text style={styles.quietLink}>Not sure yet, surprise me</Text>
           </TouchableOpacity>
+        </View>
+      </>,
+    );
+  }
 
-          <TouchableOpacity onPress={browseAll} accessibilityRole="button">
-            <Text style={styles.quietLink}>Or browse all causes</Text>
-          </TouchableOpacity>
-        </>
-      )}
-    </ScrollView>
+  return shell(
+    'How about one of these?',
+    'Tap the heart to save one for later, or choose it now.',
+    <>
+      {/* The charity cards are already white cards, so they lift into the
+          gradient directly rather than sitting inside another card. Nesting
+          white on white would flatten them. */}
+      <View style={styles.trioList}>
+        {trio.map((c) => {
+          const blurb = blurbFor(c);
+          const saved = favorites.includes(c.id);
+          return (
+            <View key={c.id} style={styles.card}>
+              <View style={styles.cardTop}>
+                <Image
+                  source={resolveBeneficiaryLogoSource(c)}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
+                <View style={styles.cardHead}>
+                  <Text style={styles.cardName} numberOfLines={2}>
+                    {c.name}
+                  </Text>
+                  {!!c.category && <Text style={styles.cardCat}>{c.category}</Text>}
+                </View>
+                <TouchableOpacity
+                  style={styles.heartBtn}
+                  onPress={() => toggleFavorite(c.id)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    saved ? `Remove ${c.name} from saved` : `Save ${c.name} for later`
+                  }
+                >
+                  <Image
+                    source={
+                      saved
+                        ? require('../../assets/images/heart.png')
+                        : require('../../assets/icons/heart.png')
+                    }
+                    style={[styles.heartIcon, { tintColor: saved ? '#DB8633' : '#C3D1D6' }]}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {!!blurb && (
+                <Text style={styles.cardBlurb} numberOfLines={3}>
+                  {blurb}
+                </Text>
+              )}
+
+              <TouchableOpacity
+                style={[styles.chooseBtn, busyId === c.id && styles.btnDisabled]}
+                onPress={() => choose(c)}
+                disabled={!!busyId}
+                accessibilityRole="button"
+                accessibilityLabel={`Choose ${c.name}`}
+              >
+                {busyId === c.id ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.chooseBtnText}>Choose this cause</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          );
+        })}
+      </View>
+
+      <View style={styles.ctaWrap}>
+        <TouchableOpacity
+          style={styles.rerollBtn}
+          onPress={reroll}
+          disabled={!!busyId}
+          accessibilityRole="button"
+        >
+          <Text style={styles.rerollText}>Show me 3 more</Text>
+          <Text style={styles.rerollSub}>
+            {hasUnseen(charities, seen, 3)
+              ? 'Different causes each time'
+              : 'Back to the start of the list'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => setPhase('categories')} accessibilityRole="button">
+          <Text style={styles.quietLink}>Change what matters to you</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={browseAll} accessibilityRole="button">
+          <Text style={styles.quietLink}>Or browse all causes</Text>
+        </TouchableOpacity>
+      </View>
+    </>,
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  content: { padding: 24, paddingTop: 48, paddingBottom: 48 },
-  centreFill: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
-  title: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#2F4E58',
-    textAlign: 'center',
-    lineHeight: 32,
-  },
-  sub: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#6d6e72',
-    textAlign: 'center',
-    marginTop: 10,
-    marginBottom: 26,
-  },
 
   primaryBtn: {
     backgroundColor: '#DB8633',
@@ -587,6 +577,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   ctaWrap: { marginTop: 24, paddingHorizontal: 24 },
+  trioList: { marginTop: -80, paddingHorizontal: 16, zIndex: 10 },
 
   chips: {
     flexDirection: 'row',
