@@ -32,6 +32,11 @@ export default function BeneficiaryDetailScreen() {
     : params?.fromSignup;
   const fromSignup = String(fromSignupRaw || "").toLowerCase() === "true";
   const flowParam = Array.isArray(params?.flow) ? params.flow[0] : params?.flow;
+  // Set by the Help me choose picker so back returns to its three cards
+  // rather than dumping the donor into the full list.
+  const returnToParam = Array.isArray(params?.returnTo)
+    ? params.returnTo[0]
+    : params?.returnTo;
   const sponsorAmountParam = Array.isArray(params?.sponsorAmount)
     ? params.sponsorAmount[0]
     : params?.sponsorAmount;
@@ -81,12 +86,42 @@ export default function BeneficiaryDetailScreen() {
     }
   };
 
+  /**
+   * Back out of a charity profile during signup.
+   *
+   * Where "back" belongs depends on where they came from. Arriving from the
+   * full list, replacing with the list is right. Arriving from the Help me
+   * choose picker, it is wrong twice over: it drops them into the fifty item
+   * list they were deliberately spared, and it loses the three charities they
+   * were actually looking at.
+   *
+   * So when returnTo says picker, go back rather than replace. Going back
+   * returns to the live chooseCause screen with its state intact, which is
+   * the only way the same three causes are still there. Replacing to
+   * chooseCause would remount it, reroll a fresh random three and reset it to
+   * the first step.
+   */
   const navigateBackInSignup = useCallback(() => {
+    if (returnToParam === 'picker') {
+      const canGoBack = typeof router.canGoBack === 'function' ? router.canGoBack() : true;
+      if (canGoBack) {
+        router.back();
+        return;
+      }
+      // Deep-linked straight here, so there is no picker underneath to
+      // return to. Send them to it rather than to the full list.
+      const pickerParams = {};
+      if (flowParam) pickerParams.flow = flowParam;
+      if (sponsorAmountParam) pickerParams.sponsorAmount = String(sponsorAmountParam);
+      router.replace({ pathname: '/signupFlow/chooseCause', params: pickerParams });
+      return;
+    }
+
     const backParams = { fromSignup: 'true' };
     if (flowParam) backParams.flow = flowParam;
     if (sponsorAmountParam) backParams.sponsorAmount = String(sponsorAmountParam);
     router.replace({ pathname: '/signupFlow/beneficiarySignupCause', params: backParams });
-  }, [router, flowParam, sponsorAmountParam]);
+  }, [router, flowParam, sponsorAmountParam, returnToParam]);
 
   useFocusEffect(
     useCallback(() => {

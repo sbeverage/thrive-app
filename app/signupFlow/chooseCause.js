@@ -272,7 +272,9 @@ export default function ChooseCause({ preview = false } = {}) {
     (charity) => {
       const next = {
         pathname: '/signupFlow/beneficiaryDetail',
-        params: { id: String(charity.id), fromSignup: 'true' },
+        // returnTo makes the profile's back button come back here, to these
+        // same three cards, instead of replacing with the full list.
+        params: { id: String(charity.id), fromSignup: 'true', returnTo: 'picker' },
       };
       if (flow === 'team') next.params.flow = 'team';
       else if (flow === 'coworking') {
