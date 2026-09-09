@@ -157,6 +157,26 @@ export default function ChooseCause({ preview = false } = {}) {
     return orderCategoryKeys([...keys]).map((k) => ({ key: k, label: categoryLabel(k) }));
   }, [charities]);
 
+  /**
+   * The charities the trio is drawn from. Everything about the reroll depends
+   * on this rather than on the whole catalogue, which is where the bug was:
+   * hasUnseen was checking all 52, so picking a narrow category left the
+   * button promising "different causes each time" when there were none left.
+   */
+  const pool = useMemo(
+    () =>
+      picked.length > 0
+        ? charities.filter((c) => picked.includes(categoryKey(c.category)))
+        : charities,
+    [charities, picked],
+  );
+
+  // Seven categories hold three charities or fewer, and one holds a single
+  // charity. In those the reroll can never change anything, so it must not
+  // pretend to: offering it would be a button that visibly does nothing.
+  const canReroll = pool.length > 3;
+  const exhausted = !hasUnseen(pool, seen, 3);
+
   const togglePicked = useCallback((key) => {
     setPicked((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
   }, []);
@@ -212,9 +232,20 @@ export default function ChooseCause({ preview = false } = {}) {
   // Rerolling swaps the three cards in place. There is no loading beat: the
   // charities are already in memory, so anything shown between the tap and
   // the cards would be a delay we invented rather than one we have.
+  //
+  // Once the pool is used up, clear `seen` and draw fresh rather than letting
+  // pickTrio quietly fall back to the full pool. Without the reset `seen`
+  // keeps growing, hasUnseen stays false forever, and every later tap looks
+  // like a button doing nothing.
   const reroll = useCallback(() => {
+    if (exhausted) {
+      const next = pickTrio(pool, new Set(), 3);
+      setTrio(next);
+      setSeen(new Set(next.map((c) => c.id)));
+      return;
+    }
     rollTrio();
-  }, [rollTrio]);
+  }, [exhausted, pool, rollTrio]);
 
   const choose = useCallback(
     async (charity) => {
@@ -439,7 +470,9 @@ export default function ChooseCause({ preview = false } = {}) {
 
   return shell(
     'How about one of these?',
-    'Tap the heart to save one for later, or choose it now.',
+    canReroll || picked.length === 0
+      ? 'Tap the heart to save one for later, or choose it now.'
+      : 'That is every cause in what you picked. Add more to see others.',
     <>
       {/* The charity cards are already white cards, so they lift into the
           gradient directly rather than sitting inside another card. Nesting
@@ -520,19 +553,39 @@ export default function ChooseCause({ preview = false } = {}) {
       </View>
 
       <View style={styles.ctaWrap}>
-        <TouchableOpacity
-          style={styles.rerollBtn}
-          onPress={reroll}
-          disabled={!!busyId}
-          accessibilityRole="button"
-        >
-          <Text style={styles.rerollText}>Show me 3 more</Text>
-          <Text style={styles.rerollSub}>
-            {hasUnseen(charities, seen, 3)
-              ? 'Different causes each time'
-              : 'Back to the start of the list'}
-          </Text>
-        </TouchableOpacity>
+        {/* Three states, because a reroll that cannot change anything has to
+            say so rather than look broken. Nothing to reroll at all, nothing
+            new left this round, or business as usual. */}
+        {!canReroll ? (
+          <TouchableOpacity
+            style={styles.primaryBtn}
+            onPress={() => setPhase('categories')}
+            accessibilityRole="button"
+          >
+            <Text style={styles.primaryBtnText}>Add more categories</Text>
+            <Text style={styles.primaryBtnSub}>
+              {pool.length === 1
+                ? 'There is only one cause here'
+                : `There are only ${pool.length} causes here`}
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.rerollBtn}
+            onPress={reroll}
+            disabled={!!busyId}
+            accessibilityRole="button"
+          >
+            <Text style={styles.rerollText}>
+              {exhausted ? 'Start over' : 'Show me 3 more'}
+            </Text>
+            <Text style={styles.rerollSub}>
+              {exhausted
+                ? 'You have seen them all, going back to the top'
+                : 'Different causes each time'}
+            </Text>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity onPress={() => setPhase('categories')} accessibilityRole="button">
           <Text style={styles.quietLink}>Change what matters to you</Text>
