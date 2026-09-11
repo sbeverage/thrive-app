@@ -71,9 +71,9 @@ function getDiscountTextForVendor(vendorId, discounts) {
     const vid = String(d.vendorId ?? d.vendor_id ?? d.vendor?.id ?? '');
     return vid === String(vendorId);
   });
-  if (list.length === 0) return 'Discounts available';
-  if (list.length === 1) return '1 discount available';
-  return `${list.length} discounts available`;
+  if (list.length === 0) return 'Discounts to unlock';
+  if (list.length === 1) return '1 discount to unlock';
+  return `${list.length} discounts to unlock`;
 }
 
 export default function DiscountTeaser() {
@@ -338,7 +338,9 @@ export default function DiscountTeaser() {
         </TouchableOpacity>
 
         <Text style={styles.headerTitle}>Discounts Waiting For You</Text>
-        <Text style={styles.headerSubtitle}>Favorite the stores you love</Text>
+        <Text style={styles.headerSubtitle}>
+          A preview of what is near you. Favorite the ones you love.
+        </Text>
 
         {/* Saved-counter pill — always rendered so the layout doesn't shift
             when the first heart is added; bounces on every favorite change. */}
@@ -464,6 +466,19 @@ export default function DiscountTeaser() {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       >
+        <View style={styles.previewNotice}>
+          <View style={styles.previewIconWrap}>
+            <Feather name="lock" size={15} color="#8A5A12" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.previewTitle}>These are locked for now</Text>
+            <Text style={styles.previewBody}>
+              Real discounts from real places near you. They unlock as soon as
+              your monthly giving starts, so nothing here is tappable yet.
+            </Text>
+          </View>
+        </View>
+
         <View style={styles.sectionHeader}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.sectionTitle}>Discounts Near You</Text>
@@ -610,7 +625,10 @@ function LockedVoucherCard({ vendor, isFavorited, onToggleFavorite }) {
                 {category}
               </Text>
             ) : null}
-            <Text style={voucherStyles.discountBadge}>{discountText}</Text>
+            <View style={voucherStyles.discountBadge}>
+              <Feather name="lock" size={11} color="#8A5A12" />
+              <Text style={voucherStyles.discountBadgeText}>{discountText}</Text>
+            </View>
           </View>
         </View>
 
@@ -693,6 +711,39 @@ function EmptyState({ filters, searchQuery = '' }) {
 }
 
 const styles = StyleSheet.create({
+  previewNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 11,
+    backgroundColor: '#FDF3E4',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    // 20 matches cardWrapper's marginHorizontal, so the notice lines up with
+    // the cards under it instead of running edge to edge.
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 0,
+  },
+  previewIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F7E2C2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewTitle: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#8A5A12',
+    marginBottom: 3,
+  },
+  previewBody: {
+    fontSize: 13,
+    lineHeight: 18.5,
+    color: '#8A5A12',
+  },
   // ─── Brand header (mirrors miniBrandHeader from live page, taller) ───
   brandHeader: {
     paddingTop: 44,
@@ -1041,14 +1092,21 @@ const voucherStyles = StyleSheet.create({
   },
   discountBadge: {
     alignSelf: 'flex-start',
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#6B7280',
-    backgroundColor: '#F3F4F6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    // Amber rather than grey. Grey read as a disabled control, which is part
+    // of why the page looked broken instead of looking like a preview.
+    backgroundColor: '#FDF3E4',
     borderRadius: 10,
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 4,
     marginTop: 6,
+  },
+  discountBadgeText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#8A5A12',
   },
   dividerContainer: {
     width: 20,
