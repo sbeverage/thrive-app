@@ -338,9 +338,10 @@ export default function DiscountTeaser() {
         </TouchableOpacity>
 
         <Text style={styles.headerTitle}>Discounts Waiting For You</Text>
-        <Text style={styles.headerSubtitle}>
-          A preview of what is near you. Favorite the ones you love.
-        </Text>
+        {/* One line. The locked notice below the search bar carries the
+            preview framing now, so this only has to name the one thing that
+            actually works on a page where everything else is locked. */}
+        <Text style={styles.headerSubtitle}>Favorite the ones you love</Text>
 
         {/* Saved-counter pill — always rendered so the layout doesn't shift
             when the first heart is added; bounces on every favorite change. */}
@@ -474,7 +475,7 @@ export default function DiscountTeaser() {
             <Text style={styles.previewTitle}>These are locked for now</Text>
             <Text style={styles.previewBody}>
               Real discounts from real places near you. They unlock as soon as
-              your monthly giving starts, so nothing here is tappable yet.
+              your monthly giving starts.
             </Text>
           </View>
         </View>
