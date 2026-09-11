@@ -275,6 +275,117 @@ export async function handleAdminSettings(
     }
   }
 
+  // DELETE /admin/settings/team/:id
+  //
+  // This route did not exist. The panel has called
+  // DELETE /admin/settings/team/:id since it shipped, so every attempt to
+  // remove a team member fell through to the 404 handler, which reports a
+  // missing REACT_APP_API_BASE_URL and sent everyone looking for a config
+  // problem that was not there.
+  //
+  // Team members live entirely in admin_team_members with their own
+  // password_hash. There is no linked users row and no Supabase auth user, so
+  // removing one really is a single row delete.
+  const teamDeleteMatch = route.match(/^\/admin\/settings\/team\/(\d+)$/);
+  if (method === "DELETE" && teamDeleteMatch) {
+    try {
+      const memberId = parseInt(teamDeleteMatch[1], 10);
+
+      const {data: member, error: readError} = await supabase
+        .from("admin_team_members")
+        .select("id, name, email, role")
+        .eq("id", memberId)
+        .maybeSingle();
+
+      if (readError) {
+        return new Response(
+          JSON.stringify({success: false, error: readError.message}),
+          {
+            headers: {...corsHeaders, "Content-Type": "application/json"},
+            status: 500,
+          },
+        );
+      }
+
+      // A real 404 for a real missing row, rather than the route-level 404
+      // that made this look like a configuration fault.
+      if (!member) {
+        return new Response(
+          JSON.stringify({success: false, error: "Team member not found"}),
+          {
+            headers: {...corsHeaders, "Content-Type": "application/json"},
+            status: 404,
+          },
+        );
+      }
+
+      // Never delete the last Super Admin. Nothing else grants access to this
+      // panel, so removing the only one locks everybody out of the tool they
+      // would need to undo it.
+      if (String(member.role || "").trim().toLowerCase() === "super admin") {
+        const {count} = await supabase
+          .from("admin_team_members")
+          .select("id", {count: "exact", head: true})
+          .ilike("role", "super admin");
+
+        if ((count ?? 0) <= 1) {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error:
+                "This is the only Super Admin. Give someone else Super Admin first, or nobody will be able to sign in to the admin panel.",
+            }),
+            {
+              headers: {...corsHeaders, "Content-Type": "application/json"},
+              status: 409,
+            },
+          );
+        }
+      }
+
+      const {error: deleteError} = await supabase
+        .from("admin_team_members")
+        .delete()
+        .eq("id", memberId);
+
+      if (deleteError) {
+        return new Response(
+          JSON.stringify({success: false, error: deleteError.message}),
+          {
+            headers: {...corsHeaders, "Content-Type": "application/json"},
+            status: 500,
+          },
+        );
+      }
+
+      console.log(
+        `\u{1F5D1}\uFE0F Removed admin team member ${memberId} (${member.email})`,
+      );
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {id: memberId, email: member.email, name: member.name},
+        }),
+        {
+          headers: {...corsHeaders, "Content-Type": "application/json"},
+          status: 200,
+        },
+      );
+    } catch (error: any) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: error.message || "Server error",
+        }),
+        {
+          headers: {...corsHeaders, "Content-Type": "application/json"},
+          status: 500,
+        },
+      );
+    }
+  }
+
   // POST /admin/settings/team/login
   if (method === "POST" && route === "/admin/settings/team/login") {
     try {
