@@ -104,9 +104,9 @@ function getOneTimeBilling(rawAmount) {
 }
 
 function formatDate(value) {
-  if (!value) return "—";
+  if (!value) return "-";
   const d = new Date(value);
-  if (isNaN(d.getTime())) return "—";
+  if (isNaN(d.getTime())) return "-";
   return d.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -125,7 +125,7 @@ function statusPillStyle(status) {
   if (["failed", "canceled", "cancelled", "refunded"].includes(s)) {
     return { bg: "#FCE8E8", fg: "#A02020", label: s.charAt(0).toUpperCase() + s.slice(1) };
   }
-  return { bg: "#EEF2F5", fg: "#324E58", label: s ? s.charAt(0).toUpperCase() + s.slice(1) : "—" };
+  return { bg: "#EEF2F5", fg: "#324E58", label: s ? s.charAt(0).toUpperCase() + s.slice(1) : "-" };
 }
 
 export default function TransactionDetails() {
@@ -245,7 +245,7 @@ export default function TransactionDetails() {
         <View style={styles.introCard}>
           <Feather name="info" size={18} color="#21555b" />
           <Text style={styles.introText}>
-            Every dollar, broken down. We believe in 100% transparency — here's
+            Every dollar, broken down. We believe in 100% transparency, so here's
             exactly where each gift goes.
           </Text>
         </View>
@@ -388,7 +388,7 @@ export default function TransactionDetails() {
             <Text style={styles.modalTitle}>Donation Amount</Text>
             <Text style={styles.modalText}>
               100% of this amount goes directly to your chosen charity. No
-              fees come out of this — it goes straight to the cause you support.
+              fees come out of this. It goes straight to the charity you support.
             </Text>
             <TouchableOpacity
               style={styles.modalCloseButton}
@@ -416,7 +416,7 @@ export default function TransactionDetails() {
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Platform Fee</Text>
             <Text style={styles.modalText}>
-              Your $3 monthly platform fee helps power THRIVE — supporting the
+              Your $3 monthly platform fee helps power THRIVE by supporting the
               technology, operations, and growth needed to expand impact
               across more communities.
             </Text>
@@ -447,7 +447,7 @@ export default function TransactionDetails() {
             <Text style={styles.modalTitle}>Card Processing Fee</Text>
             <Text style={styles.modalText}>
               Payment processors charge a small fee (3.5%) to securely handle
-              your donation. This fee goes to the payment provider — not to
+              your donation. This fee goes to the payment provider, not to
               THRIVE or your charity.
             </Text>
             <TouchableOpacity

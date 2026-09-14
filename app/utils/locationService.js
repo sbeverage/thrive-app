@@ -205,20 +205,26 @@ export const calculateDistance = (lat1, lon1, lat2, lon2) => {
 };
 
 /**
- * Format distance for display
+ * Miles, written the way a person says them.
+ *
+ * Close in keeps a decimal, because the difference between half a mile and
+ * three miles is the difference between walking and driving. Past ten miles
+ * nobody cares about the tenth, and "780.0 mi" reads like a machine wrote it,
+ * so further out rounds off and gets a thousands separator.
  */
 export const formatDistance = (distanceInMiles) => {
-  if (!distanceInMiles) {
+  if (!Number.isFinite(distanceInMiles) || distanceInMiles < 0) {
     return null;
   }
-  
+
   if (distanceInMiles < 0.1) {
     return '< 0.1 mi';
-  } else if (distanceInMiles < 1) {
-    return `${distanceInMiles.toFixed(1)} mi`;
-  } else {
-    return `${distanceInMiles.toFixed(1)} mi`;
   }
+  const oneDecimal = Math.round(distanceInMiles * 10) / 10;
+  if (oneDecimal < 10) {
+    return `${oneDecimal.toFixed(1)} mi`;
+  }
+  return `${Math.round(distanceInMiles).toLocaleString('en-US')} mi`;
 };
 
 export const getDefaultRegion = () => {

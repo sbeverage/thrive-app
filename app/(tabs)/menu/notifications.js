@@ -29,16 +29,19 @@ const CATEGORIES = [
   {
     key: 'donation',
     label: 'Donation receipts',
-    hint: "When your monthly gift reaches the cause you've chosen.",
+    hint: "When your monthly gift reaches the charity you've chosen.",
   },
   {
     key: 'discounts',
     label: 'Discounts you follow',
-    hint: "New offers, and warnings before one expires, from places you've favourited.",
+    hint: "New offers, and warnings before one expires, from places you've favorited.",
   },
   {
+    // MUST stay 'causes': it is the server's category key in
+    // NOTIFICATION_CATEGORIES, not copy. Renaming it silently detaches this
+    // toggle from the charity-approval notifications it controls.
     key: 'causes',
-    label: 'Your cause',
+    label: 'Your charity',
     hint: 'Updates about the charity you support, including approvals and changes.',
   },
   {

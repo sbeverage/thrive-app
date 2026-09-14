@@ -1,7 +1,7 @@
 // Search 501(c)(3) registry (via our ProPublica proxy) and let a donor pick
 // an org that isn't on THRIVE yet. Selection creates a "pending verification"
 // charity row that the admin team can later approve. Used inside the signup
-// flow so a donor can pick their cause even if we haven't onboarded it.
+// flow so a donor can pick their charity even if we haven't onboarded it.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -97,7 +97,7 @@ export default function SuggestCharityModal({
 
     Alert.alert(
       `Suggest ${item.name}?`,
-      `We'll verify this 501(c)(3) within 5 business days. Until they're approved:\n\n• Your monthly donations are held safely\n• You'll be notified the moment they're live\n• If we can't verify them, we'll email you so you can pick a different cause`,
+      `We'll verify this 501(c)(3) within 5 business days. Until they're approved:\n\n• Your monthly donations are held safely\n• You'll be notified the moment they're live\n• If we can't verify them, we'll email you so you can pick a different charity`,
       [
         { text: 'Cancel', style: 'cancel' },
         {

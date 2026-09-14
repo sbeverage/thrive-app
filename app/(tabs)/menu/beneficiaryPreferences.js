@@ -146,7 +146,7 @@ export default function BeneficiaryPreferences() {
     } else {
       setFavorites([...favorites, id]);
       if (!hasShownFirstFavorite) {
-        setSuccessMessage("You're now following a cause!");
+        setSuccessMessage("You're now following a charity!");
         setShowSuccessModal(true);
         setConfettiTrigger(true);
         setHasShownFirstFavorite(true);
@@ -157,7 +157,7 @@ export default function BeneficiaryPreferences() {
   const selectBeneficiary = id => {
     setSelectedBeneficiary(id);
     if (!hasShownFirstSelect) {
-      setSuccessMessage("Awesome! You've selected your cause!");
+      setSuccessMessage("Awesome! You've selected your charity!");
       setShowSuccessModal(true);
       setConfettiTrigger(true);
       setHasShownFirstSelect(true);
@@ -258,7 +258,7 @@ export default function BeneficiaryPreferences() {
                 style={{ width: 24, height: 24, tintColor: '#324E58' }} 
               />
             </TouchableOpacity>
-            <Text style={{ fontSize: 18, fontWeight: '700', color: '#324E58' }}>Beneficiaries</Text>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: '#324E58' }}>Charities</Text>
             <View style={{ width: 24 }} />
           </View>
 
@@ -283,7 +283,7 @@ export default function BeneficiaryPreferences() {
 
           <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 20 }}>
             <TouchableOpacity onPress={() => setActiveTab('Beneficiaries')} style={{ paddingVertical: 10, marginHorizontal: 16 }}>
-              <Text style={{ fontWeight: '700', color: activeTab === 'Beneficiaries' ? '#DB8633' : '#6D6E72', textAlign: 'center' }}>Beneficiary List</Text>
+              <Text style={{ fontWeight: '700', color: activeTab === 'Beneficiaries' ? '#DB8633' : '#6D6E72', textAlign: 'center' }}>All charities</Text>
               {activeTab === 'Beneficiaries' && <View style={{ height: 2, backgroundColor: '#DB8633', marginTop: 4 }} />}
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setActiveTab('Volunteer')} style={{ paddingVertical: 10, marginHorizontal: 16 }}>
@@ -303,7 +303,7 @@ export default function BeneficiaryPreferences() {
                     style={{ width: 18, height: 18, tintColor: '#6d6e72', marginRight: 8 }} 
                   />
                   <TextInput
-                    placeholder="Search Beneficiaries"
+                    placeholder="Search charities"
                     placeholderTextColor="#6d6e72"
                     value={searchText}
                     onChangeText={setSearchText}

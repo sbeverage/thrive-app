@@ -28,7 +28,7 @@ import API from '../lib/api';
 import { persistSignupFlowCheckpointFromParams } from '../utils/signupFlowCheckpoint';
 import { useLocation } from '../context/LocationContext';
 import { useDiscountFilter } from '../context/DiscountFilterContext';
-import { calculateDistance } from '../utils/locationService';
+import { calculateDistance, formatDistance } from '../utils/locationService';
 import SuggestPrompt from '../../components/SuggestPrompt';
 
 // Preload the piggy artwork at module load so it's decoded into memory by
@@ -66,6 +66,37 @@ function vendorCoords(v) {
   return { lat, lng };
 }
 
+// Past this, "near you" is not a claim we can make. Every partner we carry
+// today is in metro Atlanta, so a donor further out than this gets told where
+// the discounts actually are instead of seeing their own city in the header.
+const NEAR_RADIUS_MILES = 60;
+
+/**
+ * The city most of our partners sit in. Shown to donors who are not in it, so
+ * the header can name a real place rather than implying the discounts are
+ * wherever the phone happens to be.
+ */
+function vendorAreaLabel(list) {
+  const counts = new Map();
+  for (const v of list || []) {
+    const addr = v?.address || {};
+    const city = (addr.city || '').trim();
+    if (!city) continue;
+    const state = (addr.state || '').trim();
+    const label = state ? `${city}, ${state}` : city;
+    counts.set(label, (counts.get(label) || 0) + 1);
+  }
+  let best = null;
+  let bestCount = 0;
+  for (const [label, n] of counts) {
+    if (n > bestCount) {
+      best = label;
+      bestCount = n;
+    }
+  }
+  return best;
+}
+
 function getDiscountTextForVendor(vendorId, discounts) {
   const list = (discounts || []).filter((d) => {
     const vid = String(d.vendorId ?? d.vendor_id ?? d.vendor?.id ?? '');
@@ -79,7 +110,12 @@ function getDiscountTextForVendor(vendorId, discounts) {
 export default function DiscountTeaser() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { location: userLocation, locationAddress, locationPermission } = useLocation();
+  const {
+    location: userLocation,
+    locationAddress,
+    locationPermission,
+    checkLocationPermission,
+  } = useLocation();
   const { filters, updateFilters, hasActiveFilters } = useDiscountFilter();
 
   const [vendors, setVendors] = useState([]);
@@ -295,6 +331,41 @@ export default function DiscountTeaser() {
       ? 'Location not available'
       : 'Detecting location...');
 
+  // This screen never asked for location itself, so it depended on some
+  // earlier screen having done it. A donor who lands here without that having
+  // happened, or whose grant came from a screen that prompts the OS directly
+  // without going through the provider, read "Detecting location..." with no
+  // distances at all. A screen titled after proximity should ask for itself.
+  // checkLocationPermission asks at most once and records a denial instead of
+  // asking again, so a donor who says no is not pestered.
+  //
+  // The ref matters: checkLocationPermission is rebuilt on every render of the
+  // provider, so depending on it alone would re-run this effect constantly and
+  // could put a second prompt on screen while the first is still up.
+  const askedForLocation = useRef(false);
+  useEffect(() => {
+    if (askedForLocation.current) return;
+    askedForLocation.current = true;
+    checkLocationPermission();
+  }, [checkLocationPermission]);
+
+  // Distance to the closest discount we carry. Measured across everything,
+  // not the filtered list, so searching for one shop that happens to be far
+  // away does not flip the whole header into "you are out of area".
+  const nearestMiles = useMemo(() => {
+    const miles = processed
+      .map((v) => v._distance)
+      .filter((d) => Number.isFinite(d));
+    return miles.length ? Math.min(...miles) : null;
+  }, [processed]);
+
+  // The old header said "Discounts Near You" above the donor's own city no
+  // matter where they stood, so someone in Dallas read "Dallas, TX (10)" and
+  // reasonably took those ten to be in Dallas. They are all in Georgia.
+  const areaLabel = useMemo(() => vendorAreaLabel(processed), [processed]);
+  const isOutOfArea =
+    nearestMiles != null && nearestMiles > NEAR_RADIUS_MILES && !!areaLabel;
+
   // Goes to chooseCause, not straight to the 52 item list. That screen
   // offers "help me choose" and "start now, pick later" first, and keeps a
   // quiet link through to the full list for donors who already know.
@@ -474,19 +545,24 @@ export default function DiscountTeaser() {
           <View style={{ flex: 1 }}>
             <Text style={styles.previewTitle}>These are locked for now</Text>
             <Text style={styles.previewBody}>
-              Real discounts from real places near you. They unlock as soon as
-              your monthly giving starts.
+              {isOutOfArea
+                ? 'Real discounts from real places. They unlock as soon as your monthly giving starts.'
+                : 'Real discounts from real places near you. They unlock as soon as your monthly giving starts.'}
             </Text>
           </View>
         </View>
 
         <View style={styles.sectionHeader}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.sectionTitle}>Discounts Near You</Text>
+            <Text style={styles.sectionTitle}>
+              {isOutOfArea ? 'Where Your Discounts Are' : 'Discounts Near You'}
+            </Text>
             <View style={styles.sectionSubtitleRow}>
               <Feather name="map-pin" size={13} color="#8E9BAE" />
-              <Text style={styles.sectionSubtitle}>
-                {locationDisplay} ({visible.length})
+              <Text style={styles.sectionSubtitle} numberOfLines={2}>
+                {isOutOfArea
+                  ? `${areaLabel} (${visible.length})`
+                  : `${locationDisplay} (${visible.length})`}
               </Text>
             </View>
           </View>
@@ -509,6 +585,14 @@ export default function DiscountTeaser() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {isOutOfArea && (
+          <Text style={styles.outOfAreaNote}>
+            Our partners are around {areaLabel}, about{' '}
+            {formatDistance(nearestMiles)} from you. We are adding new places
+            all the time.
+          </Text>
+        )}
 
         {loading
           ? [0, 1, 2, 3].map((i) => <SkeletonCard key={i} />)
@@ -579,8 +663,8 @@ export default function DiscountTeaser() {
         >
           <Text style={styles.continueButtonText}>
             {milestoneHit
-              ? 'Pick a cause to save them →'
-              : 'Pick Your Cause →'}
+              ? 'Pick a charity to save them →'
+              : 'Pick Your Charity →'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -593,6 +677,11 @@ function LockedVoucherCard({ vendor, isFavorited, onToggleFavorite }) {
     vendor.logoUrl || vendor.logo_url || vendor.imageUrl || vendor.image_url || null;
   const discountText = vendor._discountText || 'Discounts available';
   const category = vendor.category || (vendor.tags && vendor.tags[0]) || null;
+  // Category and distance share one line rather than stacking, so the card
+  // keeps its height and the donor still learns how far away the place is.
+  // They are separate Texts because categoryLabel capitalizes each word, which
+  // renders "726 mi" as "726 Mi".
+  const distanceLabel = formatDistance(vendor._distance);
 
   return (
     <View style={voucherStyles.cardWrapper}>
@@ -621,10 +710,22 @@ function LockedVoucherCard({ vendor, isFavorited, onToggleFavorite }) {
             <Text style={voucherStyles.brand} numberOfLines={1}>
               {vendor.name}
             </Text>
-            {category ? (
-              <Text style={voucherStyles.categoryLabel} numberOfLines={1}>
-                {category}
-              </Text>
+            {category || distanceLabel ? (
+              <View style={voucherStyles.metaRow}>
+                {category ? (
+                  <Text style={voucherStyles.categoryLabel} numberOfLines={1}>
+                    {category}
+                  </Text>
+                ) : null}
+                {category && distanceLabel ? (
+                  <Text style={voucherStyles.metaDot}>{'\u00b7'}</Text>
+                ) : null}
+                {distanceLabel ? (
+                  <Text style={voucherStyles.distanceLabel} numberOfLines={1}>
+                    {distanceLabel}
+                  </Text>
+                ) : null}
+              </View>
             ) : null}
             <View style={voucherStyles.discountBadge}>
               <Feather name="lock" size={11} color="#8A5A12" />
@@ -886,12 +987,17 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   sectionSubtitle: {
+    // Without this the row hands the Text its full natural width and the
+    // Filter button clips it, so "(10)" fell off the end.
+    flex: 1,
     fontSize: 14,
     color: '#666',
   },
   filterBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    // Never let the header text render underneath the button.
+    flexShrink: 0,
     gap: 6,
     paddingVertical: 8,
     paddingHorizontal: 14,
@@ -1023,6 +1129,16 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 18,
   },
+  // Sits between the section header and the first card, matching the card
+  // gutter so it lines up with them rather than the screen edge.
+  outOfAreaNote: {
+    marginHorizontal: 20,
+    marginTop: -2,
+    marginBottom: 14,
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#6E7F8A',
+  },
 });
 
 // Voucher card styles — copied from components/VoucherCard.js so the visual
@@ -1083,6 +1199,21 @@ const voucherStyles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#1C4F7D',
+  },
+  // Category and distance on one line. No margins here: categoryLabel keeps
+  // its own, so the card height is unchanged from before the distance.
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  metaDot: {
+    fontSize: 11,
+    color: '#B6C2CE',
+  },
+  distanceLabel: {
+    fontSize: 11,
+    color: '#8E9BAE',
   },
   categoryLabel: {
     fontSize: 11,

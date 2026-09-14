@@ -169,9 +169,29 @@ export default function LoginScreen() {
       if (response.user?.needsOnboarding && !onboardingDoneLocally) {
         // Resume signup flow at the right step based on how far they got
         if (hasLocalBeneficiary) {
-          // Already picked a cause — resume at donation amount
-          console.log('📱 Resuming signup flow at donationAmount (beneficiary already selected)');
-          router.replace('/signupFlow/donationAmount');
+          // Comped accounts have no amount to pick: a coworking member's gift
+          // comes with their membership and a team account is never billed.
+          // Resuming them at donationAmount asked a question neither should
+          // ever see.
+          const membership = String(
+            response.user?.inviteType || response.user?.invite_type || '',
+          ).toLowerCase();
+          if (membership === 'team') {
+            router.replace({
+              pathname: '/signupFlow/teamAccountReady',
+              params: { flow: 'team' },
+            });
+          } else if (membership === 'coworking' || response.user?.coworking === true) {
+            router.replace({
+              pathname: '/signupFlow/coworkingDonationPrompt',
+              params: {
+                sponsorAmount: String(response.user?.sponsorAmount ?? '15'),
+              },
+            });
+          } else {
+            console.log('📱 Resuming signup flow at donationAmount (charity already selected)');
+            router.replace('/signupFlow/donationAmount');
+          }
         } else {
           // Start from the beginning of the signup flow
           console.log('📱 Starting signup flow from explainerDonate');
@@ -288,9 +308,29 @@ export default function LoginScreen() {
       if (response.user?.needsOnboarding && !onboardingDoneLocally) {
         // Resume signup flow at the right step based on how far they got
         if (hasLocalBeneficiary) {
-          // Already picked a cause — resume at donation amount
-          console.log('📱 Resuming signup flow at donationAmount (beneficiary already selected)');
-          router.replace('/signupFlow/donationAmount');
+          // Comped accounts have no amount to pick: a coworking member's gift
+          // comes with their membership and a team account is never billed.
+          // Resuming them at donationAmount asked a question neither should
+          // ever see.
+          const membership = String(
+            response.user?.inviteType || response.user?.invite_type || '',
+          ).toLowerCase();
+          if (membership === 'team') {
+            router.replace({
+              pathname: '/signupFlow/teamAccountReady',
+              params: { flow: 'team' },
+            });
+          } else if (membership === 'coworking' || response.user?.coworking === true) {
+            router.replace({
+              pathname: '/signupFlow/coworkingDonationPrompt',
+              params: {
+                sponsorAmount: String(response.user?.sponsorAmount ?? '15'),
+              },
+            });
+          } else {
+            console.log('📱 Resuming signup flow at donationAmount (charity already selected)');
+            router.replace('/signupFlow/donationAmount');
+          }
         } else {
           // Start from the beginning of the signup flow
           console.log('📱 Starting signup flow from explainerDonate');

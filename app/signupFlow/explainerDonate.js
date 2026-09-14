@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,12 @@ import {
   Alert,
   Modal,
   Platform,
+  Animated,
+  Easing,
+  AccessibilityInfo,
 } from 'react-native';
+import ConfettiCannon from 'react-native-confetti-cannon';
+import { CoinRain, HeartPop } from '../components/ExplainerParticles';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -25,6 +30,55 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // 2-3 min donation explainer video (Supabase) - no fallback
 const DONATION_VIDEO_URL = VIDEO_ASSETS.DONATION_EXPLAINER;
+
+/**
+ * Staged reveal timings.
+ *
+ * STAGGER is the one number worth tuning. It is 700ms rather than the two or
+ * three seconds a "pause so people read each card" implies, and that is
+ * deliberate: a pause long enough to finish reading a card is long enough for
+ * the reader to feel held up, and they look away or start hunting for the
+ * button. What actually directs attention is the arrival itself. Each card
+ * landing in turn says "this one now" without ever making the screen feel
+ * locked, and the whole sequence is done in under three seconds.
+ *
+ * Nothing here gates the button. A donor can leave on the first frame.
+ */
+// infoCard is 90% wide capped at 340, with 24px padding each side, and each
+// benefit card adds 16px of its own. Particles scatter across what is left.
+const CARD_INNER_WIDTH = Math.min(SCREEN_WIDTH * 0.9, 340) - 24 * 2 - 16 * 2;
+
+/**
+ * Staged reveal, in ms from the start.
+ *
+ * The cards arrive one at a time and each one stays: card two does not replace
+ * card one, it joins it. By the end the whole message is on screen, which is
+ * also the state a donor who skips or returns sees, so nothing ever has to be
+ * re-read.
+ *
+ * PAUSE is the number to tune. It is the gap between one card landing and the
+ * next arriving, which is the whole point of staging this: long enough to take
+ * the card in, short enough that nobody feels held up. Only opacity and
+ * transform animate, never height, so the layout never shifts.
+ */
+const ENTER = 340;     // a card arriving
+const PAUSE = 1550;    // dwell after a card lands, before the next arrives
+const TITLE_DUR = 420;
+const FIRST_AT = 520;  // card one waits for the headline to settle
+
+const IN_AT = [
+  FIRST_AT,
+  FIRST_AT + ENTER + PAUSE,
+  FIRST_AT + 2 * (ENTER + PAUSE),
+];
+const REVEAL = { IN_AT, ENTER, PAUSE, TITLE_DUR };
+
+// Plays on every visit to this screen. It was gated to once per app session,
+// which sounded prudent and was wrong twice over: a donor only passes through
+// here once in a normal signup, and the app auto-resumes to this screen on
+// launch, so the single allowed play was often spent before anyone was
+// looking. The only real replay case is resuming an interrupted signup, where
+// four and a half seconds costs nothing.
 
 export default function ExplainerDonate() {
   const router = useRouter();
@@ -66,6 +120,126 @@ export default function ExplainerDonate() {
   const params = useLocalSearchParams();
   const [showVideo, setShowVideo] = useState(false);
   const videoRef = useRef(null);
+
+  // One Animated.Value per revealed element, 0 = not yet arrived, 1 = settled.
+  // Opacity and translateY both read off the same value so a card cannot be
+  // half faded and fully risen.
+  const reveal = useRef({
+    title: new Animated.Value(0),
+    cards: [
+      new Animated.Value(0),
+      new Animated.Value(0),
+      new Animated.Value(0),
+    ],
+  }).current;
+
+  // Which particle burst is currently allowed to run.
+  const [burst, setBurst] = useState({ confetti: false, coins: false, hearts: false });
+  const burstTimers = useRef([]);
+  const sequence = useRef(null);
+
+  /** Jump straight to the settled state. Used for Reduce Motion, for repeat
+   *  visits, and when the donor taps to skip. */
+  const settled = useRef(false);
+  const settleImmediately = useCallback(() => {
+    if (settled.current) return;
+    settled.current = true;
+    sequence.current?.stop();
+    burstTimers.current.forEach(clearTimeout);
+    burstTimers.current = [];
+    reveal.title.setValue(1);
+    reveal.cards.forEach((v) => v.setValue(1));
+    setBurst({ confetti: false, coins: false, hearts: false });
+  }, [reveal]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const play = async () => {
+      // iOS Reduce Motion is a real accessibility request, not a preference to
+      // second-guess. Honour it by showing the finished screen.
+      let reduceMotion = false;
+      try {
+        reduceMotion = await AccessibilityInfo.isReduceMotionEnabled();
+      } catch {
+        reduceMotion = false;
+      }
+      if (cancelled) return;
+
+      if (reduceMotion) {
+        settleImmediately();
+        return;
+      }
+
+      // One chain per Animated.Value, never several at once.
+      //
+      // An earlier version put several delayed timings on the same value
+      // inside one Animated.parallel. Attaching a second animation to a value
+      // stops the first, and parallel defaults to stopTogether: true, so that
+      // stop cascaded through the group: the cards still ended up visible
+      // because the last animation attached to each one won, but the headline
+      // had only one animation and was stopped at 0 before it ran, leaving the
+      // title invisible while the cards animated fine. One chain per value,
+      // and stopTogether off, removes the whole class of problem.
+      const enter = (value, delay, duration) =>
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(value, {
+            toValue: 1,
+            duration,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]);
+
+      sequence.current = Animated.parallel(
+        [
+          enter(reveal.title, 0, REVEAL.TITLE_DUR),
+          enter(reveal.cards[0], REVEAL.IN_AT[0], REVEAL.ENTER),
+          enter(reveal.cards[1], REVEAL.IN_AT[1], REVEAL.ENTER),
+          enter(reveal.cards[2], REVEAL.IN_AT[2], REVEAL.ENTER),
+        ],
+        { stopTogether: false },
+      );
+      sequence.current.start();
+
+      // One burst per card, fired as it lands and cleared before the next, so
+      // only one effect is ever competing with the words.
+      const arm = (key, when, life) => {
+        burstTimers.current.push(
+          setTimeout(() => setBurst((b) => ({ ...b, [key]: true })), when),
+          setTimeout(() => setBurst((b) => ({ ...b, [key]: false })), when + life),
+        );
+      };
+      arm('confetti', REVEAL.IN_AT[0] + 40, REVEAL.PAUSE);
+      arm('coins', REVEAL.IN_AT[1] + 40, REVEAL.PAUSE);
+      arm('hearts', REVEAL.IN_AT[2] + 40, REVEAL.PAUSE);
+    };
+
+    play();
+
+    return () => {
+      cancelled = true;
+      sequence.current?.stop();
+      burstTimers.current.forEach(clearTimeout);
+      burstTimers.current = [];
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Fade up and rise into place. 18px is enough to read as arriving without
+   *  the layout visibly jumping. */
+  const revealStyle = (value) => ({
+    opacity: value,
+    transform: [
+      {
+        translateY: value.interpolate({
+          inputRange: [0, 1],
+          outputRange: [18, 0],
+        }),
+      },
+    ],
+  });
 
   const paramsSnapshot = JSON.stringify(params ?? {});
 
@@ -176,7 +350,21 @@ export default function ExplainerDonate() {
         showsVerticalScrollIndicator={true}
         bounces={true}
         alwaysBounceVertical={true}
+        onTouchStart={settleImmediately}
       >
+        {/* Title sits on the gradient, the way the discounts teaser and the
+            cause picker do, so this screen stops looking like the odd one out.
+            Animating the container rather than the Text node: the headline
+            being stuck invisible turned out to be the Animated.parallel
+            conflict described below, not the text node, but wrapping is the
+            sturdier form so it stayed. */}
+        <Animated.View style={[styles.headerBlock, revealStyle(reveal.title)]}>
+          <Text style={styles.headerTitle}>How it Works</Text>
+          <Text style={styles.headerSubtitle}>
+            Give to a charity you love. Get discounts where you already shop.
+          </Text>
+        </Animated.View>
+
         <View style={styles.infoCard}>
           {/* Nonprofit Badge - Clickable Video Link */}
           <TouchableOpacity style={styles.nonprofitBadge} onPress={handleWatchVideo}>
@@ -184,17 +372,15 @@ export default function ExplainerDonate() {
               source={require('../../assets/icons/play.png')} 
               style={{ width: 16, height: 16, tintColor: '#fff', marginRight: 8 }} 
             />
-            <Text style={styles.nonprofitText}>Watch Video</Text>
+            <Text style={styles.nonprofitText}>Our Mission Video</Text>
           </TouchableOpacity>
 
           {/* Main Headline */}
-          <Text style={styles.headline}>
-            Your Donation Makes a Difference
-          </Text>
-
           {/* Key Benefits */}
           <View style={styles.benefitsContainer}>
-            <View style={styles.benefitCard}>
+            <Animated.View
+              style={[styles.benefitCard, revealStyle(reveal.cards[0])]}
+            >
               <View style={styles.benefitIcon}>
                 <Image 
                   source={require('../../assets/icons/gift.png')} 
@@ -202,14 +388,16 @@ export default function ExplainerDonate() {
                 />
               </View>
               <View style={styles.benefitText}>
-                <Text style={styles.benefitTitle}>100% to Charity</Text>
+                <Text style={styles.benefitTitle}>100% to Your Charity</Text>
                 <Text style={styles.benefitDescription}>
-                  All proceeds go directly to our nonprofit organization and your chosen beneficiary
+                  Every dollar of your monthly gift goes to the charity you choose
                 </Text>
               </View>
-            </View>
+            </Animated.View>
 
-            <View style={styles.benefitCard}>
+            <Animated.View
+              style={[styles.benefitCard, revealStyle(reveal.cards[1])]}
+            >
               <View style={styles.benefitIcon}>
                 <Image
                   source={require('../../assets/icons/discounts.png')}
@@ -217,14 +405,17 @@ export default function ExplainerDonate() {
                 />
               </View>
               <View style={styles.benefitText}>
-                <Text style={styles.benefitTitle}>Local Discounts</Text>
+                <Text style={styles.benefitTitle}>Get Local Discounts</Text>
                 <Text style={styles.benefitDescription}>
                   Get exclusive discounts from amazing local partners as a thank you
                 </Text>
               </View>
-            </View>
+              <CoinRain run={burst.coins} width={CARD_INNER_WIDTH} fall={150} />
+            </Animated.View>
 
-            <View style={styles.benefitCard}>
+            <Animated.View
+              style={[styles.benefitCard, revealStyle(reveal.cards[2])]}
+            >
               <View style={styles.benefitIcon}>
                 <Image
                   source={require('../../assets/icons/calendar.png')}
@@ -234,27 +425,31 @@ export default function ExplainerDonate() {
               <View style={styles.benefitText}>
                 <Text style={styles.benefitTitle}>Monthly Impact</Text>
                 <Text style={styles.benefitDescription}>
-                  Set up recurring donations to create lasting change
+                  Set up monthly donations to create lasting change
                 </Text>
               </View>
-            </View>
+              <HeartPop run={burst.hearts} width={CARD_INNER_WIDTH} rise={86} />
+            </Animated.View>
           </View>
 
-          {/* Call to Action */}
-          <View style={styles.ctaSection}>
-            <Text style={styles.ctaText}>
-              Ready to make a difference?
-            </Text>
-          </View>
-          
-          {/* Extra Content for Scrolling */}
-          <View style={styles.extraContent}>
-            <Text style={styles.extraText}>
-              Join thousands of others making a positive impact in their communities every month.
-            </Text>
-          </View>
         </View>
       </ScrollView>
+
+      {/* Confetti for the first card. Outside the ScrollView because a
+          ScrollView clips its children, which would cut the burst off at the
+          card edges. pointerEvents none so it never eats a tap. */}
+      {burst.confetti && (
+        <View pointerEvents="none" style={styles.confettiLayer}>
+          <ConfettiCannon
+            count={70}
+            origin={{ x: SCREEN_WIDTH / 2, y: SCREEN_HEIGHT * 0.34 }}
+            fadeOut
+            explosionSpeed={340}
+            fallSpeed={2400}
+            colors={['#DB8633', '#F2B471', '#2F4E58', '#4CA1AF', '#FFD9A8']}
+          />
+        </View>
+      )}
 
       {/* Sticky Button at Bottom */}
       <View style={styles.stickyButtonContainer}>
@@ -317,8 +512,8 @@ export default function ExplainerDonate() {
 
           {/* Video Title */}
           <View style={styles.videoTitleContainer}>
-            <Text style={styles.videoTitle}>How Your Donation Makes a Difference</Text>
-            <Text style={styles.videoSubtitle}>Watch this short video to learn more about our impact</Text>
+            <Text style={styles.videoTitle}>Our Mission</Text>
+            <Text style={styles.videoSubtitle}>A short look at why THRIVE exists and who it helps</Text>
           </View>
         </View>
       </Modal>
@@ -360,10 +555,21 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   contentSection: {
+    // flexGrow makes this fill the scroll viewport so justifyContent has room
+    // to work; without it the container hugs the card and centring does
+    // nothing. Still scrolls normally if the card ever grows past the screen.
+    flexGrow: 1,
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingTop: 50,
-    paddingBottom: 140, // Increased to give more scrollable content
+    justifyContent: 'center',
+    // The title now sits above the card on the gradient, and the two centre
+    // together as one group, so the heavy downward bias the card needed on its
+    // own is gone.
+    paddingTop: 24,
+    // Clearance for the sticky button, which also pulls the centre point up so
+    // the card sits in the middle of the area the donor can actually see
+    // rather than the middle of the screen. Trimmed with the button's own
+    // padding to cut the band of white between the two.
+    paddingBottom: 96,
     zIndex: 5,
   },
   infoCard: {
@@ -378,8 +584,6 @@ const styles = StyleSheet.create({
     width: '90%',
     maxWidth: 340,
     alignSelf: 'center',
-    marginTop: 20,
-    marginBottom: 10,
     alignItems: 'center',
     zIndex: 10,
     borderWidth: 1,
@@ -409,16 +613,30 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
-  headline: {
-    fontSize: 26,
+  // White type on the gradient. Matches the weight and centring used by the
+  // discounts teaser so the two screens read as the same family.
+  headerBlock: {
+    paddingHorizontal: 24,
+    marginBottom: 18,
+  },
+  headerTitle: {
+    fontSize: 30,
     fontWeight: 'bold',
-    color: '#1a202c', // Darker color for better contrast
+    color: '#ffffff',
     textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 32,
+    lineHeight: 36,
+  },
+  headerSubtitle: {
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.92)',
+    textAlign: 'center',
+    lineHeight: 21,
+    marginTop: 8,
   },
   benefitsContainer: {
-    marginBottom: 16, // Reduced to fit content better
+    // No bottom margin: the card's own 24px padding is the only gap wanted
+    // under the last benefit. The extra 16 read as unexplained white.
+    marginBottom: 0,
   },
   benefitCard: {
     flexDirection: 'row',
@@ -426,7 +644,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     padding: 16,
     borderRadius: 12,
-    marginBottom: 8, // Reduced from 12 to fit better
+    // Gap between the three cards. There is room for it now that the title
+    // moved onto the gradient and the untrue block below was removed.
+    marginBottom: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -465,28 +685,11 @@ const styles = StyleSheet.create({
     color: '#4a5568', // Darker color for better contrast
     lineHeight: 20,
   },
-  ctaSection: {
-    alignItems: 'center',
-    marginTop: 8, // Reduced from 12 to fit better
-  },
-  ctaText: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#1a202c',
-    textAlign: 'center',
-    marginBottom: 0,
-  },
-  extraContent: {
-    alignItems: 'center',
-    marginTop: 12,
-    paddingHorizontal: 20,
-  },
-  extraText: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 20,
-    fontStyle: 'italic',
+  // Sits above the card but below the sticky button, and never intercepts
+  // touches.
+  confettiLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 20,
   },
   stickyButtonContainer: {
     position: 'absolute',
@@ -494,13 +697,17 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: '#fff',
-    paddingHorizontal: 24,
-    paddingVertical: 20,
+    // These four match discountTeaser's stickyCTA exactly. They had drifted
+    // (24 / 12 / 12), which inset this button 4px further on each side and sat
+    // it 12px lower than the one on the very next screen.
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 24,
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 5,
     zIndex: 1000,
@@ -517,13 +724,12 @@ const styles = StyleSheet.create({
   continueButton: {
     backgroundColor: '#DB8633',
     paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     shadowColor: '#DB8633',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowRadius: 10,
     elevation: 4,
   },
   continueButtonText: {

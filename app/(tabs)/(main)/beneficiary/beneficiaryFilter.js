@@ -119,7 +119,7 @@ export default function BeneficiaryFilter() {
       </TouchableOpacity>
 
       {/* Title */}
-      <Text style={styles.header}>Filter Beneficiaries</Text>
+      <Text style={styles.header}>Filter Charities</Text>
 
       {/* Search Input */}
       <View style={styles.fieldGroup}>
@@ -205,39 +205,39 @@ export default function BeneficiaryFilter() {
         </TouchableOpacity>
       </View>
 
-      {/* Cause Dropdown */}
+      {/* Charity Dropdown */}
       <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Beneficiary cause</Text>
+        <Text style={styles.label}>Charity type</Text>
         <TouchableOpacity
           style={styles.dropdownToggle}
           onPress={() => setIsCauseDropdownOpen(!isCauseDropdownOpen)}
         >
-          <Text style={styles.dropdownToggleText}>{filters.cause || 'All categories (optional)'}</Text>
+          <Text style={styles.dropdownToggleText}>{filters.charity || 'All categories (optional)'}</Text>
           <Feather name={isCauseDropdownOpen ? 'chevron-up' : 'chevron-down'} size={18} color="#666" />
         </TouchableOpacity>
         {isCauseDropdownOpen && (
           <ScrollView style={styles.dropdownScroll}>
             <TouchableOpacity
-              style={[styles.dropdownItem, !filters.cause && styles.dropdownItemSelected]}
+              style={[styles.dropdownItem, !filters.charity && styles.dropdownItemSelected]}
               onPress={() => {
                 updateFilters({ cause: '' });
                 setIsCauseDropdownOpen(false);
               }}
             >
-              <Text style={[styles.optionText, !filters.cause && styles.optionTextSelected]}>
+              <Text style={[styles.optionText, !filters.charity && styles.optionTextSelected]}>
                 All categories
               </Text>
             </TouchableOpacity>
             {causeOptions.map(option => (
               <TouchableOpacity
                 key={option}
-                style={[styles.dropdownItem, filters.cause === option && styles.dropdownItemSelected]}
+                style={[styles.dropdownItem, filters.charity === option && styles.dropdownItemSelected]}
                 onPress={() => {
                   updateFilters({ cause: option });
                   setIsCauseDropdownOpen(false);
                 }}
               >
-                <Text style={[styles.optionText, filters.cause === option && styles.optionTextSelected]}>
+                <Text style={[styles.optionText, filters.charity === option && styles.optionTextSelected]}>
                   {option}
                 </Text>
               </TouchableOpacity>

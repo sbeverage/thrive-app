@@ -591,13 +591,13 @@ export default function TransactionHistory() {
           <View style={styles.financialSection}>
             <View style={styles.financialItem}>
               <Text style={styles.financialLabel}>Spent</Text>
-              <Text style={styles.spentAmount}>{item.spending || "—"}</Text>
+              <Text style={styles.spentAmount}>{item.spending || "-"}</Text>
             </View>
             <View style={styles.financialDivider} />
             <View style={styles.financialItem}>
               <Text style={styles.financialLabel}>Saved</Text>
               <Text style={[styles.savedAmount, hasSavings && styles.savedAmountHighlight]}>
-                {item.savings || "—"}
+                {item.savings || "-"}
               </Text>
             </View>
           </View>

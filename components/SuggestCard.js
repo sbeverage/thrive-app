@@ -85,7 +85,7 @@ export default function SuggestCard({ type = 'vendor', searchQuery = '', onSubmi
         ) : isVendor ? (
           'Help grow the THRIVE network. Suggest a local business and we\'ll reach out to bring them on board.'
         ) : (
-          'Help grow our cause partners. Suggest a charity and we\'ll work to add them for the community.'
+          'Help grow our list of charities. Suggest one and we\'ll work to add them for the community.'
         )}
       </Text>
 

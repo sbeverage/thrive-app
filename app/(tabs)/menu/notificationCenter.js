@@ -207,10 +207,14 @@ export default function NotificationCenter() {
           }
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={styles.emptyIcon}>🔔</Text>
+              <Image
+                source={require('../../../assets/icons/notification.png')}
+                style={styles.emptyIcon}
+                resizeMode="contain"
+              />
               <Text style={styles.emptyTitle}>Nothing yet</Text>
               <Text style={styles.emptyText}>
-                Donation receipts, new discounts from places you've favourited, and
+                Donation receipts, new discounts from places you've favorited, and
                 anything needing your attention will show up here.
               </Text>
             </View>
@@ -338,8 +342,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
   },
   emptyIcon: {
-    fontSize: 44,
+    // The source is 45x52, so keep that ratio rather than squaring it.
+    width: 44,
+    height: 51,
     marginBottom: 12,
+    // Muted to match the empty-state text: at full strength it read as an
+    // alert rather than the absence of one.
+    tintColor: '#B6C2CE',
   },
   emptyTitle: {
     fontSize: 18,

@@ -164,7 +164,7 @@ function formatDonationBreakdownDate(donation) {
     return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
   }
   if (m) return String(m);
-  return "—";
+  return "-";
 }
 
 function statusDotColor(status) {
@@ -229,7 +229,7 @@ function isSubscriptionRowEligible(sub) {
 }
 
 function formatBillingDate(value) {
-  if (!value) return "—";
+  if (!value) return "-";
   if (typeof value === "number") {
     const d = new Date(value * 1000);
     if (!Number.isNaN(d.getTime())) {
@@ -813,7 +813,7 @@ export default function DonationSummary() {
     stripeScheduledCancel ||
     activeStatus === "cancelling";
   const cancellationDatePhrase =
-    currentPeriodEnd && currentPeriodEnd !== "—"
+    currentPeriodEnd && currentPeriodEnd !== "-"
       ? currentPeriodEnd
       : nextPaymentLabel || null;
 
@@ -863,7 +863,7 @@ export default function DonationSummary() {
               style={styles.charityLogo}
             />
             <View style={styles.charityInfo}>
-              <Text style={styles.charityTitle}>Current Beneficiary</Text>
+              <Text style={styles.charityTitle}>Your Charity</Text>
               <Text style={styles.charityName}>{currentCharity}</Text>
             </View>
           </View>
@@ -1127,8 +1127,8 @@ export default function DonationSummary() {
             <Text style={styles.infoModalText}>
               This is the total amount that goes directly to your chosen
               charity. Platform fees and card processing fees aren&apos;t
-              included — 100% of your selected donation amount reaches the
-              cause you support.
+              included. 100% of your selected donation amount reaches the
+              charity you support.
             </Text>
             <TouchableOpacity
               style={styles.infoModalCloseButton}
@@ -1157,7 +1157,7 @@ export default function DonationSummary() {
             <Text style={styles.infoModalTitle}>Tax-Deductible Total</Text>
             <Text style={styles.infoModalText}>
               This is the full amount you donated to THRIVE Initiative, Inc.
-              this year — including platform and processing fees. Under IRS
+              this year, including platform and processing fees. Under IRS
               rules for gifts to a 501(c)(3), the entire amount you paid is
               generally tax-deductible. Consult your tax advisor for your
               specific situation.

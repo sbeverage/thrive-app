@@ -16,7 +16,7 @@
  *   categories  pick as many as matter to you, then we filter
  *   trio        three causes, rerollable
  *
- * Deliberately no counts anywhere. Not "52 causes", not "6 in Animal
+ * Deliberately no counts anywhere. Not "52 charities", not "6 in Animal
  * Welfare". The catalogue is meant to grow, a number dates the copy the
  * moment a charity joins, and quantifying a young catalogue makes it look
  * small rather than curated.
@@ -41,11 +41,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import API from '../lib/api';
-import {
-  useBeneficiary,
-  resolveBeneficiaryLogoSource,
-} from '../context/BeneficiaryContext';
+import { useBeneficiary } from '../context/BeneficiaryContext';
 import { persistSignupFlowCheckpointFromParams } from '../utils/signupFlowCheckpoint';
+import CharityLogo from '../components/CharityLogo';
 import { pickTrio, hasUnseen, blurbFor } from '../utils/causePicker';
 import { categoryKey, categoryLabel, orderCategoryKeys } from '../utils/categories';
 
@@ -53,6 +51,22 @@ import { categoryKey, categoryLabel, orderCategoryKeys } from '../utils/categori
 // saved there and the other way round. Charity favourites are local only;
 // there is no server side for them, unlike vendor favourites.
 const FAVORITES_KEY = 'beneficiaryFavorites';
+
+/**
+ * Where the donor had got to in the picker, held outside the component.
+ *
+ * Opening a charity profile and coming back was dropping them at the two
+ * buttons again, having lost the three charities they were looking at. The
+ * profile's back does try to return here, but this screen remounts on the way
+ * back, and everything that makes up "where I was" lived in component state,
+ * so it was rebuilt from scratch every time: phase back to entry, categories
+ * forgotten, a fresh random three.
+ *
+ * A module-level value is the right scope for this. It is transient UI
+ * position, not something to persist across app launches, and it survives
+ * exactly as long as the signup session does.
+ */
+let pickerSnapshot = null;
 
 /**
  * `preview` is for the development-only route outside signupFlow/. That stack
@@ -105,6 +119,13 @@ export default function ChooseCause({ preview = false } = {}) {
   // Any number of categories. Empty means "anything".
   const [picked, setPicked] = useState([]);
 
+  // Read the snapshot during the first render, NOT inside the effect that
+  // restores it. The saving effect below runs on mount too, and on a fresh
+  // mount it runs first with the default empty state, so reading the module
+  // value later got back "phase: entry" every time and the restore never
+  // fired. useRef's initialiser evaluates during render, before any effect.
+  const restoreFrom = useRef(pickerSnapshot);
+
   const paramsKey = JSON.stringify(params ?? {});
   useEffect(() => {
     if (preview) return;
@@ -118,7 +139,36 @@ export default function ChooseCause({ preview = false } = {}) {
       const res = await API.getCharities();
       const list = res?.charities || res?.data || (Array.isArray(res) ? res : []);
       if (!cancelled) {
-        setCharities(Array.isArray(list) ? list : []);
+        const charityList = Array.isArray(list) ? list : [];
+        setCharities(charityList);
+
+        // Put the donor back exactly where they were. Skipped when the route
+        // asked for a specific starting point (arriving from the full list via
+        // "Help me choose" always means the category step), and when the
+        // snapshot has nothing useful in it.
+        const snap = restoreFrom.current;
+        if (
+          !preview &&
+          startParam !== 'categories' &&
+          snap &&
+          snap.phase !== 'entry'
+        ) {
+          const byId = new Map(charityList.map((c) => [c.id, c]));
+          const restoredTrio = (snap.trioIds || [])
+            .map((id) => byId.get(id))
+            .filter(Boolean);
+          setPicked(snap.picked || []);
+          setSeen(new Set(snap.seenIds || []));
+          // Only return to the trio if its charities still resolve; otherwise
+          // the categories step is the honest place to land.
+          if (snap.phase === 'trio' && restoredTrio.length > 0) {
+            setTrio(restoredTrio);
+            setPhase('trio');
+          } else {
+            setPhase('categories');
+          }
+        }
+
         setLoading(false);
       }
     })();
@@ -126,6 +176,17 @@ export default function ChooseCause({ preview = false } = {}) {
       cancelled = true;
     };
   }, []);
+
+  // Keep the snapshot current. Cheap: four small values, only on change.
+  useEffect(() => {
+    if (preview) return;
+    pickerSnapshot = {
+      phase,
+      picked,
+      trioIds: trio.map((c) => c.id),
+      seenIds: Array.from(seen),
+    };
+  }, [phase, picked, trio, seen, preview]);
 
   useEffect(() => {
     let cancelled = false;
@@ -146,7 +207,7 @@ export default function ChooseCause({ preview = false } = {}) {
   /**
    * The heart saves without choosing. Two actions on one card means the
    * distinction has to be obvious, so the heart never navigates and
-   * "Choose this cause" is the only thing that commits.
+   * "Choose this charity" is the only thing that commits.
    */
   const toggleFavorite = useCallback((id) => {
     setFavorites((prev) => {
@@ -172,7 +233,7 @@ export default function ChooseCause({ preview = false } = {}) {
    * The charities the trio is drawn from. Everything about the reroll depends
    * on this rather than on the whole catalogue, which is where the bug was:
    * hasUnseen was checking all 52, so picking a narrow category left the
-   * button promising "different causes each time" when there were none left.
+   * button promising "different charities each time" when there were none left.
    */
   const pool = useMemo(
     () =>
@@ -192,7 +253,7 @@ export default function ChooseCause({ preview = false } = {}) {
     setPicked((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
   }, []);
 
-  /** Where a donor goes once a cause is settled. Mirrors the list screen. */
+  /** Where a donor goes once a charity is settled. Mirrors the list screen. */
   const continueAfterPick = useCallback(
     (beneficiaryId) => {
       if (flow === 'team') {
@@ -273,6 +334,9 @@ export default function ChooseCause({ preview = false } = {}) {
       setSelectedBeneficiary(charity);
       setHoldingForChoice(false);
       setBusyId(null);
+      // They chose: the picker position is spent, so a later visit starts
+      // clean rather than dropping them back into an old set of three.
+      pickerSnapshot = null;
       continueAfterPick(charity.id);
     },
     [busyId, continueAfterPick, setHoldingForChoice, setSelectedBeneficiary],
@@ -291,7 +355,7 @@ export default function ChooseCause({ preview = false } = {}) {
       if (!thrive?.id) {
         Alert.alert(
           'Not available right now',
-          "We couldn't set that up. Pick a cause instead and you can always change it.",
+          "We couldn't set that up. Pick a charity instead and you can always change it.",
         );
         setHoldBusy(false);
         return;
@@ -362,7 +426,18 @@ export default function ChooseCause({ preview = false } = {}) {
    * subtree, losing chip selections and scroll position on every keystroke
    * of state.
    */
-  const shell = (title, sub, children) => (
+  /**
+   * @param {object} [opts]
+   * @param {boolean} [opts.tall]  deeper gradient, so a short page is mostly
+   *   brand colour rather than a band of grey under the card
+   * @param {boolean} [opts.piggy] peeking piggy straddling the gradient's edge,
+   *   matching the discounts teaser
+   *
+   * Both are opt-in because only the entry step is short enough to want them.
+   * The category and trio steps scroll, so a deeper header would just push
+   * their content off screen.
+   */
+  const shell = (title, sub, children, opts = {}) => (
     <View style={styles.gradientPage}>
       <ScrollView
         ref={scrollRef}
@@ -373,11 +448,24 @@ export default function ChooseCause({ preview = false } = {}) {
           colors={['#2C3E50', '#4CA1AF']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={[styles.gradientHeader, { paddingTop: insets.top + 20 }]}
+          style={[
+            styles.gradientHeader,
+            opts.tall && styles.gradientHeaderTall,
+            { paddingTop: insets.top + 20 },
+          ]}
         >
           <Text style={styles.gradientTitle}>{title}</Text>
           <Text style={styles.gradientSub}>{sub}</Text>
         </LinearGradient>
+        {opts.piggy && (
+          <View style={styles.piggyWrap} pointerEvents="none">
+            <Image
+              source={require('../../assets/images/piggy-peek.png')}
+              style={styles.headerPiggy}
+              resizeMode="contain"
+            />
+          </View>
+        )}
         {children}
       </ScrollView>
     </View>
@@ -386,9 +474,9 @@ export default function ChooseCause({ preview = false } = {}) {
   if (phase === 'entry') {
     return shell(
       'Who do you want to help?',
-      'You can change your cause anytime, so there is no wrong answer here.',
+      'You can change your charity anytime, so there is no wrong answer here.',
       <>
-        <View style={styles.overlapCard}>
+        <View style={[styles.overlapCard, styles.overlapCardUnderPiggy]}>
           <TouchableOpacity
             style={[styles.primaryBtn, loading && styles.btnDisabled]}
             onPress={() => setPhase('categories')}
@@ -426,10 +514,11 @@ export default function ChooseCause({ preview = false } = {}) {
 
         <View style={styles.ctaWrap}>
           <TouchableOpacity onPress={browseAll} accessibilityRole="button">
-            <Text style={styles.quietLink}>Or browse all causes</Text>
+            <Text style={styles.quietLink}>Or browse all charities</Text>
           </TouchableOpacity>
         </View>
       </>,
+      { tall: true, piggy: true },
     );
   }
 
@@ -467,7 +556,7 @@ export default function ChooseCause({ preview = false } = {}) {
             disabled={picked.length === 0}
             accessibilityRole="button"
           >
-            <Text style={styles.primaryBtnText}>Show me causes</Text>
+            <Text style={styles.primaryBtnText}>Show me charities</Text>
             <Text style={styles.primaryBtnSub}>
               {picked.length === 0
                 ? 'Pick at least one to continue'
@@ -487,7 +576,7 @@ export default function ChooseCause({ preview = false } = {}) {
     'How about one of these?',
     canReroll || picked.length === 0
       ? 'Tap the heart to save one for later, or choose it now.'
-      : 'That is every cause in what you picked. Add more to see others.',
+      : 'That is every charity in what you picked. Add more to see others.',
     <>
       {/* The charity cards are already white cards, so they lift into the
           gradient directly rather than sitting inside another card. Nesting
@@ -499,11 +588,7 @@ export default function ChooseCause({ preview = false } = {}) {
           return (
             <View key={c.id} style={styles.card}>
               <View style={styles.cardTop}>
-                <Image
-                  source={resolveBeneficiaryLogoSource(c)}
-                  style={styles.logo}
-                  resizeMode="contain"
-                />
+                <CharityLogo charity={c} style={styles.logo} />
                 <View style={styles.cardHead}>
                   <Text style={styles.cardName} numberOfLines={2}>
                     {c.name}
@@ -559,7 +644,7 @@ export default function ChooseCause({ preview = false } = {}) {
                 {busyId === c.id ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <Text style={styles.chooseBtnText}>Choose this cause</Text>
+                  <Text style={styles.chooseBtnText}>Choose this charity</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -573,15 +658,19 @@ export default function ChooseCause({ preview = false } = {}) {
             new left this round, or business as usual. */}
         {!canReroll ? (
           <TouchableOpacity
-            style={styles.primaryBtn}
+            style={styles.rerollBtn}
             onPress={() => setPhase('categories')}
             accessibilityRole="button"
           >
-            <Text style={styles.primaryBtnText}>Add more categories</Text>
-            <Text style={styles.primaryBtnSub}>
+            {/* Outlined, matching "Start over" / "Show me 3 more". A solid
+                orange button here competed with the "Choose this charity"
+                buttons on the cards above it, which are the actual decision on
+                this screen. This is the fallback, not the point. */}
+            <Text style={styles.rerollText}>Add more categories</Text>
+            <Text style={styles.rerollSub}>
               {pool.length === 1
-                ? 'There is only one cause here'
-                : `There are only ${pool.length} causes here`}
+                ? 'There is only one charity here'
+                : `There are only ${pool.length} charities here`}
             </Text>
           </TouchableOpacity>
         ) : (
@@ -597,7 +686,7 @@ export default function ChooseCause({ preview = false } = {}) {
             <Text style={styles.rerollSub}>
               {exhausted
                 ? 'You have seen them all, going back to the top'
-                : 'Different causes each time'}
+                : 'Different charities each time'}
             </Text>
           </TouchableOpacity>
         )}
@@ -607,7 +696,7 @@ export default function ChooseCause({ preview = false } = {}) {
         </TouchableOpacity>
 
         <TouchableOpacity onPress={browseAll} accessibilityRole="button">
-          <Text style={styles.quietLink}>Or browse all causes</Text>
+          <Text style={styles.quietLink}>Or browse all charities</Text>
         </TouchableOpacity>
       </View>
     </>,
@@ -647,8 +736,11 @@ const styles = StyleSheet.create({
   btnDisabled: { opacity: 0.55 },
 
   quietLink: {
-    color: '#8a9ba1',
-    fontSize: 14,
+    // Was #8a9ba1 at 14: legible, but faint enough on grey that it read as
+    // disabled rather than as the third way out of this screen.
+    color: '#5A7180',
+    fontSize: 15,
+    fontWeight: '600',
     textAlign: 'center',
     textDecorationLine: 'underline',
     paddingVertical: 10,
@@ -656,7 +748,7 @@ const styles = StyleSheet.create({
 
   // ---- the home tab treatment, for the categories step ----
   gradientPage: { flex: 1, backgroundColor: '#F5F5F5' },
-  gradientScroll: { paddingBottom: 40 },
+  gradientScroll: { paddingBottom: 40, flexGrow: 1 },
   gradientHeader: {
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
@@ -665,6 +757,33 @@ const styles = StyleSheet.create({
     // the heading.
     paddingBottom: 104,
     overflow: 'hidden',
+  },
+  /** Entry step only: deep enough that the page reads as brand colour with a
+   *  card lifted into it, rather than a short header over empty grey. */
+  gradientHeaderTall: {
+    paddingBottom: 140,
+  },
+  /** Pulled up so the piggy sits inside the gradient, with the card below
+   *  covering its lower half. Same idea as the discounts teaser. */
+  piggyWrap: {
+    // Box bottom lands just above the gradient's edge; the card then covers
+    // only its last few points.
+    marginTop: -154,
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  headerPiggy: {
+    // Bigger than the teaser's 130x100 on purpose: the art is a square canvas
+    // with the piggy in its lower portion, so the box has to be taller than
+    // the pig you want to see.
+    width: 190,
+    height: 150,
+  },
+  /** Entry step only. overlapCard's -80 would swallow 80 of the piggy's 100px
+   *  and its higher zIndex hides the rest, so the piggy vanished entirely.
+   *  -40 leaves the top 60px showing above the card. */
+  overlapCardUnderPiggy: {
+    marginTop: -10,
   },
   gradientTitle: {
     fontSize: 27,

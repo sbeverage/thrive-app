@@ -111,7 +111,7 @@ export default function OneTimeGiftScreen() {
     if (!beneficiaryIdForPayment) {
       Alert.alert(
         "Error",
-        "Beneficiary information is missing. Please try again.",
+        "We lost track of that charity. Give it another try?",
       );
       return;
     }

@@ -62,8 +62,15 @@ THRIVE asks people to give money to strangers and trust that discounts follow.
 Formal copy makes a warm idea feel like paperwork, which is a large part of why
 new users don't understand the model.
 
-- **Never say "beneficiary" to a user.** It is an insurance word. Say "cause",
-  "charity", or ask "Who do you want to help?"
+- **Never say "beneficiary" to a user.** It is an insurance word. The word is
+  **"charity"**, everywhere, chosen 2026-09-12 and swept through the whole app.
+  Not "cause" either: that was the interim word and is now gone from user-facing
+  text. Asking "Who do you want to help?" is still fine as a heading.
+  Note the two data keys that deliberately still read `cause`/`causes`: the
+  notification category key in `app/(tabs)/menu/notifications.js` (matched
+  server-side) and the step key in `app/components/ThriveLoop.js`. Identifiers,
+  routes and filenames (`chooseCause`, `causeSearch`, `causePicker`) were left
+  alone on purpose.
 - **Errors say what happened and what to do**, and never open with "Error" or
   "Failed". Not `"Error: Failed to save"` but `"That didn't save. Give it
   another try?"`

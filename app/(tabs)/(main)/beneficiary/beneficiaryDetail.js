@@ -252,7 +252,7 @@ export default function BeneficiaryDetailScreen() {
               image: require('../../../../assets/images/pending-charity.png'),
               likes: 0,
               mutual: 0,
-              about: 'Unable to load beneficiary data. The API request failed. Please check your connection and try again.',
+              about: 'We could not load this charity. Check your connection and give it another try?',
               ein: '',
               website: '',
               phone: '',
@@ -348,7 +348,7 @@ export default function BeneficiaryDetailScreen() {
             if (detailIsPending) {
               imageSource = require('../../../../assets/images/pending-charity.png');
             } else if (isThriveCause(foundBeneficiary)) {
-              // THRIVE-as-a-cause uses the bundled photo rather than the row's
+              // THRIVE-as-a-charity uses the bundled photo rather than the row's
               // brand mark — matches resolveBeneficiaryHeroImageSource, which
               // drives the My Beneficiary card on Home.
               imageSource = require('../../../../assets/images/pending-charity.png');
@@ -421,7 +421,7 @@ export default function BeneficiaryDetailScreen() {
               longitude: foundBeneficiary.longitude,
               likes: foundBeneficiary.likes ?? 0, // Use ?? to preserve 0
               mutual: foundBeneficiary.mutual ?? 0, // Use ?? to preserve 0
-              about: foundBeneficiary.about || foundBeneficiary.description || 'Learn more about this amazing cause and the impact you can make in your local community.',
+              about: foundBeneficiary.about || foundBeneficiary.description || 'Learn more about this amazing charity and the impact you can make in your local community.',
               ein: foundBeneficiary.ein || '',
               website: foundBeneficiary.website || '',
               phone: foundBeneficiary.phone || '',
@@ -481,18 +481,18 @@ export default function BeneficiaryDetailScreen() {
             // Beneficiary not found
             console.error('❌ Beneficiary not found with ID:', id);
             setDebugInfo({ 
-              step: 'Beneficiary Not Found', 
+              step: 'Charity not found', 
               id,
-              error: 'Beneficiary with this ID does not exist in the API response',
+              error: 'No charity with this ID in the API response',
             });
             setBeneficiary({
               id,
-              name: 'Unknown Beneficiary',
+              name: 'Unknown charity',
               category: 'Unknown',
               image: require('../../../../assets/images/pending-charity.png'),
               likes: 0,
               mutual: 0,
-              about: 'Beneficiary information not available. Please check that the beneficiary exists in the system and that the API is returning data correctly.',
+              about: 'We could not load the details for this charity.',
               ein: '',
               website: '',
               phone: '',
@@ -520,12 +520,12 @@ export default function BeneficiaryDetailScreen() {
         // Fallback to placeholder on error
         setBeneficiary({
           id,
-          name: 'Error Loading Beneficiary',
+          name: 'Could not load this charity',
           category: 'Unknown',
           image: require('../../../../assets/images/pending-charity.png'),
           likes: 0,
           mutual: 0,
-          about: 'There was an error loading this beneficiary. Please try again.',
+          about: 'We could not load this charity. Give it another try?',
           ein: '',
           website: '',
           phone: '',
@@ -559,7 +559,7 @@ export default function BeneficiaryDetailScreen() {
       console.warn('⚠️ Could not persist beneficiary to server:', e.message);
     }
     setSelectedBeneficiary(beneficiary);
-    setSuccessMessage("Awesome! You've selected your cause!");
+    setSuccessMessage("Awesome! You've selected your charity!");
     setShowSuccessModal(true);
     setConfettiTrigger(true);
   };
@@ -580,17 +580,22 @@ export default function BeneficiaryDetailScreen() {
         });
         return;
       }
-      const next = {
-        pathname: "/signupFlow/donationAmount",
-        params: {
-          beneficiaryId: String(beneficiary.id),
-        },
-      };
       if (flowParam === "coworking") {
-        next.params.flow = "coworking";
-        next.params.sponsorAmount = String(sponsorAmountParam ?? "15");
+        // A coworking member's $15 is already covered by their membership, so
+        // asking "how much do you want to give?" is the wrong question. They
+        // get the prompt that tells them it is handled and offers an optional
+        // extra. Every other screen that settles a charity already did this;
+        // this one sent them to the amount picker instead.
+        router.replace({
+          pathname: "/signupFlow/coworkingDonationPrompt",
+          params: { sponsorAmount: String(sponsorAmountParam ?? "15") },
+        });
+        return;
       }
-      router.replace(next);
+      router.replace({
+        pathname: "/signupFlow/donationAmount",
+        params: { beneficiaryId: String(beneficiary.id) },
+      });
       return;
     }
 
@@ -621,7 +626,7 @@ export default function BeneficiaryDetailScreen() {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
         <ActivityIndicator size="large" color="#DB8633" />
-        <Text style={styles.loadingText}>Loading beneficiary details...</Text>
+        <Text style={styles.loadingText}>Loading this charity...</Text>
       </View>
     );
   }
@@ -629,19 +634,24 @@ export default function BeneficiaryDetailScreen() {
   if (!beneficiary) {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
-        <View style={styles.debugBox}>
-          <Text style={styles.debugTitle}>🔍 Debug Info (No Beneficiary):</Text>
-          <Text style={styles.debugText}>ID from params: {id || 'NOT PROVIDED'}</Text>
-          <Text style={styles.debugText}>ID type: {typeof id}</Text>
-          <Text style={styles.debugText}>All params: {JSON.stringify(params, null, 2)}</Text>
-          {debugInfo && (
-            <>
-              <Text style={styles.debugText}>Step: {debugInfo.step}</Text>
-              {debugInfo.error && <Text style={styles.debugText}>Error: {debugInfo.error}</Text>}
-            </>
-          )}
-        </View>
-        <Text style={styles.errorText}>Beneficiary not found</Text>
+        {/* Development only. This dumped route params and raw API errors
+            straight onto the screen for any donor who opened a charity that
+            failed to load. */}
+        {__DEV__ && (
+          <View style={styles.debugBox}>
+            <Text style={styles.debugTitle}>Debug info (no charity loaded):</Text>
+            <Text style={styles.debugText}>ID from params: {id || 'NOT PROVIDED'}</Text>
+            <Text style={styles.debugText}>ID type: {typeof id}</Text>
+            <Text style={styles.debugText}>All params: {JSON.stringify(params, null, 2)}</Text>
+            {debugInfo && (
+              <>
+                <Text style={styles.debugText}>Step: {debugInfo.step}</Text>
+                {debugInfo.error && <Text style={styles.debugText}>Error: {debugInfo.error}</Text>}
+              </>
+            )}
+          </View>
+        )}
+        <Text style={styles.errorText}>We could not find that charity</Text>
         <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
           <Text style={styles.backButtonText}>Go Back</Text>
         </TouchableOpacity>
@@ -688,7 +698,7 @@ export default function BeneficiaryDetailScreen() {
         )}
         {!beneficiary && !loading && (
           <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>Beneficiary not found</Text>
+            <Text style={styles.errorText}>We could not find that charity</Text>
             <Text style={styles.errorSubtext}>Please check your connection and try again.</Text>
           </View>
         )}

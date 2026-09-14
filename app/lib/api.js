@@ -334,7 +334,7 @@ const API = {
 
   /**
    * POST /donations/monthly/redirect — donor switches from THRIVE-held to a
-   * real cause. Backend updates their subscription, releases prior held
+   * real charity. Backend updates their subscription, releases prior held
    * transactions, returns the total released amount.
    */
   redirectHeldDonations: async (newBeneficiaryId) => {
@@ -1653,7 +1653,7 @@ const API = {
     } catch (error) {
       console.error("Get beneficiary stats failed:", error);
       throw new Error(
-        error.response?.data?.message || "Failed to load beneficiary stats.",
+        error.response?.data?.message || "We could not load your impact stats right now.",
       );
     }
   },

@@ -8,7 +8,7 @@
  * picker can be reviewed without signing in and without touching the guard.
  *
  * What that costs: onward navigation from here still goes to signupFlow
- * screens, which are guarded, so "choose this cause" will bounce to the
+ * screens, which are guarded, so "choose this charity" will bounce to the
  * welcome screen. Fine for reviewing the picker itself, which is the point.
  */
 import React from 'react';

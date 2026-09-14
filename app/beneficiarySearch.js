@@ -111,7 +111,7 @@ export default function BeneficiarySearch() {
     } else {
       setFavorites([...favorites, id]);
       if (!hasShownFirstFavorite) {
-        setSuccessMessage("You're now following a cause!");
+        setSuccessMessage("You're now following a charity!");
         setShowSuccessModal(true);
         setConfettiTrigger(true);
         setHasShownFirstFavorite(true);
@@ -122,7 +122,7 @@ export default function BeneficiarySearch() {
   const selectBeneficiary = (id) => {
     setSelectedBeneficiary(id);
     if (!hasShownFirstSelect) {
-      setSuccessMessage("Awesome! You've selected your cause!");
+      setSuccessMessage("Awesome! You've selected your charity!");
       setShowSuccessModal(true);
       setConfettiTrigger(true);
       setHasShownFirstSelect(true);
@@ -134,7 +134,7 @@ export default function BeneficiarySearch() {
   };
 
   const handleRequestBeneficiary = () => {
-    setSuccessMessage('Beneficiary request sent successfully!');
+    setSuccessMessage('Your request is on its way. Thank you!');
     setShowSuccessModal(true);
     setConfettiTrigger(true);
   };
@@ -216,7 +216,7 @@ export default function BeneficiarySearch() {
             style={{ width: 18, height: 18, tintColor: '#6d6e72', marginRight: 8 }} 
           />
           <TextInput
-            placeholder="Search Beneficiaries"
+            placeholder="Search charities"
             placeholderTextColor="#6d6e72"
             value={searchText}
             onChangeText={setSearchText}
@@ -310,7 +310,7 @@ export default function BeneficiarySearch() {
               }}
               onPress={handleRequestBeneficiary}
             >
-              <Text style={{ color: '#DB8633', fontSize: 16 }}>Yes! Request Beneficiary</Text>
+              <Text style={{ color: '#DB8633', fontSize: 16 }}>Yes, request this charity</Text>
             </TouchableOpacity>
           </View>
         )}

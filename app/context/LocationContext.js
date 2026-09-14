@@ -31,28 +31,39 @@ export const LocationProvider = ({ children }) => {
         if (saved === 'true') {
           setHasAskedForPermission(true);
           console.log('📍 Loaded saved location permission preference: already asked');
+        }
 
-          // Check current permission status without prompting
-          const { status } = await Location.getForegroundPermissionsAsync();
-          if (status === 'granted') {
-            setLocationPermission('granted');
-            setIsLoadingLocation(true);
-            try {
-              const locationWithAddress = await getLocationWithAddress();
-              if (locationWithAddress) {
-                const { city, state, zipCode, country, street, ...coords } = locationWithAddress;
-                setLocation(coords);
-                setLocationAddress({ city, state, zipCode, country, street });
-                console.log('📍 Location restored on app launch:', { city, state });
-              }
-            } catch (error) {
-              console.error('Error fetching location on resume:', error);
-            } finally {
-              setIsLoadingLocation(false);
+        // Read the real OS status on every launch rather than only when our
+        // own flag was written. The discounts and beneficiary screens also
+        // call getCurrentLocation() directly, which prompts the OS without
+        // going through this provider, so a donor can be genuinely granted
+        // while this flag was never set. The old code gated the fetch on the
+        // flag, so those donors kept a null location here and every screen
+        // reading useLocation() sat on "Detecting location...". This only
+        // reads the status, it never prompts.
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status === 'granted') {
+          setLocationPermission('granted');
+          setIsLoadingLocation(true);
+          try {
+            const locationWithAddress = await getLocationWithAddress();
+            if (locationWithAddress) {
+              const { city, state, zipCode, country, street, ...coords } = locationWithAddress;
+              setLocation(coords);
+              setLocationAddress({ city, state, zipCode, country, street });
+              console.log('📍 Location restored on app launch:', { city, state });
             }
-          } else {
-            setLocationPermission('denied');
+          } catch (error) {
+            console.error('Error fetching location on resume:', error);
+          } finally {
+            setIsLoadingLocation(false);
           }
+        } else if (saved === 'true') {
+          // Only call it a denial once we know we have actually asked. Before
+          // that the status is merely undetermined, and recording 'denied'
+          // would make screens render their "no location" state for someone
+          // who was never given the choice.
+          setLocationPermission('denied');
         }
       } catch (error) {
         console.error('Error loading location permission preference:', error);
@@ -141,12 +152,50 @@ export const LocationProvider = ({ children }) => {
   };
 
   const checkLocationPermission = async () => {
-    if (hasAskedForPermission) return;
-
     try {
+      // hasAskedForPermission is loaded from AsyncStorage a tick after mount,
+      // so a caller that runs this on its own mount could read a stale false.
+      // The OS status is the authority and is never stale.
+      const { status: existing } = await Location.getForegroundPermissionsAsync();
+
+      if (existing === 'granted') {
+        setLocationPermission('granted');
+        // Several screens call this on mount and on focus, so bail out once we
+        // already hold a fix rather than running GPS and a reverse geocode
+        // again. Callers that genuinely want a fresh position use
+        // refreshLocation.
+        if (location) return;
+        const already = await getLocationWithAddress();
+        if (already) {
+          const { city, state, zipCode, country, street, ...coords } = already;
+          setLocation(coords);
+          setLocationAddress({ city, state, zipCode, country, street });
+        }
+        return;
+      }
+
+      // Already turned us down once, in this app or in Settings. Record it and
+      // leave them alone, per App Store Review 5.1.1(iv).
+      if (existing === 'denied') {
+        setLocationPermission('denied');
+        setHasAskedForPermission(true);
+        try {
+          await AsyncStorage.setItem(LOCATION_PERMISSION_ASKED_KEY, 'true');
+        } catch (e) {
+          console.warn('Could not persist location-permission preference:', e);
+        }
+        return;
+      }
+
       const hasPermission = await requestLocationPermission();
       if (hasPermission) {
         setLocationPermission('granted');
+        setHasAskedForPermission(true);
+        try {
+          await AsyncStorage.setItem(LOCATION_PERMISSION_ASKED_KEY, 'true');
+        } catch (e) {
+          console.warn('Could not persist location-permission preference:', e);
+        }
         // Get location with address (city, state, zip code)
         const locationWithAddress = await getLocationWithAddress();
         if (locationWithAddress) {

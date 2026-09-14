@@ -91,8 +91,8 @@ const HOLDING_FOR_CHOICE_KEY = 'thrive_holding_for_choice';
 export const BeneficiaryProvider = ({ children }) => {
   const [selectedBeneficiary, setSelectedBeneficiary] = useState(null);
   // "Save my spot" intent — true when the donor picked THRIVE while undecided
-  // about a cause. Used by the subscribe call (pass held_for_donor_choice=true)
-  // and the home tab banner. Cleared when they pick a real cause via redirect.
+  // about a charity. Used by the subscribe call (pass held_for_donor_choice=true)
+  // and the home tab banner. Cleared when they pick a real charity via redirect.
   const [holdingForChoice, setHoldingForChoiceState] = useState(false);
 
   // Load saved beneficiary on app start

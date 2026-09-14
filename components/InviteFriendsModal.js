@@ -110,7 +110,7 @@ export default function InviteFriendsModal({ visible, onClose }) {
   };
 
   const buildInviteMessage = () =>
-    `Join me on THRIVE! Together we can make a real difference in our community. Get exclusive discounts from local businesses while supporting amazing causes. Sign up here: ${referralLink}`;
+    `Join me on THRIVE! Together we can make a real difference in our community. Get exclusive discounts from local businesses while supporting amazing charities. Sign up here: ${referralLink}`;
 
   const handleCopyLink = async () => {
     if (!referralLink) {
@@ -172,7 +172,7 @@ export default function InviteFriendsModal({ visible, onClose }) {
                 </TouchableOpacity>
               </View>
               <Text style={styles.subtitle}>
-                Invite friends so more support reaches the causes you care about.
+                Invite friends so more support reaches the charities you care about.
               </Text>
             </View>
 
@@ -410,7 +410,7 @@ export default function InviteFriendsModal({ visible, onClose }) {
               <View style={styles.benefitsList}>
                 <View style={styles.benefitItem}>
                   <AntDesign name="heart" size={20} color="#DB8633" />
-                  <Text style={styles.benefitText}>Grow support for the causes you care about</Text>
+                  <Text style={styles.benefitText}>Grow support for the charities you care about</Text>
                 </View>
                 <View style={styles.benefitItem}>
                   <AntDesign name="star" size={20} color="#DB8633" />

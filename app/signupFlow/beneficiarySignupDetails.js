@@ -135,7 +135,7 @@ export default function BeneficiarySignupDetails() {
               longitude: foundBeneficiary.longitude,
               likes: foundBeneficiary.likes ?? 0, // Use ?? to preserve 0
               mutual: foundBeneficiary.mutual ?? 0, // Use ?? to preserve 0
-              about: foundBeneficiary.about || foundBeneficiary.description || 'Learn more about this amazing cause and the impact you can make in your local community.',
+              about: foundBeneficiary.about || foundBeneficiary.description || 'Learn more about this amazing charity and the impact you can make in your local community.',
               ein: foundBeneficiary.ein || '',
               website: foundBeneficiary.website || '',
               phone: foundBeneficiary.phone || '',
@@ -166,11 +166,11 @@ export default function BeneficiarySignupDetails() {
             console.warn('⚠️ Beneficiary not found for ID:', id);
             setBeneficiary({
               id,
-              name: 'Unknown Beneficiary',
+              name: 'Unknown charity',
               image: require('../../assets/images/pending-charity.png'),
               likes: 0,
               mutual: 0,
-              about: 'Beneficiary information not available.',
+              about: 'We could not load the details for this charity.',
               ein: '',
               website: '',
               phone: '',
@@ -181,11 +181,11 @@ export default function BeneficiarySignupDetails() {
           console.warn('⚠️ No charities found in API response');
           setBeneficiary({
             id,
-            name: 'Unknown Beneficiary',
+            name: 'Unknown charity',
             image: require('../../assets/images/pending-charity.png'),
             likes: 0,
             mutual: 0,
-            about: 'Beneficiary information not available.',
+            about: 'We could not load the details for this charity.',
             ein: '',
             website: '',
             phone: '',
@@ -196,11 +196,11 @@ export default function BeneficiarySignupDetails() {
         console.error('❌ Failed to load beneficiary from API:', error);
         setBeneficiary({
           id,
-          name: 'Unknown Beneficiary',
+          name: 'Unknown charity',
           image: require('../../assets/images/pending-charity.png'),
           likes: 0,
           mutual: 0,
-          about: 'Unable to load beneficiary data. Please check your connection and try again.',
+          about: 'We could not load this charity. Check your connection and give it another try?',
           ein: '',
           website: '',
           phone: '',
@@ -222,7 +222,7 @@ export default function BeneficiarySignupDetails() {
     
     // Award 10 points for selecting a beneficiary
     
-    setSuccessMessage("Awesome! You've selected your cause!");
+    setSuccessMessage("Awesome! You've selected your charity!");
     setShowSuccessModal(true);
     setConfettiTrigger(true);
   };
@@ -274,13 +274,13 @@ export default function BeneficiarySignupDetails() {
       <View style={styles.cardContainer}>
         {loading ? (
           <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading beneficiary details...</Text>
+            <Text style={styles.loadingText}>Loading this charity...</Text>
           </View>
         ) : beneficiary ? (
           <BeneficiaryDetailCard data={beneficiary} onSelect={handleBeneficiarySelect} showBackArrow={false} />
         ) : (
           <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Beneficiary not found</Text>
+            <Text style={styles.loadingText}>We could not find that charity</Text>
           </View>
         )}
       </View>

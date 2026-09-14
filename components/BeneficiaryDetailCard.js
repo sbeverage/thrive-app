@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
+
+const CHARITY_PLACEHOLDER = require('../assets/images/pending-charity-logo.png');
 import {
   View,
   Text,
@@ -136,6 +138,14 @@ export default function BeneficiaryDetailCard({
     });
     
   }, [data]);
+
+  // 0 = try the logo, 1 = fall back to the banner, 2 = placeholder.
+  const [logoStage, setLogoStage] = useState(0);
+  // A different charity in this card gets a fresh attempt; without this one
+  // broken logo would leave the placeholder showing for whoever came next.
+  useEffect(() => {
+    setLogoStage(0);
+  }, [data?.id, data?.name]);
 
   const [donation, setDonation] = useState('');
   const [selectedAmount, setSelectedAmount] = useState(null);
@@ -340,19 +350,22 @@ export default function BeneficiaryDetailCard({
         />
       </View>
 
-      {/* Profile Logo (from logoUrl, falls back to main image) */}
+      {/* Profile Logo. Falls back logo -> banner -> placeholder.
+          The old handler logged "Fallback to main image if logo fails" as a
+          comment and then did nothing, so a charity whose logo 404s showed an
+          empty circle. Six of the fifty-two do 404, measured 2026-09-14, four
+          of them Google favicon URLs that service no longer resolves. */}
       <View style={styles.profileRow}>
         <View style={styles.profileImageContainer}>
-          <Image 
-            source={data.logoUrl || data.image} 
+          <Image
+            source={logoStage === 0 ? (data.logoUrl || data.image || CHARITY_PLACEHOLDER)
+              : logoStage === 1 ? (data.image || CHARITY_PLACEHOLDER)
+              : CHARITY_PLACEHOLDER}
             style={styles.profileImage}
-            onError={(error) => {
-              console.error('❌ Error loading logo image:', error);
-              console.log('Logo source:', data.logoUrl || data.image);
-              // Fallback to main image if logo fails
-            }}
-            onLoad={() => {
-              console.log('✅ Logo image loaded successfully');
+            onError={() => {
+              // Advance one stage per failure rather than retrying: a 404 is
+              // not transient, and re-requesting it just spends data.
+              setLogoStage((stage) => (stage < 2 ? stage + 1 : stage));
             }}
           />
         </View>
@@ -376,14 +389,14 @@ export default function BeneficiaryDetailCard({
               pointerEvents="none"
               accessible
               accessibilityRole="text"
-              accessibilityLabel="This is the cause you currently support"
+              accessibilityLabel="This is the charity you currently support"
             >
               <Image
                 source={require('../assets/icons/donation-box.png')}
                 style={[styles.iconLeft, styles.selectedCauseIcon]}
                 resizeMode="contain"
               />
-              <Text style={styles.selectedCauseText}>Your cause</Text>
+              <Text style={styles.selectedCauseText}>Your charity</Text>
             </View>
           ) : (
             <TouchableOpacity
@@ -394,7 +407,7 @@ export default function BeneficiaryDetailCard({
                 source={require('../assets/icons/donation-box.png')}
                 style={[styles.iconLeft, { tintColor: '#fff' }]}
               />
-              <Text style={styles.btnText}>Select This Cause</Text>
+              <Text style={styles.btnText}>Select This Charity</Text>
             </TouchableOpacity>
           )}
 
@@ -618,7 +631,7 @@ export default function BeneficiaryDetailCard({
               </Text>
               <Text style={styles.giftInfoBody}>
                 A one-time gift is an extra amount you give right now, on top of
-                your monthly giving — for a specific need, a moment that moved
+                your monthly giving, for a specific need, a moment that moved
                 you, or simply because you want to do more this month.
               </Text>
               <TouchableOpacity

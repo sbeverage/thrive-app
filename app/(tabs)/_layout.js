@@ -61,7 +61,7 @@ export default function TabsRootLayout() {
   const tabs = [
     { name: 'home', label: 'Home', href: '/home' },
     { name: 'discounts', label: 'Discounts', href: '/discounts' },
-    { name: 'beneficiary', label: 'Beneficiary', href: '/beneficiary' },
+    { name: 'beneficiary', label: 'Charities', href: '/beneficiary' },
   ];
 
   const goTab = (href) => {

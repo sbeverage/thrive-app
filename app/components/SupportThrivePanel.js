@@ -13,7 +13,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'rea
 
 // `allowPickLater` gates the "Start now, pick later" CTA. Holding a gift
 // while you decide only makes sense during signup, before any monthly
-// donation exists. An established donor switching causes already gives every
+// donation exists. An established donor switching charities already gives every
 // month, so offering to "start now" reads as nonsense there — and tapping it
 // would move their live subscription into held mode.
 // `onHelpMeChoose` adds a route back into the guided picker. Someone reading
@@ -46,8 +46,8 @@ export default function SupportThrivePanel({
         {!allowPickLater
           ? 'Your giving can go toward growing the platform and reaching more cities.'
           : showHelp
-            ? 'We can narrow it down for you, or you can start now and pick a cause anytime.'
-            : 'No pressure. Start your monthly gift now and pick a cause anytime.'}
+            ? 'We can narrow it down for you, or you can start now and pick a charity anytime.'
+            : 'No pressure. Start your monthly gift now and pick a charity anytime.'}
       </Text>
 
       {/* Above the pick-later CTA, and the filled one of the pair, matching

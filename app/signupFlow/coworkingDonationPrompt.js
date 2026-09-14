@@ -27,7 +27,7 @@ export default function CoworkingDonationPrompt() {
   const [showModal, setShowModal] = useState(false);
 
   const sponsorAmount = parseFloat(params.sponsorAmount || '15');
-  const charityName = selectedBeneficiary?.name || 'your chosen cause';
+  const charityName = selectedBeneficiary?.name || 'your chosen charity';
 
   const coworkingPromptParamsKey = JSON.stringify(params ?? {});
   useEffect(() => {
@@ -85,6 +85,19 @@ export default function CoworkingDonationPrompt() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back to pick a different charity"
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Image
+            source={require('../../assets/icons/arrow-left.png')}
+            style={styles.backIcon}
+          />
+        </TouchableOpacity>
+
         <View style={styles.hero}>
           <Image
             source={require('../../assets/images/bolt-piggy.png')}
@@ -93,9 +106,12 @@ export default function CoworkingDonationPrompt() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.title}>
-            Your THRIVE Membership Includes a Monthly Donation
-          </Text>
+          {/* The old title, the badge's own label and the first paragraph all
+              said "included with your membership", three times on one screen,
+              and a fourth line narrated the button under it. The badge already
+              carries the amount and the charity, so the prose only has to say
+              the one thing it cannot: that nobody is being asked to pay. */}
+          <Text style={styles.title}>You're all set</Text>
 
           <View style={styles.includedBox}>
             <Text style={styles.includedLabel}>Included with your membership</Text>
@@ -107,29 +123,25 @@ export default function CoworkingDonationPrompt() {
           </View>
 
           <Text style={styles.body}>
-            This monthly gift is already set up through your THRIVE membership.
-          </Text>
-
-          <Text style={styles.bodySecondary}>
-            If you would like, you can add an optional extra monthly gift.
+            Nothing to pay here. Your membership covers it.
           </Text>
 
           <View style={styles.buttonRow}>
             <TouchableOpacity
-              style={styles.secondaryButton}
+              style={styles.primaryButton}
               onPress={completeWithoutExtra}
               activeOpacity={0.85}
             >
-              <Text style={styles.secondaryButtonText}>
-                Continue (${sponsorAmount.toFixed(0)}/mo only)
+              <Text style={styles.primaryButtonText}>
+                Continue with ${sponsorAmount.toFixed(0)}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.primaryButton}
+              style={styles.secondaryButton}
               onPress={goToExtraDonation}
               activeOpacity={0.85}
             >
-              <Text style={styles.primaryButtonText}>Give Extra</Text>
+              <Text style={styles.secondaryButtonText}>I want to give more</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -176,6 +188,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
+  backButton: {
+    alignSelf: 'flex-start',
+    padding: 8,
+    marginBottom: 8,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 20,
+    zIndex: 2,
+  },
+  backIcon: { width: 24, height: 24, tintColor: '#324E58' },
   hero: {
     alignItems: 'center',
     marginBottom: 20,
@@ -210,12 +231,14 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   title: {
-    fontSize: 20,
+    // Bigger now that it is three words rather than seven: it can carry the
+    // screen instead of being a paragraph pretending to be a heading.
+    fontSize: 26,
     fontWeight: '700',
     color: '#324E58',
     textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 26,
+    marginBottom: 18,
+    lineHeight: 32,
   },
   includedBox: {
     backgroundColor: '#E8F4F5',

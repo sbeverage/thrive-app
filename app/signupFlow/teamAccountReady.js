@@ -38,7 +38,7 @@ export default function TeamAccountReady() {
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const charityName = selectedBeneficiary?.name || 'your chosen cause';
+  const charityName = selectedBeneficiary?.name || 'your chosen charity';
 
   const teamParamsKey = JSON.stringify(params ?? {});
   useEffect(() => {
@@ -118,7 +118,7 @@ export default function TeamAccountReady() {
           </View>
 
           <Text style={styles.body}>
-            Your cause selection is here so you can see what donors see — it
+            Your charity choice is here so you can see what donors see. It
             isn't counted in THRIVE's donation totals.
           </Text>
 

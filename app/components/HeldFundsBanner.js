@@ -1,5 +1,5 @@
 // Home-tab banner shown to donors who picked "Save my spot" during signup.
-// Surfaces the running held balance and pushes a gentle "Choose your cause"
+// Surfaces the running held balance and pushes a gentle "Choose your charity"
 // CTA. Disappears the moment they redirect their held funds to a real cause.
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -30,7 +30,7 @@ export default function HeldFundsBanner() {
 
   const amountLabel = data.balance > 0
     ? `$${Number(data.balance).toFixed(2).replace(/\.00$/, '')} set aside`
-    : 'Your future cause is reserved';
+    : 'Your future charity is reserved';
 
   return (
     <TouchableOpacity
@@ -44,7 +44,7 @@ export default function HeldFundsBanner() {
       <View style={styles.textWrap}>
         <Text style={styles.title}>Saving your spot</Text>
         <Text style={styles.subtitle}>
-          {amountLabel} · tap to choose a cause and we'll direct it there.
+          {amountLabel} · tap to choose a charity and we'll direct it there.
         </Text>
       </View>
       <Feather name="chevron-right" size={20} color="#324E58" />

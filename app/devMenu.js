@@ -37,20 +37,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // pretending they will open.
 const DESTINATIONS = [
   {
-    label: 'Choose a cause (the new picker)',
+    label: 'Choose a charity (the new picker)',
     hint: 'Help me choose, categories, the piggy animation, three cards, hearts',
     path: '/devChooseCause',
     works: 'full',
   },
   {
-    label: 'Choose a cause, as a team account',
+    label: 'Choose a charity, as a team account',
     hint: 'Same screen, comped path. Should never reach a card form',
     path: '/devChooseCause',
     params: { flow: 'team' },
     works: 'full',
   },
   {
-    label: 'Browse all causes',
+    label: 'Browse all charities',
     hint: 'The 52 item list. Behind the signup guard, so it needs a session',
     path: '/signupFlow/beneficiarySignupCause',
     works: 'partial',

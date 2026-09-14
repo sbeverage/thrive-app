@@ -15,7 +15,7 @@ const FAQ_ITEMS = [
   {
     question: 'What is THRIVE Initiative?',
     answer:
-      'THRIVE connects you with local business discounts while supporting a nonprofit you care about. You save money when you shop, and your monthly donation goes directly to your chosen cause.',
+      'THRIVE connects you with local business discounts while supporting a nonprofit you care about. You save money when you shop, and your monthly donation goes directly to your chosen charity.',
   },
   {
     question: 'How do discounts work?',
@@ -25,12 +25,12 @@ const FAQ_ITEMS = [
   {
     question: 'How does my monthly donation work?',
     answer:
-      'During signup you choose a cause and a monthly amount. THRIVE charges your card each month and sends your gift to that beneficiary. View or update your plan anytime under Donation Summary or Manage Billing in the menu.',
+      'During signup you choose a charity and a monthly amount. THRIVE charges your card each month and sends your gift to that charity. View or update your plan anytime under Donation Summary or Manage Billing in the menu.',
   },
   {
-    question: 'Can I change my cause or donation amount?',
+    question: 'Can I change my charity or donation amount?',
     answer:
-      'Yes. Use Donation Summary to adjust your monthly amount or payment method. To support a different charity, change your beneficiary from the Beneficiary tab or your profile settings when that option is available.',
+      'Yes. Use Donation Summary to adjust your monthly amount or payment method. To give somewhere else, pick a new charity from the Charities tab or your profile settings when that option is available.',
   },
   {
     question: 'What is Grow Your Impact?',

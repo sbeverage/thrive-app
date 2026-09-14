@@ -466,7 +466,7 @@ export default function MainHome() {
 
           {/* My Beneficiary Section */}
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionHeader}>My Beneficiary</Text>
+            <Text style={styles.sectionHeader}>My Charity</Text>
           </View>
           {selectedBeneficiary ? (
             <TouchableOpacity
@@ -524,10 +524,10 @@ export default function MainHome() {
                 />
                 <View style={styles.beneficiaryTextOverlay}>
                   <View style={styles.beneficiaryNameRow}>
-                    <Text style={styles.beneficiaryName}>Select Your Cause</Text>
+                    <Text style={styles.beneficiaryName}>Select Your Charity</Text>
                     <AntDesign name="right" size={18} color="#FFFFFF" style={styles.chevronIcon} />
                   </View>
-                  <Text style={styles.beneficiaryCategory}>Tap to choose a beneficiary</Text>
+                  <Text style={styles.beneficiaryCategory}>Tap to choose your charity</Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -608,7 +608,7 @@ export default function MainHome() {
             >
               <Text style={styles.inviteSectionTitle}>Grow Your Impact</Text>
               <Text style={styles.inviteSectionSubtitle}>
-                Invite friends so more support reaches the causes you care about.
+                Invite friends so more support reaches the charities you care about.
               </Text>
               <View style={styles.inviteStatsContainer}>
                 <View style={styles.inviteStatItem}>

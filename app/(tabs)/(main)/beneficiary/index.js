@@ -205,7 +205,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
       setLoadingBeneficiaries(true);
       const data = await API.getCharities();
       // Fetch THRIVE separately so it appears in the Support-THRIVE panel
-      // instead of mixed into the regular cause list.
+      // instead of mixed into the regular charity list.
       API.getThriveCharity().then((c) => {
         if (c) setThriveCharity(c);
       }).catch(() => {});
@@ -292,7 +292,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
     loadBeneficiaries();
   }, []);
 
-  // Modal cause overrides category chips — reset a conflicting pill so labels match what's listed
+  // Modal charity overrides category chips — reset a conflicting pill so labels match what's listed
   useEffect(() => {
     const c = filters.cause?.trim();
     if (!c) return;
@@ -589,7 +589,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
   const beneficiariesSectionTitle = hasNoBeneficiaryResults
     ? 'No Results Found'
     : activeCategory === 'All'
-      ? 'All Beneficiaries'
+      ? 'All Charities'
       : `All ${activeCategory}`;
   const displayedBeneficiaryCount =
     filteredBeneficiaries.length > 50 ? '50+' : String(filteredBeneficiaries.length);
@@ -606,7 +606,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
    * which is the exact person Help me choose was built for.
    *
    * push, not replace, so this list stays underneath. The picker's own
-   * "Or browse all causes" link pushes here in turn, so a donor can move
+   * "Or browse all charities" link pushes here in turn, so a donor can move
    * between the two without either screen losing its place.
    */
   const goToPicker = () => {
@@ -718,7 +718,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
     setHoldingForChoice(willBeHeld);
 
     // Outside signup, if the donor is already in held-mode and is picking a
-    // real cause (not THRIVE), use the redirect endpoint — it updates their
+    // real charity (not THRIVE), use the redirect endpoint — it updates their
     // active subscription's beneficiary AND releases prior held charges to
     // the new cause in one shot.
     // willBeHeld already covers the unverified case, so an unverified pick can
@@ -757,7 +757,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
         });
       }
     } else {
-      setSuccessMessage("Awesome! You've selected your cause!");
+      setSuccessMessage("Awesome! You've selected your charity!");
       setShowSuccessModal(true);
       setConfettiTrigger(true);
     }
@@ -1001,7 +1001,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
         {isSignupFlow ? (
           <>
             <Text style={styles.signupHeaderTitle}>Who do you want to help?</Text>
-            <Text style={styles.signupHeaderSubtitle}>You can change your cause anytime</Text>
+            <Text style={styles.signupHeaderSubtitle}>You can change your charity anytime</Text>
           </>
         ) : (
           <Image
@@ -1032,7 +1032,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
         <View style={styles.searchRow}>
           <Feather name="search" size={18} color="#6d6e72" style={{ marginRight: 8 }} />
           <TextInput
-            placeholder="Search beneficiaries"
+            placeholder="Search charities"
             placeholderTextColor="#6d6e72"
             value={searchText}
             onChangeText={setSearchText}
@@ -1328,7 +1328,10 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
         ) : (
           <ScrollView
             style={styles.listContainer}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[
+              styles.listContent,
+              isSignupFlow && !!selectedBeneficiary && styles.listContentSignup,
+            ]}
             showsVerticalScrollIndicator={false}
             automaticallyAdjustKeyboardInsets={true}
             keyboardShouldPersistTaps="handled"
@@ -1366,7 +1369,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
 
             {loadingBeneficiaries ? (
               <View style={{ padding: 40, alignItems: 'center' }}>
-                <Text style={{ color: '#666', fontSize: 16 }}>Loading beneficiaries...</Text>
+                <Text style={{ color: '#666', fontSize: 16 }}>Loading charities...</Text>
               </View>
             ) : filteredBeneficiaries.length > 0 ? (
               <>
@@ -1413,7 +1416,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                           {(b.isPendingVerification || b.is_pending_verification) && (
                             /* Donor-suggested from the IRS registry, not yet verified by the
                                team. Without this the card is indistinguishable from a vetted
-                               cause. */
+                               charity. */
                             <View style={styles.pendingBadge}>
                               <Feather name="clock" size={10} color="#8A5A12" />
                               <Text style={styles.pendingBadgeText}>Pending</Text>
@@ -1429,11 +1432,18 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                         {!isSignupFlow && (
                           <View style={styles.beneficiaryLocation}>
                             <Ionicons name="location" size={14} color="#8E9BAE" />
-                            <Text style={styles.beneficiaryLocationText}>{cityStateFromLocation(b.location)} • {b.distance}</Text>
+                            <Text style={styles.beneficiaryLocationText}>
+                            {/* Only 7 of the charities have stored
+                                coordinates, so distance is usually null and
+                                the separator was left dangling. */}
+                            {[cityStateFromLocation(b.location), b.distance]
+                              .filter(Boolean)
+                              .join(' • ')}
+                          </Text>
                           </View>
                         )}
                         
-                        <View style={[styles.buttonsRow, isSelected && styles.buttonsRowSingle]}>
+                                                  <View style={[styles.buttonsRow, isSelected && styles.buttonsRowSingle]}>
                           <TouchableOpacity 
                             style={[
                               styles.viewDetailsButton,
@@ -1462,19 +1472,6 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                               }}
                             >
                               <Text style={styles.changeToThisButtonText}>Select</Text>
-                            </TouchableOpacity>
-                          ) : isSignupFlow ? (
-                            // Charity is already selected and we're mid-signup
-                            // — let the user continue forward instead of dead-
-                            // ending them when they come back via Back.
-                            <TouchableOpacity
-                              style={styles.changeToThisButton}
-                              onPress={(e) => {
-                                e.stopPropagation();
-                                advanceFromSelected();
-                              }}
-                            >
-                              <Text style={styles.changeToThisButtonText}>Continue</Text>
                             </TouchableOpacity>
                           ) : null}
                         </View>
@@ -1526,7 +1523,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                         {(b.isPendingVerification || b.is_pending_verification) && (
                           /* Donor-suggested from the IRS registry, not yet verified by the
                              team. Without this the card is indistinguishable from a vetted
-                             cause. */
+                             charity. */
                           <View style={styles.pendingBadge}>
                             <Feather name="clock" size={10} color="#8A5A12" />
                             <Text style={styles.pendingBadgeText}>Pending</Text>
@@ -1542,7 +1539,14 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                       {!isSignupFlow && (
                         <View style={styles.beneficiaryLocation}>
                           <Ionicons name="location" size={14} color="#8E9BAE" />
-                          <Text style={styles.beneficiaryLocationText}>{cityStateFromLocation(b.location)} • {b.distance}</Text>
+                          <Text style={styles.beneficiaryLocationText}>
+                            {/* Only 7 of the charities have stored
+                                coordinates, so distance is usually null and
+                                the separator was left dangling. */}
+                            {[cityStateFromLocation(b.location), b.distance]
+                              .filter(Boolean)
+                              .join(' • ')}
+                          </Text>
                         </View>
                       )}
                       
@@ -1577,20 +1581,6 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                           >
                             <Text style={styles.changeToThisButtonText}>Select</Text>
                           </TouchableOpacity>
-                        ) : isSignupFlow ? (
-                          // Same Continue-out-of-back-button-trap fix as the
-                          // first list above — signup users who return to this
-                          // screen with a charity already selected need a way
-                          // to move forward without re-selecting.
-                          <TouchableOpacity
-                            style={styles.changeToThisButton}
-                            onPress={(e) => {
-                              e.stopPropagation();
-                              advanceFromSelected();
-                            }}
-                          >
-                            <Text style={styles.changeToThisButtonText}>Continue</Text>
-                          </TouchableOpacity>
                         ) : null}
                       </View>
                     </View>
@@ -1603,7 +1593,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                 {renderRegistrySection()}
 
                 {/* End-of-list Support-THRIVE panel — a landing pad for donors
-                    who scrolled the cause cards without picking one. Shown in
+                    who scrolled the charity cards without picking one. Shown in
                     both the signup flow and the home-tab beneficiary switcher
                     so donors can pick THRIVE anywhere. */}
                 <SupportThrivePanel
@@ -1686,10 +1676,30 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
         )}
       </View>
 
+      {/* One obvious way forward.
+          This used to be a "Continue" button sitting on the selected card
+          itself, next to that card's "Details". Two buttons on one card, one of
+          which advanced the whole flow, read as a property of that charity
+          rather than as the way out of the page, so donors reached for the back
+          arrow instead. A sticky bar is the same action in the place people
+          already look for it, and it names its destination. */}
+      {isSignupFlow && !!selectedBeneficiary && (
+        <View style={styles.signupContinueBar}>
+          <TouchableOpacity
+            style={styles.signupContinueButton}
+            onPress={advanceFromSelected}
+            accessibilityRole="button"
+            accessibilityLabel={`Continue to donation with ${selectedBeneficiary?.name || 'your charity'}`}
+          >
+            <Text style={styles.signupContinueText}>Continue to Donation</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Confirmation Modal — copy adapts to which of the three pick paths
           the donor took (Save my spot vs Help THRIVE grow vs regular cause). */}
       {/* Branded confirmation for registry suggestions. Uses the same modal
-          chrome as the regular "Confirm Your Beneficiary" prompt so it feels
+          chrome as the regular "Confirm Your Charity" prompt so it feels
           like part of the app instead of a native iOS Alert. */}
       <Modal
         visible={!!suggestConfirmFor}
@@ -1717,7 +1727,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
             <View style={styles.suggestBulletList}>
               <SuggestBullet text="Your monthly donations are held safely" />
               <SuggestBullet text="You'll be notified the moment they're live" />
-              <SuggestBullet text="If we can't verify, we'll email so you can pick another cause" />
+              <SuggestBullet text="If we can't verify, we'll email so you can pick another charity" />
             </View>
             <View style={styles.modalActions}>
               <TouchableOpacity
@@ -1752,16 +1762,16 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                 : pendingBeneficiary?.isPendingVerification ||
                   pendingBeneficiary?.is_pending_verification
                 ? "We'll verify them first"
-                : 'Confirm Your Beneficiary'}
+                : 'Confirm Your Charity'}
             </Text>
             <Text style={styles.modalText}>
               {pendingBeneficiary?._saveMySpot
-                ? "You're starting your monthly gift today. No rush, we'll hold it with THRIVE until you find a cause you love."
+                ? "You're starting your monthly gift today. No rush, we'll hold it with THRIVE until you find a charity you love."
                 : isThriveCause(pendingBeneficiary)
                 ? 'Your monthly donation will go directly toward growing the platform and reaching more donors and cities.'
                 : pendingBeneficiary?.isPendingVerification ||
                   pendingBeneficiary?.is_pending_verification
-                ? `"${pendingBeneficiary?.name}" comes from the IRS registry and our team hasn't verified them yet. We'll set your giving aside until they're approved. If we can't verify them, you can choose another cause. Nothing is lost either way.`
+                ? `"${pendingBeneficiary?.name}" comes from the IRS registry and our team hasn't verified them yet. We'll set your giving aside until they're approved. If we can't verify them, you can choose another charity. Nothing is lost either way.`
                 : `Give to "${pendingBeneficiary?.name}" every month?`}
             </Text>
             <View style={styles.modalActions}>
@@ -1796,12 +1806,12 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
             </View>
             <Text style={styles.registryInfoBody}>
               These come from the public IRS 501(c)(3) registry, so you can
-              search a much broader set of causes while we grow THRIVE.
+              search a much broader set of charities while we grow THRIVE.
             </Text>
             <Text style={styles.registryInfoBody}>
               You can pick one now, but our team verifies the organization
               before any giving begins. If we can't verify them we'll ask you to
-              choose another cause — your giving is never lost.
+              choose another charity. Your giving is never lost.
             </Text>
             <TouchableOpacity
               style={styles.registryInfoCta}
@@ -2230,7 +2240,42 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5fa',
   },
   listContent: {
+    // 80 cleared the tab bar. The signup flow adds a sticky Continue bar on
+    // top of that, so the last card needs room not to sit behind it.
     paddingBottom: 80,
+  },
+  listContentSignup: {
+    paddingBottom: 168,
+  },
+  signupContinueBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 28,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 12,
+    zIndex: 50,
+  },
+  signupContinueButton: {
+    backgroundColor: '#DB8633',
+    borderRadius: 12,
+    paddingVertical: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  signupContinueText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '700',
   },
   sectionHeader: {
     paddingHorizontal: 25,

@@ -11,7 +11,7 @@
  *   1. piggy-with-coin      the gift going in
  *   2. piggy-app-icon       flowers growing out of it, the gift becoming
  *                           something, which is a better picture of "100% goes
- *                           to your cause" than a heart was
+ *                           to your charity" than a heart was
  *   3. piggy-confetti       the thank you coming back
  *
  * Cross-fading whole scenes rather than moving parts around also sidesteps a
@@ -59,7 +59,7 @@ const SCENES = [
     key: 'cause',
     source: require('../../assets/images/piggy-app-icon.png'),
     step: 'STEP 2',
-    headline: '100% goes to your cause',
+    headline: '100% goes to your charity',
     sub: 'Our costs ride on top, never out of your gift.',
     fit: 1.12,
   },
@@ -160,7 +160,7 @@ export default function ThriveLoop({ style, showSteps = false }) {
         style={styles.stage}
         accessible
         accessibilityRole="image"
-        accessibilityLabel="Give monthly, all of it reaches your cause, and local shops thank you with discounts."
+        accessibilityLabel="Give monthly, all of it reaches your charity, and local shops thank you with discounts."
       >
         {SCENES.map((scene, i) => (
           <Animated.Image

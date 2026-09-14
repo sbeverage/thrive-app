@@ -190,7 +190,7 @@ export default function DonationAmount() {
                   textAlign: "center",
                 }}
               >
-                Give to {selectedBeneficiary?.name || "Your Cause"}!
+                Give to {selectedBeneficiary?.name || "Your Charity"}!
               </Text>
               <Text
                 style={{

@@ -139,9 +139,15 @@ export default function StripeIntegration() {
   // For coworking extras, the sponsor amount ($15) is already billed externally —
   // only charge the user's extra donation. For all other flows, charge the full donation.
   const chargeBase = isCoworkingExtra ? baseAmount : totalMonthlyDonation;
-  const donationSubtotal = chargeBase + SERVICE_FEE;
-  // Gross-up so the charity nets donation + $3 after Stripe's 2.2% + $0.30 cut.
-  // Math.ceil to the nearest cent guarantees the charity is never short.
+  // No platform fee on a coworking member's extra gift. Their membership
+  // already carries the sponsored donation, and the fee is a flat $3, so on a
+  // small top-up it dwarfed the gift itself: $3 on the $1 minimum. Coworking
+  // extras are pure upside, so they are not taxed.
+  const serviceFee = isCoworkingExtra ? 0 : SERVICE_FEE;
+  const donationSubtotal = chargeBase + serviceFee;
+  // Gross-up so the subtotal survives Stripe's 2.2% + $0.30 cut intact: the
+  // donation plus the platform fee where one applies, the donation alone on a
+  // coworking extra. Math.ceil to the cent guarantees it is never short.
   const grossedTotal = coverFees
     ? Math.ceil(
         ((donationSubtotal + STRIPE_FIXED_FEE) / (1 - STRIPE_FEE_PERCENT)) * 100,
@@ -285,7 +291,10 @@ export default function StripeIntegration() {
       console.log("🎯 Beneficiary for donation:", beneficiaryIdForPayload);
 
       if (!beneficiaryIdForPayload) {
-        Alert.alert("Error", "Please select a beneficiary before continuing.");
+        Alert.alert(
+          "Almost there",
+          "Choose a charity first, then we can finish setting up your gift.",
+        );
         return;
       }
 
@@ -297,7 +306,7 @@ export default function StripeIntegration() {
         role: "donor",
         currency: "USD",
         // "Save my spot" intent flows through to the backend so prior held
-        // charges can later be released to the donor's eventual cause pick.
+        // charges can later be released to the donor's eventual charity pick.
         held_for_donor_choice: holdingForChoice === true,
         // Persist which side is absorbing the Stripe fee so admin reporting
         // shows the correct fee-absorption state per donor.
@@ -542,25 +551,29 @@ export default function StripeIntegration() {
                   </View>
                 )}
 
-                {/* Platform Fee */}
-                <View style={styles.summaryRow}>
-                  <View style={styles.labelWithInfo}>
-                    <Text style={styles.summaryLabel}>Platform Fee</Text>
-                    <TouchableOpacity
-                      onPress={() => setShowServiceFeeInfo(true)}
-                      style={styles.infoIconButton}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Image
-                        source={require("../../assets/icons/info.png")}
-                        style={styles.infoIcon}
-                      />
-                    </TouchableOpacity>
+                {/* Platform Fee — omitted entirely when it does not apply,
+                    rather than shown as $0.00, which only raises the question
+                    of why it is there. */}
+                {serviceFee > 0 && (
+                  <View style={styles.summaryRow}>
+                    <View style={styles.labelWithInfo}>
+                      <Text style={styles.summaryLabel}>Platform Fee</Text>
+                      <TouchableOpacity
+                        onPress={() => setShowServiceFeeInfo(true)}
+                        style={styles.infoIconButton}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Image
+                          source={require("../../assets/icons/info.png")}
+                          style={styles.infoIcon}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.summaryAmount}>
+                      ${serviceFee.toFixed(2)}
+                    </Text>
                   </View>
-                  <Text style={styles.summaryAmount}>
-                    ${SERVICE_FEE.toFixed(2)}
-                  </Text>
-                </View>
+                )}
 
                 {/* Credit Card Fees with Toggle */}
                 <View style={styles.summaryRow}>
@@ -623,7 +636,7 @@ export default function StripeIntegration() {
                 <View style={styles.summarySupportCallout}>
                   <Text style={styles.summarySupportCalloutText}>
                     Help us cover processing fees so more of your donation goes
-                    directly to {selectedBeneficiary?.name || "your cause"}.
+                    directly to {selectedBeneficiary?.name || "your charity"}.
                   </Text>
                 </View>
               </View>
@@ -778,7 +791,7 @@ export default function StripeIntegration() {
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Monthly Donation</Text>
             <Text style={styles.modalText}>
-              This is the amount you choose to give each month — 100% goes straight to your cause, creating real impact where it matters most.
+              This is the amount you choose to give each month. 100% goes straight to your charity, creating real impact where it matters most.
             </Text>
             <TouchableOpacity
               style={styles.modalCloseButton}
@@ -806,7 +819,7 @@ export default function StripeIntegration() {
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Platform Fee</Text>
             <Text style={styles.modalText}>
-              Your $3 monthly platform fee helps power THRIVE — supporting the technology, operations, and growth needed to expand impact across more communities.
+              Your $3 monthly platform fee helps power THRIVE by supporting the technology, operations, and growth needed to expand impact across more communities.
             </Text>
             <TouchableOpacity
               style={styles.modalCloseButton}
@@ -834,7 +847,7 @@ export default function StripeIntegration() {
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Credit Card Fees</Text>
             <Text style={styles.modalText}>
-              Payment processors charge a small fee (3.5%) to securely handle your donation. By turning this on, you help ensure 100% of your gift goes directly to your cause.
+              Payment processors charge a small fee (3.5%) to securely handle your donation. By turning this on, you help ensure 100% of your gift goes directly to your charity.
             </Text>
             <TouchableOpacity
               style={styles.modalCloseButton}

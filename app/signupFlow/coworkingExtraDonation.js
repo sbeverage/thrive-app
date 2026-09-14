@@ -27,7 +27,7 @@ export default function CoworkingExtraDonation() {
 
   const sponsorAmount = parseFloat(params.sponsorAmount || '15');
   const charityName =
-    params.charityName || selectedBeneficiary?.name || 'your chosen cause';
+    params.charityName || selectedBeneficiary?.name || 'your chosen charity';
   const [extraAmountText, setExtraAmountText] = useState('');
   const extraAmount = parseInt(extraAmountText, 10) || 0;
   const totalMonthlyDonation = sponsorAmount + extraAmount;
@@ -127,8 +127,7 @@ export default function CoworkingExtraDonation() {
             <View style={styles.breakdownRow}>
               <Text style={styles.breakdownLabel}>Your extra gift</Text>
               <Text style={[styles.breakdownValue, styles.breakdownValueAccent]}>
-                ${extraAmount > 0 ? extraAmount : '—'}
-                {extraAmount > 0 ? '/mo' : ''}
+                ${extraAmount > 0 ? extraAmount : 0}/mo
               </Text>
             </View>
             {extraAmount > 0 && (

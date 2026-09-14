@@ -1,5 +1,5 @@
 import { corsHeaders } from "../lib/cors.ts";
-import { isTeamMember } from "../lib/membership.ts";
+import { isTeamMember, membershipOf } from "../lib/membership.ts";
 
 export type AdminAnalyticsDeps = {
   sendReferralReminderEmail: (args: {
@@ -65,9 +65,12 @@ export async function handleAdminAnalytics(
         .from("users")
         .select("id, email, first_name, last_name, created_at, invite_type, coworking")
         .eq("role", "donor");
-      const donors = (donorRows || []).filter((d: any) => !isTeamMember(d));
-      const byId = new Map<number, any>(donors.map((d: any) => [d.id, d]));
-      const donorIds = donors.map((d: any) => d.id);
+      const allDonors = donorRows || [];
+      const donors = allDonors.filter((d: any) => !isTeamMember(d));
+      // Lookup spans every donor, team included, so team rows resolve and can
+      // be labelled. Counting still uses `donors`.
+      const byId = new Map<number, any>(allDonors.map((d: any) => [d.id, d]));
+      const donorIds = allDonors.map((d: any) => d.id);
 
       const rows: any[] = [];
 
@@ -97,6 +100,16 @@ export async function handleAdminAnalytics(
           const cur = first.get(r.user_id);
           if (!cur || r.created_at < cur) first.set(r.user_id, r.created_at);
         }
+        // Same rule as donor-overview: a coworking member has no donation row,
+        // so their signup date stands in as their first gift. Without this they
+        // were invisible in this list however new they were.
+        for (const d of allDonors) {
+          const m = membershipOf(d);
+          if (m !== "coworking" && m !== "team") continue;
+          if (!d.created_at) continue;
+          const cur = first.get(d.id);
+          if (!cur || d.created_at < cur) first.set(d.id, d.created_at);
+        }
 
         for (const [userId, ts] of first) {
           if (ts < sinceIso) continue;
@@ -108,6 +121,9 @@ export async function handleAdminAnalytics(
             email: u.email,
             first_donation_at: ts,
             joined_at: u.created_at,
+            // "coworking" | "standard" — drives the tag in the admin table so
+            // it is obvious at a glance which side of the $3 each donor is on.
+            membership: membershipOf(u),
           });
         }
         rows.sort((a, b) => String(b.first_donation_at).localeCompare(String(a.first_donation_at)));
@@ -134,6 +150,7 @@ export async function handleAdminAnalytics(
               status: r.status,
               lost_at: r.updated_at,
               amount: r.amount,
+              membership: membershipOf(u),
             });
           }
         }
@@ -144,7 +161,20 @@ export async function handleAdminAnalytics(
       return new Response(
         JSON.stringify({
           success: true,
-          data: { type, period, since: sinceIso, count: rows.length, donors: rows },
+          data: {
+            type,
+            period,
+            since: sinceIso,
+            count: rows.length,
+            // Team accounts are listed but never counted as donors, so the
+            // table can hold more rows than the card's number. Both are
+            // returned rather than leaving the UI to guess.
+            countExcludingTeam: rows.filter(
+              (r: any) => r.membership !== "team",
+            ).length,
+            teamCount: rows.filter((r: any) => r.membership === "team").length,
+            donors: rows,
+          },
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
       );
@@ -247,13 +277,44 @@ export async function handleAdminAnalytics(
         ...(recentMonthlyPayments || []).map((r: any) => r.user_id),
         ...(recentOneTime || []).map((r: any) => r.user_id),
       ]);
+      // A coworking member never gets a monthly_donations row: their seat is
+      // billed by the coworking space, outside Stripe. Active was defined as
+      // "has a live subscription or has paid recently", both of which read that
+      // table, so every coworking member was being counted as INACTIVE while
+      // their space was paying for them every month. They are giving donors and
+      // they count as active.
+      const coworkingUserIds = new Set<number>(
+        (donors || [])
+          .filter((d: any) => membershipOf(d) === "coworking")
+          .map((d: any) => d.id),
+      );
+
       const activeUserIds = new Set<number>([
         ...activeSubUserIds,
         ...recentlyDonatedUserIds,
+        ...coworkingUserIds,
       ]);
 
       const totalActive = activeUserIds.size;
       const totalInactive = (donors || []).length - totalActive;
+
+      // Membership split of the donor base. The $3 platform fee arrives by two
+      // different routes, so knowing the size of each group is what makes the
+      // fee total checkable by hand: general donors pay it inside their Stripe
+      // charge, coworking members pay it inside their $18 membership.
+      const coworkingTotal = coworkingUserIds.size;
+      const generalTotal = (donors || []).length - coworkingTotal;
+      const membership = {
+        coworking: coworkingTotal,
+        general: generalTotal,
+        // General donors with a live subscription or a payment in the last 90
+        // days. There is deliberately no coworkingActive counterpart: we get no
+        // feed from the coworking spaces, so we cannot know when a seat lapses.
+        // Every coworking member is treated as active, which makes such a field
+        // equal to `coworking` by construction — a number that looks measured
+        // but never varies is worse than no number.
+        generalActive: totalActive - coworkingTotal,
+      };
 
       // First donation timestamp per donor, used to identify "new in window".
       const { data: allMonthlyPayments } = await supabase
@@ -278,6 +339,19 @@ export async function handleAdminAnalytics(
         if (!ts) continue;
         const cur = firstDonationByUser.get(row.user_id);
         if (!cur || ts < cur) firstDonationByUser.set(row.user_id, ts);
+      }
+      // A coworking member's giving starts the moment they finish signup, but
+      // it leaves no donation row for either query above to find, so they could
+      // never appear as a new donor no matter how recently they joined. Their
+      // signup date IS their first gift date. Applied here and in donor-cohort
+      // with the same rule, so the drill-through count still equals the card.
+      for (const d of donors || []) {
+        if (membershipOf(d) !== "coworking") continue;
+        if (!d.created_at) continue;
+        const cur = firstDonationByUser.get(d.id);
+        if (!cur || d.created_at < cur) {
+          firstDonationByUser.set(d.id, d.created_at);
+        }
       }
 
       // Count "new" donors whose first donation falls in [sinceIso, untilIso).
@@ -472,6 +546,20 @@ export async function handleAdminAnalytics(
           data: {
             totalActive,
             totalInactive,
+            // How the donor base splits, and where the $3 comes from for each
+            // half. Deliberately NOT folded into platformFee.total: that figure
+            // counts paid Stripe invoices in the selected window, and coworking
+            // money never passes through Stripe, so adding the two would mix a
+            // windowed count with a monthly run-rate. Kept separate so each
+            // number still means one thing.
+            membership,
+            platformFeeCoworking: {
+              // Per month, not per selected window. A coworking seat is billed
+              // $18 by the space ($15 donation + the $3 fee) on its own cycle,
+              // which we do not see, so a window count would be invented.
+              count: coworkingTotal,
+              monthlyTotal: Math.round(coworkingTotal * SERVICE_FEE * 100) / 100,
+            },
             current: {
               weekly: buildBlock(newWeekly, lostWeekly, platformWeekly),
               monthly: buildBlock(newMonthly, lostMonthly, platformMonthly),

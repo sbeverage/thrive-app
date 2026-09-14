@@ -187,11 +187,11 @@ export default function EditDonationAmount() {
       } else if (!beneficiaryId) {
         Alert.alert(
           "Amount Saved",
-          `$${donation.toFixed(2)}/month saved. To enable billing, select a beneficiary and add a payment method.`,
+          `$${donation.toFixed(2)}/month saved. To start giving, choose a charity and add a payment method.`,
           [
             { text: "OK", onPress: () => router.replace("/(tabs)/menu") },
             {
-              text: "Select Beneficiary",
+              text: "Choose a charity",
               onPress: () => router.replace("/(tabs)/beneficiary"),
             },
           ]
@@ -400,7 +400,7 @@ export default function EditDonationAmount() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Monthly Donation</Text>
             <Text style={styles.modalBody}>
-              This is the amount you choose to give each month — 100% goes straight to your cause, creating real impact where it matters most.
+              This is the amount you choose to give each month. 100% goes straight to your charity, creating real impact where it matters most.
             </Text>
             <TouchableOpacity
               style={styles.modalClose}
@@ -427,7 +427,7 @@ export default function EditDonationAmount() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Platform Fee</Text>
             <Text style={styles.modalBody}>
-              Your $3 monthly platform fee helps power THRIVE — supporting the technology, operations, and growth needed to expand impact across more communities.
+              Your $3 monthly platform fee helps power THRIVE by supporting the technology, operations, and growth needed to expand impact across more communities.
             </Text>
             <TouchableOpacity
               style={styles.modalClose}
@@ -454,7 +454,7 @@ export default function EditDonationAmount() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Credit Card Fees</Text>
             <Text style={styles.modalBody}>
-              Payment processors charge a small fee (3.5%) to securely handle your donation. By turning this on, you help ensure 100% of your gift goes directly to your cause.
+              Payment processors charge a small fee (3.5%) to securely handle your donation. By turning this on, you help ensure 100% of your gift goes directly to your charity.
             </Text>
             <TouchableOpacity
               style={styles.modalClose}

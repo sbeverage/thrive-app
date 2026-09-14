@@ -1,4 +1,5 @@
 import { corsHeaders } from "../lib/cors.ts";
+import { membershipOf } from "../lib/membership.ts";
 import { getStripeClient } from "../lib/stripe.ts";
 import { sendPaymentFailureNotice } from "../lib/dunning.ts";
 import { sendPushWithTicket } from "../lib/push.ts";
@@ -2364,6 +2365,25 @@ export async function handleAdminReporting(
       // transactions.created_at (which is a timestamptz).
       const endOfDayIso = `${endDate}T23:59:59.999Z`;
 
+      // Which donors are coworking members.
+      //
+      // They pay the $3 platform fee inside their $18 membership, collected by
+      // the coworking space. Since 2026-09-11 the app no longer charges it
+      // again on their optional extra gift, so deducting $3 from those
+      // donations would take money off the charity's payout that was never
+      // collected on that donation. Their sponsored $15 never reaches Stripe
+      // at all, so any Stripe donation from a coworking donor is by definition
+      // an extra, which makes membership the whole test.
+      const {data: coworkingRows} = await supabase
+        .from("users")
+        .select("id, coworking, invite_type")
+        .eq("role", "donor");
+      const coworkingDonorIds = new Set<number>(
+        (coworkingRows || [])
+          .filter((u: any) => membershipOf(u) === "coworking")
+          .map((u: any) => u.id),
+      );
+
       // Calculate payouts for each charity
       const payoutData = await Promise.all(
         (charities || []).map(async (charity: any) => {
@@ -2382,7 +2402,7 @@ export async function handleAdminReporting(
           const {data: monthlyTxns} = await supabase
             .from("transactions")
             .select(
-              "id, amount, processing_fee, user_covered_fees, donation_id, created_at",
+              "id, user_id, amount, processing_fee, user_covered_fees, donation_id, created_at",
             )
             .eq("beneficiary_id", charity.id)
             .eq("type", "monthly_donation")
@@ -2425,7 +2445,7 @@ export async function handleAdminReporting(
           const {data: oneTimeGifts} = await supabase
             .from("one_time_gifts")
             .select(
-              "id, amount, net_amount, processing_fee, user_covered_fees, status, created_at",
+              "id, user_id, amount, net_amount, processing_fee, user_covered_fees, status, created_at",
             )
             .eq("beneficiary_id", charity.id)
             .in("status", ["succeeded", "completed", "processed"])
@@ -2445,8 +2465,17 @@ export async function handleAdminReporting(
           const donationCount =
             (monthlyTxns?.length || 0) + (oneTimeGifts?.length || 0);
 
+          // Donations that actually carried a $3 platform fee. Coworking
+          // extras did not, so counting them understated the charity's payout
+          // by $3 apiece and overstated THRIVE's revenue by the same.
+          const feeBearingCount = [
+            ...(monthlyTxns || []),
+            ...(oneTimeGifts || []),
+          ].filter((r: any) => !coworkingDonorIds.has(r.user_id)).length;
+          const coworkingExemptCount = donationCount - feeBearingCount;
+
           // Calculate fees
-          const serviceFee = donationCount * 3.0; // $3 per donation
+          const serviceFee = feeBearingCount * 3.0; // $3 per fee-bearing donation
           // Real Stripe processing fees taken from the charge's balance_transaction.
           // For one-time gifts we historically only counted fees the donor didn't
           // cover (beneficiary absorbed); we keep that behavior, plus the monthly
@@ -2495,6 +2524,11 @@ export async function handleAdminReporting(
             oneTimeGifts: parseFloat(oneTimeTotal.toFixed(2)),
             donationCount,
             serviceFee: parseFloat(serviceFee.toFixed(2)),
+            // So the figure is checkable by hand rather than mysterious:
+            // donations counted for the fee, and how many were exempt because
+            // the donor is a coworking member who already paid it.
+            feeBearingCount,
+            coworkingExemptCount,
             processingFees: parseFloat(processingFees.toFixed(2)),
             netAmount: parseFloat(netAmount.toFixed(2)),
             platformFee: parseFloat(platformFee.toFixed(2)),
@@ -3334,6 +3368,347 @@ export async function handleAdminReporting(
             ...corsHeaders,
             "Content-Type": "application/json",
           },
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // POST /admin/reporting/backfill-charity-logos
+  //
+  // Pulls a real logo for each charity from its own website and stores it in
+  // Supabase, replacing the Google favicon URLs that 30 of the 52 charities
+  // currently point at.
+  //
+  // Why not keep using favicons: measured 2026-09-14, four of those URLs now
+  // answer 404 because Google stopped resolving an icon for the domain, which
+  // can happen at any time with nothing changing on our side. They are also
+  // 16-32px browser-tab icons, so they look soft in a 48pt slot at 3x, and
+  // they are frequently a letter mark rather than the organisation's logo.
+  // And `sizedImageUrl` in the app only rewrites Supabase Storage URLs, so an
+  // external logo skips the resizing path entirely.
+  //
+  // Source preference, best first:
+  //   1. og:image        usually 1200x630, the image the org chose to represent itself
+  //   2. twitter:image   same idea, different tag
+  //   3. apple-touch-icon  typically 180x180, still far better than a favicon
+  //   4. link rel=icon with an explicit large `sizes`
+  //
+  // Safe to re-run. Charities already on Supabase Storage are skipped unless
+  // force=1, and ?dry_run=true reports what it would do without writing.
+  if (
+    method === "POST" &&
+    route.startsWith("/admin/reporting/backfill-charity-logos")
+  ) {
+    try {
+      const url = new URL(req.url);
+      const dryRun = url.searchParams.get("dry_run") === "true";
+      const force = url.searchParams.get("force") === "1";
+      const onlyId = url.searchParams.get("id");
+
+      const {data: charities, error: readError} = await supabase
+        .from("charities")
+        .select("id, name, website, logo_url");
+
+      if (readError) {
+        return new Response(JSON.stringify({error: readError.message}), {
+          headers: {...corsHeaders, "Content-Type": "application/json"},
+          status: 500,
+        });
+      }
+
+      const BUCKET = "beneficiary-images";
+      const MIN_BYTES = 1024;          // below this it is a favicon, not a logo
+      const MAX_BYTES = 6 * 1024 * 1024;
+
+      const absolute = (href: string, base: string): string | null => {
+        try {
+          return new URL(href, base).toString();
+        } catch {
+          return null;
+        }
+      };
+
+      /**
+       * Pull candidate logo URLs out of a page, best first.
+       *
+       * Ordering matters more than the extraction. A first version preferred
+       * og:image, which is the *share* image: measured across all 52 sites it
+       * returned a homepage hero for Shepherd Center, a staff photo for PAWS
+       * Atlanta and an Unsplash stock photo for The Bridge International. Those
+       * are worse in a logo slot than the favicon they replaced.
+       *
+       * So candidates are scored, not ranked by tag:
+       *   +100  the URL path says "logo" (any source, including og:image)
+       *    +60  apple-touch-icon or android-chrome, i.e. a square app icon
+       *    +20  a link rel=icon with a declared size of 120px or more
+       *      0  og:image / twitter:image, which may well be a photograph
+       * Ties break toward the larger declared size.
+       */
+      const candidatesFromHtml = (html: string, base: string): string[] => {
+        const scored = new Map<string, number>();
+        const add = (href: string | undefined | null, score: number) => {
+          if (!href) return;
+          const abs = absolute(href.trim(), base);
+          if (!abs) return;
+          const looksLikeLogo = /logo/i.test(new URL(abs).pathname);
+          const total = score + (looksLikeLogo ? 100 : 0);
+          if (!scored.has(abs) || (scored.get(abs) as number) < total) {
+            scored.set(abs, total);
+          }
+        };
+
+        const meta = (prop: string) => {
+          const re = new RegExp(
+            `<meta[^>]+(?:property|name)=["']${prop}["'][^>]*>`,
+            "gi",
+          );
+          for (const tag of html.match(re) || []) {
+            add((tag.match(/content=["']([^"']+)["']/i) || [])[1], 0);
+          }
+        };
+        meta("og:image:secure_url");
+        meta("og:image");
+        meta("twitter:image");
+        meta("twitter:image:src");
+
+        for (const tag of html.match(/<link[^>]+>/gi) || []) {
+          const rel = ((tag.match(/rel=["']([^"']+)["']/i) || [])[1] || "").toLowerCase();
+          if (!rel.includes("icon")) continue;
+          const href = (tag.match(/href=["']([^"']+)["']/i) || [])[1];
+          if (!href) continue;
+          const sizes = (tag.match(/sizes=["']([^"']+)["']/i) || [])[1] || "";
+          const size = parseInt((sizes.match(/(\d+)/) || [])[1] || "0", 10);
+          const apple = rel.includes("apple-touch") || /android-chrome/i.test(href);
+          add(href, apple ? 60 : size >= 120 ? 20 : 0);
+        }
+
+        // The header logo is usually a plain <img> the meta tags never mention.
+        // Only taken when the tag itself says "logo", so this cannot drag in
+        // arbitrary page imagery.
+        for (const tag of (html.match(/<img[^>]+>/gi) || []).slice(0, 120)) {
+          if (!/logo/i.test(tag)) continue;
+          add((tag.match(/\bsrc=["']([^"']+)["']/i) || [])[1], 40);
+        }
+
+        return [...scored.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([url]) => url);
+      };
+
+      const extFor = (contentType: string): string => {
+        const t = contentType.toLowerCase();
+        if (t.includes("png")) return "png";
+        if (t.includes("jpeg") || t.includes("jpg")) return "jpg";
+        if (t.includes("webp")) return "webp";
+        if (t.includes("svg")) return "svg";
+        if (t.includes("gif")) return "gif";
+        return "png";
+      };
+
+      const results: any[] = [];
+      let updated = 0;
+      let skipped = 0;
+      let failed = 0;
+
+      for (const c of charities || []) {
+        if (onlyId && String(c.id) !== String(onlyId)) continue;
+
+        const existing = typeof c.logo_url === "string" ? c.logo_url : "";
+        if (existing.includes("/storage/v1/") && !force) {
+          skipped += 1;
+          continue;
+        }
+
+        const site = typeof c.website === "string" ? c.website.trim() : "";
+        if (!site) {
+          results.push({id: c.id, name: c.name, status: "no_website"});
+          failed += 1;
+          continue;
+        }
+        const siteUrl = site.startsWith("http") ? site : `https://${site}`;
+
+        let html = "";
+        try {
+          const page = await fetch(siteUrl, {
+            headers: {
+              // Some sites serve a stub to unknown agents.
+              "User-Agent":
+                "Mozilla/5.0 (compatible; THRIVE-logo-backfill/1.0; +https://workatthrive.com)",
+              Accept: "text/html,application/xhtml+xml",
+            },
+            redirect: "follow",
+          });
+          if (!page.ok) {
+            results.push({
+              id: c.id,
+              name: c.name,
+              status: "site_unreachable",
+              httpStatus: page.status,
+            });
+            failed += 1;
+            continue;
+          }
+          html = await page.text();
+        } catch (e: any) {
+          results.push({
+            id: c.id,
+            name: c.name,
+            status: "site_error",
+            detail: String(e?.message || e),
+          });
+          failed += 1;
+          continue;
+        }
+
+        const candidates = candidatesFromHtml(html, siteUrl);
+        if (candidates.length === 0) {
+          results.push({id: c.id, name: c.name, status: "no_candidates"});
+          failed += 1;
+          continue;
+        }
+
+        let picked: {url: string; bytes: Uint8Array; contentType: string} | null = null;
+        const tried: any[] = [];
+
+        for (const candidate of candidates.slice(0, 6)) {
+          try {
+            const res = await fetch(candidate, {
+              headers: {"User-Agent": "Mozilla/5.0 (compatible; THRIVE-logo-backfill/1.0)"},
+              redirect: "follow",
+            });
+            if (!res.ok) {
+              tried.push({url: candidate, reason: `http_${res.status}`});
+              continue;
+            }
+            const contentType = (res.headers.get("content-type") || "").toLowerCase();
+            if (!contentType.startsWith("image/")) {
+              tried.push({url: candidate, reason: `not_image:${contentType}`});
+              continue;
+            }
+            // React Native's <Image> renders neither SVG nor ICO. Several
+            // sites' best logo is an SVG and one offers only a .ico, and
+            // storing those would swap a poor logo for a blank one. Skipping
+            // them lets the next candidate win instead.
+            if (
+              contentType.includes("svg") ||
+              contentType.includes("icon") ||
+              /\.(svg|ico)(\?|$)/i.test(candidate)
+            ) {
+              tried.push({url: candidate, reason: `unsupported_format:${contentType}`});
+              continue;
+            }
+            const buf = new Uint8Array(await res.arrayBuffer());
+            if (buf.byteLength < MIN_BYTES) {
+              // Almost certainly a favicon. Rejecting these is the point of
+              // the exercise: swapping one tiny icon for another gains nothing.
+              tried.push({url: candidate, reason: `too_small:${buf.byteLength}`});
+              continue;
+            }
+            if (buf.byteLength > MAX_BYTES) {
+              tried.push({url: candidate, reason: `too_large:${buf.byteLength}`});
+              continue;
+            }
+            picked = {url: candidate, bytes: buf, contentType};
+            break;
+          } catch (e: any) {
+            tried.push({url: candidate, reason: String(e?.message || e)});
+          }
+        }
+
+        if (!picked) {
+          results.push({id: c.id, name: c.name, status: "no_usable_image", tried});
+          failed += 1;
+          continue;
+        }
+
+        if (dryRun) {
+          results.push({
+            id: c.id,
+            name: c.name,
+            status: "would_update",
+            from: existing || null,
+            source: picked.url,
+            bytes: picked.bytes.byteLength,
+            contentType: picked.contentType,
+          });
+          updated += 1;
+          continue;
+        }
+
+        const path = `logos/charity-${c.id}-${Date.now()}.${extFor(picked.contentType)}`;
+        const {error: uploadError} = await supabase.storage
+          .from(BUCKET)
+          .upload(path, picked.bytes, {
+            contentType: picked.contentType,
+            upsert: true,
+          });
+
+        if (uploadError) {
+          results.push({
+            id: c.id,
+            name: c.name,
+            status: "upload_failed",
+            detail: uploadError.message,
+          });
+          failed += 1;
+          continue;
+        }
+
+        const {data: pub} = supabase.storage.from(BUCKET).getPublicUrl(path);
+        const publicUrl = pub?.publicUrl;
+        if (!publicUrl) {
+          results.push({id: c.id, name: c.name, status: "no_public_url"});
+          failed += 1;
+          continue;
+        }
+
+        const {error: writeError} = await supabase
+          .from("charities")
+          .update({logo_url: publicUrl})
+          .eq("id", c.id);
+
+        if (writeError) {
+          results.push({
+            id: c.id,
+            name: c.name,
+            status: "db_update_failed",
+            detail: writeError.message,
+          });
+          failed += 1;
+          continue;
+        }
+
+        results.push({
+          id: c.id,
+          name: c.name,
+          status: "updated",
+          from: existing || null,
+          to: publicUrl,
+          source: picked.url,
+          bytes: picked.bytes.byteLength,
+        });
+        updated += 1;
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          dryRun,
+          summary: {updated, skipped, failed, considered: (charities || []).length},
+          results,
+        }),
+        {
+          headers: {...corsHeaders, "Content-Type": "application/json"},
+          status: 200,
+        },
+      );
+    } catch (err: any) {
+      console.error("backfill-charity-logos error:", err);
+      return new Response(
+        JSON.stringify({error: err?.message || "backfill-charity-logos failed"}),
+        {
+          headers: {...corsHeaders, "Content-Type": "application/json"},
           status: 500,
         },
       );
