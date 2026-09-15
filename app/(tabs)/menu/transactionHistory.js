@@ -632,7 +632,7 @@ export default function TransactionHistory() {
             </View>
 
             {/* Hero savings card */}
-            <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroCard}>
+            <LinearGradient colors={['#2C3E50', '#4CA1AF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroCard}>
               <View style={styles.heroLeft}>
                 <Text style={styles.heroLabel}>TOTAL SAVED</Text>
                 <Text style={styles.heroAmount}>${totalSavings.toFixed(2)}</Text>

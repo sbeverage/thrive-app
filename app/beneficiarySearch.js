@@ -1,6 +1,7 @@
 // app/beneficiarySearch.js
 
 import React, { useState, useEffect } from 'react';
+import { BACK_BUTTON, BACK_ICON } from './utils/signupChrome';
 import { View, Text, TouchableOpacity, Image, TextInput, ScrollView, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
@@ -16,21 +17,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 120,
   },
-  backButton: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    zIndex: 100,
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    borderRadius: 20,
-    padding: 6,
-    marginBottom: 25,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
+  backButton: BACK_BUTTON,
+  backIcon: BACK_ICON,
   // ... keep other styles ...
 });
 
@@ -161,7 +149,7 @@ export default function BeneficiarySearch() {
           <TouchableOpacity style={styles.backButton} onPress={router.back}>
             <Image 
               source={require('../assets/icons/arrow-left.png')} 
-              style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+              style={styles.backIcon} 
             />
           </TouchableOpacity>
           <TouchableOpacity onPress={handleSkip}>

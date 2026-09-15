@@ -67,7 +67,7 @@ export default function ResetPassword() {
 
   if (success) {
     return (
-      <LinearGradient colors={['#21555b', '#2d7a82']} style={styles.successContainer}>
+      <LinearGradient colors={['#2C3E50', '#4CA1AF']} style={styles.successContainer}>
         <Image source={require('../assets/images/bolt-piggy.png')} style={styles.logo} />
         <Text style={styles.successTitle}>Password Updated!</Text>
         <Text style={styles.successSub}>You can now log in with your new password.</Text>

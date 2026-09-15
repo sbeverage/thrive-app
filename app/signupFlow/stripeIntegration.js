@@ -15,6 +15,8 @@ import {
   Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BACK_BUTTON, BACK_ICON } from '../utils/signupChrome';
 import { AntDesign, MaterialIcons } from "@expo/vector-icons";
 import ProfileCompleteModal from "../../components/ProfileCompleteModal";
 import { LinearGradient } from "expo-linear-gradient";
@@ -52,6 +54,7 @@ const applePaySvgAsset = require("../../assets/logos/Apple-Pay.svg");
 
 export default function StripeIntegration() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const { selectedBeneficiary, holdingForChoice } = useBeneficiary();
   const [applePaySvg, setApplePaySvg] = useState(null);
@@ -484,7 +487,7 @@ export default function StripeIntegration() {
           >
             <Image
               source={require("../../assets/icons/arrow-left.png")}
-              style={{ width: 24, height: 24, tintColor: "#fff" }}
+              style={styles.backIcon}
             />
           </TouchableOpacity>
 
@@ -937,21 +940,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     zIndex: 2,
   },
-  backButton: {
-    position: "absolute",
-    top: 20,
-    left: 20,
-    zIndex: 100,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderRadius: 20,
-    padding: 8,
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
-  },
+  backButton: BACK_BUTTON,
+  backIcon: BACK_ICON,
   mainCard: {
     backgroundColor: "#fff",
     borderRadius: 24,

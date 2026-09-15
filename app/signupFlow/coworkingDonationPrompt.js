@@ -9,6 +9,8 @@ import {
   Dimensions,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BACK_BUTTON, BACK_ICON } from '../utils/signupChrome';
 import { LinearGradient } from 'expo-linear-gradient';
 import ProfileCompleteModal from '../../components/ProfileCompleteModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,6 +23,7 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function CoworkingDonationPrompt() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const { saveUserData } = useUser();
   const { selectedBeneficiary } = useBeneficiary();
@@ -72,9 +75,22 @@ export default function CoworkingDonationPrompt() {
 
   return (
     <View style={styles.screen}>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => router.back()}
+        accessibilityRole="button"
+        accessibilityLabel="Go back"
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Image
+          source={require('../../assets/icons/arrow-left.png')}
+          style={styles.backIcon}
+        />
+      </TouchableOpacity>
+
       <View style={styles.gradientBgWrap} pointerEvents="none">
         <LinearGradient
-          colors={['#21555b', '#2d7a82']}
+          colors={['#2C3E50', '#4CA1AF']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.gradientBg}
@@ -85,18 +101,6 @@ export default function CoworkingDonationPrompt() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-          accessibilityRole="button"
-          accessibilityLabel="Go back to pick a different charity"
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Image
-            source={require('../../assets/icons/arrow-left.png')}
-            style={styles.backIcon}
-          />
-        </TouchableOpacity>
 
         <View style={styles.hero}>
           <Image
@@ -188,15 +192,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
-  backButton: {
-    alignSelf: 'flex-start',
-    padding: 8,
-    marginBottom: 8,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 20,
-    zIndex: 2,
-  },
-  backIcon: { width: 24, height: 24, tintColor: '#324E58' },
+  // Standard signup back button. Same position and treatment on every screen
+  // in the flow: anchored to the screen (not the scroll content) so it never
+  // drifts, and offset from the safe area rather than a guessed constant.
+  backButton: BACK_BUTTON,
+  backIcon: BACK_ICON,
   hero: {
     alignItems: 'center',
     marginBottom: 20,
@@ -231,14 +231,12 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   title: {
-    // Bigger now that it is three words rather than seven: it can carry the
-    // screen instead of being a paragraph pretending to be a heading.
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '700',
     color: '#324E58',
     textAlign: 'center',
     marginBottom: 18,
-    lineHeight: 32,
+    lineHeight: 28,
   },
   includedBox: {
     backgroundColor: '#E8F4F5',

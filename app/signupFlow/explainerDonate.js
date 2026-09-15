@@ -19,6 +19,8 @@ import {
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { CoinRain, HeartPop } from '../components/ExplainerParticles';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BACK_BUTTON, BACK_ICON } from '../utils/signupChrome';
 import { AntDesign } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Video, ResizeMode, Audio } from 'expo-av';
@@ -82,6 +84,7 @@ const REVEAL = { IN_AT, ENTER, PAUSE, TITLE_DUR };
 
 export default function ExplainerDonate() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { logout } = useUser();
 
   /**
@@ -339,7 +342,7 @@ export default function ExplainerDonate() {
       <TouchableOpacity style={styles.backButton} onPress={confirmLeaveSignup}>
         <Image 
           source={require('../../assets/icons/arrow-left.png')} 
-          style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+          style={styles.backIcon}
         />
       </TouchableOpacity>
 
@@ -540,20 +543,8 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  backButton: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    zIndex: 100,
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    borderRadius: 20,
-    padding: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
+  backButton: BACK_BUTTON,
+  backIcon: BACK_ICON,
   contentSection: {
     // flexGrow makes this fill the scroll viewport so justifyContent has room
     // to work; without it the container hugs the card and centring does
@@ -619,19 +610,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     marginBottom: 18,
   },
+  // 22/800, matching discountTeaser, chooseCause and the charity list. This
+  // was 30/bold, the largest of the four gradient headers, so the type size
+  // changed as a donor moved from this screen to the next.
   headerTitle: {
-    fontSize: 30,
-    fontWeight: 'bold',
-    color: '#ffffff',
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#fff',
     textAlign: 'center',
-    lineHeight: 36,
+    lineHeight: 28,
   },
   headerSubtitle: {
-    fontSize: 15,
+    fontSize: 13,
+    fontWeight: '500',
     color: 'rgba(255,255,255,0.92)',
     textAlign: 'center',
-    lineHeight: 21,
-    marginTop: 8,
+    lineHeight: 18,
+    marginTop: 6,
   },
   benefitsContainer: {
     // No bottom margin: the card's own 24px padding is the only gap wanted

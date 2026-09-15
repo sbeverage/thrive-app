@@ -1,5 +1,6 @@
 // Updated to use superior design patterns from Discounts tab
 import React, { useRef, useMemo, useState, useEffect, useCallback } from 'react';
+import { BACK_BUTTON, BACK_ICON } from '../../../utils/signupChrome';
 import {
   View,
   Text,
@@ -993,7 +994,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
           >
             <Image
               source={require('../../../../assets/icons/arrow-left.png')}
-              style={{ width: 22, height: 22, tintColor: '#fff' }}
+              style={styles.backIcon}
             />
           </TouchableOpacity>
         )}
@@ -1877,15 +1878,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '500',
   },
-  signupBackButton: {
-    position: 'absolute',
-    top: 18,
-    left: 16,
-    zIndex: 50,
-    backgroundColor: 'rgba(0,0,0,0.18)',
-    borderRadius: 18,
-    padding: 6,
-  },
+  signupBackButton: BACK_BUTTON,
+  backIcon: BACK_ICON,
   // ─── IRS-registry inline section ───
   registrySection: {
     marginTop: 18,

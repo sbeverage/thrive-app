@@ -13,6 +13,8 @@ import {
   TextInput,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BACK_BUTTON, BACK_ICON } from '../utils/signupChrome';
 import { AntDesign } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { LinearGradient } from "expo-linear-gradient";
@@ -25,6 +27,7 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function DonationAmount() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const routeParams = useLocalSearchParams();
   const { selectedBeneficiary } = useBeneficiary();
   const { saveUserData, user } = useUser();
@@ -157,7 +160,7 @@ export default function DonationAmount() {
           >
             <Image
               source={require("../../assets/icons/arrow-left.png")}
-              style={{ width: 24, height: 24, tintColor: "#324E58" }}
+              style={styles.backIcon}
             />
           </TouchableOpacity>
           {/* Piggy and Speech Bubble in blue area */}
@@ -407,16 +410,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
     width: "100%",
   },
-  backButton: {
-    position: "absolute",
-    top: 20,
-    left: 20,
-    zIndex: 100,
-    backgroundColor: "rgba(255,255,255,0.8)",
-    borderRadius: 20,
-    padding: 6,
-    marginBottom: 25,
-  },
+  backButton: BACK_BUTTON,
+  backIcon: BACK_ICON,
   skipButton: {
     position: "absolute",
     top: 20,

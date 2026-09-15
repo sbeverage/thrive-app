@@ -1,5 +1,6 @@
 // Universal verification handler - works for both mobile and web
 import { useEffect, useState } from 'react';
+import { BACK_BUTTON, BACK_ICON } from './utils/signupChrome';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   View,
@@ -175,7 +176,7 @@ export default function UniversalVerifyHandler() {
         <View style={styles.backButtonContainer}>
           <Image
             source={require('../assets/icons/arrow-left.png')}
-            style={{ width: 24, height: 24, tintColor: '#333' }}
+            style={styles.backIcon}
           />
         </View>
       </TouchableOpacity>
@@ -234,12 +235,8 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 40,
     borderBottomRightRadius: 40,
   },
-  backButton: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    zIndex: 10,
-  },
+  backButton: BACK_BUTTON,
+  backIcon: BACK_ICON,
   backButtonContainer: {
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
     borderRadius: 20,

@@ -133,7 +133,7 @@ export default function FeedbackScreen() {
 
         {/* Hero */}
         <LinearGradient
-          colors={['#21555b', '#2d7a82']}
+          colors={['#2C3E50', '#4CA1AF']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.heroSection}

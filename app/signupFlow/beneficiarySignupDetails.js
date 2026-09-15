@@ -1,6 +1,7 @@
 // app/signupFlow/beneficiarySignupDetails.js
 
 import React, { useState, useEffect } from 'react';
+import { BACK_BUTTON, BACK_ICON } from '../utils/signupChrome';
 import { View, StyleSheet, Dimensions, TouchableOpacity, Platform, Text, Image } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
@@ -266,7 +267,7 @@ export default function BeneficiarySignupDetails() {
         <TouchableOpacity onPress={handleBackPress}>
           <Image 
             source={require('../../assets/icons/arrow-left.png')} 
-            style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+            style={styles.backIcon} 
           />
         </TouchableOpacity>
       </View>
@@ -320,20 +321,8 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 40,
     borderBottomRightRadius: 40,
   },
-  backButton: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    zIndex: 100,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    borderRadius: 20,
-    padding: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
-  },
+  backButton: BACK_BUTTON,
+  backIcon: BACK_ICON,
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',

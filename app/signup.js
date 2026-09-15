@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BACK_BUTTON, BACK_ICON } from './utils/signupChrome';
 import {
   View,
   Text,
@@ -286,7 +287,7 @@ export default function SignupScreen() {
           <TouchableOpacity style={styles.backArrow} onPress={() => router.replace('/')}> 
             <Image 
               source={require('../assets/icons/arrow-left.png')} 
-              style={{ width: 24, height: 24, tintColor: '#324E58' }} 
+              style={styles.backIcon} 
             />
           </TouchableOpacity>
           <View style={styles.piggyLogoColumn}>
@@ -430,21 +431,8 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     width: '100%',
   },
-  backArrow: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    zIndex: 100,
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    borderRadius: 20,
-    padding: 6,
-    marginBottom: 25,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
+  backArrow: BACK_BUTTON,
+  backIcon: BACK_ICON,
   tagline: {
     fontSize: 16,
     color: '#6d6e72',

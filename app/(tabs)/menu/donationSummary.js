@@ -853,7 +853,7 @@ export default function DonationSummary() {
         showsVerticalScrollIndicator={false}
       >
         {/* Current Charity Card */}
-        <LinearGradient colors={['#21555b', '#2d7a82']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.charityCard}>
+        <LinearGradient colors={['#2C3E50', '#4CA1AF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.charityCard}>
           <View style={styles.charityHeader}>
             <Image
               source={

@@ -39,6 +39,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BACK_BUTTON, BACK_ICON } from '../utils/signupChrome';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import API from '../lib/api';
 import { useBeneficiary } from '../context/BeneficiaryContext';
@@ -106,9 +107,49 @@ export default function ChooseCause({ preview = false } = {}) {
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   }, []);
 
+  /**
+   * Back out one step.
+   *
+   * This screen had no back affordance at all, so a donor mid-pick could only
+   * go forward or use the system swipe. Its three steps are one route, so back
+   * has to walk the phases before it leaves: trio -> categories -> entry.
+   */
+  const goBack = useCallback(() => {
+    if (phaseRef.current === 'trio') {
+      setPhase('categories');
+      scrollToTop();
+      return;
+    }
+    if (phaseRef.current === 'categories') {
+      setPhase('entry');
+      scrollToTop();
+      return;
+    }
+    if (preview) return;
+    const canGoBack = typeof router.canGoBack === 'function' ? router.canGoBack() : true;
+    if (canGoBack) {
+      router.back();
+      return;
+    }
+    // Deep-linked straight in, so there is nothing beneath. The teaser is the
+    // step before this one in every flow.
+    const params = {};
+    if (flow === 'team') params.flow = 'team';
+    else if (flow === 'coworking') {
+      params.flow = 'coworking';
+      params.sponsorAmount = String(sponsorAmount ?? '15');
+    }
+    router.replace({ pathname: '/signupFlow/discountTeaser', params });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flow, preview, router, sponsorAmount, scrollToTop]);
+
   const [phase, setPhase] = useState(
     startParam === 'categories' ? 'categories' : 'entry',
   ); // entry | categories | trio
+  const phaseRef = useRef(phase);
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
   const [charities, setCharities] = useState([]);
   const [trio, setTrio] = useState([]);
   const [seen, setSeen] = useState(() => new Set());
@@ -439,6 +480,20 @@ export default function ChooseCause({ preview = false } = {}) {
    */
   const shell = (title, sub, children, opts = {}) => (
     <View style={styles.gradientPage}>
+      {!preview && (
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={goBack}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Image
+            source={require('../../assets/icons/arrow-left.png')}
+            style={styles.backIcon}
+          />
+        </TouchableOpacity>
+      )}
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={styles.gradientScroll}
@@ -451,7 +506,11 @@ export default function ChooseCause({ preview = false } = {}) {
           style={[
             styles.gradientHeader,
             opts.tall && styles.gradientHeaderTall,
-            { paddingTop: insets.top + 20 },
+            // 44 matches discountTeaser's brandHeader exactly, so the title
+            // lands in the same place as the donor moves between the two. A
+            // fixed value rather than insets.top + n for the same reason the
+            // back button uses one: there is no SafeAreaProvider in this tree.
+            { paddingTop: 44 },
           ]}
         >
           <Text style={styles.gradientTitle}>{title}</Text>
@@ -692,7 +751,7 @@ export default function ChooseCause({ preview = false } = {}) {
         )}
 
         <TouchableOpacity onPress={() => setPhase('categories')} accessibilityRole="button">
-          <Text style={styles.quietLink}>Change what matters to you</Text>
+          <Text style={styles.quietLink}>Change or add categories</Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={browseAll} accessibilityRole="button">
@@ -752,7 +811,7 @@ const styles = StyleSheet.create({
   gradientHeader: {
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
-    paddingHorizontal: 28,
+    paddingHorizontal: 24,
     // Deep enough that the card below can lift into it without covering
     // the heading.
     paddingBottom: 104,
@@ -760,6 +819,8 @@ const styles = StyleSheet.create({
   },
   /** Entry step only: deep enough that the page reads as brand colour with a
    *  card lifted into it, rather than a short header over empty grey. */
+  backButton: BACK_BUTTON,
+  backIcon: BACK_ICON,
   gradientHeaderTall: {
     paddingBottom: 140,
   },
@@ -785,19 +846,22 @@ const styles = StyleSheet.create({
   overlapCardUnderPiggy: {
     marginTop: -10,
   },
+  // Same as discountTeaser's headerTitle and the 52-list's, which already
+  // agreed with each other. This screen was the outlier at 27/700.
   gradientTitle: {
-    fontSize: 27,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#fff',
     textAlign: 'center',
-    lineHeight: 34,
+    lineHeight: 28,
   },
   gradientSub: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#DCEFF3',
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 18,
+    color: 'rgba(255,255,255,0.92)',
     textAlign: 'center',
-    marginTop: 10,
+    marginTop: 6,
   },
   overlapCard: {
     marginTop: -80,

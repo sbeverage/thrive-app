@@ -21,6 +21,8 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BACK_BUTTON, BACK_ICON } from '../utils/signupChrome';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, AntDesign } from '@expo/vector-icons';
 import { Asset } from 'expo-asset';
@@ -109,6 +111,7 @@ function getDiscountTextForVendor(vendorId, discounts) {
 
 export default function DiscountTeaser() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const {
     location: userLocation,
@@ -404,7 +407,7 @@ export default function DiscountTeaser() {
         >
           <Image
             source={require('../../assets/icons/arrow-left.png')}
-            style={{ width: 22, height: 22, tintColor: '#fff' }}
+            style={styles.backIcon}
           />
         </TouchableOpacity>
 
@@ -857,15 +860,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backButton: {
-    position: 'absolute',
-    top: 18,
-    left: 16,
-    zIndex: 10,
-    backgroundColor: 'rgba(0,0,0,0.18)',
-    borderRadius: 18,
-    padding: 6,
-  },
+  backButton: BACK_BUTTON,
+  backIcon: BACK_ICON,
   // Wrapper sits over the brand header; alignItems centers the piggy
   // horizontally, and the `top` value tunes how much of the piggy hangs over
   // the search card. Tweak `top` if the empirical placement looks off.
