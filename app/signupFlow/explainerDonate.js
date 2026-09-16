@@ -46,9 +46,17 @@ const DONATION_VIDEO_URL = VIDEO_ASSETS.DONATION_EXPLAINER;
  *
  * Nothing here gates the button. A donor can leave on the first frame.
  */
-// infoCard is 90% wide capped at 340, with 24px padding each side, and each
-// benefit card adds 16px of its own. Particles scatter across what is left.
-const CARD_INNER_WIDTH = Math.min(SCREEN_WIDTH * 0.9, 340) - 24 * 2 - 16 * 2;
+// Particles scatter across the inside of a benefit card, so this has to track
+// the real geometry: infoCard is 90% wide capped at CARD_MAX_WIDTH with
+// CARD_PAD each side, and each benefit card adds BENEFIT_PAD of its own. These
+// are constants rather than literals because the numbers were previously
+// duplicated here and in the stylesheet, and changing the card size silently
+// left the bursts scattering across the old width.
+const CARD_MAX_WIDTH = 360;
+const CARD_PAD = 30;
+const BENEFIT_PAD = 18;
+const CARD_INNER_WIDTH =
+  Math.min(SCREEN_WIDTH * 0.9, CARD_MAX_WIDTH) - CARD_PAD * 2 - BENEFIT_PAD * 2;
 
 /**
  * Staged reveal, in ms from the start.
@@ -81,6 +89,28 @@ const REVEAL = { IN_AT, ENTER, PAUSE, TITLE_DUR };
 // launch, so the single allowed play was often spent before anyone was
 // looking. The only real replay case is resuming an interrupted signup, where
 // four and a half seconds costs nothing.
+
+/**
+ * The third card's copy, which is the one promise that isn't true for everyone.
+ *
+ * A coworking member's gift is billed by their space and a team member's is
+ * covered by their team, so "set up monthly donations" describes an action
+ * neither of them will ever take. This screen is the first thing they see after
+ * verifying their email, three screens before anything tells them the gift is
+ * already handled, so a wrong impression formed here is the one they carry into
+ * the rest of signup.
+ *
+ * The general flow's wording is left exactly as it is.
+ */
+function monthlyImpactCopy(flow) {
+  if (flow === 'coworking') {
+    return 'Your monthly gift is already covered by your THRIVE Coworking membership';
+  }
+  if (flow === 'team') {
+    return 'Your monthly gift is already covered by your team';
+  }
+  return 'Set up monthly donations to create lasting change';
+}
 
 export default function ExplainerDonate() {
   const router = useRouter();
@@ -428,7 +458,7 @@ export default function ExplainerDonate() {
               <View style={styles.benefitText}>
                 <Text style={styles.benefitTitle}>Monthly Impact</Text>
                 <Text style={styles.benefitDescription}>
-                  Set up monthly donations to create lasting change
+                  {monthlyImpactCopy(params?.flow)}
                 </Text>
               </View>
               <HeartPop run={burst.hearts} width={CARD_INNER_WIDTH} rise={86} />
@@ -551,31 +581,45 @@ const styles = StyleSheet.create({
     // nothing. Still scrolls normally if the card ever grows past the screen.
     flexGrow: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    // The title now sits above the card on the gradient, and the two centre
-    // together as one group, so the heavy downward bias the card needed on its
-    // own is gone.
-    paddingTop: 24,
+    // Deliberately NOT justifyContent: 'center'. Centring this container
+    // centred the title and the card together as one group, which made the
+    // headline's position depend on how tall the card happened to be. It
+    // landed about 30pt lower than the same headline on the discounts teaser
+    // and the charity picker, so this screen read as misaligned against the
+    // rest of signup.
+    //
+    // 44 is the number the other gradient headers use (discountTeaser's
+    // brandHeader, chooseCause's gradientHeader), so every H1 in the flow now
+    // sits at the same offset. The card still centres, via auto margins below,
+    // in whatever space is left under the title.
+    paddingTop: 44,
     // Clearance for the sticky button, which also pulls the centre point up so
     // the card sits in the middle of the area the donor can actually see
     // rather than the middle of the screen. Trimmed with the button's own
     // padding to cut the band of white between the two.
-    paddingBottom: 96,
+    paddingBottom: 84,
     zIndex: 5,
   },
   infoCard: {
     backgroundColor: '#ffffff',
     borderRadius: 24,
-    padding: 24, // Reduced from 28 to fit content better
+    padding: CARD_PAD,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 4,
     width: '90%',
-    maxWidth: 340,
+    // 90% of a 402pt screen is ~362, so 360 lets the card actually reach the
+    // 90% it asks for instead of being capped well short of it.
+    maxWidth: CARD_MAX_WIDTH,
     alignSelf: 'center',
     alignItems: 'center',
+    // Centres the card in the space below the pinned title, rather than the
+    // container centring title-and-card as one group. Auto margins collapse to
+    // 0 if the card ever outgrows the viewport, so it just scrolls normally.
+    marginTop: 'auto',
+    marginBottom: 'auto',
     zIndex: 10,
     borderWidth: 1,
     borderColor: '#e2e8f0',
@@ -588,7 +632,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
     alignSelf: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
     shadowColor: '#DB8633',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
@@ -629,19 +673,24 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   benefitsContainer: {
-    // No bottom margin: the card's own 24px padding is the only gap wanted
-    // under the last benefit. The extra 16 read as unexplained white.
+    width: '100%',
+    // `gap` rather than marginBottom on each card, so the spacing lands
+    // *between* the three and never after the last one. With margins the third
+    // card contributed its own trailing gap on top of the card's 24 padding,
+    // which is the unexplained white this used to try to cancel out.
+    gap: 26,
+    // No bottom margin: the card's own padding is the only gap wanted under
+    // the last benefit.
     marginBottom: 0,
   },
   benefitCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     backgroundColor: '#ffffff',
-    padding: 16,
+    padding: BENEFIT_PAD,
     borderRadius: 12,
-    // Gap between the three cards. There is room for it now that the title
-    // moved onto the gradient and the untrue block below was removed.
-    marginBottom: 14,
+    // Spacing between the three is benefitsContainer's `gap`, not a margin
+    // here, so the last card doesn't add a trailing one.
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -650,7 +699,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
     width: '100%',
-    minHeight: 80,
+    // Taller so the three cards fill the white card rather than leaving it
+    // floating in empty gradient above and white below.
+    minHeight: 104,
   },
   benefitIcon: {
     backgroundColor: '#FFF5EB',
