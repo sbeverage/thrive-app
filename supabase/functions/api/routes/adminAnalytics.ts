@@ -634,7 +634,7 @@ export async function handleAdminAnalytics(
       const { data: allDonorRows, error: donorsError } = await supabase
         .from("users")
         .select(
-          "id, created_at, city, state, invite_type, coworking",
+          "id, email, created_at, city, state, invite_type, coworking",
         )
         .eq("role", "donor");
       // Internal team accounts stay out of every donor chart.
@@ -730,11 +730,36 @@ export async function handleAdminAnalytics(
           .map((r: any) => r.referred_user_id)
           .filter((id: any) => id != null),
       );
+      // An admin invitation is a row in `invitations`, which is keyed by the
+      // email address it was sent to.
+      //
+      // This deliberately does not read invite_type. That column records
+      // *membership* — "coworking", "team", "standard" — and auth.ts writes
+      // "standard" on ordinary signups as well, so treating it as an
+      // invitation source labelled most of the donor base "Admin Invited"
+      // no matter how they actually arrived. Membership and acquisition are
+      // two different questions and this chart answers the second one.
+      //
+      // Any invitation row counts, including ones never accepted: the donor
+      // did sign up, and the invitation is the reason their address was known.
+      const { data: invites } = await supabase
+        .from("invitations")
+        .select("email");
+      const invitedEmails = new Set<string>(
+        (invites || [])
+          .map((r: any) => String(r.email ?? "").trim().toLowerCase())
+          .filter((e: string) => e !== ""),
+      );
+
       let adminInvited = 0;
       let referredCount = 0;
       let directCount = 0;
       for (const d of donors || []) {
-        if (d.invite_type === "coworking" || d.invite_type === "standard") {
+        const email = String(d.email ?? "").trim().toLowerCase();
+        // Invitation wins over referral when both exist: the invitation is the
+        // earlier and more deliberate act. Kept as if/else so the three
+        // buckets always sum to the donor total.
+        if (email !== "" && invitedEmails.has(email)) {
           adminInvited += 1;
         } else if (referredUserIds.has(d.id)) {
           referredCount += 1;
