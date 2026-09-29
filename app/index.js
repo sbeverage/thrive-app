@@ -538,15 +538,8 @@ export default function Index()  {
         </TouchableOpacity>
       )}
 
-      {/* Bottom stays white. The piggy leans in from the corner with the
-          buttons over her. */}
+      {/* Bottom stays white. */}
       <View style={styles.bottomArea}>
-        <Image
-          source={require('../assets/images/peeking-piggy-bottom-right.png')}
-          style={styles.cornerPiggy}
-          pointerEvents="none"
-        />
-
         <View style={styles.buttonsWrapper}>
           <TouchableOpacity
             style={styles.primaryButton}
@@ -655,13 +648,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    // Taller than the buttons need, because the piggy lives in here too and
-    // this is the band that closes the gap under the card. The dev button sits
-    // in that gap during development and is absent from a release build, so the
-    // spacing is set for the release layout, not the one I am looking at.
     height: 186,
     justifyContent: 'flex-end',
-    paddingBottom: 28,
+    // Lifted from 28. With the piggy gone this band is empty apart from the
+    // buttons, and sitting them right down on the home indicator left the
+    // screen bottom-heavy.
+    paddingBottom: 52,
   },
   stage: {
     // Absolute children need the parent to have a height of its own. This is
@@ -809,29 +801,6 @@ const styles = StyleSheet.create({
    * the corner puts her in the corner, and the height is chosen so she clears
    * the panel's top edge by a little rather than being swallowed by it.
    */
-  cornerPiggy: {
-    position: 'absolute',
-    // Pushed further off the right edge than looks right on paper. At -6 she
-    // reached far enough in that the Login label sat across her snout, and a
-    // button you have to squint at is a worse trade than a slightly smaller
-    // piggy. Tucked out here the label clears her and she still reads as
-    // leaning in from the corner.
-    right: -12,
-    // 66, and the limit is tighter than the asset suggests.
-    //
-    // The canvas has no transparent margin at its bottom, but her lowest
-    // *on-screen* pixel is row 1562 of 1672: the rest of her belly is in the
-    // 22pt that `right` pushes off the edge. So the number that matters is
-    // 20pt above the canvas bottom, which at this size puts her feet at y=788,
-    // ten points clear of the Login button's top edge at 798. Much below 60
-    // and she starts touching it.
-    bottom: 35,
-    // 176 x 313 keeps the asset's 941:1672 ratio. Both numbers have to move
-    // together or she stretches.
-    width: 176,
-    height: 313,
-    resizeMode: 'contain',
-  },
   buttonsWrapper: {
     flexDirection: 'row',
     justifyContent: 'center',
