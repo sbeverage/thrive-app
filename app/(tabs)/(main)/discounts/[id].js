@@ -233,15 +233,27 @@ export default function VendorDetails() {
           );
           return;
         }
-        // Non-402 errors — network hiccup, server error — keep the older
-        // "still let them see the code" fallback so a working donor isn't
-        // blocked by a transient blip.
-        console.warn('⚠️ API redemption failed, using local data:', redeemError);
-        result = {
-          discountCode: selectedDiscount.discountCode || 'N/A',
-          success: true,
-          message: 'Discount redeemed successfully (offline mode)',
-        };
+        // Everything else: say so, and do not pretend.
+        //
+        // This used to fabricate `success: true` and show the code anyway, so
+        // that "a working donor isn't blocked by a transient blip". The cost of
+        // that kindness was five months of invisible data loss: the redeem call
+        // was 401ing on every single redemption, the donor saw their code, and
+        // the `redemptions` table recorded 4 of 28. Nobody could see it,
+        // because from the donor's side it looked perfect.
+        //
+        // A code the vendor honours with no record behind it is worse than an
+        // error, because the vendor gives the discount and no report will ever
+        // show it. Surface the failure and let them tap again.
+        console.warn('⚠️ API redemption failed:', redeemError);
+        setIsRedeeming(false);
+        Alert.alert(
+          'That didn\'t go through',
+          redeemError?.message
+            || "We couldn't record your redemption just now. Give it another try?",
+          [{ text: 'OK' }],
+        );
+        return;
       }
       
       // Add savings if provided

@@ -37,8 +37,25 @@ const PUBLIC_ENDPOINTS = [
 // Endpoints that LOOK public (prefix matches PUBLIC_ENDPOINTS) but actually
 // require the user's JWT — `isPublicEndpoint` checks these first and returns
 // false so the request interceptor attaches the donor's auth token.
+//
+// READ THIS BEFORE ADDING A ROUTE UNDER /api/discounts, /api/vendors OR
+// /api/charities. isPublicEndpoint matches with `url.includes(...)`, so any
+// path *below* one of those public prefixes is classified public and gets the
+// anon key instead of the donor's token. The Edge Function then verifies that
+// token against JWT_SECRET, which the anon key is not signed with, and answers
+// 401. If the caller swallows the error, the feature silently does nothing.
+//
+// That is exactly what happened to redemptions. From the donor's side every
+// redemption looked successful — the code appeared, the savings history
+// updated — while the `redemptions` table recorded nothing for five months:
+// 4 rows against 28 actual redemptions. `/favorite` was in the same state.
 const PROTECTED_OVERRIDES = [
   "/api/charities/suggest",
+  // POST /api/discounts/:id/redeem
+  "/redeem",
+  // PUT+DELETE /api/vendors/:id/favorite, and GET /api/vendors/me/favorites,
+  // which this also covers because the match is a substring.
+  "/favorite",
 ];
 
 // Check if an endpoint is public

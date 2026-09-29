@@ -260,23 +260,41 @@ export async function handleAdminAnalytics(
         (activeSubs || []).map((r: any) => r.user_id),
       );
 
-      // Anyone with a donation (monthly payment or one-time gift) in last 90d.
+      // Anyone with a donation (monthly payment or one-time gift) in the last
+      // YEAR, not 90 days. The dates come back with the rows so every window
+      // below is bucketed from this one pair of queries rather than issuing
+      // four pairs — the membership cards need weekly/monthly/quarterly/yearly
+      // and the widest of those is 365 days.
       const { data: recentMonthlyPayments } = await supabase
         .from("monthly_donations")
         .select("user_id, last_payment_date")
         .in("user_id", donorIds.length ? donorIds : [0])
-        .gte("last_payment_date", ninetyDaysAgo.split("T")[0]);
+        .gte("last_payment_date", cur.yearly.split("T")[0]);
       const { data: recentOneTime } = await supabase
         .from("one_time_gifts")
         .select("user_id, created_at")
         .in("user_id", donorIds.length ? donorIds : [0])
         .eq("status", "completed")
-        .gte("created_at", ninetyDaysAgo);
+        .gte("created_at", cur.yearly);
 
-      const recentlyDonatedUserIds = new Set<number>([
-        ...(recentMonthlyPayments || []).map((r: any) => r.user_id),
-        ...(recentOneTime || []).map((r: any) => r.user_id),
-      ]);
+      /** Donor ids with a payment on or after `boundary` (an ISO string). */
+      const donatedSince = (boundary: string) => {
+        const day = boundary.split("T")[0];
+        const ids = new Set<number>();
+        for (const r of recentMonthlyPayments || []) {
+          if (r.last_payment_date && String(r.last_payment_date) >= day) {
+            ids.add(r.user_id);
+          }
+        }
+        for (const r of recentOneTime || []) {
+          if (r.created_at && String(r.created_at) >= boundary) ids.add(r.user_id);
+        }
+        return ids;
+      };
+
+      // The 90-day set, which is what "active" has always meant here. Now
+      // derived from the year of rows above rather than its own query.
+      const recentlyDonatedUserIds = donatedSince(ninetyDaysAgo);
       // A coworking member never gets a monthly_donations row: their seat is
       // billed by the coworking space, outside Stripe. Active was defined as
       // "has a live subscription or has paid recently", both of which read that
@@ -314,6 +332,35 @@ export async function handleAdminAnalytics(
         // equal to `coworking` by construction — a number that looks measured
         // but never varies is worse than no number.
         generalActive: totalActive - coworkingTotal,
+        // Per-window versions, so the period control can sit above these cards
+        // and actually change them.
+        //
+        // `coworking` has no windowed counterpart on purpose, for the same
+        // reason there is no coworkingActive: we get no feed from the spaces,
+        // so a coworking seat can never be observed to lapse. What CAN be
+        // measured is when one joined, so that is what varies by period.
+        activeByPeriod: Object.fromEntries(
+          (["weekly", "monthly", "quarterly", "yearly"] as const).map((k) => {
+            const boundary = cur[k];
+            const activeThen = new Set<number>([
+              ...activeSubUserIds,
+              ...donatedSince(boundary),
+              ...coworkingUserIds,
+            ]);
+            return [k, activeThen.size - coworkingTotal];
+          }),
+        ),
+        coworkingJoinedByPeriod: Object.fromEntries(
+          (["weekly", "monthly", "quarterly", "yearly"] as const).map((k) => [
+            k,
+            (donors || []).filter(
+              (d: any) =>
+                membershipOf(d) === "coworking" &&
+                d.created_at &&
+                d.created_at >= cur[k],
+            ).length,
+          ]),
+        ),
       };
 
       // First donation timestamp per donor, used to identify "new in window".

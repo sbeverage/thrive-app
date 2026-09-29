@@ -745,7 +745,29 @@ export async function handleDiscountRoute(
         .single();
 
       if (redemptionError) {
+        // Fail the request. This used to log and carry on, returning 200 with
+        // the discount code, which meant a redemption that recorded nothing
+        // looked identical to one that worked — to the donor, to the vendor,
+        // and on every admin screen. Between April and September 2026 the
+        // `redemptions` table captured 4 of 28 actual redemptions and nobody
+        // could tell, because this line was the only trace and it was a
+        // console.error nobody was reading.
+        //
+        // A redemption that was not recorded is not a redemption. Better the
+        // donor sees an honest failure and taps again than the vendor honours
+        // a discount that no report will ever show.
         console.error("Error creating redemption record:", redemptionError);
+        return new Response(
+          JSON.stringify({
+            error:
+              "We couldn't record that redemption. Please try again in a moment.",
+            code: "redemption_not_recorded",
+          }),
+          {
+            headers: { "Content-Type": "application/json" },
+            status: 500,
+          },
+        );
       }
 
       // 7. Calculate remaining uses after redemption

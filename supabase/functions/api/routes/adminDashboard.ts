@@ -82,10 +82,21 @@ export async function handleAdminDashboard(
           )
           .map((s: any) => s.user_id),
       );
-      const teamIds = new Set(
-        (donorRows || []).filter((d: any) => isTeamMember(d)).map((d: any) => d.id),
-      );
-      const activeDonors = [...activeUserIds].filter((id) => !teamIds.has(id)).length;
+      // Count only subscriptions belonging to an actual donor account.
+      //
+      // This used to subtract team ids from every active subscription in the
+      // table, which is not the same thing: the query above is unscoped, so a
+      // live subscription attached to anything that is not a donor — another
+      // role, or a user row that has since been deleted — was counted as an
+      // active donor. Measured 2026-09-16 there is exactly one such row, and it
+      // was inflating this card to 9 when only 8 donors hold a subscription.
+      //
+      // Testing positively against the donor set fixes that and covers the team
+      // case for free, since `donors` already has team accounts filtered out.
+      const donorIdSet = new Set((donors || []).map((d: any) => d.id));
+      const activeDonors = [...activeUserIds].filter((id) =>
+        donorIdSet.has(id),
+      ).length;
 
       // ── Vendors / beneficiaries ────────────────────────────────────────
       const { count: totalVendors } = await supabase
