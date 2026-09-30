@@ -950,6 +950,59 @@ export async function handleAdminDonors(
         );
       }
 
+      // Refuse to delete a donor who has given.
+      //
+      // Every financial table referencing users(id) was ON DELETE CASCADE, so
+      // this endpoint — reachable from a "Delete Donor" button in the admin
+      // panel — would take the donor's transactions, monthly_donations,
+      // one_time_gifts and donations with them. For a 501(c)(3) those rows are
+      // the audit trail behind receipts, charity payouts and reconciliation,
+      // and losing them is not recoverable.
+      //
+      // The database now answers this too: those four constraints are
+      // RESTRICT, so a delete that slipped past this check fails at the
+      // constraint rather than succeeding quietly. This check exists so the
+      // admin gets a sentence explaining what to do instead of a raw
+      // foreign-key error.
+      {
+        const [txns, monthly, gifts, donationRows] = await Promise.all([
+          supabase.from("transactions").select("id", {count: "exact", head: true})
+            .eq("user_id", donorId),
+          supabase.from("monthly_donations").select("id", {count: "exact", head: true})
+            .eq("user_id", donorId),
+          supabase.from("one_time_gifts").select("id", {count: "exact", head: true})
+            .eq("user_id", donorId),
+          supabase.from("donations").select("id", {count: "exact", head: true})
+            .eq("donor_id", donorId),
+        ]);
+        const history =
+          (txns.count || 0) + (monthly.count || 0) +
+          (gifts.count || 0) + (donationRows.count || 0);
+
+        if (history > 0) {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error:
+                `This donor has ${history} financial record${history === 1 ? "" : "s"} ` +
+                `(donations, payments or gifts). Deleting them would erase that history, ` +
+                `which we need for receipts and charity payouts. Deactivate the account instead.`,
+              code: "donor_has_financial_history",
+              counts: {
+                transactions: txns.count || 0,
+                monthly_donations: monthly.count || 0,
+                one_time_gifts: gifts.count || 0,
+                donations: donationRows.count || 0,
+              },
+            }),
+            {
+              headers: {...corsHeaders, "Content-Type": "application/json"},
+              status: 409,
+            },
+          );
+        }
+      }
+
       // Delete profile picture from Supabase Storage if it exists
       if (donor.profile_picture_url) {
         try {
