@@ -4,6 +4,157 @@ import { capitalizeName } from "../lib/strings.ts";
 import { geocodeAddress } from "../lib/geocoding.ts";
 import { membershipOf } from "../lib/membership.ts";
 import { getStripeClient } from "../lib/stripe.ts";
+import {
+  cancelMonthlySubscriptionCore,
+  resumeMonthlySubscriptionCore,
+} from "./donations.ts";
+
+/**
+ * Stripe statuses that mean the donor is still on the hook for a charge.
+ * "past_due" and "unpaid" count: the subscription has not ended, it is failing,
+ * so cancelling it is still a real and necessary action.
+ */
+const LIVE_STRIPE_STATUSES = ["active", "trialing", "past_due", "unpaid"];
+
+type MembershipSub = {
+  localId: number;
+  stripeSubscriptionId: string | null;
+  amount: number | null;
+  localStatus: string | null;
+  stripeStatus: string | null;
+  cancelAtPeriodEnd: boolean | null;
+  currentPeriodEnd: string | null;
+  endedAt: string | null;
+  foundInStripe: boolean;
+};
+
+type MembershipState = {
+  email: string | null;
+  subscriptions: MembershipSub[];
+  liveCount: number;
+  /** The one subscription a button may act on, or null if none qualifies. */
+  target: MembershipSub | null;
+  action: "cancel" | "resume" | null;
+  /** Admin-facing explanation when action is null. */
+  reason: string | null;
+};
+
+/**
+ * Work out what, if anything, an admin may do to this donor's monthly gift.
+ *
+ * Deliberately asks Stripe rather than trusting monthly_donations.status. Local
+ * status has drifted from Stripe more than once (that is how a second live
+ * subscription for one donor stayed invisible for months), and a button that
+ * cancels or restarts a real charge has to be driven by the system that holds
+ * the money, not by our copy of it.
+ *
+ * Returns null when the donor does not exist.
+ */
+async function loadDonorMembership(
+  supabase: any,
+  donorId: number,
+): Promise<MembershipState | null> {
+  const { data: user } = await supabase
+    .from("users")
+    .select("id, email")
+    .eq("id", donorId)
+    .maybeSingle();
+  if (!user) return null;
+
+  const { data: rows } = await supabase
+    .from("monthly_donations")
+    .select("id, status, amount, stripe_subscription_id, created_at")
+    .eq("user_id", donorId)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  const stripe = getStripeClient();
+  const subscriptions: MembershipSub[] = [];
+
+  for (const row of rows || []) {
+    const sub: MembershipSub = {
+      localId: row.id,
+      stripeSubscriptionId: row.stripe_subscription_id || null,
+      amount: row.amount ?? null,
+      localStatus: row.status ?? null,
+      stripeStatus: null,
+      cancelAtPeriodEnd: null,
+      currentPeriodEnd: null,
+      endedAt: null,
+      foundInStripe: false,
+    };
+
+    if (row.stripe_subscription_id) {
+      try {
+        const res = await fetch(
+          `${stripe.baseUrl}/subscriptions/${encodeURIComponent(row.stripe_subscription_id)}`,
+          { headers: { Authorization: `Bearer ${stripe.secretKey}` } },
+        );
+        const body = await res.json().catch(() => ({}));
+        if (res.ok) {
+          sub.foundInStripe = true;
+          sub.stripeStatus = body.status ?? null;
+          sub.cancelAtPeriodEnd = Boolean(body.cancel_at_period_end);
+          sub.currentPeriodEnd = body.current_period_end
+            ? new Date(body.current_period_end * 1000).toISOString()
+            : null;
+          const endedTs = body.ended_at ?? body.canceled_at ?? null;
+          sub.endedAt = endedTs ? new Date(endedTs * 1000).toISOString() : null;
+        }
+      } catch (e: any) {
+        // A Stripe read that fails leaves foundInStripe false, which falls
+        // through to "no live subscription" and therefore to no button. Failing
+        // closed is right here: the cost of a missing button is an admin asking
+        // a question, the cost of a wrong one is a donor's card.
+        console.warn("membership: Stripe read failed:", e?.message);
+      }
+    }
+
+    subscriptions.push(sub);
+  }
+
+  const live = subscriptions.filter(
+    (s) => s.stripeStatus && LIVE_STRIPE_STATUSES.includes(String(s.stripeStatus)),
+  );
+
+  let target: MembershipSub | null = null;
+  let action: "cancel" | "resume" | null = null;
+  let reason: string | null = null;
+
+  if (live.length === 1) {
+    target = live[0];
+    // cancel_at_period_end is the whole reversible window: the donor keeps the
+    // month they paid for, and until it runs out this is undoable.
+    action = target.cancelAtPeriodEnd ? "resume" : "cancel";
+  } else if (live.length > 1) {
+    reason =
+      `This donor has ${live.length} live subscriptions in Stripe. ` +
+      "Stopping one here would leave the other still charging them, so sort the duplicate out first with the Stripe check.";
+  } else if (subscriptions.length === 0) {
+    reason = "This donor has no monthly gift on file.";
+  } else {
+    const ended = subscriptions.find((s) => s.endedAt);
+    const when = ended?.endedAt
+      ? new Date(ended.endedAt).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+      : null;
+    reason = when
+      ? `Their monthly gift ended on ${when}. Starting it again needs their card, so it has to be done from the app on their phone.`
+      : "Their monthly gift is no longer live in Stripe. Starting it again needs their card, so it has to be done from the app on their phone.";
+  }
+
+  return {
+    email: user.email ?? null,
+    subscriptions,
+    liveCount: live.length,
+    target,
+    action,
+    reason,
+  };
+}
 
 export type AdminDonorsDeps = {
   sendInvitationEmail: (args: {
@@ -1301,6 +1452,115 @@ export async function handleAdminDonors(
     } catch (e: any) {
       return new Response(
         JSON.stringify({ error: e?.message || "diagnostic failed", partial: out }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // GET /admin/donors/:id/membership — what the Membership button should say.
+  //
+  // Separate from /stripe (which is a wide diagnostic) because the modal needs
+  // one decision, fast: is there exactly one live subscription, and is it
+  // running or already winding down.
+  const donorMembershipMatch = route.match(/^\/admin\/donors\/(\d+)\/membership$/);
+  if (method === "GET" && donorMembershipMatch) {
+    const donorId = parseInt(donorMembershipMatch[1], 10);
+    try {
+      const state = await loadDonorMembership(supabase, donorId);
+      if (!state) {
+        return new Response(JSON.stringify({ error: "Donor not found" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 404,
+        });
+      }
+      return new Response(
+        JSON.stringify({ success: true, data: { donorId, ...state } }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        },
+      );
+    } catch (e: any) {
+      return new Response(
+        JSON.stringify({
+          error: e?.message || "Could not read this donor's membership.",
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+        },
+      );
+    }
+  }
+
+  // POST /admin/donors/:id/subscription/cancel
+  // POST /admin/donors/:id/subscription/resume
+  //
+  // Both run the donor's own code paths (cancelMonthlySubscriptionCore /
+  // resumeMonthlySubscriptionCore) against a donor the admin names, so the
+  // panel and the app cannot drift apart in what cancelling means.
+  //
+  // Scope is deliberately narrow, and it is the reversible window only:
+  //   cancel  -> sets cancel_at_period_end on the existing subscription.
+  //              Nothing is deleted and the donor keeps the month they paid for.
+  //   resume  -> clears cancel_at_period_end on that same subscription.
+  //
+  // Neither branch can create a subscription or charge a card. That is on
+  // purpose: a "reactivate" that creates subscriptions is how one donor ended
+  // up billed twice a month for five months. A donor whose subscription has
+  // genuinely ended has to start a new one in the app, with their own card.
+  const donorSubscriptionActionMatch = route.match(
+    /^\/admin\/donors\/(\d+)\/subscription\/(cancel|resume)$/,
+  );
+  if (method === "POST" && donorSubscriptionActionMatch) {
+    const donorId = parseInt(donorSubscriptionActionMatch[1], 10);
+    const wanted = donorSubscriptionActionMatch[2] as "cancel" | "resume";
+    try {
+      const state = await loadDonorMembership(supabase, donorId);
+      if (!state) {
+        return new Response(JSON.stringify({ error: "Donor not found" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 404,
+        });
+      }
+
+      // Re-derive from Stripe rather than trusting what the panel had on
+      // screen. The modal may have been open for a while, and the donor can
+      // cancel from their phone at the same time.
+      if (state.action !== wanted || !state.target?.stripeSubscriptionId) {
+        const fallback =
+          wanted === "cancel"
+            ? "This monthly gift is not running, so there is nothing to stop."
+            : "This monthly gift is not scheduled to stop, so there is nothing to restart.";
+        return new Response(
+          JSON.stringify({
+            error: state.reason || fallback,
+            code: "membership_action_unavailable",
+            available: state.action,
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 409,
+          },
+        );
+      }
+
+      const identifier = state.target.stripeSubscriptionId;
+      return wanted === "cancel"
+        ? await cancelMonthlySubscriptionCore(supabase, donorId, identifier)
+        : await resumeMonthlySubscriptionCore(supabase, donorId, identifier);
+    } catch (e: any) {
+      return new Response(
+        JSON.stringify({
+          error:
+            e?.message ||
+            (wanted === "cancel"
+              ? "That did not go through. Give it another try?"
+              : "That did not go through. Give it another try?"),
+        }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
           status: 500,

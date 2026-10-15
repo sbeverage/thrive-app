@@ -12,7 +12,198 @@ import {
  * Undo cancel-at-period-end: POST Stripe cancel_at_period_end=false and sync monthly_donations.status.
  * Also supports rows with no Stripe id but status cancelling (local-only).
  */
-async function resumeMonthlySubscriptionCore(
+/**
+ * Cancel a donor's monthly donation at the end of the period they have paid for.
+ *
+ * Lifted verbatim out of the DELETE handler below so an admin route can run the
+ * same code against a donor it names, rather than the caller's own JWT. The
+ * logic is unchanged: it schedules cancel_at_period_end on Stripe rather than
+ * deleting the subscription, so the donor keeps what they already paid for, and
+ * it reconciles the local row when Stripe says the subscription is already gone.
+ */
+export async function cancelMonthlySubscriptionCore(
+  supabase: any,
+  userId: number,
+  rawIdentifier: string,
+): Promise<Response> {
+  try {
+    const raw = decodeURIComponent(String(rawIdentifier ?? "").trim());
+    if (!raw) {
+      return new Response(
+        JSON.stringify({error: "Subscription id is required"}),
+        {headers: {"Content-Type": "application/json"}, status: 400},
+      );
+    }
+
+    let subQuery = supabase
+      .from("monthly_donations")
+      .select("*")
+      .eq("user_id", userId);
+
+    if (/^\d+$/.test(raw)) {
+      subQuery = subQuery.eq("id", parseInt(raw, 10));
+    } else {
+      subQuery = subQuery.eq("stripe_subscription_id", raw);
+    }
+
+    const {data: subscription, error: fetchError} = await subQuery.maybeSingle();
+
+    if (fetchError || !subscription) {
+      return new Response(JSON.stringify({error: "Subscription not found"}), {
+        headers: {"Content-Type": "application/json"},
+        status: 404,
+      });
+    }
+
+    const rowId = subscription.id;
+
+    // Schedule cancel at period end (matches in-app copy). Avoid Stripe DELETE sub (immediate cancel).
+    if (subscription.stripe_subscription_id) {
+      const stripe = getStripeClient();
+      const cancelBody = new URLSearchParams();
+      cancelBody.set("cancel_at_period_end", "true");
+      const stripeRes = await fetch(
+        `${stripe.baseUrl}/subscriptions/${subscription.stripe_subscription_id}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${stripe.secretKey}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: cancelBody.toString(),
+        },
+      );
+      if (!stripeRes.ok) {
+        const errText = await stripeRes.text().catch(() => "");
+        const lowerErr = String(errText || "").toLowerCase();
+        const isMissingSubscription =
+          stripeRes.status === 404 &&
+          (lowerErr.includes("no such subscription") ||
+            lowerErr.includes("resource_missing"));
+        const isAlreadyCanceled =
+          stripeRes.status === 400 &&
+          (lowerErr.includes("already canceled") ||
+            lowerErr.includes("cannot update a canceled subscription") ||
+            lowerErr.includes("status of canceled"));
+        console.error(
+          "Stripe subscription cancel-at-period-end failed:",
+          stripeRes.status,
+          errText,
+        );
+        if (isMissingSubscription || isAlreadyCanceled) {
+          // Stripe no longer considers this subscription renewable. Reflect that locally.
+          await supabase
+            .from("monthly_donations")
+            .update({status: "cancelled"})
+            .eq("id", rowId);
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              message:
+                "Subscription is already inactive with payment provider.",
+            }),
+            {
+              headers: {"Content-Type": "application/json"},
+              status: 200,
+            },
+          );
+        }
+
+        // Stripe can reject update even when cancellation is already scheduled.
+        // Verify current Stripe state before treating as a hard failure.
+        try {
+          const verifyRes = await fetch(
+            `${stripe.baseUrl}/subscriptions/${subscription.stripe_subscription_id}`,
+            {
+              method: "GET",
+              headers: {Authorization: `Bearer ${stripe.secretKey}`},
+            },
+          );
+          if (verifyRes.ok) {
+            const verifyJson = (await verifyRes.json().catch(() => null)) as {
+              status?: string;
+              cancel_at_period_end?: boolean;
+            } | null;
+            const verifyStatus = String(verifyJson?.status || "").toLowerCase();
+            const scheduled = Boolean(verifyJson?.cancel_at_period_end);
+            const inactive =
+              verifyStatus === "canceled" || verifyStatus === "incomplete_expired";
+
+            if (scheduled || inactive) {
+              await supabase
+                .from("monthly_donations")
+                .update({status: inactive ? "cancelled" : "cancelling"})
+                .eq("id", rowId);
+
+              return new Response(
+                JSON.stringify({
+                  success: true,
+                  message: scheduled
+                    ? "Subscription scheduled to cancel at period end."
+                    : "Subscription is already inactive with payment provider.",
+                }),
+                {
+                  headers: {"Content-Type": "application/json"},
+                  status: 200,
+                },
+              );
+            }
+          }
+        } catch (verifyErr) {
+          console.error("Stripe cancellation verify step failed:", verifyErr);
+        }
+
+        const conciseProviderError =
+          String(errText || "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 240) || null;
+        return new Response(
+          JSON.stringify({
+            error: conciseProviderError
+              ? `Unable to cancel with payment provider: ${conciseProviderError}`
+              : "Unable to cancel with payment provider; try again or contact support.",
+          }),
+          {
+            headers: {"Content-Type": "application/json"},
+            status: 502,
+          },
+        );
+      }
+    }
+
+    // Still billable until Stripe period end; keep row visible as "cancelling" (see app isSubscriptionRowEligible).
+    await supabase
+      .from("monthly_donations")
+      .update({status: "cancelling"})
+      .eq("id", rowId);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message: "Subscription scheduled to cancel at period end.",
+      }),
+      {
+        headers: {"Content-Type": "application/json"},
+        status: 200,
+      },
+    );
+  } catch (error: any) {
+    console.error("Error cancelling subscription:", error);
+    return new Response(
+      JSON.stringify({
+        error: error.message || "Failed to cancel subscription",
+      }),
+      {
+        headers: {"Content-Type": "application/json"},
+        status: 500,
+      },
+    );
+  }
+}
+
+export async function resumeMonthlySubscriptionCore(
   supabase: any,
   userId: number,
   rawIdentifier: string,
@@ -2118,176 +2309,13 @@ export async function handleDonationRoute(
         status: 401,
       });
     }
-
-    try {
-      const raw = decodeURIComponent(deleteSubscriptionMatch[1] || "");
-
-      let subQuery = supabase
-        .from("monthly_donations")
-        .select("*")
-        .eq("user_id", userId);
-
-      if (/^\d+$/.test(raw)) {
-        subQuery = subQuery.eq("id", parseInt(raw, 10));
-      } else {
-        subQuery = subQuery.eq("stripe_subscription_id", raw);
-      }
-
-      const {data: subscription, error: fetchError} = await subQuery.maybeSingle();
-
-      if (fetchError || !subscription) {
-        return new Response(JSON.stringify({error: "Subscription not found"}), {
-          headers: {"Content-Type": "application/json"},
-          status: 404,
-        });
-      }
-
-      const rowId = subscription.id;
-
-      // Schedule cancel at period end (matches in-app copy). Avoid Stripe DELETE sub (immediate cancel).
-      if (subscription.stripe_subscription_id) {
-        const stripe = getStripeClient();
-        const cancelBody = new URLSearchParams();
-        cancelBody.set("cancel_at_period_end", "true");
-        const stripeRes = await fetch(
-          `${stripe.baseUrl}/subscriptions/${subscription.stripe_subscription_id}`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${stripe.secretKey}`,
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: cancelBody.toString(),
-          },
-        );
-        if (!stripeRes.ok) {
-          const errText = await stripeRes.text().catch(() => "");
-          const lowerErr = String(errText || "").toLowerCase();
-          const isMissingSubscription =
-            stripeRes.status === 404 &&
-            (lowerErr.includes("no such subscription") ||
-              lowerErr.includes("resource_missing"));
-          const isAlreadyCanceled =
-            stripeRes.status === 400 &&
-            (lowerErr.includes("already canceled") ||
-              lowerErr.includes("cannot update a canceled subscription") ||
-              lowerErr.includes("status of canceled"));
-          console.error(
-            "Stripe subscription cancel-at-period-end failed:",
-            stripeRes.status,
-            errText,
-          );
-          if (isMissingSubscription || isAlreadyCanceled) {
-            // Stripe no longer considers this subscription renewable. Reflect that locally.
-            await supabase
-              .from("monthly_donations")
-              .update({status: "cancelled"})
-              .eq("id", rowId);
-
-            return new Response(
-              JSON.stringify({
-                success: true,
-                message:
-                  "Subscription is already inactive with payment provider.",
-              }),
-              {
-                headers: {"Content-Type": "application/json"},
-                status: 200,
-              },
-            );
-          }
-
-          // Stripe can reject update even when cancellation is already scheduled.
-          // Verify current Stripe state before treating as a hard failure.
-          try {
-            const verifyRes = await fetch(
-              `${stripe.baseUrl}/subscriptions/${subscription.stripe_subscription_id}`,
-              {
-                method: "GET",
-                headers: {Authorization: `Bearer ${stripe.secretKey}`},
-              },
-            );
-            if (verifyRes.ok) {
-              const verifyJson = (await verifyRes.json().catch(() => null)) as {
-                status?: string;
-                cancel_at_period_end?: boolean;
-              } | null;
-              const verifyStatus = String(verifyJson?.status || "").toLowerCase();
-              const scheduled = Boolean(verifyJson?.cancel_at_period_end);
-              const inactive =
-                verifyStatus === "canceled" || verifyStatus === "incomplete_expired";
-
-              if (scheduled || inactive) {
-                await supabase
-                  .from("monthly_donations")
-                  .update({status: inactive ? "cancelled" : "cancelling"})
-                  .eq("id", rowId);
-
-                return new Response(
-                  JSON.stringify({
-                    success: true,
-                    message: scheduled
-                      ? "Subscription scheduled to cancel at period end."
-                      : "Subscription is already inactive with payment provider.",
-                  }),
-                  {
-                    headers: {"Content-Type": "application/json"},
-                    status: 200,
-                  },
-                );
-              }
-            }
-          } catch (verifyErr) {
-            console.error("Stripe cancellation verify step failed:", verifyErr);
-          }
-
-          const conciseProviderError =
-            String(errText || "")
-              .replace(/\s+/g, " ")
-              .trim()
-              .slice(0, 240) || null;
-          return new Response(
-            JSON.stringify({
-              error: conciseProviderError
-                ? `Unable to cancel with payment provider: ${conciseProviderError}`
-                : "Unable to cancel with payment provider; try again or contact support.",
-            }),
-            {
-              headers: {"Content-Type": "application/json"},
-              status: 502,
-            },
-          );
-        }
-      }
-
-      // Still billable until Stripe period end; keep row visible as "cancelling" (see app isSubscriptionRowEligible).
-      await supabase
-        .from("monthly_donations")
-        .update({status: "cancelling"})
-        .eq("id", rowId);
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: "Subscription scheduled to cancel at period end.",
-        }),
-        {
-          headers: {"Content-Type": "application/json"},
-          status: 200,
-        },
-      );
-    } catch (error: any) {
-      console.error("Error cancelling subscription:", error);
-      return new Response(
-        JSON.stringify({
-          error: error.message || "Failed to cancel subscription",
-        }),
-        {
-          headers: {"Content-Type": "application/json"},
-          status: 500,
-        },
-      );
-    }
+    // Body lives in cancelMonthlySubscriptionCore so the admin route can
+    // run exactly this against a donor it names.
+    return cancelMonthlySubscriptionCore(
+      supabase,
+      userId,
+      deleteSubscriptionMatch[1] || "",
+    );
   }
 
   return new Response(JSON.stringify({error: "Donation route not found"}), {
