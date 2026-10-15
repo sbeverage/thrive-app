@@ -1205,9 +1205,10 @@ export async function handleAuthRoute(
         .eq("id", user.id);
 
       // Check if user has completed onboarding.
-      // Consider onboarding complete if user has either:
-      // 1) a selected beneficiary in preferences, OR
-      // 2) recurring donation setup/billing metadata.
+      // Consider onboarding complete if the user has any of:
+      // 1) a selected charity in preferences, OR
+      // 2) recurring donation setup/billing metadata, OR
+      // 3) a live monthly donation.
       const hasBeneficiaryPreference = Boolean(
         user.preferences?.preferredCharity || user.preferences?.beneficiary,
       );
@@ -1215,7 +1216,43 @@ export async function handleAuthRoute(
         Number(user.total_monthly_donation || 0) > 0 ||
         Number(user.sponsor_amount || 0) > 0 ||
         user.external_billed === true;
-      const needsOnboarding = !(hasBeneficiaryPreference || hasRecurringSetup);
+
+      // The third test, and the reason it exists.
+      //
+      // The two above read denormalised columns on `users`, which are written
+      // by the donor signup flow. An account that acquired a subscription any
+      // other way has them empty, so a donor who is demonstrably paying every
+      // month was told to sign up again on their next login. That happened to
+      // a real account provisioned through the vendor-admin flow.
+      //
+      // monthly_donations is the source of truth for whether someone is
+      // giving. Checked last and only when the cheap tests fail, so a normal
+      // login costs no extra query.
+      let hasLiveSubscription = false;
+      if (!hasBeneficiaryPreference && !hasRecurringSetup) {
+        const {data: liveSub, error: liveSubError} = await supabase
+          .from("monthly_donations")
+          .select("id")
+          .eq("user_id", user.id)
+          .in("status", ["active", "trialing"])
+          .limit(1)
+          .maybeSingle();
+        if (liveSubError) {
+          // Don't send a paying donor through signup because a query failed.
+          // Treating this as "no subscription" is the damaging direction.
+          console.warn(
+            "⚠️ Could not check for a live subscription; assuming onboarded:",
+            liveSubError.message,
+          );
+          hasLiveSubscription = true;
+        } else {
+          hasLiveSubscription = Boolean(liveSub);
+        }
+      }
+
+      const needsOnboarding = !(
+        hasBeneficiaryPreference || hasRecurringSetup || hasLiveSubscription
+      );
 
       // Detailed logging for debugging
       console.log(
@@ -3871,9 +3908,10 @@ export async function handleAuthRoute(
       );
 
       // Check if user has completed onboarding.
-      // Consider onboarding complete if user has either:
-      // 1) a selected beneficiary in preferences, OR
-      // 2) recurring donation setup/billing metadata.
+      // Consider onboarding complete if the user has any of:
+      // 1) a selected charity in preferences, OR
+      // 2) recurring donation setup/billing metadata, OR
+      // 3) a live monthly donation.
       const hasBeneficiaryPreference = Boolean(
         user.preferences?.preferredCharity || user.preferences?.beneficiary,
       );
@@ -3881,7 +3919,43 @@ export async function handleAuthRoute(
         Number(user.total_monthly_donation || 0) > 0 ||
         Number(user.sponsor_amount || 0) > 0 ||
         user.external_billed === true;
-      const needsOnboarding = !(hasBeneficiaryPreference || hasRecurringSetup);
+
+      // The third test, and the reason it exists.
+      //
+      // The two above read denormalised columns on `users`, which are written
+      // by the donor signup flow. An account that acquired a subscription any
+      // other way has them empty, so a donor who is demonstrably paying every
+      // month was told to sign up again on their next login. That happened to
+      // a real account provisioned through the vendor-admin flow.
+      //
+      // monthly_donations is the source of truth for whether someone is
+      // giving. Checked last and only when the cheap tests fail, so a normal
+      // login costs no extra query.
+      let hasLiveSubscription = false;
+      if (!hasBeneficiaryPreference && !hasRecurringSetup) {
+        const {data: liveSub, error: liveSubError} = await supabase
+          .from("monthly_donations")
+          .select("id")
+          .eq("user_id", user.id)
+          .in("status", ["active", "trialing"])
+          .limit(1)
+          .maybeSingle();
+        if (liveSubError) {
+          // Don't send a paying donor through signup because a query failed.
+          // Treating this as "no subscription" is the damaging direction.
+          console.warn(
+            "⚠️ Could not check for a live subscription; assuming onboarded:",
+            liveSubError.message,
+          );
+          hasLiveSubscription = true;
+        } else {
+          hasLiveSubscription = Boolean(liveSub);
+        }
+      }
+
+      const needsOnboarding = !(
+        hasBeneficiaryPreference || hasRecurringSetup || hasLiveSubscription
+      );
 
       // Detailed logging for debugging
       console.log(
