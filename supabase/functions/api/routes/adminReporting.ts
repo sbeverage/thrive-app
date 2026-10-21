@@ -1632,7 +1632,7 @@ export async function handleAdminReporting(
           // sign in. Used by both the add-member and reset-password flows.
           admin_portal_url:
             Deno.env.get("ADMIN_PORTAL_URL") ||
-            "https://admin.forpurposetechnologies.com",
+            "https://admin.jointhriveinitiative.org",
         },
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },

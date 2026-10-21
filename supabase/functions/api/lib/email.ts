@@ -668,11 +668,19 @@ export async function sendAdminTempPasswordEmail({
 
     // Where they actually sign in. The email previously gave a temporary
     // password and no URL at all, so a new team member had a credential and
-    // nowhere to use it. Overridable, because the panel answers on several
-    // hostnames and one of them (admin.jointhriveinitiative.org) does not
-    // resolve — verified 2026-09-04 that this one serves the panel.
+    // nowhere to use it.
+    //
+    // admin.jointhriveinitiative.org, not admin.forpurposetechnologies.com.
+    // The forpurpose host sits behind a Cloudflare proxy we no longer have
+    // the account for, and that proxy terminates TLS: the certificate it
+    // presents fails for most people while still working for anyone whose
+    // browser had cached the old one. So the email was handing new team
+    // members a link that worked for Stephanie and nobody else. This host
+    // points straight at Vercel with no proxy in the handshake. Verified
+    // 2026-10-20: 200, clean TLS, serving the panel.
     const portalUrl =
-      Deno.env.get("ADMIN_PORTAL_URL") || "https://admin.forpurposetechnologies.com";
+      Deno.env.get("ADMIN_PORTAL_URL") ||
+      "https://admin.jointhriveinitiative.org";
 
     const emailSubject = `${appName} Admin Access - Temporary Password`;
     const emailHtml = `
