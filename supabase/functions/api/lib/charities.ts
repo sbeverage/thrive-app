@@ -17,8 +17,18 @@ export function formatCharityResponse(charity: any) {
     familiesHelped: null,
     communitiesServed: null,
     directToPrograms: null,
+    // Three image roles, three shapes. See CLAUDE.md "Charity images".
+    //   imageUrl     the 2:1 cover across the top of the profile
+    //   logoUrl      the 1:1 logo, drawn in a circle
+    //   highlightUrl the 1:1 crop on the browse list
     imageUrl: charity.image_url || charity.logo_url || null,
     logoUrl: charity.logo_url || charity.image_url || null,
+    // Falls back to the cover, then the logo. The ~50 charities uploaded
+    // before highlight_url existed therefore render exactly as they do now
+    // (a centre-crop of the wide cover) until someone re-crops them, rather
+    // than going blank. Resolved here so no consumer has to repeat the chain.
+    highlightUrl:
+      charity.highlight_url || charity.image_url || charity.logo_url || null,
     // Photo gallery (max 5, enforced by a CHECK constraint) + one video.
     // videoUrl holds either an uploaded .mp4/.mov in the charity-images
     // bucket, played inline, or a YouTube/Vimeo link, opened externally.

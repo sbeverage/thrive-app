@@ -15,6 +15,20 @@
       ],
       "port": 4322,
       "autoPort": false
+    },
+    {
+      "name": "crop-harness",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "--yes",
+        "http-server",
+        "/Users/stephaniebeverage/thrive-app/ti-admin-panel/ti-admin-panel/scripts/cropHarness",
+        "-p",
+        "4399",
+        "-c-1"
+      ],
+      "port": 4399,
+      "autoPort": false
     }
   ]
 }

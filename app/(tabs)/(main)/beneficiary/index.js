@@ -237,9 +237,16 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
           }
 
           // Handle image - use URL if available, otherwise fallback to local asset
+          //
+          // highlightUrl first: this card's image slot is square, and a wide
+          // cover rendered into it with "cover" loses its left and right
+          // thirds. The API resolves highlightUrl -> image_url -> logo_url, so
+          // a charity that has not been re-cropped yet still gets a picture,
+          // just the old centre-crop of its cover.
           let imageSource;
-          if (charity.imageUrl) {
-            imageSource = { uri: charity.imageUrl };
+          const cardImageUrl = charity.highlightUrl || charity.imageUrl;
+          if (cardImageUrl) {
+            imageSource = { uri: cardImageUrl };
           } else {
             // Fallback to default image based on category
             if (charity.category === 'Childhood Illness') {
@@ -1426,7 +1433,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                         </View>
                         <Text style={styles.beneficiaryCategory}>{b.category}</Text>
                         {!!b.description && (
-                          <Text style={styles.beneficiaryBlurb} numberOfLines={2}>
+                          <Text style={styles.beneficiaryBlurb} numberOfLines={1}>
                             {b.description}
                           </Text>
                         )}
@@ -1533,7 +1540,7 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                       </View>
                       <Text style={styles.beneficiaryCategory}>{b.category}</Text>
                       {!!b.description && (
-                        <Text style={styles.beneficiaryBlurb} numberOfLines={2}>
+                        <Text style={styles.beneficiaryBlurb} numberOfLines={1}>
                           {b.description}
                         </Text>
                       )}
@@ -2310,7 +2317,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-    minHeight: 100,
+    // Fixed, not minHeight: the image slot is 120 square and only stays square
+    // if the card does not grow under it. Content is clamped to fit (name 2
+    // lines, blurb 1) so nothing is cut off at default text sizes.
+    height: 120,
     borderWidth: 2,
     borderColor: 'transparent',
   },
@@ -2324,8 +2334,12 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   beneficiaryImage: {
+    // 120x120, square, to match the 1:1 highlight crop. height: '100%' against
+    // a flexible card height used to make this slot an arbitrary rectangle,
+    // which re-cropped the image after the fact and undid whatever framing was
+    // chosen at upload. Paired with the fixed card height below.
     width: 120,
-    height: '100%',
+    height: 120,
     borderTopLeftRadius: 12,
     borderBottomLeftRadius: 12,
     resizeMode: 'cover',

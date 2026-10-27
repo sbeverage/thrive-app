@@ -85,6 +85,58 @@ isn't permanent.
 
 ---
 
+## Charity images
+
+A charity has **three** images, not one. They live in three differently-shaped
+slots, and a single photo cannot fill all three without something important
+getting cut off. Uploading one picture and hoping is what made profiles look
+broken: the app crops with `resizeMode: "cover"`, which centre-crops, so a wide
+cover squeezed into the square browse card silently lost its left and right
+thirds.
+
+| Role | Column | Ratio | Upload target | Where it appears |
+|---|---|---|---|---|
+| **Logo** | `logo_url` | 1:1 | 512 x 512 | 110pt circle on the charity profile |
+| **Highlight** | `highlight_url` | 1:1 | 600 x 600 | 120pt square on the charity browse list |
+| **Cover** | `image_url` | 2:1 | 1600 x 800 | Full-width band across the top of the profile |
+
+### 1. Always crop in the panel, never upload raw
+
+The charity profile form has a cropper (`ImageCropUpload.tsx`). It exports
+exactly the rectangle you framed, at the target size, and uploads that. Don't
+add an upload path for these three roles that skips it: an uncropped file puts
+the silent centre-crop straight back.
+
+The original is not kept. Reframing means re-cropping, which is a deliberate
+trade for a correct render everywhere and smaller downloads.
+
+### 2. Slot ratios and crop ratios are a matched pair
+
+Changing `imageCarousel` in `components/BeneficiaryDetailCard.js`, or
+`beneficiaryImage` / `beneficiaryCard` in
+`app/(tabs)/(main)/beneficiary/index.js`, without changing `IMAGE_PRESETS` in
+`ImageCropUpload.tsx` to match re-introduces the bug. They are two halves of
+one decision.
+
+Give a slot an **aspect ratio, never a fixed height**. `height: 200` on a
+full-width band means the ratio changes with screen width, so the same cover
+frames differently on a small phone than a large one and the chosen crop only
+holds on one device.
+
+### 3. Fallbacks are render-time only
+
+`formatCharityResponse` resolves `highlightUrl -> image_url -> logo_url` so a
+charity nobody has re-cropped yet still shows a picture. Never write that
+fallback into the database: storing a cover in `highlight_url` records a square
+crop that nobody made, and the panel can no longer tell what still needs doing.
+
+### 4. What to tell a charity asking what to send
+
+One square logo on a transparent or white background, and two photos: one wide
+(landscape, the wider the better) and one that works square. Faces and text
+near the middle. We do the cropping.
+---
+
 ## Architecture reminders
 
 - **Backend**: Supabase Edge Functions only. `BACKEND_URL = https://mdqgndyhzlnwojtubouh.supabase.co/functions/v1`

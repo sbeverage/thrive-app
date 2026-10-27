@@ -356,6 +356,7 @@ export async function handleAdminCharities(
         ein,
         imageUrl,
         logoUrl,
+        highlightUrl,
         likes,
         mutual,
         isActive,
@@ -454,6 +455,7 @@ export async function handleAdminCharities(
         "ein",
         "image_url",
         "logo_url",
+        "highlight_url",
         "likes",
         "mutual",
         "is_active",
@@ -518,6 +520,10 @@ export async function handleAdminCharities(
         ein: ein || null,
         image_url: imageUrl || logoUrl || null,
         logo_url: logoUrl || imageUrl || null,
+        // No fallback to imageUrl on purpose. The app falls back at render
+        // time; writing a wide cover in here would record it as a square crop
+        // that nobody actually made.
+        highlight_url: highlightUrl || null,
         likes: likes ? parseInt(likes) : 0,
         mutual: mutual ? parseInt(mutual) : 0,
         is_active: isActive !== false,
@@ -771,6 +777,7 @@ export async function handleAdminCharities(
         ein,
         imageUrl,
         logoUrl,
+        highlightUrl,
         likes,
         mutual,
         isActive,
@@ -945,6 +952,12 @@ export async function handleAdminCharities(
           `📸 Logo URL received in PUT /admin/charities/${charityId}: ${logoUrl}`,
         );
         updateData.logo_url = logoUrl;
+      }
+      if (highlightUrl !== undefined) {
+        console.log(
+          `📸 Highlight URL received in PUT /admin/charities/${charityId}: ${highlightUrl}`,
+        );
+        updateData.highlight_url = highlightUrl;
       }
       if (imageUrl === undefined && logoUrl === undefined) {
         console.log(

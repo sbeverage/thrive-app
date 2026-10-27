@@ -1111,7 +1111,12 @@ const styles = StyleSheet.create({
   },
   headerRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 0, paddingBottom: 16 },
   header: { fontSize: 18, fontWeight: '600', marginLeft: 12, color: '#21555b' },
-  imageCarousel: { width: '100%', height: 200 },
+  // 2:1, matching the cover crop, rather than a fixed 200pt height. A fixed
+  // height makes the slot's ratio depend on screen width, so the same cover
+  // was framed differently on a small phone than on a large one and the crop
+  // chosen at upload only held on one device. On a 390pt screen this is 195pt,
+  // so it looks essentially the same as before.
+  imageCarousel: { width: '100%', aspectRatio: 2 },
   mainImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   profileRow: { flexDirection: 'row', alignItems: 'center', marginTop: -55, marginLeft: 16 },
   profileImageContainer: {
