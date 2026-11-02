@@ -1,0 +1,90 @@
+/* THRIVE brand palette + base layout for the Vendor Portal.
+ * Matches the admin panel's chrome (orange #DB8633, teal #324E58) so vendors
+ * feel like they're inside the same product family, but the layout favors a
+ * simpler, content-first design suited to self-service.
+ */
+
+:root {
+  --brand-orange: #DB8633;
+  --brand-orange-soft: rgba(219, 134, 51, 0.1);
+  --brand-orange-soft-strong: rgba(219, 134, 51, 0.18);
+  --brand-teal: #324E58;
+  --brand-teal-soft: rgba(50, 78, 88, 0.08);
+  --brand-bg: #F5F5FA;
+  --brand-border: #E8E8E8;
+  --brand-text: #324E58;
+  --brand-text-muted: #8C8C8C;
+  --brand-success: #52C41A;
+  --brand-warning: #FAAD14;
+  --brand-danger: #FF4D4F;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  background-color: var(--brand-bg);
+  color: var(--brand-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+a { color: var(--brand-orange); }
+a:hover { color: #C57729; }
+
+/* Page section wrapper matching the admin's DashboardSection look */
+.portal-section {
+  background: #FFFFFF;
+  border-radius: 12px;
+  border: 1px solid var(--brand-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+
+.portal-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: #FAFAFC;
+  border-bottom: 1px solid var(--brand-border);
+  border-left: 4px solid var(--brand-orange);
+}
+
+.portal-section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--brand-text);
+  margin: 0;
+}
+
+.portal-section-body { padding: 20px; }
+
+/* Primary button override — brand orange instead of antd blue */
+.ant-btn-primary {
+  background: var(--brand-orange) !important;
+  border-color: var(--brand-orange) !important;
+}
+.ant-btn-primary:hover,
+.ant-btn-primary:focus {
+  background: #C57729 !important;
+  border-color: #C57729 !important;
+}
+
+/* Form labels read tighter and friendlier than antd default */
+.ant-form-item-label > label {
+  color: var(--brand-text) !important;
+  font-weight: 500;
+}
+
+/* Status badges */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.status-pill.pending  { background: rgba(250, 173, 20, 0.12); color: var(--brand-warning); }
+.status-pill.approved { background: rgba(82, 196, 26, 0.12);  color: var(--brand-success); }
+.status-pill.rejected { background: rgba(255, 77, 79, 0.12);  color: var(--brand-danger); }

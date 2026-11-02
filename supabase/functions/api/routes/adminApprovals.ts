@@ -13,6 +13,11 @@
 //   POST  /admin/approvals/charity/:id/approve          approve + complete profile
 //   POST  /admin/approvals/charity/:id/reject           reject with reason
 //
+// Charity access requests — who may manage a charity's profile:
+//   GET   /admin/approvals/charity-access               list pending requests
+//   POST  /admin/approvals/charity-access/:id/approve   link the account
+//   POST  /admin/approvals/charity-access/:id/reject    turn it down
+//
 // Charity routes carry `charity` in the path rather than reusing
 // /admin/approvals/:id — vendor and charity ids come from different tables and
 // would collide.
@@ -896,6 +901,184 @@ async function reassignDonorsToThrive(
     }
 
     return json({ success: true, data: vendor, submission_kind: isReactivation ? "reactivation" : "signup" });
+  }
+
+  // ==========================================================================
+  // Charity access requests — someone asking to manage a charity profile.
+  //
+  // Separate from the charity approvals above, which answer "should this
+  // charity be visible to donors". These answer "does this person work there".
+  // A charity can be live with no owner, and an owner can be approved for a
+  // charity that is still hidden.
+  // ==========================================================================
+
+  // GET /admin/approvals/charity-access?status=pending
+  if (method === "GET" && route.startsWith("/admin/approvals/charity-access")) {
+    const url = new URL(req.url);
+    const status = url.searchParams.get("status") || "pending";
+
+    const { data: requests, error } = await supabase
+      .from("charity_access_requests")
+      .select("*")
+      .eq("status", status)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) return json({ error: error.message }, 500);
+
+    const rows = requests || [];
+    // Join by hand: PostgREST embedding needs a declared relationship and
+    // these two FKs were added outside the migration history.
+    const charityIds = [...new Set(rows.map((r: any) => r.charity_id))];
+    const userIds = [...new Set(rows.map((r: any) => r.user_id))];
+
+    const [{ data: charities }, { data: users }] = await Promise.all([
+      charityIds.length
+        ? supabase.from("charities").select("id, name, ein, website, location, auth_user_id").in("id", charityIds)
+        : Promise.resolve({ data: [] }),
+      userIds.length
+        ? supabase.from("users").select("id, email, first_name, last_name, created_at").in("id", userIds)
+        : Promise.resolve({ data: [] }),
+    ]);
+
+    const charityById = new Map((charities || []).map((c: any) => [c.id, c]));
+    const userById = new Map((users || []).map((u: any) => [u.id, u]));
+
+    return json({
+      success: true,
+      data: rows.map((r: any) => {
+        const c: any = charityById.get(r.charity_id);
+        const u: any = userById.get(r.user_id);
+        return {
+          id: r.id,
+          kind: r.kind,
+          status: r.status,
+          createdAt: r.created_at,
+          // The one thing worth leading with. True means their verified email
+          // is on the charity's own domain, which is as close to proof as
+          // this gets without a phone call.
+          domainVerified: r.domain_verified,
+          contactName: r.contact_name,
+          contactTitle: r.contact_title,
+          contactPhone: r.contact_phone,
+          workEmail: r.work_email,
+          note: r.note,
+          charity: c
+            ? { id: c.id, name: c.name, ein: c.ein, website: c.website, location: c.location, hasOwner: !!c.auth_user_id }
+            : { id: r.charity_id, name: "(charity missing)" },
+          user: u
+            ? {
+                id: u.id,
+                email: u.email,
+                name: [u.first_name, u.last_name].filter(Boolean).join(" "),
+                accountCreatedAt: u.created_at,
+              }
+            : { id: r.user_id },
+        };
+      }),
+    });
+  }
+
+  // POST /admin/approvals/charity-access/:id/approve
+  const accessApprove = route.match(/^\/admin\/approvals\/charity-access\/(\d+)\/approve$/);
+  if (method === "POST" && accessApprove) {
+    const requestId = parseInt(accessApprove[1], 10);
+
+    const { data: request, error: findErr } = await supabase
+      .from("charity_access_requests")
+      .select("*")
+      .eq("id", requestId)
+      .maybeSingle();
+    if (findErr) return json({ error: findErr.message }, 500);
+    if (!request) return json({ error: "Request not found" }, 404);
+    if (request.status !== "pending") {
+      return json({ error: `That request was already ${request.status}.` }, 409);
+    }
+
+    const { data: charity } = await supabase
+      .from("charities")
+      .select("id, name, auth_user_id")
+      .eq("id", request.charity_id)
+      .maybeSingle();
+    if (!charity) return json({ error: "Charity not found" }, 404);
+
+    // Re-check rather than trust the list the admin was looking at: another
+    // request for the same charity may have been approved in between.
+    if (charity.auth_user_id) {
+      return json(
+        {
+          error:
+            charity.auth_user_id === request.user_id
+              ? "They already manage that charity."
+              : "Someone else was already given access to that charity.",
+          code: "charity_has_owner",
+        },
+        409,
+      );
+    }
+
+    const { error: linkErr } = await supabase
+      .from("charities")
+      .update({ auth_user_id: request.user_id, updated_at: new Date().toISOString() })
+      // Only link a charity that is still unowned, so two approvals racing
+      // cannot both succeed.
+      .eq("id", charity.id)
+      .is("auth_user_id", null);
+    if (linkErr) {
+      console.error("charity-access approve link error:", linkErr);
+      return json({ error: "That did not go through. Give it another try?" }, 500);
+    }
+
+    await supabase
+      .from("charity_access_requests")
+      .update({ status: "approved", reviewed_at: new Date().toISOString() })
+      .eq("id", requestId);
+
+    // Anyone else still waiting on this charity cannot be granted now. Closing
+    // them out is kinder than leaving them pending forever, and it keeps the
+    // queue honest.
+    await supabase
+      .from("charity_access_requests")
+      .update({
+        status: "rejected",
+        reviewed_at: new Date().toISOString(),
+        rejection_reason:
+          "Someone else at this charity was given access. Get in touch if that is not right.",
+      })
+      .eq("charity_id", charity.id)
+      .eq("status", "pending")
+      .neq("id", requestId);
+
+    return json({ success: true, message: `${charity.name} is now managed by that account.` });
+  }
+
+  // POST /admin/approvals/charity-access/:id/reject
+  const accessReject = route.match(/^\/admin\/approvals\/charity-access\/(\d+)\/reject$/);
+  if (method === "POST" && accessReject) {
+    const requestId = parseInt(accessReject[1], 10);
+    let body: any = {};
+    try {
+      const text = await req.text();
+      if (text) body = JSON.parse(text);
+    } catch {
+      // Rejecting without a reason is allowed, if unhelpful.
+    }
+
+    const { data: updated, error } = await supabase
+      .from("charity_access_requests")
+      .update({
+        status: "rejected",
+        reviewed_at: new Date().toISOString(),
+        rejection_reason: body.reason || null,
+      })
+      .eq("id", requestId)
+      .eq("status", "pending")
+      .select("*")
+      .maybeSingle();
+
+    if (error) return json({ error: error.message }, 500);
+    if (!updated) return json({ error: "That request was already reviewed." }, 409);
+
+    return json({ success: true });
   }
 
   return json({ error: "Admin approvals route not found" }, 404);
