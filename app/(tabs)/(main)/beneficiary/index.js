@@ -1432,11 +1432,6 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                           )}
                         </View>
                         <Text style={styles.beneficiaryCategory}>{b.category}</Text>
-                        {!!b.description && (
-                          <Text style={styles.beneficiaryBlurb} numberOfLines={1}>
-                            {b.description}
-                          </Text>
-                        )}
                         {!isSignupFlow && (
                           <View style={styles.beneficiaryLocation}>
                             <Ionicons name="location" size={14} color="#8E9BAE" />
@@ -1539,11 +1534,6 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
                         )}
                       </View>
                       <Text style={styles.beneficiaryCategory}>{b.category}</Text>
-                      {!!b.description && (
-                        <Text style={styles.beneficiaryBlurb} numberOfLines={1}>
-                          {b.description}
-                        </Text>
-                      )}
                       {!isSignupFlow && (
                         <View style={styles.beneficiaryLocation}>
                           <Ionicons name="location" size={14} color="#8E9BAE" />
@@ -2383,12 +2373,6 @@ const styles = StyleSheet.create({
     // right: 8, size ~20) so long charity names wrap on their own line
     // instead of running under the icon.
     paddingRight: 32,
-  },
-  beneficiaryBlurb: {
-    fontSize: 12.5,
-    lineHeight: 17,
-    color: '#7A8B92',
-    marginTop: 3,
   },
   beneficiaryCategory: {
     fontSize: 13,
