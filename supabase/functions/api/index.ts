@@ -36,6 +36,7 @@ import { handleUploadRoute } from "./routes/uploads.ts";
 import { handleReferralRoute } from "./routes/referrals.ts";
 import { handleVendorRoute } from "./routes/vendors.ts";
 import { handleVendorPortalRoute } from "./routes/vendorPortal.ts";
+import { handleCharityPortalRoute } from "./routes/charityPortal.ts";
 import { handleDiscountRoute } from "./routes/discounts.ts";
 import { handleDataDeletionRoute } from "./routes/dataDeletion.ts";
 import { handleAuthRoute } from "./routes/auth.ts";
@@ -682,6 +683,12 @@ serve(async (req) => {
       response = await handleDiscountRoute(req, supabase, route, method);
     }
     // Charities routes
+    // Charity Portal — authenticated, charity-scoped. Must come BEFORE the
+    // public /charities prefix: "/charity/me" does not start with "/charities",
+    // but keeping them adjacent makes the ordering obvious to the next reader.
+    else if (route.startsWith("/charity/")) {
+      response = await handleCharityPortalRoute(req, supabase, route, method);
+    }
     else if (route.startsWith("/charities")) {
       response = await handleCharityRoute(req, supabase, route, method);
     }
