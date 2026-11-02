@@ -10,6 +10,7 @@
 //   POST /charity/claim            ask for access to one that is
 //   GET  /charity/me               current charity + where the request is up to
 //   PUT  /charity/me               update the profile
+//   POST /charity/me/image/:role   upload a cropped logo / highlight / cover
 //   POST /charity/me/resubmit      send it back for review after a rejection
 //
 // Two ways in, deliberately not the same:
@@ -551,6 +552,100 @@ async function handleMePut(
 }
 
 // ============================================================================
+// POST /charity/me/image/:role — multipart upload of an already-cropped image.
+//
+// Mirrors /vendor/me/logo: the server writes to storage so the browser never
+// needs storage credentials, and the write is scoped to the caller's own
+// charity.
+//
+// The role is in the path rather than guessed from the file, because the
+// three roles are three different shapes and the column the URL lands in is
+// the whole point. See CLAUDE.md "Charity images".
+//
+// This endpoint stores what it is given. It cannot verify that the file was
+// cropped to the right ratio, so the portal must always send it through the
+// cropper. That is the same contract the admin panel works under.
+// ============================================================================
+
+const IMAGE_COLUMN: Record<string, string> = {
+  logo: "logo_url",
+  highlight: "highlight_url",
+  cover: "image_url",
+};
+
+const ACCEPTED_IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png"]);
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB, matching the vendor portal
+
+async function handleImageUpload(
+  req: Request,
+  supabase: any,
+  userId: number,
+  role: string,
+): Promise<JSONResponse> {
+  const column = IMAGE_COLUMN[role];
+  if (!column) {
+    return json({ error: "That is not one of the three image slots." }, 400);
+  }
+
+  const charity = await loadCharityForUser(supabase, userId);
+  if (!charity) return json({ error: "You do not manage a charity yet." }, 404);
+
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch {
+    return json({ error: "Send the image as multipart form data." }, 400);
+  }
+
+  const file = formData.get("image") as File | null;
+  if (!file || typeof (file as any).arrayBuffer !== "function") {
+    return json({ error: "No image came through. Give it another try?" }, 400);
+  }
+  if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
+    return json({ error: "Images need to be a JPG or a PNG." }, 400);
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    // The cropper exports well under this, so hitting it means something
+    // bypassed the cropper.
+    return json({ error: "That image is over 5 MB. Crop it in the portal first." }, 400);
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const ext = file.type === "image/png" ? "png" : "jpg";
+  const path = `charity-${charity.id}/${role}-${Date.now()}_${
+    Math.random().toString(36).slice(2, 9)
+  }.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("charity-images")
+    .upload(path, bytes, { contentType: file.type, upsert: false });
+
+  if (uploadError) {
+    console.error("charity image upload error:", uploadError);
+    return json({ error: "That did not upload. Give it another try?" }, 500);
+  }
+
+  const { data: { publicUrl } } = supabase.storage
+    .from("charity-images")
+    .getPublicUrl(path);
+
+  const { data: updated, error: updateError } = await supabase
+    .from("charities")
+    .update({ [column]: publicUrl, updated_at: new Date().toISOString() })
+    .eq("id", charity.id)
+    .eq("auth_user_id", userId)
+    .select("*")
+    .single();
+
+  if (updateError || !updated) {
+    console.error("charity image save error:", updateError);
+    return json({ error: "The image uploaded but did not save. Give it another try?" }, 500);
+  }
+
+  return json({ charity: formatCharityResponse(updated), role, url: publicUrl });
+}
+
+// ============================================================================
 // POST /charity/me/resubmit
 // ============================================================================
 
@@ -605,6 +700,11 @@ export async function handleCharityPortalRoute(
   if (route === "/charity/me") {
     if (method === "GET") return handleMeGet(supabase, userId);
     if (method === "PUT") return handleMePut(req, supabase, userId);
+  }
+
+  const imageMatch = route.match(/^\/charity\/me\/image\/(logo|highlight|cover)$/);
+  if (method === "POST" && imageMatch) {
+    return handleImageUpload(req, supabase, userId, imageMatch[1]);
   }
 
   if (method === "POST" && route === "/charity/me/resubmit") {

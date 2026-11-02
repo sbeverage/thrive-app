@@ -29,6 +29,18 @@
       ],
       "port": 4399,
       "autoPort": false
+    },
+    {
+      "name": "charity-portal",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/stephaniebeverage/thrive-app/thrive-charity-portal",
+        "run",
+        "dev"
+      ],
+      "port": 5174,
+      "autoPort": false
     }
   ]
 }
