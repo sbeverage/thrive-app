@@ -78,7 +78,21 @@ new users don't understand the model.
   a "recurring donation record".
 - **Buttons say what happens.** "Choose this cause", not "Submit".
 
-### 3. Say when something is reversible
+### 3. Never blue or teal font on an orange background
+
+On any orange surface, the brand orange `#DB8633` included, text is **white**.
+Never the brand teal `#324E58`, never a blue, never orange-on-orange. Teal on
+orange is low contrast and reads as a mistake; orange on orange disappears.
+This covers modal headers, buttons, banners, tags and badges, in the app, both
+portals, the admin panel and the website.
+
+```
+BANNED   <Title style={{ color: '#324E58' }}>  on an orange header
+BANNED   <Title style={{ color: '#DB8633' }}>  on an orange header
+INSTEAD  <Title style={{ color: '#ffffff' }}>
+```
+
+### 4. Say when something is reversible
 Anywhere the app asks for a commitment, say it can be changed. The cause picker
 is the important one: people stall there because nothing tells them the choice
 isn't permanent.
