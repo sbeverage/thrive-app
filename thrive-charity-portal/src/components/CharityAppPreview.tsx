@@ -45,11 +45,62 @@ export interface CharityPreviewData {
   name?: string | null;
   category?: string | null;
   location?: string | null;
+  about?: string | null;
   logoUrl?: string | null;
   highlightUrl?: string | null;
   coverUrl?: string | null;
   isPendingVerification?: boolean;
 }
+
+/**
+ * The app's About block, quirks included.
+ *
+ * BeneficiaryDetailCard builds its preview as
+ *   data.about?.split(' ').slice(0, 60).join(' ') + '...'
+ * and renders "Read More" whenever showFullAbout is false. Neither is
+ * conditional on the text actually being longer than 60 words, so a
+ * two-sentence About really does render with trailing dots and a Read More
+ * that opens nothing further. Reproduced rather than tidied: a charity
+ * judging their own copy needs to see what donors see, and quietly fixing it
+ * here would make the preview disagree with the app.
+ */
+const AboutPreview: React.FC<{ about?: string | null }> = ({ about }) => {
+  const text = (about || '').trim();
+  const words = text.split(/\s+/).filter(Boolean);
+  const truncated = words.slice(0, 60).join(' ');
+
+  return (
+    // aboutSection: marginTop 4, paddingHorizontal 24
+    <div style={{ marginTop: 4, padding: '0 24px' }}>
+      {/* sectionTitle: 18 / 600, marginTop 24, marginBottom 8, #21555b */}
+      <div
+        style={{
+          fontSize: 18,
+          fontWeight: 600,
+          marginTop: 24,
+          marginBottom: 8,
+          color: '#21555b',
+        }}
+      >
+        About
+      </div>
+      {/* aboutText: 14 / #444 / lineHeight 20 */}
+      <div style={{ fontSize: 14, color: '#444', lineHeight: '20px' }}>
+        {text ? (
+          <>
+            {truncated}
+            {'...'}
+            <span style={{ color: '#DB8633', fontWeight: 600 }}> Read More</span>
+          </>
+        ) : (
+          <span style={{ color: '#8a97a3', fontStyle: 'italic' }}>
+            Your answer to "What you do" appears here.
+          </span>
+        )}
+      </div>
+    </div>
+  );
+};
 
 /**
  * The app's render-time fallback chain, repeated here on purpose.
@@ -345,8 +396,8 @@ export const ProfileHeaderPreview: React.FC<{
           {data.name || 'Charity name'}
         </div>
 
-        {/* Buttons, so the preview ends where the app's fold is rather than
-            stopping at the title and implying there is nothing below it. */}
+        {/* Buttons, so the preview carries the app's fold rather than jumping
+            from the title straight to the copy below it. */}
         <div style={{ display: 'flex', gap: 12, padding: '16px 24px 0' }}>
           <div
             style={{
@@ -377,6 +428,8 @@ export const ProfileHeaderPreview: React.FC<{
             Favorite
           </div>
         </div>
+
+        <AboutPreview about={data.about} />
       </div>
     </div>
   );

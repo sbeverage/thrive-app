@@ -36,6 +36,10 @@ const Profile: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Watched rather than read off `charity`, so editing "What you do" in the
+  // details form below moves the preview before anything is saved.
+  const aboutDraft = Form.useWatch('about', form);
+
   const load = useCallback(async () => {
     try {
       const res = await charityAPI.me();
@@ -188,6 +192,7 @@ const Profile: React.FC = () => {
               name: charity.name,
               category: charity.category,
               location: charity.location,
+              about: aboutDraft ?? charity.about,
               logoUrl: charity.logoUrl,
               highlightUrl: charity.highlightUrl,
               coverUrl: charity.imageUrl,
@@ -231,7 +236,11 @@ const Profile: React.FC = () => {
             </Col>
           </Row>
 
-          <Form.Item name="about" label="What you do">
+          <Form.Item
+            name="about"
+            label="What you do"
+            extra="This is the About section on your profile. Donors see the first 60 words before they tap Read More, so lead with what you do and who it helps."
+          >
             <TextArea rows={5} />
           </Form.Item>
 
