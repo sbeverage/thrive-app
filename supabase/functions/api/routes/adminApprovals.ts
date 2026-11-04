@@ -172,9 +172,12 @@ export async function handleAdminApprovals(
     // default stays vendor-only so the existing UI call is unaffected.
     const typeParam = url.searchParams.get("type");
     if (typeParam === "charity" || typeParam === "beneficiary") {
+      // count: "exact" so `total` is the size of the whole filtered set, not
+      // of the page that came back. The panel reads it for the tab badges,
+      // which have to be right before anyone clicks the tab.
       let q = supabase
         .from("charities")
-        .select("*")
+        .select("*", { count: "exact" })
         .order("suggested_at", { ascending: false, nullsFirst: false });
 
       if (status === "pending") {
@@ -197,7 +200,7 @@ export async function handleAdminApprovals(
       }
       q = q.range((page - 1) * limit, page * limit - 1);
 
-      const { data: charities, error: chErr } = await q;
+      const { data: charities, error: chErr, count: charityCount } = await q;
       if (chErr) return json({ error: chErr.message }, 500);
 
       // Who suggested each one — useful context when judging a submission.
@@ -228,8 +231,10 @@ export async function handleAdminApprovals(
         pagination: {
           page,
           limit,
-          total: data.length,
-          pages: Math.max(1, Math.ceil(data.length / limit)),
+          // The whole filtered set, not this page. Falls back to the page
+          // length only if the driver gave us no count at all.
+          total: charityCount ?? data.length,
+          pages: Math.max(1, Math.ceil((charityCount ?? data.length) / limit)),
         },
       });
     }
@@ -238,9 +243,12 @@ export async function handleAdminApprovals(
     // returning vendors asking to reactivate. Approved / rejected / all
     // remain single-shape queries because they're historical views, not
     // action queues.
+    // count: "exact" so `total` describes the whole filtered set rather than
+    // the page. The reactivation query below is unpaginated, so its rows are
+    // counted directly and added on.
     let signupQuery = supabase
       .from("vendors")
-      .select("*")
+      .select("*", { count: "exact" })
       .order("submitted_at", { ascending: false, nullsFirst: false });
     if (status === "pending") {
       // Unsubmitted registrations belong here too. Portal signup creates the
@@ -257,7 +265,7 @@ export async function handleAdminApprovals(
     // status="all" → no extra filter
     signupQuery = signupQuery.range((page - 1) * limit, page * limit - 1);
 
-    const { data: signupVendors, error: signupErr } = await signupQuery;
+    const { data: signupVendors, error: signupErr, count: signupCount } = await signupQuery;
     if (signupErr) return json({ error: signupErr.message }, 500);
 
     let reactivationVendors: any[] = [];
@@ -296,14 +304,16 @@ export async function handleAdminApprovals(
     // vendor is already off the donor app while waiting.
     const data = [...reactivationRows, ...signupRows];
 
+    const vendorTotal = (signupCount ?? (signupVendors || []).length) + reactivationVendors.length;
+
     return json({
       success: true,
       data,
       pagination: {
         page,
         limit,
-        total: data.length,
-        pages: Math.max(1, Math.ceil(data.length / limit)),
+        total: vendorTotal,
+        pages: Math.max(1, Math.ceil(vendorTotal / limit)),
       },
     });
   }
