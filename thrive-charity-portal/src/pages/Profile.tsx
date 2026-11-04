@@ -102,7 +102,18 @@ const Profile: React.FC = () => {
    * is no newer version to hand over, and a prominent "Submit for review" on
    * something already submitted only invites a second press.
    */
-  const canSubmit = !!review && !review.liveToDonors && (review.isDraft || !!review.rejectedAt);
+  /**
+   * Anything not yet live can be sent, including one already waiting.
+   *
+   * This used to exclude the pending state, on the reasoning that a charity
+   * in the queue has nothing new to hand over. Vetting made that wrong: a
+   * charity that reached the queue before the links were required, or whose
+   * row was stamped by hand, sits pending with no links and, under the old
+   * rule, no button and no vetting card either. Nothing to press and nothing
+   * to fix. Live is still excluded, since submitting a published profile
+   * would pull it back out of the app.
+   */
+  const canSubmit = !!review && !review.liveToDonors;
   // Shown but disabled rather than hidden: a missing button raises "how do I
   // send this?", a disabled one with a reason answers it.
   const submitBlocked = !review?.vettingOk;
@@ -113,7 +124,9 @@ const Profile: React.FC = () => {
     ? { colour: 'orange', label: 'Needs a change' }
     : review?.isDraft
     ? { colour: 'default', label: 'Draft' }
-    : { colour: 'blue', label: 'With the THRIVE team' };
+    // "With the THRIVE team" read like a partnership badge sitting next to a
+    // charity's name rather than a status. This says what is happening.
+    : { colour: 'blue', label: 'Being reviewed' };
 
   const sendForReview = async () => {
     setSubmitting(true);
@@ -190,7 +203,11 @@ const Profile: React.FC = () => {
                   disabled={submitBlocked}
                   onClick={onSubmitForReview}
                 >
-                  {review?.rejectedAt ? 'Send back for review' : 'Submit for review'}
+                  {review?.rejectedAt
+                    ? 'Send back for review'
+                    : review?.isDraft
+                    ? 'Submit for review'
+                    : 'Send updates'}
                 </Button>
               </Tooltip>
             )}
@@ -224,8 +241,12 @@ const Profile: React.FC = () => {
             style={{ marginTop: 16 }}
             type="info"
             showIcon
-            message="With the THRIVE team"
-            description="We are looking at your profile and will come back to you. You can keep editing in the meantime; we will see the latest version."
+            message="We are reviewing it"
+            description={
+              review.vettingOk
+                ? 'We are looking at your profile and will come back to you. You can keep editing in the meantime; we will see the latest version.'
+                : 'Before we can finish, we need to see where you are independently vetted. Add a link below and send it across.'
+            }
           />
         )}
 
