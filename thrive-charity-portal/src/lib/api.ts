@@ -56,7 +56,7 @@ async function put<T>(path: string, body?: unknown, config?: AxiosRequestConfig)
   return (await client.put<T>(path, body, config)).data;
 }
 
-export type ImageRole = 'logo' | 'highlight' | 'cover';
+export type ImageRole = 'logo' | 'highlight' | 'cover' | 'gallery';
 
 export interface CharityMe {
   id: number;

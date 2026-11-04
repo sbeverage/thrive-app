@@ -21,6 +21,7 @@ import CharityAppPreview from '../components/CharityAppPreview';
 import { ABOUT_MAX, aboutRules } from '../utils/aboutLimits';
 import AboutFieldHint from '../components/AboutFieldHint';
 import VettingLinks from '../components/VettingLinks';
+import GalleryPhotos from '../components/GalleryPhotos';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -326,6 +327,8 @@ const Profile: React.FC = () => {
           />
         </div>
       </Card>
+
+      <GalleryPhotos photos={charity.imageUrls ?? []} onChanged={load} />
 
       <Card title="Your details">
         <Form form={form} layout="vertical" onFinish={onSave}>

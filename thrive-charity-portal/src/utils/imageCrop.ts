@@ -18,7 +18,7 @@
  */
 import type { Area } from 'react-easy-crop';
 
-export type ImageRole = 'logo' | 'cover' | 'highlight';
+export type ImageRole = 'logo' | 'cover' | 'highlight' | 'gallery';
 
 type Preset = {
   label: string;
@@ -73,6 +73,19 @@ export const IMAGE_PRESETS: Record<ImageRole, Preset> = {
     round: false,
     png: false,
     help: 'Square thumbnail on the browse list, where donors see the charity before tapping in. One clear subject reads best this small.',
+  },
+  gallery: {
+    label: 'Photo',
+    // The app draws these at 220 x 165 in a horizontal strip, which is 4:3.
+    // A real ratio, so these are cropped like the other three rather than
+    // uploaded raw: anything not already 4:3 would be centre-cropped on the
+    // device with nobody watching. See CLAUDE.md "Charity images".
+    aspect: 4 / 3,
+    outWidth: 1200,
+    outHeight: 900,
+    round: false,
+    png: false,
+    help: 'Shown in the Photos strip on your profile. Landscape works best. Up to five.',
   },
 };
 

@@ -101,7 +101,7 @@ isn't permanent.
 
 ## Charity images
 
-A charity has **three** images, not one. They live in three differently-shaped
+A charity has **three** identity images, not one, plus an optional gallery. They live in three differently-shaped
 slots, and a single photo cannot fill all three without something important
 getting cut off. Uploading one picture and hoping is what made profiles look
 broken: the app crops with `resizeMode: "cover"`, which centre-crops, so a wide
@@ -113,6 +113,14 @@ thirds.
 | **Logo** | `logo_url` | 1:1 | 512 x 512 | 110pt circle on the charity profile |
 | **Highlight** | `highlight_url` | 1:1 | 600 x 600 | 120pt square on the charity browse list |
 | **Cover** | `image_url` | 2:1 | 1600 x 800 | Full-width band across the top of the profile |
+| **Photos** | `image_urls` | 4:3 | 1200 x 900 | Up to 5 tiles in the horizontal strip on the profile |
+
+The first three are single slots and a charity needs all three. **Photos** is
+a list, capped at 5 by the `charities_image_urls_max_5` CHECK, and entirely
+optional: the app hides the whole section when there are none, so a profile
+without photos still reads as finished. It is cropped like the others because
+the app draws the tiles at 220 x 165, which is a real ratio, and an uncropped
+upload is centre-cropped on the device with nobody watching.
 
 ### 1. Always crop in the panel, never upload raw
 

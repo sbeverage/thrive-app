@@ -10,7 +10,8 @@
 //   POST /charity/claim            ask for access to one that is
 //   GET  /charity/me               current charity + where the request is up to
 //   PUT  /charity/me               update the profile
-//   POST /charity/me/image/:role   upload a cropped logo / highlight / cover
+//   POST /charity/me/image/:role   upload a cropped logo / highlight / cover /
+//                                  gallery photo (gallery appends to a list)
 //   POST /charity/me/submit        put it in front of a reviewer
 //   POST /charity/me/resubmit      alias of submit, kept for deployed builds
 //
@@ -785,6 +786,19 @@ const IMAGE_COLUMN: Record<string, string> = {
   cover: "image_url",
 };
 
+/**
+ * The gallery is the fourth role and the only one that is a list.
+ *
+ * It lands in image_urls rather than a column of its own, appending instead
+ * of replacing, and the app renders it as 220x165 tiles: 4:3, a real ratio,
+ * so these go through the cropper exactly like the other three. The old
+ * admin gallery uploaded raw files into the same strip, which put the silent
+ * centre-crop straight back for anything that was not already 4:3.
+ */
+const GALLERY_ROLE = "gallery";
+/** Matches the charities_image_urls_max_5 CHECK constraint. */
+const MAX_GALLERY_IMAGES = 5;
+
 const ACCEPTED_IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png"]);
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB, matching the vendor portal
 
@@ -794,13 +808,26 @@ async function handleImageUpload(
   userId: number,
   role: string,
 ): Promise<JSONResponse> {
+  const isGallery = role === GALLERY_ROLE;
   const column = IMAGE_COLUMN[role];
-  if (!column) {
-    return json({ error: "That is not one of the three image slots." }, 400);
+  if (!column && !isGallery) {
+    return json({ error: "That is not one of the image slots." }, 400);
   }
 
   const charity = await loadCharityForUser(supabase, userId);
   if (!charity) return json({ error: "You do not manage a charity yet." }, 404);
+
+  // Checked before the upload, so a full gallery does not leave an orphaned
+  // file in storage that nothing references.
+  const existingGallery: string[] = Array.isArray(charity.image_urls)
+    ? charity.image_urls.filter((u: unknown) => typeof u === "string" && u.trim())
+    : [];
+  if (isGallery && existingGallery.length >= MAX_GALLERY_IMAGES) {
+    return json(
+      { error: `Your gallery holds ${MAX_GALLERY_IMAGES} photos. Remove one to add another.` },
+      400,
+    );
+  }
 
   let formData: FormData;
   try {
@@ -841,9 +868,13 @@ async function handleImageUpload(
     .from("charity-images")
     .getPublicUrl(path);
 
+  const patch = isGallery
+    ? { image_urls: [...existingGallery, publicUrl] }
+    : { [column]: publicUrl };
+
   const { data: updated, error: updateError } = await supabase
     .from("charities")
-    .update({ [column]: publicUrl, updated_at: new Date().toISOString() })
+    .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", charity.id)
     .eq("auth_user_id", userId)
     .select("*")
@@ -955,7 +986,7 @@ export async function handleCharityPortalRoute(
     if (method === "PUT") return handleMePut(req, supabase, userId);
   }
 
-  const imageMatch = route.match(/^\/charity\/me\/image\/(logo|highlight|cover)$/);
+  const imageMatch = route.match(/^\/charity\/me\/image\/(logo|highlight|cover|gallery)$/);
   if (method === "POST" && imageMatch) {
     return handleImageUpload(req, supabase, userId, imageMatch[1]);
   }
