@@ -271,6 +271,11 @@ export default function BeneficiaryScreen({ isSignupFlow = false, signupParams =
             likes: charity.likes || 0,
             mutual: charity.mutual || 0,
             about: charity.about || '',
+            // causeSearch.js matches on description, not about. This object
+            // carried only `about`, so that leg of the search read undefined
+            // for every charity and a donor could never find one by the words
+            // it wrote about itself, only by name, category or location.
+            description: charity.description || charity.about || '',
             ein: charity.ein || '',
             website: charity.website || '',
             phone: charity.phone || '',

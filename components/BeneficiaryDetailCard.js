@@ -228,7 +228,16 @@ export default function BeneficiaryDetailCard({
   const presetAmounts = [5, 10, 15];
   const giftPresetAmounts = [10, 25, 50, 100, 250, 500];
 
-  const aboutPreview = data.about?.split(' ').slice(0, 60).join(' ') + '...';
+  // Truncate only when there is something to truncate. This used to append
+  // '...' and render Read More whatever the length, so a two-sentence About
+  // ended in dots and offered to expand into nothing. It also produced the
+  // literal string "undefined..." when a charity had no About at all, since
+  // the optional chain short-circuits to undefined before the concatenation.
+  const aboutWords = String(data.about || '').trim().split(/\s+/).filter(Boolean);
+  const aboutIsTruncated = aboutWords.length > 60;
+  const aboutPreview = aboutIsTruncated
+    ? `${aboutWords.slice(0, 60).join(' ')}...`
+    : String(data.about || '');
 
   const loadPaymentMethodsFromApi = useCallback(async () => {
     setLoadingPaymentMethods(true);
@@ -436,7 +445,7 @@ export default function BeneficiaryDetailCard({
               <Text style={styles.sectionTitle}>About</Text>
               <Text style={styles.aboutText}>
                 {showFullAbout ? data.about : aboutPreview}
-                {!showFullAbout && (
+                {aboutIsTruncated && !showFullAbout && (
                   <Text onPress={() => setShowFullAbout(true)} style={styles.readMore}>
                     {' '}Read More
                   </Text>

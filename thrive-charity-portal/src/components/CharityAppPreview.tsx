@@ -53,21 +53,19 @@ export interface CharityPreviewData {
 }
 
 /**
- * The app's About block, quirks included.
+ * The app's About block.
  *
- * BeneficiaryDetailCard builds its preview as
- *   data.about?.split(' ').slice(0, 60).join(' ') + '...'
- * and renders "Read More" whenever showFullAbout is false. Neither is
- * conditional on the text actually being longer than 60 words, so a
- * two-sentence About really does render with trailing dots and a Read More
- * that opens nothing further. Reproduced rather than tidied: a charity
- * judging their own copy needs to see what donors see, and quietly fixing it
- * here would make the preview disagree with the app.
+ * Mirrors BeneficiaryDetailCard: the first 60 words, then "Read More", and
+ * neither the dots nor the link when the text is shorter than that. The app
+ * used to append '...' and offer Read More whatever the length; both were
+ * fixed in the same change that added this, and the two have to move
+ * together or the preview starts promising a fold the app does not have.
  */
 const AboutPreview: React.FC<{ about?: string | null }> = ({ about }) => {
   const text = (about || '').trim();
   const words = text.split(/\s+/).filter(Boolean);
-  const truncated = words.slice(0, 60).join(' ');
+  const isTruncated = words.length > 60;
+  const shown = isTruncated ? `${words.slice(0, 60).join(' ')}...` : text;
 
   return (
     // aboutSection: marginTop 4, paddingHorizontal 24
@@ -88,9 +86,10 @@ const AboutPreview: React.FC<{ about?: string | null }> = ({ about }) => {
       <div style={{ fontSize: 14, color: '#444', lineHeight: '20px' }}>
         {text ? (
           <>
-            {truncated}
-            {'...'}
-            <span style={{ color: '#DB8633', fontWeight: 600 }}> Read More</span>
+            {shown}
+            {isTruncated && (
+              <span style={{ color: '#DB8633', fontWeight: 600 }}> Read More</span>
+            )}
           </>
         ) : (
           <span style={{ color: '#8a97a3', fontStyle: 'italic' }}>
