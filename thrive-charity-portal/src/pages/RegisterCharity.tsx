@@ -19,6 +19,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { charityAPI, apiErrorMessage, apiErrorCode } from '../lib/api';
 import { ProfileHeaderPreview } from '../components/CharityAppPreview';
+import { ABOUT_HELP, ABOUT_MAX, aboutRules } from '../utils/aboutLimits';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -114,10 +115,15 @@ const RegisterCharity: React.FC = () => {
             <Form.Item
               name="about"
               label="What you do"
-              extra="This becomes the About section on your profile. Donors see the first 60 words before they tap Read More, so lead with what you do and who it helps."
-              rules={[{ required: true, message: 'A sentence or two is plenty.' }]}
+              extra={ABOUT_HELP}
+              rules={aboutRules(true)}
             >
-              <TextArea rows={5} placeholder="A couple of sentences a donor would understand straight away." />
+              <TextArea
+                rows={5}
+                showCount
+                maxLength={ABOUT_MAX}
+                placeholder="A couple of sentences a donor would understand straight away."
+              />
             </Form.Item>
             <Button type="primary" size="large" htmlType="submit" loading={loading} block>
               Add charity

@@ -130,6 +130,43 @@ export function emailMatchesCharityDomain(
   return mailHost === siteHost || mailHost.endsWith(`.${siteHost}`);
 }
 
+/**
+ * How long a charity's "What you do" text may be.
+ *
+ * Both numbers come from the 53 charities already on THRIVE rather than from
+ * taste: their About text runs 224 to 839 characters, median 563. So the
+ * floor rejects a one-line answer without excluding anyone real, and the
+ * ceiling leaves headroom above the longest existing entry. Nobody is locked
+ * out of saving an edit by limits introduced after they wrote their copy.
+ *
+ * The portal mirrors these in src/utils/aboutLimits.ts for the live counter.
+ * Client validation is a courtesy; this is the one that counts.
+ */
+export const ABOUT_MIN = 150;
+export const ABOUT_MAX = 1000;
+
+/**
+ * Returns a message to show the charity, or null when the text is fine.
+ * `required` separates signup, where About is mandatory, from an edit that
+ * simply leaves it alone.
+ */
+export function checkAboutLength(value: unknown, required: boolean): string | null {
+  const text = typeof value === "string" ? value.trim() : "";
+
+  if (!text) {
+    return required
+      ? "Tell donors what you do. A couple of sentences is plenty."
+      : null;
+  }
+  if (text.length < ABOUT_MIN) {
+    return `That is a little short. Give donors ${ABOUT_MIN} characters or more, about two sentences, so they know who you help.`;
+  }
+  if (text.length > ABOUT_MAX) {
+    return `That is longer than ${ABOUT_MAX} characters. Trim it to the part a donor needs first; the rest can live on your own site.`;
+  }
+  return null;
+}
+
 // ============================================================================
 // Loading
 // ============================================================================
@@ -236,6 +273,9 @@ async function handleSignup(
   if (!name) {
     return json({ error: "Your charity needs a name." }, 400);
   }
+
+  const aboutProblem = checkAboutLength(body.about, true);
+  if (aboutProblem) return json({ error: aboutProblem }, 400);
 
   // Dedupe on EIN, the same key /charities/suggest uses. If the row exists
   // this is a claim, not a signup, and saying so is more useful than a
@@ -516,6 +556,22 @@ async function handleMePut(
   const updates: Record<string, unknown> = {};
   for (const [inKey, column] of Object.entries(editable)) {
     if (inKey in body) updates[column] = body[inKey] === "" ? null : body[inKey];
+  }
+
+  if ("about" in body) {
+    // Only when they are actually changing it. An older row that predates
+    // these limits must stay editable in every other field.
+    const problem = checkAboutLength(body.about, false);
+    if (problem) return json({ error: problem }, 400);
+
+    // Keep the two columns in step. Signup writes the same text to both, and
+    // the donor app's charity search reads `description`, so updating only
+    // `about` would leave a charity searchable on the words they first wrote
+    // and never on the words they rewrote. An explicit description in the
+    // body still wins, for a caller that genuinely means to set them apart.
+    if (!("description" in body)) {
+      updates.description = updates.about;
+    }
   }
 
   if ("imageUrls" in body) {

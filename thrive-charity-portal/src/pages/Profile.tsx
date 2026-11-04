@@ -18,6 +18,7 @@ import { charityAPI, apiErrorMessage } from '../lib/api';
 import type { CharityMe, ReviewState } from '../lib/api';
 import ImageCropUpload from '../components/ImageCropUpload';
 import CharityAppPreview from '../components/CharityAppPreview';
+import { ABOUT_HELP, ABOUT_MAX, aboutRules } from '../utils/aboutLimits';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -239,9 +240,10 @@ const Profile: React.FC = () => {
           <Form.Item
             name="about"
             label="What you do"
-            extra="This is the About section on your profile. Donors see the first 60 words before they tap Read More, so lead with what you do and who it helps."
+            extra={ABOUT_HELP}
+            rules={aboutRules(false)}
           >
-            <TextArea rows={5} />
+            <TextArea rows={5} showCount maxLength={ABOUT_MAX} />
           </Form.Item>
 
           <Divider />
