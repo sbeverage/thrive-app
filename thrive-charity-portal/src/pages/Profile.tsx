@@ -18,7 +18,8 @@ import { charityAPI, apiErrorMessage } from '../lib/api';
 import type { CharityMe, ReviewState } from '../lib/api';
 import ImageCropUpload from '../components/ImageCropUpload';
 import CharityAppPreview from '../components/CharityAppPreview';
-import { ABOUT_HELP, ABOUT_MAX, aboutRules } from '../utils/aboutLimits';
+import { ABOUT_MAX, aboutRules } from '../utils/aboutLimits';
+import AboutFieldHint from '../components/AboutFieldHint';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -240,10 +241,13 @@ const Profile: React.FC = () => {
           <Form.Item
             name="about"
             label="What you do"
-            extra={ABOUT_HELP}
+            extra={<AboutFieldHint value={aboutDraft} />}
             rules={aboutRules(false)}
+            // See RegisterCharity: validating on every keystroke reddens the
+            // field before the minimum could possibly be met.
+            validateTrigger="onBlur"
           >
-            <TextArea rows={5} showCount maxLength={ABOUT_MAX} />
+            <TextArea rows={5} maxLength={ABOUT_MAX} />
           </Form.Item>
 
           <Divider />

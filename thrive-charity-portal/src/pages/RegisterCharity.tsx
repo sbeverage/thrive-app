@@ -19,7 +19,8 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { charityAPI, apiErrorMessage, apiErrorCode } from '../lib/api';
 import { ProfileHeaderPreview } from '../components/CharityAppPreview';
-import { ABOUT_HELP, ABOUT_MAX, aboutRules } from '../utils/aboutLimits';
+import { ABOUT_MAX, aboutRules } from '../utils/aboutLimits';
+import AboutFieldHint from '../components/AboutFieldHint';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -115,12 +116,16 @@ const RegisterCharity: React.FC = () => {
             <Form.Item
               name="about"
               label="What you do"
-              extra={ABOUT_HELP}
+              extra={<AboutFieldHint value={about} />}
               rules={aboutRules(true)}
+              // Not onChange: the minimum cannot be met at character one, so
+              // validating as they type turns the field red while they are
+              // still writing the first sentence. The live count does the
+              // nudging; this speaks when they leave the field, and on submit.
+              validateTrigger="onBlur"
             >
               <TextArea
                 rows={5}
-                showCount
                 maxLength={ABOUT_MAX}
                 placeholder="A couple of sentences a donor would understand straight away."
               />
