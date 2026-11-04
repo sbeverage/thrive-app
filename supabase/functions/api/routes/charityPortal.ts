@@ -147,6 +147,97 @@ export const ABOUT_MIN = 150;
 export const ABOUT_MAX = 1000;
 
 /**
+ * The vetting sites we accept, by registrable domain.
+ *
+ * All four actively assess charities rather than merely listing them, which
+ * is what "in good standing" has to mean for this check to be worth
+ * anything. A filings registry proves an organisation exists; it says
+ * nothing about how it is run.
+ */
+export const VETTING_SITES: Record<string, string> = {
+  "charitynavigator.org": "Charity Navigator",
+  "guidestar.org": "Candid (GuideStar)",
+  "candid.org": "Candid",
+  "give.org": "BBB Wise Giving Alliance",
+  "charitywatch.org": "CharityWatch",
+};
+
+const CHARITY_NAVIGATOR = "charitynavigator.org";
+
+/** The accepted domain a URL belongs to, or null if it is not one of ours. */
+function vettingHost(raw: unknown): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  let parsed: URL;
+  try {
+    // People paste "charitynavigator.org/ein/123" as often as a full URL.
+    parsed = new URL(/^https?:\/\//i.test(s) ? s : `https://${s}`);
+  } catch {
+    return null;
+  }
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+  for (const known of Object.keys(VETTING_SITES)) {
+    // endsWith covers subdomains such as www.give.org or apps.candid.org,
+    // anchored on a dot so "notcharitynavigator.org" cannot match.
+    if (host === known || host.endsWith(`.${known}`)) return known;
+  }
+  return null;
+}
+
+export interface VettingLink {
+  url: string;
+  host: string;
+  site: string;
+}
+
+/** Splits submitted links into ones we recognise and ones we do not. */
+export function describeVettingLinks(links: unknown): {
+  accepted: VettingLink[];
+  rejected: string[];
+} {
+  const accepted: VettingLink[] = [];
+  const rejected: string[] = [];
+  const seenHosts = new Set<string>();
+
+  for (const raw of Array.isArray(links) ? links : []) {
+    const url = String(raw ?? "").trim();
+    if (!url) continue;
+    const host = vettingHost(url);
+    if (!host) {
+      rejected.push(url);
+      continue;
+    }
+    // One link per site. A second Charity Navigator page is the same source
+    // saying the same thing, and counting it would satisfy "two others"
+    // with no second opinion at all.
+    if (seenHosts.has(host)) continue;
+    seenHosts.add(host);
+    accepted.push({ url, host, site: VETTING_SITES[host] });
+  }
+
+  return { accepted, rejected };
+}
+
+/**
+ * Null when the charity has shown enough, otherwise what to tell them.
+ *
+ * Charity Navigator on its own is enough. Failing that, two distinct sites.
+ */
+export function checkVettingReady(links: unknown): string | null {
+  const { accepted } = describeVettingLinks(links);
+  const hosts = new Set(accepted.map((a) => a.host));
+
+  if (hosts.has(CHARITY_NAVIGATOR)) return null;
+  if (hosts.size >= 2) return null;
+
+  if (hosts.size === 1) {
+    const [only] = [...hosts];
+    return `We have your ${VETTING_SITES[only]} page. Add either your Charity Navigator page or one more site, and you can send this to us.`;
+  }
+  return "Add your Charity Navigator page, or pages from two of the other sites that vet charities, so we can confirm you are in good standing.";
+}
+
+/**
  * What a charity still has to fill in, in the words the portal uses for it.
  *
  * Deliberately separate from charityProfileGaps in lib/charities.ts. That one
@@ -533,6 +624,11 @@ async function handleMeGet(supabase: any, userId: number): Promise<JSONResponse>
         // predates the three image roles; widening it would reclassify every
         // existing charity.
         missing: portalProfileGaps(charity),
+        // The submit gate, so the button can explain itself before it is
+        // pressed rather than failing afterwards.
+        vettingOk: checkVettingReady(charity.vetting_links) === null,
+        vettingProblem: checkVettingReady(charity.vetting_links),
+        vettingLinks: describeVettingLinks(charity.vetting_links).accepted,
       },
     });
   }
@@ -612,6 +708,26 @@ async function handleMePut(
     if (!("description" in body)) {
       updates.description = updates.about;
     }
+  }
+
+  if ("vettingLinks" in body) {
+    if (!Array.isArray(body.vettingLinks)) {
+      return json({ error: "vettingLinks has to be a list of links." }, 400);
+    }
+    const { accepted, rejected } = describeVettingLinks(body.vettingLinks);
+    if (rejected.length > 0) {
+      const names = [...new Set(Object.values(VETTING_SITES))].join(", ");
+      return json(
+        {
+          error: `We could not place ${rejected[0]}. We accept pages on ${names}.`,
+          code: "vetting_host_unknown",
+        },
+        400,
+      );
+    }
+    // Stored as the accepted set, so duplicates of one site collapse and the
+    // column never holds a link the check would ignore.
+    updates.vetting_links = accepted.map((a) => a.url);
   }
 
   if ("imageUrls" in body) {
@@ -769,6 +885,14 @@ async function handleSubmitForReview(
       alreadyLive: true,
       message: "Your profile is already live to donors. Edits save straight away.",
     });
+  }
+
+  // The one hard gate on submitting. Everything else about an unfinished
+  // profile is advisory, but "is this organisation in good standing" is the
+  // question a reviewer cannot answer from the profile itself.
+  const vettingProblem = checkVettingReady(charity.vetting_links);
+  if (vettingProblem) {
+    return json({ error: vettingProblem, code: "vetting_required" }, 400);
   }
 
   const wasRejected = !!charity.verification_rejected_at;

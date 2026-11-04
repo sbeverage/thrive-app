@@ -10,7 +10,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Card, Typography, Row, Col, Form, Input, Select, Button, Spin, Alert,
-  Tag, Space, message, Divider, Modal,
+  Tag, Space, message, Divider, Modal, Tooltip,
 } from 'antd';
 import { EyeOutlined, SaveOutlined, SendOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -20,6 +20,7 @@ import ImageCropUpload from '../components/ImageCropUpload';
 import CharityAppPreview from '../components/CharityAppPreview';
 import { ABOUT_MAX, aboutRules } from '../utils/aboutLimits';
 import AboutFieldHint from '../components/AboutFieldHint';
+import VettingLinks from '../components/VettingLinks';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -102,6 +103,9 @@ const Profile: React.FC = () => {
    * something already submitted only invites a second press.
    */
   const canSubmit = !!review && !review.liveToDonors && (review.isDraft || !!review.rejectedAt);
+  // Shown but disabled rather than hidden: a missing button raises "how do I
+  // send this?", a disabled one with a reason answers it.
+  const submitBlocked = !review?.vettingOk;
 
   const statusTag = review?.liveToDonors
     ? { colour: 'green', label: 'Live to donors' }
@@ -177,15 +181,18 @@ const Profile: React.FC = () => {
               </Tag>
             )}
             {canSubmit && (
-              <Button
-                type="primary"
-                size="large"
-                icon={<SendOutlined />}
-                loading={submitting}
-                onClick={onSubmitForReview}
-              >
-                {review?.rejectedAt ? 'Send back for review' : 'Submit for review'}
-              </Button>
+              <Tooltip title={submitBlocked ? review?.vettingProblem : ''}>
+                <Button
+                  type="primary"
+                  size="large"
+                  icon={<SendOutlined />}
+                  loading={submitting}
+                  disabled={submitBlocked}
+                  onClick={onSubmitForReview}
+                >
+                  {review?.rejectedAt ? 'Send back for review' : 'Submit for review'}
+                </Button>
+              </Tooltip>
             )}
           </Space>
         </Space>
@@ -232,6 +239,14 @@ const Profile: React.FC = () => {
           />
         )}
       </Card>
+
+      {canSubmit && (
+        <VettingLinks
+          links={review?.vettingLinks ?? []}
+          problem={review?.vettingOk ? null : review?.vettingProblem ?? null}
+          onSaved={load}
+        />
+      )}
 
       <Card title="Your images">
         <Paragraph type="secondary" style={{ fontSize: 13 }}>

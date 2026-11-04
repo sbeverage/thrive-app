@@ -89,6 +89,16 @@ export interface ReviewState {
   submittedAt: string | null;
   /** Advisory list of what still looks unfinished. Never blocks submitting. */
   missing: string[];
+  /** The one hard gate: independent vetting links. */
+  vettingOk: boolean;
+  vettingProblem: string | null;
+  vettingLinks: VettingLink[];
+}
+
+export interface VettingLink {
+  url: string;
+  host: string;
+  site: string;
 }
 
 export interface AccessRequest {

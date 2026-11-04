@@ -101,6 +101,17 @@ function formatCharity(c: any, suggestedByName: string) {
     website: c.website || null,
     category: c.category || null,
     description: c.description || null,
+    // The profile as donors would see it. The panel renders these through
+    // CharityAppPreview during review, which is faster to judge than a list
+    // of field values: whether a crop works is a question about the slot.
+    about: c.about || c.description || null,
+    logo_url: c.logo_url || null,
+    highlight_url: c.highlight_url || null,
+    image_url: c.image_url || null,
+    // Independent vetting, required before a charity can submit. This is the
+    // evidence the approve/reject decision actually turns on.
+    vetting_links: Array.isArray(c.vetting_links) ? c.vetting_links : [],
+    submitted_for_review_at: c.submitted_for_review_at || null,
     suggested_by_user_id: c.suggested_by_user_id || null,
     suggested_by_name: suggestedByName || null,
     // Derived for display. The column is a boolean, so `|| "pending"`
