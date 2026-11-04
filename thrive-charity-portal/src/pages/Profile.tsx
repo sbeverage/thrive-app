@@ -10,9 +10,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Card, Typography, Row, Col, Form, Input, Select, Button, Spin, Alert,
-  Tag, Space, message, Divider,
+  Tag, Space, message, Divider, Modal,
 } from 'antd';
-import { EyeOutlined, SaveOutlined } from '@ant-design/icons';
+import { EyeOutlined, SaveOutlined, SendOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { charityAPI, apiErrorMessage } from '../lib/api';
 import type { CharityMe, ReviewState } from '../lib/api';
@@ -37,6 +37,7 @@ const Profile: React.FC = () => {
   const [review, setReview] = useState<ReviewState | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // Watched rather than read off `charity`, so editing "What you do" in the
   // details form below moves the preview before anything is saved.
@@ -88,6 +89,73 @@ const Profile: React.FC = () => {
   const onImage = (key: 'logoUrl' | 'highlightUrl' | 'imageUrl') => (url: string) =>
     setCharity((c) => (c ? { ...c, [key]: url } : c));
 
+  const missing = review?.missing ?? [];
+
+  /**
+   * Only a draft or a rejection has anything to send.
+   *
+   * Live is excluded because submitting a published profile would pull it
+   * back out of the app, which is never what the button means to the person
+   * pressing it. Already-pending is excluded because it would do nothing: a
+   * reviewer reads the row as it stands and edits save immediately, so there
+   * is no newer version to hand over, and a prominent "Submit for review" on
+   * something already submitted only invites a second press.
+   */
+  const canSubmit = !!review && !review.liveToDonors && (review.isDraft || !!review.rejectedAt);
+
+  const statusTag = review?.liveToDonors
+    ? { colour: 'green', label: 'Live to donors' }
+    : review?.rejectedAt
+    ? { colour: 'orange', label: 'Needs a change' }
+    : review?.isDraft
+    ? { colour: 'default', label: 'Draft' }
+    : { colour: 'blue', label: 'With the THRIVE team' };
+
+  const sendForReview = async () => {
+    setSubmitting(true);
+    try {
+      const r = await charityAPI.submitForReview();
+      message.success(r.message);
+      await load();
+    } catch (err) {
+      message.error(apiErrorMessage(err, 'That did not send. Give it another try?'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  /**
+   * An incomplete profile is worth a pause, not a block. They know things we
+   * do not, and a charity held hostage by a missing website field is a charity
+   * that gives up. So: name what is missing, and let them decide.
+   */
+  const onSubmitForReview = () => {
+    if (missing.length === 0 || review?.rejectedAt) {
+      sendForReview();
+      return;
+    }
+    Modal.confirm({
+      title: 'Send it as it is?',
+      okText: 'Send it anyway',
+      cancelText: 'Keep working on it',
+      content: (
+        <>
+          <Paragraph style={{ marginBottom: 8 }}>
+            These are still empty, and donors see all of them:
+          </Paragraph>
+          <ul style={{ margin: '0 0 12px 18px', padding: 0 }}>
+            {missing.map((m) => <li key={m}>{m}</li>)}
+          </ul>
+          <Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 0 }}>
+            You can send it now and add the rest later, or finish first. Either
+            way you can keep editing after you send.
+          </Paragraph>
+        </>
+      ),
+      onOk: sendForReview,
+    });
+  };
+
   if (loading) {
     return <div style={{ display: 'grid', placeItems: 'center', minHeight: '50vh' }}><Spin size="large" /></div>;
   }
@@ -101,20 +169,56 @@ const Profile: React.FC = () => {
             <Title level={3} style={{ margin: 0 }}>{charity.name}</Title>
             <Text type="secondary">{[charity.category, charity.location].filter(Boolean).join(' · ')}</Text>
           </div>
-          {review && (
-            <Tag color={review.liveToDonors ? 'green' : 'orange'} style={{ fontSize: 13, padding: '4px 10px' }}>
-              {review.liveToDonors ? 'Live to donors' : 'With the THRIVE team'}
-            </Tag>
-          )}
+
+          <Space align="center" size={12} wrap>
+            {review && (
+              <Tag color={statusTag.colour} style={{ fontSize: 13, padding: '4px 10px', marginInlineEnd: 0 }}>
+                {statusTag.label}
+              </Tag>
+            )}
+            {canSubmit && (
+              <Button
+                type="primary"
+                size="large"
+                icon={<SendOutlined />}
+                loading={submitting}
+                onClick={onSubmitForReview}
+              >
+                {review?.rejectedAt ? 'Send back for review' : 'Submit for review'}
+              </Button>
+            )}
+          </Space>
         </Space>
 
-        {review && !review.liveToDonors && !review.rejectedAt && (
+        {review?.isDraft && !review.rejectedAt && (
           <Alert
             style={{ marginTop: 16 }}
             type="info"
             showIcon
-            message="Not visible to donors yet"
-            description="We review every charity before it goes live. Adding your images and your story is what usually moves it along fastest."
+            message="This is yours to work on. Nobody is reviewing it yet."
+            description={
+              <>
+                Add your images and your story, take as long as you like, then
+                press Submit for review. Nothing goes in front of the THRIVE
+                team until you do, and you can keep editing afterwards.
+                {missing.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <Text strong style={{ fontSize: 13 }}>Still to add: </Text>
+                    <Text style={{ fontSize: 13 }}>{missing.join(', ')}</Text>
+                  </div>
+                )}
+              </>
+            }
+          />
+        )}
+
+        {review && !review.isDraft && !review.liveToDonors && !review.rejectedAt && (
+          <Alert
+            style={{ marginTop: 16 }}
+            type="info"
+            showIcon
+            message="With the THRIVE team"
+            description="We are looking at your profile and will come back to you. You can keep editing in the meantime; we will see the latest version."
           />
         )}
 
@@ -125,22 +229,6 @@ const Profile: React.FC = () => {
             showIcon
             message="We need a change before this goes live"
             description={review.rejectedReason || 'Get in touch and we will talk it through.'}
-            action={
-              <Button
-                size="small"
-                onClick={async () => {
-                  try {
-                    const r = await charityAPI.resubmit();
-                    message.success(r.message);
-                    load();
-                  } catch (err) {
-                    message.error(apiErrorMessage(err, 'That did not send. Give it another try?'));
-                  }
-                }}
-              >
-                Send it back
-              </Button>
-            }
           />
         )}
       </Card>

@@ -189,6 +189,11 @@ export async function handleAdminApprovals(
         // A freshly suggested charity also has verification_status false, so
         // the pending flag is what separates rejected from not-yet-judged.
         q = q.eq("verification_status", false).eq("is_pending_verification", false);
+        // ...and a portal draft matches both of those too, having never been
+        // judged either way. submitted_for_review_at is null only for drafts
+        // (the migration backfilled every pre-existing row), so this excludes
+        // them without reclassifying anything that was already here.
+        q = q.not("submitted_for_review_at", "is", null);
       }
       q = q.range((page - 1) * limit, page * limit - 1);
 

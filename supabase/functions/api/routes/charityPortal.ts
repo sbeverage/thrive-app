@@ -11,7 +11,8 @@
 //   GET  /charity/me               current charity + where the request is up to
 //   PUT  /charity/me               update the profile
 //   POST /charity/me/image/:role   upload a cropped logo / highlight / cover
-//   POST /charity/me/resubmit      send it back for review after a rejection
+//   POST /charity/me/submit        put it in front of a reviewer
+//   POST /charity/me/resubmit      alias of submit, kept for deployed builds
 //
 // Two ways in, deliberately not the same:
 //
@@ -144,6 +145,31 @@ export function emailMatchesCharityDomain(
  */
 export const ABOUT_MIN = 150;
 export const ABOUT_MAX = 1000;
+
+/**
+ * What a charity still has to fill in, in the words the portal uses for it.
+ *
+ * Deliberately separate from charityProfileGaps in lib/charities.ts. That one
+ * feeds the admin panel's completeness column and predates the three image
+ * roles, so teaching it about the highlight would reclassify all 53 existing
+ * charities as incomplete overnight. This list is advisory only: it tells a
+ * charity what looks unfinished, and never blocks them from submitting.
+ */
+export function portalProfileGaps(charity: any): string[] {
+  const gaps: string[] = [];
+  if (!charity) return [];
+
+  const blank = (v: unknown) => !String(v ?? "").trim();
+
+  if (blank(charity.logo_url)) gaps.push("Logo image");
+  if (blank(charity.highlight_url)) gaps.push("Highlight image");
+  if (blank(charity.image_url)) gaps.push("Cover image");
+  if (blank(charity.about) && blank(charity.description)) gaps.push("What you do");
+  if (blank(charity.location)) gaps.push("City and state");
+  if (blank(charity.website)) gaps.push("Website");
+
+  return gaps;
+}
 
 /**
  * Returns a message to show the charity, or null when the text is fine.
@@ -326,12 +352,15 @@ async function handleSignup(
       // not exist a second ago, so there is nobody to impersonate.
       auth_user_id: userId,
       created_by_user_id: userId,
-      // Hidden from donors until an admin verifies it. These are the existing
-      // flags the approvals queue already reads, so a self-registered charity
-      // appears there next to donor-suggested ones with no new plumbing.
+      // Hidden from donors, and a DRAFT: not in the approvals queue yet.
+      // This used to set is_pending_verification = true, which put a charity
+      // in front of a reviewer before it had a single image. It enters the
+      // queue when they press Submit for review, which sets both that flag
+      // and submitted_for_review_at.
       is_active: false,
-      is_pending_verification: true,
+      is_pending_verification: false,
       verification_status: false,
+      submitted_for_review_at: null,
     })
     .select("*")
     .single();
@@ -493,6 +522,17 @@ async function handleMeGet(supabase: any, userId: number): Promise<JSONResponse>
         awaitingProfile: !!charity.awaiting_profile_completion,
         rejectedAt: charity.verification_rejected_at ?? null,
         rejectedReason: charity.verification_rejected_reason ?? null,
+        // Never submitted: theirs to edit, and not in front of a reviewer.
+        // Backfilled non-null for every row that predates the draft state,
+        // so this is false for all 53 existing charities.
+        isDraft: !charity.submitted_for_review_at,
+        submittedAt: charity.submitted_for_review_at ?? null,
+        // What still looks unfinished. Advisory: they can submit anyway, and
+        // the reviewer is the one who decides. Kept here rather than in
+        // charityProfileGaps because that one feeds the admin panel and
+        // predates the three image roles; widening it would reclassify every
+        // existing charity.
+        missing: portalProfileGaps(charity),
       },
     });
   }
@@ -705,14 +745,40 @@ async function handleImageUpload(
 // POST /charity/me/resubmit
 // ============================================================================
 
-async function handleResubmit(supabase: any, userId: number): Promise<JSONResponse> {
+/**
+ * Puts a charity in front of a reviewer, whether for the first time or after
+ * a rejection. One handler because the write is identical: the pending flag
+ * on, the rejection cleared, the submission stamped.
+ *
+ * Already-pending is not an error. Pressing it twice is a thing people do
+ * when nothing visibly happened the first time, and a second press should
+ * reassure rather than scold.
+ */
+async function handleSubmitForReview(
+  supabase: any,
+  userId: number,
+): Promise<JSONResponse> {
   const charity = await loadCharityForUser(supabase, userId);
   if (!charity) return json({ error: "You do not manage a charity yet." }, 404);
+
+  if (charity.is_active === true && charity.verification_status === true) {
+    // Live already. Resubmitting would pull a published profile back out of
+    // the app, which is never what the button means.
+    return json({
+      success: true,
+      alreadyLive: true,
+      message: "Your profile is already live to donors. Edits save straight away.",
+    });
+  }
+
+  const wasRejected = !!charity.verification_rejected_at;
+  const alreadyPending = !!charity.is_pending_verification;
 
   const { error } = await supabase
     .from("charities")
     .update({
       is_pending_verification: true,
+      submitted_for_review_at: new Date().toISOString(),
       verification_rejected_at: null,
       verification_rejected_reason: null,
       updated_at: new Date().toISOString(),
@@ -721,11 +787,18 @@ async function handleResubmit(supabase: any, userId: number): Promise<JSONRespon
     .eq("auth_user_id", userId);
 
   if (error) {
-    console.error("charity/me/resubmit error:", error);
+    console.error("charity/me/submit error:", error);
     return json({ error: "That did not send. Give it another try?" }, 500);
   }
 
-  return json({ success: true, message: "Sent back to us for another look." });
+  return json({
+    success: true,
+    message: wasRejected
+      ? "Sent back to us for another look. We will be in touch."
+      : alreadyPending
+      ? "Still with us. We will be in touch as soon as we have looked."
+      : "Sent to the THRIVE team. We will take a look and come back to you.",
+  });
 }
 
 // ============================================================================
@@ -763,8 +836,13 @@ export async function handleCharityPortalRoute(
     return handleImageUpload(req, supabase, userId, imageMatch[1]);
   }
 
-  if (method === "POST" && route === "/charity/me/resubmit") {
-    return handleResubmit(supabase, userId);
+  // One handler, two names. /submit is what the portal calls; /resubmit is
+  // kept because a deployed build may still be calling it.
+  if (
+    method === "POST" &&
+    (route === "/charity/me/submit" || route === "/charity/me/resubmit")
+  ) {
+    return handleSubmitForReview(supabase, userId);
   }
 
   return json({ error: "Not found" }, 404);

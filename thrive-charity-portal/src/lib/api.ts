@@ -84,6 +84,11 @@ export interface ReviewState {
   awaitingProfile: boolean;
   rejectedAt: string | null;
   rejectedReason: string | null;
+  /** Never submitted: still theirs to edit, not in front of a reviewer. */
+  isDraft: boolean;
+  submittedAt: string | null;
+  /** Advisory list of what still looks unfinished. Never blocks submitting. */
+  missing: string[];
 }
 
 export interface AccessRequest {
@@ -146,6 +151,10 @@ export const charityAPI = {
     ),
   updateMe: (payload: Record<string, unknown>) =>
     put<{ charity: CharityMe }>('/charity/me', payload),
-  resubmit: () => post<{ success: boolean; message: string }>('/charity/me/resubmit'),
+  /** First submission and re-submission after a rejection are the same call. */
+  submitForReview: () =>
+    post<{ success: boolean; message: string; alreadyLive?: boolean }>(
+      '/charity/me/submit',
+    ),
   uploadImage,
 };
