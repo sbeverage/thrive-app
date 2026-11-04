@@ -27,6 +27,7 @@ import { sendVendorEmail } from "../lib/email.ts";
 import { notifyUser } from "../lib/notifications.ts";
 import { sendNotificationEmail } from "../lib/email.ts";
 import { charityProfileGaps } from "../lib/charities.ts";
+import { describeVettingLinks, VETTING_SITES } from "./charityPortal.ts";
 
 const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: jsonHeaders });
@@ -359,6 +360,25 @@ export async function handleAdminApprovals(
     const profile: Record<string, unknown> = {};
     for (const [key, column] of Object.entries(CHARITY_PROFILE_FIELDS)) {
       if (body[key] !== undefined) profile[column] = body[key];
+    }
+
+    // Vetting links are handled apart from CHARITY_PROFILE_FIELDS because
+    // they need the host check. An admin adding a link on a charity's behalf
+    // should be held to the same rule the portal enforces, or the column ends
+    // up holding a charity's own About page and the evidence means nothing.
+    if (body.vettingLinks !== undefined) {
+      if (!Array.isArray(body.vettingLinks)) {
+        return json({ error: "vettingLinks has to be a list of links." }, 400);
+      }
+      const { accepted, rejected } = describeVettingLinks(body.vettingLinks);
+      if (rejected.length > 0) {
+        const names = [...new Set(Object.values(VETTING_SITES))].join(", ");
+        return json(
+          { error: `We could not place ${rejected[0]}. We accept pages on ${names}.` },
+          400,
+        );
+      }
+      if (accepted.length > 0) profile.vetting_links = accepted.map((a) => a.url);
     }
 
     // Merge the admin's edits over the stored row so completeness is judged
