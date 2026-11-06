@@ -307,6 +307,8 @@ export default function SignupScreen() {
               style={styles.input}
               placeholderTextColor="#6d6e72"
               autoCapitalize="none"
+              textContentType="username"
+              autoComplete="email"
             />
             <Text style={styles.label}>Password</Text>
             <View style={styles.passwordContainer}>
@@ -319,6 +321,11 @@ export default function SignupScreen() {
                 placeholderTextColor="#6d6e72"
                 autoCapitalize="none"
                 autoCorrect={false}
+                // newPassword, not password: this is the field that makes iOS
+                // offer to save the credential in the first place. Nothing was
+                // ever saved, which is why there was nothing for login to fill.
+                textContentType="newPassword"
+                autoComplete="new-password"
               />
               <TouchableOpacity
                 style={styles.eyeButton}

@@ -457,6 +457,12 @@ export default function LoginScreen() {
                 value={email}
                 onChangeText={setEmail}
                 accessibilityLabel="Email address"
+                // Tells iOS this pair is a sign-in, which is what puts the
+                // saved password on the QuickType bar behind Face ID. Without
+                // it the keyboard never offers one and the password has to be
+                // typed every time, whatever "Remember me" is set to.
+                textContentType="username"
+                autoComplete="username"
               />
             </View>
             <View style={styles.fieldGroup}>
@@ -472,6 +478,8 @@ export default function LoginScreen() {
                   value={password}
                   onChangeText={setPassword}
                   accessibilityLabel="Password"
+                  textContentType="password"
+                  autoComplete="password"
                 />
                 <TouchableOpacity
                   style={styles.eyeButton}

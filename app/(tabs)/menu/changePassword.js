@@ -59,6 +59,10 @@ export default function ChangePassword() {
           secureTextEntry={!showNew}
           value={newPassword}
           onChangeText={setNewPassword}
+          // Keeps the keychain in step: without this a changed password
+          // leaves iOS filling the old one at the next sign-in.
+          textContentType="newPassword"
+          autoComplete="new-password"
         />
         <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowNew(!showNew)}>
           <Feather name="eye" size={18} color="#888" />
@@ -73,6 +77,8 @@ export default function ChangePassword() {
           secureTextEntry={!showConfirm}
           value={confirmPassword}
           onChangeText={setConfirmPassword}
+          textContentType="newPassword"
+          autoComplete="new-password"
         />
         <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowConfirm(!showConfirm)}>
           <Feather name="eye" size={18} color="#888" />
