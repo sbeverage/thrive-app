@@ -220,6 +220,40 @@ export default function Index()  {
       outputRange: SAMPLES.map((t) => fn(offsetOf(i, t))),
     });
 
+  // Already signed in? Go straight to the app.
+  //
+  // This was dropped when the welcome screen was rebuilt in d32a8cc. The two
+  // imports it needed were left behind, which is the tell: AsyncStorage and
+  // resumeSignupFlowPendingIfAny were imported and used nowhere. Without it
+  // every cold start landed on this screen with Log In and Sign Up on it, so
+  // a valid 30-day session looked exactly like being signed out. The token was
+  // never actually cleared; nothing ever read it.
+  //
+  // The signupFlowPending leg goes first and returns early when it fires: an
+  // account created but never finished belongs back in the signup flow, not on
+  // the home tab with no donation set up. CLAUDE.md lists both this guard and
+  // the redirect under things not to remove.
+  React.useEffect(() => {
+    const checkUserStatus = async () => {
+      try {
+        const token = await AsyncStorage.getItem('authToken');
+        if (token) {
+          const resumed = await resumeSignupFlowPendingIfAny(router, {
+            gatePendingEmailAgainstStoredUserData: true,
+          });
+          if (resumed) return;
+
+          console.log('📱 Auth token found, redirecting from index to home...');
+          router.replace('/(tabs)/home');
+        }
+      } catch (error) {
+        console.error('Error checking user status in index:', error);
+      }
+    };
+
+    checkUserStatus();
+  }, []);
+
   React.useEffect(() => {
     let cancelled = false;
     AccessibilityInfo.isReduceMotionEnabled()
