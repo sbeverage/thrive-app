@@ -260,6 +260,10 @@ api.interceptors.response.use(
         const isTokenPreservedEndpoint =
           url.includes("/api/auth/save-profile") ||
           url.includes("/api/auth/profile") ||
+          // Answers 401 for "Current password is incorrect." as well as for a
+          // dead token. Without this entry, mistyping your current password
+          // once clears the session and drops you at the welcome screen.
+          url.includes("/api/auth/change-password") ||
           url.includes("/api/user/points");
 
         if (jwtMatchesStorage && !isTokenPreservedEndpoint) {
@@ -767,6 +771,28 @@ const API = {
       console.error("Reset password failed:", error);
       throw new Error(
         error.response?.data?.message || "Password reset failed.",
+      );
+    }
+  },
+
+  /**
+   * Change the signed-in user's password.
+   *
+   * The current password is checked server side against the bcrypt hash, so a
+   * wrong one comes back as a 401. See isTokenPreservedEndpoint above for why
+   * that does not end the session.
+   */
+  changePassword: async (currentPassword, newPassword) => {
+    try {
+      const response = await api.post("/api/auth/change-password", {
+        currentPassword,
+        newPassword,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Change password failed:", error);
+      throw new Error(
+        getApiErrorMessage(error, "That didn't save. Give it another try?"),
       );
     }
   },
