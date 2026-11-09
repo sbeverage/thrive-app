@@ -2321,18 +2321,20 @@ const styles = StyleSheet.create({
     // the selected card, and every line height below is set explicitly so this
     // arithmetic actually holds instead of depending on iOS font metrics:
     //
-    //   name          2 x 20 lineHeight + 4 marginBottom   = 44
+    //   name          2 x 16 lineHeight + 3 marginBottom   = 35
     //   category      16 lineHeight + 6 marginBottom       = 22
     //   location row  max(14 icon, 16 lineHeight)          = 16
     //   buttons row   8 marginTop + 34 selected button     = 42
     //                 (8 padding x2 + 1 border x2 + 16 text)
-    //                                                 total  124
+    //                                                 total  115
     //   content padding 16 x 2                               32
-    //                                                 card   156
+    //                                                 card   147
     //
-    // 160 leaves a little slack. The content is centred, so a one-line name
-    // spends the leftover 56 as even space above the title and below the
-    // button, which is the padding this was missing.
+    // Held at 160 rather than trimmed to 147: the content is centred, so the
+    // 13 of slack becomes even space above the title and below the button, on
+    // top of the 16 padding. A one-line name spends 61 the same way. That
+    // space is the point, not waste. Shrink this number and the padding goes
+    // with it.
     height: 160,
     borderWidth: 2,
     borderColor: 'transparent',
@@ -2396,13 +2398,19 @@ const styles = StyleSheet.create({
     color: '#8A5A12',
   },
   beneficiaryName: {
-    fontSize: 16,
+    // 14, down from 16. Two lines plus the margin now occupy 35 rather than 44,
+    // and fewer names reach two lines in the first place. Note this leaves only
+    // 1pt between the title and the 13pt category under it, so the hierarchy is
+    // now carried by weight (700 against 400) and colour (#324E58 against
+    // #6d6e72), not size. Do not lighten either of those here.
+    fontSize: 14,
     fontWeight: '700',
     color: '#324E58',
     // Explicit, so the card height above is arithmetic rather than a guess at
-    // what iOS gives a 16pt system bold.
-    lineHeight: 20,
-    marginBottom: 4,
+    // what iOS gives system bold. 16 on 14 is tight leading, which is what a
+    // wrapped title wants: the two lines read as one name.
+    lineHeight: 16,
+    marginBottom: 3,
     // Reserve space for the absolute-positioned favorite heart (top: 8,
     // right: 8, size ~20) so long charity names wrap on their own line
     // instead of running under the icon.
