@@ -2312,10 +2312,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-    // Fixed, not minHeight: the image slot is 120 square and only stays square
-    // if the card does not grow under it. Content is clamped to fit (name 2
-    // lines, blurb 1) so nothing is cut off at default text sizes.
-    height: 120,
+    // Still fixed rather than minHeight, so every card in the list keeps the
+    // same rhythm and the thumbnail is the same size on all of them. But 120
+    // was shorter than the contents, which is why a two-line name pushed the
+    // Details button past the bottom edge and `overflow: hidden` clipped it.
+    //
+    // The number is derived, not eyeballed. Worst case is a two-line name on
+    // the selected card, and every line height below is set explicitly so this
+    // arithmetic actually holds instead of depending on iOS font metrics:
+    //
+    //   name          2 x 20 lineHeight + 4 marginBottom   = 44
+    //   category      16 lineHeight + 6 marginBottom       = 22
+    //   location row  max(14 icon, 16 lineHeight)          = 16
+    //   buttons row   8 marginTop + 34 selected button     = 42
+    //                 (8 padding x2 + 1 border x2 + 16 text)
+    //                                                 total  124
+    //   content padding 16 x 2                               32
+    //                                                 card   156
+    //
+    // 160 leaves a little slack. The content is centred, so a one-line name
+    // spends the leftover 56 as even space above the title and below the
+    // button, which is the padding this was missing.
+    height: 160,
     borderWidth: 2,
     borderColor: 'transparent',
   },
@@ -2329,14 +2347,22 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   beneficiaryImage: {
-    // 120x120, square, to match the 1:1 highlight crop. height: '100%' against
-    // a flexible card height used to make this slot an arbitrary rectangle,
-    // which re-cropped the image after the fact and undid whatever framing was
-    // chosen at upload. Paired with the fixed card height below.
+    // Still 120x120, square, to match the 1:1 highlight crop. Growing it with
+    // the taller card would have been the obvious move and is the wrong one
+    // twice over: height: '100%' makes the slot a rectangle and re-crops the
+    // image, undoing the framing chosen at upload, and a 160-wide thumbnail
+    // takes 36pt off the text column, which starts truncating real names like
+    // Atlanta-Fulton Library Foundation.
+    //
+    // So it keeps its size and is centred in the taller card instead, which
+    // makes it an inset thumbnail rather than a full-bleed left edge. Hence
+    // the radius on all four corners: with 20pt of card above and below it,
+    // rounding only the left two read as a mistake.
     width: 120,
     height: 120,
-    borderTopLeftRadius: 12,
-    borderBottomLeftRadius: 12,
+    alignSelf: 'center',
+    marginLeft: 12,
+    borderRadius: 10,
     resizeMode: 'cover',
   },
   favoriteButton: {
@@ -2373,6 +2399,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#324E58',
+    // Explicit, so the card height above is arithmetic rather than a guess at
+    // what iOS gives a 16pt system bold.
+    lineHeight: 20,
     marginBottom: 4,
     // Reserve space for the absolute-positioned favorite heart (top: 8,
     // right: 8, size ~20) so long charity names wrap on their own line
@@ -2381,6 +2410,7 @@ const styles = StyleSheet.create({
   },
   beneficiaryCategory: {
     fontSize: 13,
+    lineHeight: 16,
     color: '#6d6e72',
     marginBottom: 6,
   },
@@ -2391,6 +2421,7 @@ const styles = StyleSheet.create({
   },
   beneficiaryLocationText: {
     fontSize: 12,
+    lineHeight: 16,
     color: '#8E9BAE',
     marginLeft: 4,
   },
