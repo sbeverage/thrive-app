@@ -94,6 +94,8 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your camera</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Lets you sign in to $(PRODUCT_NAME) with Face ID instead of typing your password.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to use your location to show nearby discounts and causes on the map.</string>
 	<key>NSLocationAlwaysUsageDescription</key>

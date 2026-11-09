@@ -20,7 +20,7 @@ import { useRouter } from 'expo-router';
 const LAST_LOGIN_KEY = 'lastLoginMethod';
 const REMEMBER_ME_KEY = 'loginRememberMe';
 const ONBOARDING_DONE_KEY_PREFIX = 'onboardingCompleted:';
-import { AntDesign, Feather } from '@expo/vector-icons';
+import { AntDesign, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import API from './lib/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from './context/UserContext';
@@ -28,6 +28,15 @@ import { useBeneficiary } from './context/BeneficiaryContext';
 import { signInWithApple, signInWithGoogle } from './utils/socialLogin';
 import { IMAGE_ASSETS } from './utils/assetConstants';
 import { resumeSignupFlowPendingIfAny } from './utils/signupFlowResume';
+import {
+  getBiometricCapability,
+  getSavedBiometricEmail,
+  readBiometricLogin,
+  saveBiometricLogin,
+  clearBiometricLogin,
+  isBiometricLoginDeclined,
+  setBiometricLoginDeclined,
+} from './utils/biometricLogin';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -43,6 +52,11 @@ export default function LoginScreen() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [lastLogin, setLastLogin] = useState(null);
   const [rememberMe, setRememberMe] = useState(true);
+  // { label, email } when this phone can sign her in biometrically and a
+  // credential is saved for it. null hides the button entirely, so a device
+  // with no Face ID enrolled sees exactly the screen it saw before.
+  const [biometric, setBiometric] = useState(null);
+  const [biometricLabel, setBiometricLabel] = useState('Face ID');
 
   useEffect(() => {
     AsyncStorage.getItem(REMEMBER_ME_KEY).then((v) => {
@@ -64,6 +78,25 @@ export default function LoginScreen() {
     });
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [{ available, label }, savedEmail] = await Promise.all([
+        getBiometricCapability(),
+        getSavedBiometricEmail(),
+      ]);
+      if (cancelled) return;
+      setBiometricLabel(label);
+      // Both halves have to hold: the hardware can be there with nothing saved
+      // (first run), and something can be saved on a phone where she has since
+      // turned Face ID off.
+      setBiometric(available && savedEmail ? { label, email: savedEmail } : null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const saveLastLogin = (method, emailValue) => {
     const data =
       method === "email" ? { method, email: emailValue } : { method };
@@ -79,21 +112,58 @@ export default function LoginScreen() {
     return flag === "true";
   };
 
-  const handleLogin = async () => {
-    if (isLoggingIn) return;
-    const emailTrim = email.trim();
-    if (!emailTrim || !password) {
-      Alert.alert("Missing Info", "Please enter both email and password.");
-      return;
-    }
+  /**
+   * Ask once, after a sign-in that actually worked, whether to keep the
+   * password behind Face ID. Wrapped in a promise so the answer lands before
+   * the navigation below moves the screen out from under the alert.
+   */
+  const offerBiometricLogin = (emailValue, passwordValue, label) =>
+    new Promise((resolve) => {
+      Alert.alert(
+        `Use ${label} next time?`,
+        `We can keep your password in this phone's secure storage so ${label} signs you in. You can turn it off any time from My Profile.`,
+        [
+          {
+            text: 'Not now',
+            style: 'cancel',
+            onPress: async () => {
+              await setBiometricLoginDeclined();
+              resolve(false);
+            },
+          },
+          {
+            text: `Use ${label}`,
+            onPress: async () => {
+              const saved = await saveBiometricLogin(emailValue, passwordValue);
+              if (saved) setBiometric({ label, email: emailValue });
+              resolve(saved);
+            },
+          },
+        ],
+        { cancelable: false },
+      );
+    });
 
+  /**
+   * The single login path. Face ID gets no shortcut: it unlocks the saved
+   * password and arrives here, so profile setup, signup resume and onboarding
+   * all branch identically whichever way she signed in.
+   */
+  const performLogin = async (
+    emailTrim,
+    passwordValue,
+    { viaBiometrics = false } = {},
+  ) => {
     try {
       setIsLoggingIn(true);
       await AsyncStorage.setItem(
         REMEMBER_ME_KEY,
         rememberMe ? "true" : "false",
       );
-      const response = await API.login({ email: emailTrim, password });
+      const response = await API.login({
+        email: emailTrim,
+        password: passwordValue,
+      });
 
       console.log("🔐 Login response:", response);
       console.log("🔐 Login response.user:", response.user);
@@ -140,6 +210,27 @@ export default function LoginScreen() {
       } else {
         await AsyncStorage.removeItem(LAST_LOGIN_KEY);
         setLastLogin(null);
+      }
+
+      // Offer Face ID only after the password has been proven against the
+      // backend, so a typo never gets saved as the stored credential. Skipped
+      // when this login *came from* Face ID, and when she has already said no.
+      if (!viaBiometrics) {
+        // Read the label here rather than off state: the mount probe is async
+        // and a fast sign-in can beat it, which would put "Face ID" in front of
+        // someone whose phone only has a fingerprint reader.
+        const { available, label } = await getBiometricCapability();
+        const alreadySaved = await getSavedBiometricEmail();
+        const sameAccount =
+          (alreadySaved || '').toLowerCase() === emailTrim.toLowerCase();
+        if (available && !sameAccount && !(await isBiometricLoginDeclined())) {
+          await offerBiometricLogin(emailTrim, passwordValue, label);
+        } else if (available && sameAccount) {
+          // Same account, freshly confirmed password. Re-save silently so a
+          // reset password, or a keychain item iOS invalidated when the face
+          // profile changed, repairs itself without her being asked anything.
+          await saveBiometricLogin(emailTrim, passwordValue);
+        }
       }
 
       // Check if user needs to complete onboarding
@@ -208,6 +299,19 @@ export default function LoginScreen() {
       const isNotFound = status === 404 || code === "USER_NOT_FOUND" ||
         (error.message || '').toLowerCase().includes("no account found");
 
+      // A saved password that the backend now rejects means it was changed
+      // somewhere else, most likely through a reset link. Drop it rather than
+      // leave a button that raises Face ID and then fails every single time.
+      if (viaBiometrics && (status === 401 || status === 400 || isNotFound)) {
+        await clearBiometricLogin();
+        setBiometric(null);
+        Alert.alert(
+          `${biometricLabel} is turned off`,
+          'Your password has changed since this phone saved it. Sign in with your new password and we will offer to set it up again.',
+        );
+        return;
+      }
+
       if (isNotFound) {
         Alert.alert(
           "No Account Found",
@@ -223,6 +327,42 @@ export default function LoginScreen() {
     } finally {
       setIsLoggingIn(false);
     }
+  };
+
+  const handleLogin = async () => {
+    if (isLoggingIn) return;
+    const emailTrim = email.trim();
+    if (!emailTrim || !password) {
+      Alert.alert("Missing Info", "Please enter both email and password.");
+      return;
+    }
+    await performLogin(emailTrim, password);
+  };
+
+  const handleBiometricLogin = async () => {
+    if (isLoggingIn) return;
+    const result = await readBiometricLogin();
+
+    if (result.status === 'cancelled') {
+      // Sheet dismissed or the scan did not take. Say nothing and leave the
+      // saved credential alone; the password field is right there.
+      return;
+    }
+
+    if (result.status === 'none') {
+      // iOS invalidates a protected keychain item whenever the enrolled face or
+      // fingerprint set changes, so this is a normal thing to hit, not a fault.
+      await clearBiometricLogin();
+      setBiometric(null);
+      Alert.alert(
+        `${biometricLabel} needs setting up again`,
+        `Your ${biometricLabel} changed on this phone, so the saved sign-in no longer opens. Sign in with your password once and we will offer to set it up again.`,
+      );
+      return;
+    }
+
+    setEmail(result.email);
+    await performLogin(result.email, result.password, { viaBiometrics: true });
   };
 
   const handleSocialLogin = async (socialData) => {
@@ -521,6 +661,34 @@ export default function LoginScreen() {
               <Text style={styles.forgotText}>Forgot Password?</Text>
             </TouchableOpacity>
 
+            {/* Face ID / Touch ID, only once a credential is actually saved */}
+            {biometric && (
+              <TouchableOpacity
+                style={[
+                  styles.biometricButton,
+                  isLoggingIn && { opacity: 0.6 },
+                ]}
+                onPress={handleBiometricLogin}
+                disabled={isLoggingIn}
+                accessibilityRole="button"
+                accessibilityLabel={`Sign in as ${biometric.email} with ${biometric.label}`}
+              >
+                <MaterialCommunityIcons
+                  name={
+                    biometric.label === 'Touch ID' ||
+                    biometric.label === 'your fingerprint'
+                      ? 'fingerprint'
+                      : 'face-recognition'
+                  }
+                  size={22}
+                  color="#DB8633"
+                />
+                <Text style={styles.biometricButtonText}>
+                  Sign in with {biometric.label}
+                </Text>
+              </TouchableOpacity>
+            )}
+
             {/* Login Button */}
             <TouchableOpacity
               style={[styles.loginButton, isLoggingIn && { opacity: 0.7 }]}
@@ -768,6 +936,28 @@ const styles = StyleSheet.create({
     color: "#6d6e72",
     fontSize: 14,
     fontWeight: "500",
+  },
+  biometricButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    // Matched to loginButton below so the two read as a pair rather than as
+    // two unrelated controls stacked on top of each other.
+    width: '100%',
+    height: 48,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#DB8633',
+    // White ground, orange ink. The reverse would be orange on orange, which
+    // CLAUDE.md rules out because it disappears.
+    backgroundColor: '#ffffff',
+    marginBottom: 12,
+  },
+  biometricButtonText: {
+    color: '#DB8633',
+    fontSize: 16,
+    fontWeight: '600',
   },
   loginButton: {
     backgroundColor: "#db8633",

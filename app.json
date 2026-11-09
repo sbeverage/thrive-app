@@ -132,6 +132,12 @@
       ],
       "expo-web-browser",
       "expo-apple-authentication",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Lets you sign in to $(PRODUCT_NAME) with Face ID instead of typing your password."
+        }
+      ],
       "@react-native-google-signin/google-signin",
       [
         "react-native-fbsdk-next",

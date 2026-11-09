@@ -1,18 +1,32 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Alert, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Alert, ScrollView, ActivityIndicator, Switch } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { AntDesign } from '@expo/vector-icons';
+import { AntDesign, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUser } from '../../context/UserContext';
 import API from '../../lib/api';
 import { milestonesForDisplay } from '../../constants/referralRewards';
+import {
+  getBiometricCapability,
+  getSavedBiometricEmail,
+  clearBiometricLogin,
+  setBiometricLoginDeclined,
+} from '../../utils/biometricLogin';
 
 export default function UserProfile() {
   const router = useRouter();
   const { user, loadUserData, logout } = useUser();
   const [badges, setBadges] = useState([]);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  // Whether this phone can do it at all, and whether a credential is
+  // currently saved. The row is hidden outright when it cannot, so a phone
+  // with nothing enrolled is not offered a switch that does nothing.
+  const [biometric, setBiometric] = useState({
+    available: false,
+    label: 'Face ID',
+    enabled: false,
+  });
   
   // Format phone number for display: (XXX) XXX-XXXX
   const formatPhoneNumber = (phone) => {
@@ -27,6 +41,52 @@ export default function UserProfile() {
     return phone;
   };
   
+  const refreshBiometricState = useCallback(async () => {
+    const [{ available, label }, savedEmail] = await Promise.all([
+      getBiometricCapability(),
+      getSavedBiometricEmail(),
+    ]);
+    setBiometric({ available, label, enabled: Boolean(savedEmail) });
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      // It is switched *on* over on the login screen, so re-read on focus
+      // rather than trusting whatever this screen loaded the first time.
+      refreshBiometricState();
+    }, [refreshBiometricState]),
+  );
+
+  const handleBiometricToggle = (next) => {
+    if (!next) {
+      Alert.alert(
+        `Turn off ${biometric.label}?`,
+        'Your password will be removed from this phone and you will type it the next time you sign in. You can turn this back on whenever you like.',
+        [
+          { text: 'Keep it on', style: 'cancel' },
+          {
+            text: 'Turn off',
+            style: 'destructive',
+            onPress: async () => {
+              await clearBiometricLogin();
+              setBiometric((b) => ({ ...b, enabled: false }));
+            },
+          },
+        ],
+      );
+      return;
+    }
+
+    // Turning it on needs the password, and this screen does not have it: the
+    // app never keeps one in memory. So clear the "not now" flag and let the
+    // next sign-in make the offer.
+    setBiometricLoginDeclined(false);
+    Alert.alert(
+      `${biometric.label} is set up when you sign in`,
+      `Next time you sign in with your password, we will ask whether to save it for ${biometric.label}.`,
+    );
+  };
+
   // Load user data when screen is focused
   const loadBadges = useCallback(async () => {
     try {
@@ -64,6 +124,10 @@ export default function UserProfile() {
     try {
       await API.deleteUser(email);
       await AsyncStorage.removeItem('userTransactions');
+      // The keychain credential outlives a sign-out on purpose, but not a
+      // deleted account: leaving it would keep drawing a Face ID button that
+      // signs in to nothing.
+      await clearBiometricLogin();
       await logout();
       router.replace('/');
     } catch (error) {
@@ -207,6 +271,38 @@ export default function UserProfile() {
           </View>
           <AntDesign name="right" size={16} color="#ccc" />
         </TouchableOpacity>
+
+        {biometric.available && (
+          <>
+            <View style={styles.separator} />
+
+            <View style={styles.actionItem}>
+              <View style={styles.actionLeft}>
+                <MaterialCommunityIcons
+                  name={
+                    biometric.label === 'Touch ID' ||
+                    biometric.label === 'your fingerprint'
+                      ? 'fingerprint'
+                      : 'face-recognition'
+                  }
+                  size={20}
+                  color="#324E58"
+                />
+                <Text style={styles.actionText}>
+                  Sign in with {biometric.label}
+                </Text>
+              </View>
+              <Switch
+                value={biometric.enabled}
+                onValueChange={handleBiometricToggle}
+                trackColor={{ false: '#d1d5db', true: 'rgba(219, 134, 51, 0.45)' }}
+                thumbColor={biometric.enabled ? '#DB8633' : '#f4f4f5'}
+                ios_backgroundColor="#d1d5db"
+                accessibilityLabel={`Sign in with ${biometric.label}`}
+              />
+            </View>
+          </>
+        )}
 
         <View style={styles.separator} />
 
