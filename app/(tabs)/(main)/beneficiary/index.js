@@ -84,11 +84,18 @@ const SuggestBullet = ({ text }) => (
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 /**
- * Browse card height, and therefore the side of its thumbnail, because that
- * slot is 1:1. See styles.beneficiaryCard for how the number is derived; the
- * two must move together or the image stops being square and gets re-cropped.
+ * Browse card height. The contents need 147 at the worst case; see
+ * styles.beneficiaryCard for the arithmetic and for why the slack above that
+ * is deliberate rather than waste.
  */
-const CARD_HEIGHT = 128;
+const CARD_HEIGHT = 160;
+
+/**
+ * Side of the browse card thumbnail, both ways, because that slot holds the
+ * 1:1 highlight crop. One constant for both so it cannot quietly stop being
+ * square. Deliberately smaller than CARD_HEIGHT: see styles.beneficiaryImage.
+ */
+const THUMB_SIZE = 120;
 
 export default function BeneficiaryScreen({ isSignupFlow = false, signupParams = null } = {}) {
   const router = useRouter();
@@ -2328,25 +2335,24 @@ const styles = StyleSheet.create({
     // the selected card, and every line height below is set explicitly so this
     // arithmetic actually holds instead of depending on iOS font metrics:
     //
-    //   name          2 x 16 lineHeight + 2 marginBottom   = 34
-    //   category      15 lineHeight + 3 marginBottom       = 18
-    //   location row  max(14 icon, 14 lineHeight)          = 14
-    //   buttons row   6 marginTop + 30 button              = 36
-    //                 (6 padding x2 + 1 border x2 + 16 text)
-    //                                                 total  102
-    //   content padding 12 x 2                               24
-    //                                            required   126
+    //   name          2 x 16 lineHeight + 3 marginBottom   = 35
+    //   category      16 lineHeight + 6 marginBottom       = 22
+    //   location row  max(14 icon, 16 lineHeight)          = 16
+    //   buttons row   8 marginTop + 34 selected button     = 42
+    //                 (8 padding x2 + 1 border x2 + 16 text)
+    //                                                 total  115
+    //   content padding 16 x 2                               32
+    //                                                 card   147
     //
-    // CARD_HEIGHT is 128, so there are 2 points of slack. Not decoration: the
-    // sum above is exact, and without slack the next line anyone adds to this
-    // card clips silently instead of looking wrong.
+    // CARD_HEIGHT is held at 160 rather than trimmed to 147: the content is
+    // centred, so the 13 of slack becomes even space above the title and below
+    // the button, on top of the 16 padding. A one-line name spends 61 the same
+    // way. That space is the point, not waste. Shrink this number and the
+    // padding goes with it.
     //
-    // 128 is within 8 of the 120 this card was before, so the list costs about
-    // the same scrolling, but 120 never actually fitted its own contents: at the
-    // old type sizes it needed 146, overflowed by 26, and `overflow: hidden`
-    // took that out of the Details button and the space above the title. The
-    // height did not grow to add padding; the type and the gaps shrank until
-    // real padding fitted inside roughly the original height.
+    // 128 was tried and rejected: it fits, but only by cutting the padding to
+    // 12 and the gaps to 3, which is the cramped look this card started with.
+    // The extra scrolling is the accepted cost of the breathing room.
     height: CARD_HEIGHT,
     borderWidth: 2,
     borderColor: 'transparent',
@@ -2361,21 +2367,22 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   beneficiaryImage: {
-    // Still 120x120, square, to match the 1:1 highlight crop. Growing it with
+    // Still THUMB_SIZE square, to match the 1:1 highlight crop. Growing it with
     // the taller card would have been the obvious move and is the wrong one
     // twice over: height: '100%' makes the slot a rectangle and re-crops the
     // image, undoing the framing chosen at upload, and a 160-wide thumbnail
     // takes 36pt off the text column, which starts truncating real names like
     // Atlanta-Fulton Library Foundation.
     //
-    // With the card back to roughly its old height there is no longer a band
-    // to hide, so this goes back to filling the left edge, and both sides are
-    // CARD_HEIGHT so it stays exactly square. Never give this a fixed width
-    // with a stretched height: that is the rectangle that re-crops the image.
-    width: CARD_HEIGHT,
-    height: CARD_HEIGHT,
-    borderTopLeftRadius: 12,
-    borderBottomLeftRadius: 12,
+    // So it keeps its size and is centred in the taller card instead, which
+    // makes it an inset thumbnail rather than a full-bleed left edge. Hence
+    // the radius on all four corners: with 20pt of card above and below it,
+    // rounding only the left two read as a mistake.
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
+    alignSelf: 'center',
+    marginLeft: 12,
+    borderRadius: 10,
     resizeMode: 'cover',
   },
   favoriteButton: {
@@ -2386,10 +2393,7 @@ const styles = StyleSheet.create({
   },
   beneficiaryCardContent: {
     flex: 1,
-    // 12 vertical rather than 16: four of the six points the card gave back.
-    // Horizontal stays 16 so the text column is unchanged.
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    padding: 16,
     justifyContent: 'center',
   },
   beneficiaryNameRow: {
@@ -2424,7 +2428,7 @@ const styles = StyleSheet.create({
     // what iOS gives system bold. 16 on 14 is tight leading, which is what a
     // wrapped title wants: the two lines read as one name.
     lineHeight: 16,
-    marginBottom: 2,
+    marginBottom: 3,
     // Reserve space for the absolute-positioned favorite heart (top: 8,
     // right: 8, size ~20) so long charity names wrap on their own line
     // instead of running under the icon.
@@ -2432,9 +2436,9 @@ const styles = StyleSheet.create({
   },
   beneficiaryCategory: {
     fontSize: 13,
-    lineHeight: 15,
+    lineHeight: 16,
     color: '#6d6e72',
-    marginBottom: 3,
+    marginBottom: 6,
   },
   beneficiaryLocation: {
     flexDirection: 'row',
@@ -2443,7 +2447,7 @@ const styles = StyleSheet.create({
   },
   beneficiaryLocationText: {
     fontSize: 12,
-    lineHeight: 14,
+    lineHeight: 16,
     color: '#8E9BAE',
     marginLeft: 4,
   },
@@ -2460,6 +2464,7 @@ const styles = StyleSheet.create({
   },
   viewDetailsButtonText: {
     fontSize: 12,
+    // Explicit, so the card arithmetic above is a fact and not a guess.
     lineHeight: 16,
     color: '#DB8633',
     fontWeight: '500',
@@ -2485,13 +2490,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-start',
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 8,
     gap: 8,
   },
   /** Selected cause: one primary action, full width inside card padding */
   buttonsRowSingle: {
     justifyContent: 'center',
-    marginTop: 6,
+    marginTop: 8,
     gap: 0,
   },
   viewDetailsButtonAlone: {
@@ -2501,7 +2506,7 @@ const styles = StyleSheet.create({
     width: '100%',
     marginRight: 0,
     marginLeft: 0,
-    paddingVertical: 6,
+    paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 8,
     borderWidth: 1,
