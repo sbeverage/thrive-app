@@ -748,6 +748,35 @@ export default function DonationSummary() {
     setShowCancelSheet(false);
   };
 
+  /**
+   * The save. A donor who picked "I want to support a different charity" does
+   * not want to stop giving, and switching is something the app already does
+   * without touching the subscription, so cancelling to do it loses a donor to
+   * a problem that was never a reason to leave.
+   *
+   * Recorded with outcome "kept_changing_charity" so it sits next to the
+   * cancellations it came from without being counted as one.
+   */
+  const handleSwitchCharityInstead = () => {
+    if (isCancelling) return;
+
+    const subscriptionId = activeSubscriptionId;
+    const details = cancelDetails.trim();
+
+    setShowCancelSheet(false);
+    router.push("/(tabs)/beneficiary");
+
+    // Not awaited on purpose: the donor is already on their way to the picker
+    // and should not wait on a write that only we care about.
+    // submitCancellationFeedback never rejects; the catch is belt and braces.
+    API.submitCancellationFeedback({
+      reasonCode: "switch_charity",
+      details,
+      subscriptionId,
+      outcome: "kept_changing_charity",
+    }).catch(() => {});
+  };
+
   const confirmCancelSubscription = async () => {
     if (!activeSubscriptionId || isCancelling || !cancelReason) return;
 
@@ -771,6 +800,7 @@ export default function DonationSummary() {
         reasonCode,
         details,
         subscriptionId,
+        outcome: "cancelled",
       });
 
       await loadActiveSubscriptionId();
@@ -1302,6 +1332,28 @@ export default function DonationSummary() {
                   );
                 })}
 
+                {cancelReason === "switch_charity" ? (
+                  <View style={styles.cancelSwitchCallout}>
+                    <Text style={styles.cancelSwitchTitle}>
+                      You don't have to cancel for that
+                    </Text>
+                    <Text style={styles.cancelSwitchBody}>
+                      You can move your monthly gift to a different charity and
+                      everything else stays exactly as it is.
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.cancelSwitchButton}
+                      onPress={handleSwitchCharityInstead}
+                      disabled={isCancelling}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.cancelSwitchButtonText}>
+                        Change my charity instead
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+
                 <Text style={styles.cancelSheetInputLabel}>
                   Anything else you want us to know? (optional)
                 </Text>
@@ -1756,6 +1808,37 @@ const styles = StyleSheet.create({
   },
   cancelReasonLabelSelected: {
     fontWeight: "600",
+  },
+  // The offer, not a warning: orange ground, so by the brand rule every piece
+  // of text on it is white. Never teal and never the orange itself.
+  cancelSwitchCallout: {
+    marginTop: 6,
+    backgroundColor: "#DB8633",
+    borderRadius: 12,
+    padding: 16,
+  },
+  cancelSwitchTitle: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  cancelSwitchBody: {
+    color: "#ffffff",
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 14,
+  },
+  cancelSwitchButton: {
+    backgroundColor: "#ffffff",
+    borderRadius: 8,
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  cancelSwitchButtonText: {
+    color: "#DB8633",
+    fontSize: 14,
+    fontWeight: "700",
   },
   cancelSheetInputLabel: {
     fontSize: 13,

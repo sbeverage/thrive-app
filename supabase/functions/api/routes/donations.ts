@@ -2347,6 +2347,16 @@ export async function handleDonationRoute(
         .slice(0, 2000);
       const rawIdentifier = String((body as any).subscriptionId ?? "").trim();
 
+      // Whitelisted rather than passed through: this column is what churn
+      // reporting filters on, so an unrecognised value here would quietly
+      // remove a cancellation from the count. Anything unexpected is treated
+      // as the cancellation it almost certainly was.
+      const requestedOutcome = String((body as any).outcome ?? "").trim();
+      const outcome =
+        requestedOutcome === "kept_changing_charity"
+          ? "kept_changing_charity"
+          : "cancelled";
+
       if (!reasonCode) {
         return new Response(JSON.stringify({error: "A reason is required."}), {
           headers: {"Content-Type": "application/json"},
@@ -2391,6 +2401,7 @@ export async function handleDonationRoute(
           monthly_donation_id: monthlyDonationId,
           stripe_subscription_id: stripeSubscriptionId,
           reason_code: reasonCode,
+          outcome,
           details: details || null,
           monthly_amount: monthlyAmount,
           charity_id: charityId,
@@ -2450,9 +2461,14 @@ export async function handleDonationRoute(
               ? `$${Number(monthlyAmount).toFixed(2)}`
               : "Unknown";
 
+          const wasSaved = outcome === "kept_changing_charity";
+          const headline = wasSaved
+            ? "Membership kept, switching charity"
+            : "Membership cancelled";
+
           const emailHtml = `
             <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
-              <h2 style="color:#DB8633">Membership cancelled</h2>
+              <h2 style="color:#DB8633">${headline}</h2>
               <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
                 <tr><td style="padding:8px;font-weight:600;color:#324E58;width:140px">Donor</td><td style="padding:8px;color:#555">${escapeHtml(donorName)} (${escapeHtml(donorEmail)})</td></tr>
                 <tr style="background:#f9f9f9"><td style="padding:8px;font-weight:600;color:#324E58">Reason</td><td style="padding:8px;color:#555">${escapeHtml(reasonLabel)}</td></tr>
@@ -2472,7 +2488,9 @@ export async function handleDonationRoute(
             body: JSON.stringify({
               from: "THRIVE App <noreply@jointhriveinitiative.org>",
               to: ["info@jointhriveinitiative.org"],
-              subject: `[THRIVE] Membership cancelled: ${reasonLabel}`,
+              subject: wasSaved
+                ? `[THRIVE] Membership kept: donor is switching charity`
+                : `[THRIVE] Membership cancelled: ${reasonLabel}`,
               html: emailHtml,
             }),
           });

@@ -2084,24 +2084,34 @@ const API = {
   },
 
   /**
-   * Record why a donor cancelled. Called after the cancellation itself has
-   * already succeeded, and deliberately never throws: the membership is
-   * already cancelled by this point, so a failure here is a lost data point,
-   * not something to put in front of someone who is on their way out.
+   * Record how the cancel sheet ended. Called only after the thing it is
+   * reporting on has already happened, and deliberately never throws: by the
+   * time this runs the membership is already cancelled, or the donor is
+   * already on their way to the charity picker, so a failure here is a lost
+   * data point rather than something to put in front of them.
+   *
+   * `outcome` is "cancelled" or "kept_changing_charity". Churn reporting
+   * filters on it, so a save must not be sent as a cancellation.
    *
    * Returns true if it was recorded, false if it quietly was not.
    */
-  submitCancellationFeedback: async ({ reasonCode, details, subscriptionId }) => {
+  submitCancellationFeedback: async ({
+    reasonCode,
+    details,
+    subscriptionId,
+    outcome = "cancelled",
+  }) => {
     try {
       await api.post("/api/donations/monthly/cancellation-feedback", {
         reasonCode,
         details: details || "",
         subscriptionId: subscriptionId == null ? "" : String(subscriptionId),
+        outcome,
       });
       return true;
     } catch (error) {
       console.warn(
-        "Cancellation feedback not recorded:",
+        "Cancel sheet outcome not recorded:",
         error?.response?.data?.error || error?.message,
       );
       return false;
