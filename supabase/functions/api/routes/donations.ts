@@ -2318,6 +2318,189 @@ export async function handleDonationRoute(
     );
   }
 
+  // POST /donations/monthly/cancellation-feedback
+  //
+  // Why a donor just cancelled. Deliberately its own endpoint rather than a
+  // body on the DELETE above, for two reasons: a request body on DELETE is not
+  // reliably forwarded by every proxy in front of this function, and keeping
+  // them separate means a failure here can never cost someone a cancellation
+  // they asked for. The app calls this only after the cancellation succeeds,
+  // and ignores the result.
+  if (
+    method === "POST" &&
+    route === "/donations/monthly/cancellation-feedback"
+  ) {
+    if (!userId) {
+      return new Response(JSON.stringify({error: "Unauthorized"}), {
+        headers: {"Content-Type": "application/json"},
+        status: 401,
+      });
+    }
+
+    try {
+      const body = await req.json().catch(() => ({}) as Record<string, unknown>);
+      const reasonCode = String((body as any).reasonCode ?? "")
+        .trim()
+        .slice(0, 64);
+      const details = String((body as any).details ?? "")
+        .trim()
+        .slice(0, 2000);
+      const rawIdentifier = String((body as any).subscriptionId ?? "").trim();
+
+      if (!reasonCode) {
+        return new Response(JSON.stringify({error: "A reason is required."}), {
+          headers: {"Content-Type": "application/json"},
+          status: 400,
+        });
+      }
+
+      // Snapshot what the membership was, so the row still means something
+      // after the donation changes or goes away. Scoped to this user's own
+      // rows: the identifier comes from the client and is not trusted to name
+      // somebody else's subscription.
+      let monthlyDonationId: number | null = null;
+      let monthlyAmount: number | null = null;
+      let charityId: number | null = null;
+      let stripeSubscriptionId: string | null = null;
+
+      if (rawIdentifier) {
+        let subQuery = supabase
+          .from("monthly_donations")
+          .select("id, amount, beneficiary_id, stripe_subscription_id")
+          .eq("user_id", userId);
+
+        if (/^\d+$/.test(rawIdentifier)) {
+          subQuery = subQuery.eq("id", parseInt(rawIdentifier, 10));
+        } else {
+          subQuery = subQuery.eq("stripe_subscription_id", rawIdentifier);
+        }
+
+        const {data: sub} = await subQuery.maybeSingle();
+        if (sub) {
+          monthlyDonationId = sub.id ?? null;
+          monthlyAmount = sub.amount ?? null;
+          charityId = sub.beneficiary_id ?? null;
+          stripeSubscriptionId = sub.stripe_subscription_id ?? null;
+        }
+      }
+
+      const {error: insertError} = await supabase
+        .from("membership_cancellation_feedback")
+        .insert({
+          user_id: userId,
+          monthly_donation_id: monthlyDonationId,
+          stripe_subscription_id: stripeSubscriptionId,
+          reason_code: reasonCode,
+          details: details || null,
+          monthly_amount: monthlyAmount,
+          charity_id: charityId,
+        });
+
+      if (insertError) {
+        console.error("Cancellation feedback insert failed:", insertError);
+        return new Response(
+          JSON.stringify({error: "Could not record cancellation feedback."}),
+          {headers: {"Content-Type": "application/json"}, status: 500},
+        );
+      }
+
+      // Email it too. The table is for counting; this is so somebody actually
+      // hears about it the same day and can reach out. Never allowed to fail
+      // the request: the feedback is already saved by this point.
+      try {
+        const resendApiKey = Deno.env.get("RESEND_API_KEY");
+        if (resendApiKey) {
+          const {data: userData} = await supabase
+            .from("users")
+            .select("first_name, last_name, email")
+            .eq("id", userId)
+            .maybeSingle();
+
+          const donorName =
+            `${userData?.first_name || ""} ${userData?.last_name || ""}`.trim() ||
+            "A donor";
+          const donorEmail = userData?.email || "unknown";
+
+          // Labels for the email only. The app owns the list; an unknown code
+          // falls back to the code itself rather than being dropped.
+          const REASON_LABELS: Record<string, string> = {
+            too_expensive: "It costs too much right now",
+            not_using_discounts: "Not using the discounts",
+            unclear_how_it_works: "Not sure how it works",
+            switch_charity: "Wants to support a different charity",
+            app_problem: "Ran into a problem with the app",
+            other: "Something else",
+          };
+          const reasonLabel = REASON_LABELS[reasonCode] || reasonCode;
+
+          const escapeHtml = (value: string) =>
+            value
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;");
+
+          const detailsHtml = details
+            ? `<div style="background:#fafafa;border-left:4px solid #DB8633;padding:16px;border-radius:4px"><p style="margin:0;color:#324E58;line-height:1.6">${escapeHtml(
+                details,
+              ).replace(/\n/g, "<br>")}</p></div>`
+            : `<p style="color:#888;font-style:italic">No extra comments.</p>`;
+
+          const amountCell =
+            monthlyAmount != null
+              ? `$${Number(monthlyAmount).toFixed(2)}`
+              : "Unknown";
+
+          const emailHtml = `
+            <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+              <h2 style="color:#DB8633">Membership cancelled</h2>
+              <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
+                <tr><td style="padding:8px;font-weight:600;color:#324E58;width:140px">Donor</td><td style="padding:8px;color:#555">${escapeHtml(donorName)} (${escapeHtml(donorEmail)})</td></tr>
+                <tr style="background:#f9f9f9"><td style="padding:8px;font-weight:600;color:#324E58">Reason</td><td style="padding:8px;color:#555">${escapeHtml(reasonLabel)}</td></tr>
+                <tr><td style="padding:8px;font-weight:600;color:#324E58">Monthly gift</td><td style="padding:8px;color:#555">${amountCell}</td></tr>
+              </table>
+              ${detailsHtml}
+              <p style="margin-top:24px;font-size:12px;color:#aaa">Sent from THRIVE app</p>
+            </div>
+          `;
+
+          const resendRes = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${resendApiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              from: "THRIVE App <noreply@jointhriveinitiative.org>",
+              to: ["info@jointhriveinitiative.org"],
+              subject: `[THRIVE] Membership cancelled: ${reasonLabel}`,
+              html: emailHtml,
+            }),
+          });
+          if (!resendRes.ok) {
+            console.error(
+              "Resend API error on cancellation feedback:",
+              resendRes.status,
+              await resendRes.text().catch(() => ""),
+            );
+          }
+        }
+      } catch (emailErr) {
+        console.error("Cancellation feedback email failed:", emailErr);
+      }
+
+      return new Response(JSON.stringify({success: true}), {
+        headers: {"Content-Type": "application/json"},
+        status: 200,
+      });
+    } catch (error: any) {
+      console.error("Cancellation feedback failed:", error);
+      return new Response(
+        JSON.stringify({error: "Could not record cancellation feedback."}),
+        {headers: {"Content-Type": "application/json"}, status: 500},
+      );
+    }
+  }
+
   return new Response(JSON.stringify({error: "Donation route not found"}), {
     headers: {"Content-Type": "application/json"},
     status: 404,

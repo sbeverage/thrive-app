@@ -2084,6 +2084,31 @@ const API = {
   },
 
   /**
+   * Record why a donor cancelled. Called after the cancellation itself has
+   * already succeeded, and deliberately never throws: the membership is
+   * already cancelled by this point, so a failure here is a lost data point,
+   * not something to put in front of someone who is on their way out.
+   *
+   * Returns true if it was recorded, false if it quietly was not.
+   */
+  submitCancellationFeedback: async ({ reasonCode, details, subscriptionId }) => {
+    try {
+      await api.post("/api/donations/monthly/cancellation-feedback", {
+        reasonCode,
+        details: details || "",
+        subscriptionId: subscriptionId == null ? "" : String(subscriptionId),
+      });
+      return true;
+    } catch (error) {
+      console.warn(
+        "Cancellation feedback not recorded:",
+        error?.response?.data?.error || error?.message,
+      );
+      return false;
+    }
+  },
+
+  /**
    * Undo cancel-at-period-end (Stripe cancel_at_period_end=false + DB status).
    */
   resumeMonthlySubscription: async (subscriptionId) => {

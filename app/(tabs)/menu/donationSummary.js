@@ -17,6 +17,9 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -24,6 +27,27 @@ import { AntDesign, Feather } from "@expo/vector-icons";
 import { useUser } from "../../context/UserContext";
 import { useBeneficiary } from "../../context/BeneficiaryContext";
 import API from "../../lib/api";
+
+/**
+ * The reasons offered in the cancel sheet.
+ *
+ * `id` is what lands in membership_cancellation_feedback.reason_code, so it is
+ * the thing the reporting counts. Renaming one silently splits a reason in two
+ * across the history: add a new entry instead and leave the old id alone, even
+ * when it stops being offered.
+ *
+ * `switch_charity` is the one worth watching. A donor who picks it does not
+ * want to stop giving, they want to give somewhere else, and the app can
+ * already do that without cancelling anything.
+ */
+const CANCELLATION_REASONS = [
+  { id: "too_expensive", label: "It costs too much right now" },
+  { id: "not_using_discounts", label: "I'm not using the discounts" },
+  { id: "unclear_how_it_works", label: "I'm not sure how it all works" },
+  { id: "switch_charity", label: "I want to support a different charity" },
+  { id: "app_problem", label: "I ran into a problem with the app" },
+  { id: "other", label: "Something else" },
+];
 
 const SERVICE_FEE = 3.0;
 // Legacy "donor covers fees" rate (3.5% on top of subtotal). Used by the
@@ -280,6 +304,9 @@ export default function DonationSummary() {
   const [oneTimeTaxDeductibleYear, setOneTimeTaxDeductibleYear] = useState(0);
   const [oneTimeGifts, setOneTimeGifts] = useState([]);
   const [billingDetailRow, setBillingDetailRow] = useState(null);
+  const [showCancelSheet, setShowCancelSheet] = useState(false);
+  const [cancelReason, setCancelReason] = useState(null);
+  const [cancelDetails, setCancelDetails] = useState("");
   const isFetchingRef = useRef(false);
   const lastFetchTsRef = useRef(0);
   /** Last good Stripe billing-preview API payload — survives transient failures / re-fetches that would clear state */
@@ -704,39 +731,63 @@ export default function DonationSummary() {
     }, [reloadBeneficiary, loadScreenData]),
   );
 
+  /**
+   * Opens the cancel sheet. The sheet, not an alert, is the confirmation step:
+   * it is where the donor says why they are leaving, and where they are told
+   * the cancellation is reversible.
+   */
   const handleCancelSubscription = () => {
     if (!activeSubscriptionId || isCancelling) return;
-    Alert.alert(
-      "Cancel Monthly Subscription",
-      "Your subscription will remain active until the end of the current billing period and then cancel automatically.",
-      [
-        { text: "Keep Subscription", style: "cancel" },
-        {
-          text: "Cancel at Period End",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              setIsCancelling(true);
-              await API.cancelMonthlyAtPeriodEnd(activeSubscriptionId);
-              setLocalCancellationScheduled(true);
-              Alert.alert(
-                "Cancellation Scheduled",
-                "Your subscription will cancel at the end of the current billing period.",
-              );
-              await loadActiveSubscriptionId();
-            } catch (error) {
-              Alert.alert(
-                "Cancellation Failed",
-                error.message ||
-                  "Could not cancel subscription. Please try again.",
-              );
-            } finally {
-              setIsCancelling(false);
-            }
-          },
-        },
-      ],
-    );
+    setCancelReason(null);
+    setCancelDetails("");
+    setShowCancelSheet(true);
+  };
+
+  const closeCancelSheet = () => {
+    if (isCancelling) return;
+    setShowCancelSheet(false);
+  };
+
+  const confirmCancelSubscription = async () => {
+    if (!activeSubscriptionId || isCancelling || !cancelReason) return;
+
+    // Read these out of state before the awaits: the sheet closes partway
+    // through and resets them.
+    const subscriptionId = activeSubscriptionId;
+    const reasonCode = cancelReason;
+    const details = cancelDetails.trim();
+
+    try {
+      setIsCancelling(true);
+      await API.cancelMonthlyAtPeriodEnd(subscriptionId);
+      setLocalCancellationScheduled(true);
+      setShowCancelSheet(false);
+
+      // After the cancellation, never before, and never able to undo it.
+      // submitCancellationFeedback swallows its own errors by design: the
+      // membership is already cancelled by this line, so a failure here costs
+      // a data point rather than confusing somebody on their way out.
+      await API.submitCancellationFeedback({
+        reasonCode,
+        details,
+        subscriptionId,
+      });
+
+      await loadActiveSubscriptionId();
+
+      Alert.alert(
+        "Thanks for telling us",
+        "Your membership stays active until the end of this billing period, then stops. You can turn it back on any time before then.",
+      );
+    } catch (error) {
+      Alert.alert(
+        "That didn't go through",
+        error.message ||
+          "Your membership is still active. Give it another try?",
+      );
+    } finally {
+      setIsCancelling(false);
+    }
   };
 
   const handleResumeSubscription = () => {
@@ -1172,6 +1223,142 @@ export default function DonationSummary() {
         </TouchableOpacity>
       </Modal>
 
+      {/* Cancel Membership Sheet */}
+      <Modal
+        visible={showCancelSheet}
+        transparent
+        animationType="slide"
+        onRequestClose={closeCancelSheet}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.cancelSheetKeyboard}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={closeCancelSheet}
+          >
+            <TouchableOpacity
+              style={styles.cancelSheetContent}
+              activeOpacity={1}
+              onPress={() => {}}
+            >
+              <View style={styles.modalHandle} />
+              <ScrollView
+                style={styles.cancelSheetScroll}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                <Text style={styles.cancelSheetTitle}>Before you go</Text>
+                <Text style={styles.cancelSheetIntro}>
+                  {cancellationDatePhrase
+                    ? `Your membership stays active until ${cancellationDatePhrase}, then stops. You can turn it back on any time before then.`
+                    : "Your membership stays active until the end of this billing period, then stops. You can turn it back on any time before then."}
+                </Text>
+
+                <Text style={styles.cancelSheetQuestion}>
+                  What made you decide to stop?
+                </Text>
+                <Text style={styles.cancelSheetWhy}>
+                  We read every one of these. Your answer shapes what we build
+                  next, and it helps us keep showing up for the charities
+                  counting on THRIVE.
+                </Text>
+
+                {CANCELLATION_REASONS.map((reason) => {
+                  const selected = cancelReason === reason.id;
+                  return (
+                    <TouchableOpacity
+                      key={reason.id}
+                      style={[
+                        styles.cancelReasonRow,
+                        selected && styles.cancelReasonRowSelected,
+                      ]}
+                      onPress={() => setCancelReason(reason.id)}
+                      activeOpacity={0.8}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                    >
+                      <View
+                        style={[
+                          styles.cancelReasonDot,
+                          selected && styles.cancelReasonDotSelected,
+                        ]}
+                      >
+                        {selected ? (
+                          <View style={styles.cancelReasonDotInner} />
+                        ) : null}
+                      </View>
+                      <Text
+                        style={[
+                          styles.cancelReasonLabel,
+                          selected && styles.cancelReasonLabelSelected,
+                        ]}
+                      >
+                        {reason.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+
+                <Text style={styles.cancelSheetInputLabel}>
+                  Anything else you want us to know? (optional)
+                </Text>
+                <TextInput
+                  style={styles.cancelSheetInput}
+                  value={cancelDetails}
+                  onChangeText={setCancelDetails}
+                  placeholder="Tell us in your own words"
+                  placeholderTextColor="#9CA3AF"
+                  multiline
+                  maxLength={2000}
+                  textAlignVertical="top"
+                />
+              </ScrollView>
+
+              {/*
+                Outside the ScrollView on purpose. With six reasons and a text
+                box the sheet is taller than a small phone, and buttons that
+                scroll out of view make someone hunt for the thing they already
+                asked to do.
+              */}
+              <View style={styles.cancelSheetFooter}>
+                <TouchableOpacity
+                  style={[
+                    styles.cancelConfirmButton,
+                    (!cancelReason || isCancelling) &&
+                      styles.cancelConfirmButtonDisabled,
+                  ]}
+                  onPress={confirmCancelSubscription}
+                  disabled={!cancelReason || isCancelling}
+                  activeOpacity={0.85}
+                >
+                  {isCancelling ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.cancelConfirmButtonText}>
+                      Cancel my membership
+                    </Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.cancelKeepButton}
+                  onPress={closeCancelSheet}
+                  disabled={isCancelling}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.cancelKeepButtonText}>
+                    Never mind, keep my membership
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
+
       {/* Billing Detail Modal */}
       <Modal
         visible={!!billingDetailRow}
@@ -1476,6 +1663,143 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
     justifyContent: "flex-end",
+  },
+  cancelSheetKeyboard: {
+    flex: 1,
+  },
+  cancelSheetContent: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 32,
+    // Capped so the sheet never covers the whole screen: the donor can still
+    // see they are on their own donation page behind it, and the list scrolls
+    // rather than pushing the buttons off the bottom on a small phone.
+    maxHeight: "88%",
+  },
+  // flexShrink so the scroll area gives way to the pinned footer below it
+  // rather than pushing it past the bottom of the sheet.
+  cancelSheetScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  cancelSheetFooter: {
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#F0F0F0",
+    marginTop: 4,
+  },
+  cancelSheetTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#324E58",
+    marginBottom: 8,
+  },
+  cancelSheetIntro: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#6d6e72",
+    marginBottom: 20,
+  },
+  cancelSheetQuestion: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#324E58",
+    marginBottom: 6,
+  },
+  cancelSheetWhy: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: "#6d6e72",
+    marginBottom: 14,
+  },
+  cancelReasonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  cancelReasonRowSelected: {
+    borderColor: "#DB8633",
+    backgroundColor: "#FFF5EB",
+  },
+  cancelReasonDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: "#D1D5DB",
+    marginRight: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cancelReasonDotSelected: {
+    borderColor: "#DB8633",
+  },
+  cancelReasonDotInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#DB8633",
+  },
+  cancelReasonLabel: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 19,
+    color: "#324E58",
+  },
+  cancelReasonLabelSelected: {
+    fontWeight: "600",
+  },
+  cancelSheetInputLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#324E58",
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  cancelSheetInput: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    padding: 12,
+    minHeight: 88,
+    fontSize: 14,
+    lineHeight: 19,
+    color: "#324E58",
+    backgroundColor: "#F9FAFB",
+  },
+  cancelConfirmButton: {
+    backgroundColor: "#EF4444",
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 48,
+  },
+  cancelConfirmButtonDisabled: {
+    opacity: 0.45,
+  },
+  cancelConfirmButtonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  cancelKeepButton: {
+    marginTop: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  cancelKeepButtonText: {
+    color: "#324E58",
+    fontSize: 14,
+    fontWeight: "600",
   },
   billingModalContent: {
     backgroundColor: "#fff",
