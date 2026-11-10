@@ -1,11 +1,15 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ScrollView, Modal, Dimensions, Platform, Keyboard, KeyboardAvoidingView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Image, ScrollView, Modal, Dimensions, Platform, Keyboard, KeyboardAvoidingView, Alert, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { AntDesign, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from '../../../context/UserContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import API from '../../../lib/api';
+import {
+  isVendorFavorited,
+  setVendorFavorited,
+} from '../../../utils/vendorFavorites';
 import ConfettiCannon from 'react-native-confetti-cannon';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -14,6 +18,16 @@ export default function DiscountApproved() {
   const router = useRouter();
   const { addSavings } = useUser();
   const params = useLocalSearchParams();
+
+  /**
+   * The follow offer: 'hidden' | 'offer' | 'saving' | 'done'.
+   *
+   * Starts hidden and only opens once we know they are not already following,
+   * so the card never flashes up at a donor who followed this vendor months
+   * ago. Decided once on mount; nothing re-checks it, because the only thing
+   * that can change it on this screen is the button inside it.
+   */
+  const [followState, setFollowState] = useState('hidden');
   
   // Get dynamic data from route params
   const discountId = params.discountId || null;
@@ -235,6 +249,19 @@ export default function DiscountApproved() {
     }
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!vendorId) return undefined;
+    isVendorFavorited(vendorId)
+      .then((already) => {
+        if (!cancelled && !already) setFollowState('offer');
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [vendorId]);
+
   const handleSkip = async () => {
     transactionCreatedRef.current = true;
     try {
@@ -264,6 +291,13 @@ export default function DiscountApproved() {
   const handleClose = () => {
     setShowModal(false);
     router.push('/(tabs)');
+  };
+
+  const handleFollowVendor = async () => {
+    if (!vendorId || followState !== 'offer') return;
+    setFollowState('saving');
+    await setVendorFavorited(vendorId, true);
+    setFollowState('done');
   };
 
   return (
@@ -350,6 +384,62 @@ export default function DiscountApproved() {
             ) : null}
           </View>
         </View>
+
+        {/*
+          The follow offer, placed right after the code and before the savings
+          form. This is the one moment we know they are standing in front of
+          this vendor having just saved money there, which is the only time
+          "do you want to hear from them again" is an easy yes.
+
+          Following is what makes the two notifications THRIVE already sends
+          reach them at all: a new discount from this vendor, and a warning
+          before one expires.
+        */}
+        {followState !== 'hidden' && (
+          <View style={styles.followCard}>
+            {followState === 'done' ? (
+              <View style={styles.followDoneRow}>
+                <Ionicons name="heart" size={20} color="#FF6B7A" />
+                <Text style={styles.followDoneText}>
+                  You're following {vendorName}. We'll let you know when they
+                  post something new.
+                </Text>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.followTitle}>
+                  Want a heads-up from {vendorName}?
+                </Text>
+                <Text style={styles.followBody}>
+                  We'll tell you when they add a new discount, and before one
+                  runs out. You can stop any time.
+                </Text>
+                <TouchableOpacity
+                  style={styles.followButton}
+                  onPress={handleFollowVendor}
+                  disabled={followState === 'saving'}
+                  activeOpacity={0.85}
+                >
+                  {followState === 'saving' ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="heart-outline"
+                        size={16}
+                        color="#ffffff"
+                        style={{ marginRight: 8 }}
+                      />
+                      <Text style={styles.followButtonText}>
+                        Follow {vendorName}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
 
         {/* Savings Tracking Section */}
         <View style={styles.savingsSection}>
@@ -653,6 +743,56 @@ const styles = StyleSheet.create({
   },
 
   // Savings Section
+  followCard: {
+    backgroundColor: '#FFF5EB',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F3D9BC',
+    padding: 18,
+    marginHorizontal: 20,
+    marginTop: 16,
+  },
+  followTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#324E58',
+    marginBottom: 6,
+  },
+  followBody: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#6d6e72',
+    marginBottom: 14,
+  },
+  // Brand orange ground, so the label on it is white. Never teal, never the
+  // orange itself.
+  followButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DB8633',
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    minHeight: 44,
+  },
+  followButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  followDoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  followDoneText: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#324E58',
+    fontWeight: '600',
+  },
   savingsSection: {
     backgroundColor: '#fff',
     borderRadius: 20,

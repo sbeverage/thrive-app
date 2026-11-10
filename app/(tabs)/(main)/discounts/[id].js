@@ -20,6 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useDiscount } from '../../../context/DiscountContext';
 import { useUser } from '../../../context/UserContext';
 import API from '../../../lib/api';
+import { isVendorFavorited, setVendorFavorited } from '../../../utils/vendorFavorites';
 import { availabilityLabel } from '../../../utils/discountDisplay';
 import { paymentRecoveryRoute } from '../../../utils/paymentRecovery';
 import { useCallback } from 'react';
@@ -51,42 +52,37 @@ export default function VendorDetails() {
   const [redemptionCounts, setRedemptionCounts] = useState({}); // { discountId: count }
   const [isFavorited, setIsFavorited] = useState(false);
 
-  // Hydrate the favorite flag for this vendor from the same AsyncStorage
-  // key the discounts list uses, so the heart stays in sync between the
-  // list and this detail screen. `vendorId` is aliased from the URL param
-  // `id` — see the useLocalSearchParams destructure at the top of the
-  // component (previously mis-referenced as `id` and crashed the screen).
+  // Hydrate the favorite flag for this vendor from the same store the
+  // discounts list uses, so the heart stays in sync between the list and this
+  // detail screen. `vendorId` is aliased from the URL param `id` — see the
+  // useLocalSearchParams destructure at the top of the component (previously
+  // mis-referenced as `id` and crashed the screen).
+  //
+  // Both halves now go through app/utils/vendorFavorites.js, which the
+  // post-redemption follow prompt also uses. Worth noting what that fixed
+  // here: the old inline read did not coerce stored ids to strings, so a
+  // favourite written as a number by an older build compared false against
+  // String(vendorId) and the heart came up empty on a vendor they had
+  // actually saved.
   useEffect(() => {
     if (!vendorId) return;
-    AsyncStorage.getItem('@thrive_favorites')
-      .then((stored) => {
-        if (!stored) return;
-        const ids = new Set(JSON.parse(stored));
-        setIsFavorited(ids.has(String(vendorId)));
+    let cancelled = false;
+    isVendorFavorited(vendorId)
+      .then((favorited) => {
+        if (!cancelled) setIsFavorited(favorited);
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [vendorId]);
 
   const toggleFavorite = async () => {
     if (!vendorId) return;
     const nextFav = !isFavorited;
+    // Optimistic: the heart must never wait on the network.
     setIsFavorited(nextFav);
-    try {
-      const raw = await AsyncStorage.getItem('@thrive_favorites');
-      const ids = new Set(raw ? JSON.parse(raw) : []);
-      if (nextFav) ids.add(String(vendorId));
-      else ids.delete(String(vendorId));
-      await AsyncStorage.setItem('@thrive_favorites', JSON.stringify([...ids]));
-    } catch {
-      // Local write failed — server call below is still authoritative.
-    }
-    // Mirror the *intended* state to the server, not a flip. A toggle could be
-    // undone by favoritesSync replaying local storage on the next launch.
-    try {
-      await API.setVendorFavorite(vendorId, nextFav);
-    } catch {
-      // ignore — logged-out donors keep local state only
-    }
+    await setVendorFavorited(vendorId, nextFav);
   };
 
   // Load vendor and discounts
