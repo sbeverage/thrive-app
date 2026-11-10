@@ -23,6 +23,7 @@ import { normalizeCategory, normalizeTags } from "../lib/categories.ts";
 import { getAppAuthHeader } from "../lib/jwt-app.ts";
 import { sendVendorEmail } from "../lib/email.ts";
 import { notifyUsers, favoriterUserIds } from "../lib/notifications.ts";
+import { withGeocodedAddress } from "../lib/vendorGeocode.ts";
 import { normalizeHours } from "../lib/vendorHours.ts";
 
 type JSONResponse = Response;
@@ -91,6 +92,19 @@ async function handleVendorSignup(req: Request, supabase: any, userId: number): 
   }
 
   const body = await req.json().catch(() => ({}));
+
+  // The other half of the same hole as PUT /vendor/me: a vendor registering
+  // themselves wrote their address with no coordinates, so they were a pin
+  // nowhere until an admin happened to re-save them.
+  let signupAddress = body.address ?? null;
+  if (signupAddress) {
+    try {
+      signupAddress = await withGeocodedAddress(signupAddress);
+    } catch (geoErr) {
+      console.warn("vendor signup geocode failed:", geoErr);
+    }
+  }
+
   const insertPayload = {
     name: body.name || "",
     category: normalizeCategory(body.category),
@@ -99,7 +113,7 @@ async function handleVendorSignup(req: Request, supabase: any, userId: number): 
     website: body.website ?? null,
     phone: body.phone ?? null,
     social_links: body.social_links ?? null,
-    address: body.address ?? null,
+    address: signupAddress,
     hours: body.hours ? normalizeHours(body.hours) : null,
     auth_user_id: userId,
     created_by_user_id: userId,
@@ -157,6 +171,30 @@ async function handleVendorMePut(req: Request, supabase: any, userId: number): P
     }
   }
   if (Object.keys(updates).length === 0) return json({ vendor: existing });
+
+  // Resolve coordinates before storing, exactly as the admin path does.
+  //
+  // This used to be admin-only, and that was the bug: a vendor who filled in
+  // their own address here had it written straight to the column with no
+  // coordinates, so they never appeared as a pin and every device fell back
+  // to geocoding them itself. The Savory Gourmet Market is the live example,
+  // with a perfectly resolvable address and an empty latitude.
+  //
+  // `existing.address` is passed as the previous value so a corrected street
+  // discards the old coordinates instead of keeping a pin on the wrong
+  // building. Warm Waves Coffee sat 1.5km out on South Main for that reason.
+  if ("address" in updates) {
+    try {
+      updates["address"] = await withGeocodedAddress(
+        updates["address"],
+        existing.address,
+      );
+    } catch (geoErr) {
+      // A geocoder outage must not stop a vendor saving their own profile.
+      // The address is stored as given; the admin backfill can fill it later.
+      console.warn("vendor/me geocode failed:", geoErr);
+    }
+  }
 
   // Editing a rejected profile flips it back to pending implicitly — the
   // explicit resubmit endpoint stamps submitted_at to surface it to admins.
