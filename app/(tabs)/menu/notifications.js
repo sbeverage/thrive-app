@@ -21,9 +21,15 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import API from '../../lib/api';
+import {
+  getNearbyStatus,
+  enableNearbyReminders,
+  disableNearbyReminders,
+} from '../../utils/nearbyReminders';
 
 const CATEGORIES = [
   {
@@ -57,6 +63,56 @@ const DEFAULTS = { payment: true, donation: true, discounts: true, causes: true 
 
 export default function NotificationSettings() {
   const router = useRouter();
+
+  /**
+   * Nearby reminders are not one of the server categories above.
+   *
+   * Those switch a push on or off. This one is a local notification fired by
+   * the phone from a geofence, and switching it on means asking iOS for
+   * background location. So it carries its own state, its own storage, and
+   * its own row below the others.
+   */
+  const [nearby, setNearby] = useState(null);
+  const [nearbyBusy, setNearbyBusy] = useState(false);
+
+  // Re-read on focus: the only way back from a declined permission is the
+  // iOS Settings app, and coming back from there has to be reflected here.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      getNearbyStatus()
+        .then((status) => {
+          if (!cancelled) setNearby(status);
+        })
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
+
+  const toggleNearby = async (next) => {
+    if (nearbyBusy) return;
+    setNearbyBusy(true);
+    try {
+      if (next) {
+        const result = await enableNearbyReminders([]);
+        if (!result.ok && result.reason === 'background_denied') {
+          Alert.alert(
+            'Not turned on',
+            "Your phone only asks once, and it's already been answered. You can allow this for THRIVE in your phone's Settings, under Location.",
+          );
+        }
+      } else {
+        await disableNearbyReminders();
+      }
+      setNearby(await getNearbyStatus());
+    } catch (error) {
+      console.warn('Nearby toggle failed:', error?.message || error);
+    } finally {
+      setNearbyBusy(false);
+    }
+  };
 
   const [settings, setSettings] = useState(DEFAULTS);
   const [loading, setLoading] = useState(true);
@@ -134,6 +190,29 @@ export default function NotificationSettings() {
               />
             </View>
           ))}
+
+          <View style={styles.settingRow}>
+            <View style={styles.labelWrap}>
+              <Text style={styles.label}>
+                Remind me when I'm near a discount
+              </Text>
+              <Text style={styles.hint}>
+                A nudge when you've arrived somewhere you can use one, before
+                you pay. Your phone checks this, and we don't keep a history of
+                where you go.
+              </Text>
+            </View>
+            {nearbyBusy ? (
+              <ActivityIndicator size="small" color="#DB8633" />
+            ) : (
+              <Switch
+                trackColor={{ false: '#ccc', true: '#DB8633' }}
+                thumbColor="#fff"
+                onValueChange={toggleNearby}
+                value={!!(nearby?.enabled && nearby?.backgroundGranted)}
+              />
+            )}
+          </View>
 
           <Text style={styles.footnote}>
             Switching a category off stops the push. Everything still appears in

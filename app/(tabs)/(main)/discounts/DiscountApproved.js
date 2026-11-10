@@ -10,6 +10,15 @@ import {
   isVendorFavorited,
   setVendorFavorited,
 } from '../../../utils/vendorFavorites';
+import {
+  shouldOfferNearby,
+  recordNearbyOffer,
+  enableNearbyReminders,
+  cancelPendingNearbyReminders,
+  recordNearbyRedemption,
+} from '../../../utils/nearbyReminders';
+import NearbyRemindersSheet from '../../../../components/NearbyRemindersSheet';
+import { useDiscount } from '../../../context/DiscountContext';
 import ConfettiCannon from 'react-native-confetti-cannon';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -28,6 +37,11 @@ export default function DiscountApproved() {
    * that can change it on this screen is the button inside it.
    */
   const [followState, setFollowState] = useState('hidden');
+
+  /** The nearby-reminders ask, raised on the way out rather than on arrival. */
+  const [showNearbySheet, setShowNearbySheet] = useState(false);
+  const [nearbyBusy, setNearbyBusy] = useState(false);
+  const { vendors } = useDiscount();
   
   // Get dynamic data from route params
   const discountId = params.discountId || null;
@@ -262,6 +276,69 @@ export default function DiscountApproved() {
     };
   }, [vendorId]);
 
+  // They have just redeemed, so any reminder still counting down for this
+  // place is now wrong. Without this, somebody who walks in and redeems
+  // immediately is told five minutes later to use the discount they are
+  // already holding, which is the single most irritating thing this feature
+  // could do.
+  useEffect(() => {
+    cancelPendingNearbyReminders().catch(() => {});
+    if (vendorId) recordNearbyRedemption(vendorId).catch(() => {});
+  }, [vendorId]);
+
+  /**
+   * Leaving the screen, which is where the nearby ask goes.
+   *
+   * Not on arrival, and not stacked on the follow card: they get one sheet,
+   * at the end, after they have had the chance to follow. shouldOfferNearby
+   * handles every reason not to bother, including iOS no longer allowing the
+   * prompt at all.
+   */
+  const leaveScreen = async () => {
+    try {
+      if (await shouldOfferNearby()) {
+        await recordNearbyOffer();
+        setShowNearbySheet(true);
+        return;
+      }
+    } catch (error) {
+      console.warn('Nearby offer check failed:', error?.message || error);
+    }
+    router.push('/(tabs)');
+  };
+
+  const handleEnableNearby = async () => {
+    setNearbyBusy(true);
+    let result = { ok: false };
+    try {
+      result = await enableNearbyReminders(vendors || []);
+    } catch (error) {
+      console.warn('Enabling nearby reminders failed:', error?.message || error);
+    }
+    setNearbyBusy(false);
+    setShowNearbySheet(false);
+
+    if (result.ok) {
+      Alert.alert(
+        "You're all set",
+        "We'll nudge you when you're at a THRIVE business, right before you pay.",
+      );
+    } else if (result.reason === 'background_denied') {
+      // iOS allows exactly one prompt. Saying so is the only useful thing
+      // left, and it beats silently doing nothing.
+      Alert.alert(
+        'Not turned on',
+        'Your phone only asks once. You can switch nearby reminders on in Settings whenever you like.',
+      );
+    }
+    router.push('/(tabs)');
+  };
+
+  const handleDismissNearby = () => {
+    setShowNearbySheet(false);
+    router.push('/(tabs)');
+  };
+
   const handleSkip = async () => {
     transactionCreatedRef.current = true;
     try {
@@ -280,17 +357,17 @@ export default function DiscountApproved() {
       });
       
       console.log('💰 Created transaction record with $0 values!');
-      router.push('/(tabs)');
+      await leaveScreen();
     } catch (error) {
       console.error('❌ Error creating transaction:', error);
-      // Still navigate even if there's an error
-      router.push('/(tabs)');
+      // Still leave even if there's an error
+      await leaveScreen();
     }
   };
 
   const handleClose = () => {
     setShowModal(false);
-    router.push('/(tabs)');
+    leaveScreen();
   };
 
   const handleFollowVendor = async () => {
@@ -440,6 +517,14 @@ export default function DiscountApproved() {
             )}
           </View>
         )}
+
+        <NearbyRemindersSheet
+          visible={showNearbySheet}
+          vendorName={vendorName}
+          busy={nearbyBusy}
+          onEnable={handleEnableNearby}
+          onDismiss={handleDismissNearby}
+        />
 
         {/* Savings Tracking Section */}
         <View style={styles.savingsSection}>

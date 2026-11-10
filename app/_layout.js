@@ -22,6 +22,12 @@ import {
   APP_URL_SCHEME,
 } from './utils/constants';
 import ErrorBoundary from '../components/ErrorBoundary';
+// Imported for its side effect, not for anything it exports. The module calls
+// TaskManager.defineTask at import time, and iOS relaunches the app into the
+// background to deliver a geofence event, so the task has to already exist by
+// the time the bundle finishes evaluating. Nothing here calls into it; remove
+// this import and arriving somewhere silently does nothing.
+import './utils/nearbyReminders';
 
 /** Matches ScrollView/card surfaces (#F5F5F5) so stack transitions don't flash brighter white underneath. */
 const STACK_SCENE_BACKGROUND = '#F5F5F5';

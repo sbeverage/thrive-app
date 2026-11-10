@@ -97,11 +97,11 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>Lets you sign in to $(PRODUCT_NAME) with Face ID instead of typing your password.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Allow $(PRODUCT_NAME) to use your location to show nearby discounts and causes on the map.</string>
+	<string>So $(PRODUCT_NAME) can remind you to use your discount when you arrive at a partner business. We don't keep a history of where you go.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
-	<string>Allow $(PRODUCT_NAME) to access your location</string>
+	<string>So $(PRODUCT_NAME) can remind you to use your discount when you arrive at a partner business. We don't keep a history of where you go.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>This app uses location to show nearby discounts and causes on the map.</string>
+	<string>$(PRODUCT_NAME) uses your location to show the discounts and charities nearest you on the map.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your microphone</string>
 	<key>NSPhotoLibraryUsageDescription</key>
@@ -122,6 +122,10 @@
 			<key>SKAdNetworkIdentifier</key>
 			<string>n38lu8286q.skadnetwork</string>
 		</dict>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
 	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>SplashScreen</string>

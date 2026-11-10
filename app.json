@@ -127,9 +127,12 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location to show nearby discounts and causes on the map."
+          "locationAlwaysAndWhenInUsePermission": "So $(PRODUCT_NAME) can remind you to use your discount when you arrive at a partner business. We don't keep a history of where you go.",
+          "locationWhenInUsePermission": "$(PRODUCT_NAME) uses your location to show the discounts and charities nearest you on the map.",
+          "isAndroidBackgroundLocationEnabled": false
         }
       ],
+      "expo-task-manager",
       "expo-web-browser",
       "expo-apple-authentication",
       [

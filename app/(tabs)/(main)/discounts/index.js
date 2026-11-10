@@ -26,6 +26,10 @@ import VoucherCard from '../../../../components/VoucherCard';
 import SuggestPrompt from '../../../../components/SuggestPrompt';
 import DiscountsLockOverlay from '../../../../components/DiscountsLockOverlay';
 import FollowNudgeSheet from '../../../../components/FollowNudgeSheet';
+import {
+  syncGeofences,
+  setMembershipActive,
+} from '../../../utils/nearbyReminders';
 import useSubscriptionGate from '../../../../hooks/useSubscriptionGate';
 import API from '../../../lib/api';
 import MapView, { Marker } from 'react-native-maps';
@@ -316,6 +320,40 @@ export default function DiscountsScreen() {
 
   // Discount context
   const { discounts, vendors, isLoading: isLoadingDiscounts, loadDiscounts } = useDiscount();
+
+  /**
+   * Keep the monitored circles in step with the vendor list.
+   *
+   * startGeofencingAsync replaces the whole set rather than adding to it, so
+   * running this whenever vendors change is both safe and the only thing that
+   * picks up a new business, a corrected address, or a vendor that finally
+   * got coordinates. syncGeofences returns immediately when the feature is
+   * off or the permission was never granted.
+   */
+  useEffect(() => {
+    if (!vendors || vendors.length === 0) return;
+    syncGeofences(vendors).catch((e) =>
+      console.warn('Geofence sync failed:', e?.message || e),
+    );
+  }, [vendors]);
+
+  /**
+   * Cache whether this donor can redeem anything.
+   *
+   * The background task cannot ask: a closed app woken for a region event has
+   * no time and quite possibly no valid token. So the answer is written here,
+   * where the gate has already resolved it, and read from storage later.
+   *
+   * Only written once the hook has actually decided. It reports null while
+   * loading and after a failed check, and treating that as "no membership"
+   * would silently switch the feature off for a paying donor on a bad
+   * connection.
+   */
+  useEffect(() => {
+    if (subscriptionActive === null || subscriptionActive === undefined) return;
+    setMembershipActive(subscriptionActive === true);
+  }, [subscriptionActive]);
+
   
   
   // Debug: Log vendors and discounts when they change
