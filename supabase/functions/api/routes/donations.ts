@@ -1,5 +1,6 @@
 import { verify as verifyJWT } from "https://deno.land/x/djwt@v2.9/mod.ts";
 import { getAppAuthHeader, getJwtPayload } from "../lib/jwt-app.ts";
+import { cancellationReasonLabel } from "../lib/cancellationReasons.ts";
 import {
   createStripePaymentIntent,
   createOrGetStripeCustomer,
@@ -2432,17 +2433,9 @@ export async function handleDonationRoute(
             "A donor";
           const donorEmail = userData?.email || "unknown";
 
-          // Labels for the email only. The app owns the list; an unknown code
-          // falls back to the code itself rather than being dropped.
-          const REASON_LABELS: Record<string, string> = {
-            too_expensive: "It costs too much right now",
-            not_using_discounts: "Not using the discounts",
-            unclear_how_it_works: "Not sure how it works",
-            switch_charity: "Wants to support a different charity",
-            app_problem: "Ran into a problem with the app",
-            other: "Something else",
-          };
-          const reasonLabel = REASON_LABELS[reasonCode] || reasonCode;
+          // Shared with the admin panel, so the sentence a donor's reason
+          // turns into is the same in the email and on their profile.
+          const reasonLabel = cancellationReasonLabel(reasonCode);
 
           const escapeHtml = (value: string) =>
             value

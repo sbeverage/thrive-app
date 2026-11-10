@@ -4,6 +4,7 @@ import { capitalizeName } from "../lib/strings.ts";
 import { geocodeAddress } from "../lib/geocoding.ts";
 import { membershipOf } from "../lib/membership.ts";
 import { getStripeClient } from "../lib/stripe.ts";
+import { cancellationReasonLabel } from "../lib/cancellationReasons.ts";
 import {
   cancelMonthlySubscriptionCore,
   resumeMonthlySubscriptionCore,
@@ -2200,8 +2201,77 @@ export async function handleAdminDonors(
         console.log("⚠️ Leaderboard calculation error:", lbErr);
       }
 
+      // What they said on the way out, if they ever got as far as the cancel
+      // sheet. Newest first.
+      //
+      // Saves (outcome "kept_changing_charity") are included on purpose. They
+      // are not cancellations, and the panel labels them differently, but they
+      // are the same conversation and belong on the same timeline: a donor who
+      // nearly left over their charity and then stayed is worth seeing next to
+      // one who left.
+      let cancellationFeedback: any[] = [];
+      try {
+        const {data: feedbackRows, error: feedbackError} = await supabase
+          .from("membership_cancellation_feedback")
+          .select(
+            "id, reason_code, outcome, details, monthly_amount, charity_id, created_at",
+          )
+          .eq("user_id", donorId)
+          .order("created_at", {ascending: false})
+          .limit(20);
+
+        if (feedbackError) {
+          // The table or its outcome column may not be applied in this
+          // environment yet. That must not take the whole donor profile down
+          // with it, so this degrades to an empty list.
+          console.log(
+            "⚠️ Cancellation feedback unavailable:",
+            feedbackError.message,
+          );
+        } else if (feedbackRows && feedbackRows.length > 0) {
+          // Resolved separately rather than through an embedded select: the
+          // charity on a cancellation is whichever one they were giving to at
+          // the time, which is not always the one on their profile now.
+          const charityIds = [
+            ...new Set(
+              feedbackRows
+                .map((row: any) => row.charity_id)
+                .filter((id: any) => id != null),
+            ),
+          ];
+          const charityNames: Record<number, string> = {};
+          if (charityIds.length > 0) {
+            const {data: charityRows} = await supabase
+              .from("charities")
+              .select("id, name")
+              .in("id", charityIds);
+            for (const charity of charityRows || []) {
+              charityNames[charity.id] = charity.name;
+            }
+          }
+
+          cancellationFeedback = feedbackRows.map((row: any) => ({
+            id: row.id,
+            reason_code: row.reason_code,
+            reason_label: cancellationReasonLabel(row.reason_code),
+            outcome: row.outcome || "cancelled",
+            details: row.details || null,
+            monthly_amount: row.monthly_amount,
+            charity_id: row.charity_id,
+            charity_name:
+              row.charity_id != null
+                ? charityNames[row.charity_id] || null
+                : null,
+            created_at: row.created_at,
+          }));
+        }
+      } catch (feedbackErr) {
+        console.log("⚠️ Cancellation feedback lookup failed:", feedbackErr);
+      }
+
       // Format response
       const responseData = {
+        cancellation_feedback: cancellationFeedback,
         payment_methods: paymentMethods,
         monthly_donation: monthlyDonation,
         current_beneficiary: currentBeneficiary,
