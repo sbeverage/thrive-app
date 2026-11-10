@@ -25,6 +25,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import VoucherCard from '../../../../components/VoucherCard';
 import SuggestPrompt from '../../../../components/SuggestPrompt';
 import DiscountsLockOverlay from '../../../../components/DiscountsLockOverlay';
+import FollowNudgeSheet from '../../../../components/FollowNudgeSheet';
 import useSubscriptionGate from '../../../../hooks/useSubscriptionGate';
 import API from '../../../lib/api';
 import MapView, { Marker } from 'react-native-maps';
@@ -43,6 +44,19 @@ import { clusterVendors, isCoLocated, regionForCluster, sharedAddressLabel } fro
 // If no logoUrl is provided, the component will handle it gracefully
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
+
+/** Shown at most once per install, whether or not they acted on it. */
+const FOLLOW_NUDGE_SEEN_KEY = '@thrive_follow_nudge_seen';
+
+/**
+ * How far down the list the follow nudge waits.
+ *
+ * A VoucherCard is 110 tall plus its spacing, so this is roughly four cards
+ * past the top: far enough that they are genuinely browsing rather than
+ * landing, and the sheet reads as an aside instead of an interruption. A
+ * popup on arrival is the kind people dismiss without reading.
+ */
+const FOLLOW_NUDGE_SCROLL_PX = 520;
 
 export default function DiscountsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -106,6 +120,59 @@ export default function DiscountsScreen() {
   const { filters, updateFilters, hasActiveFilters } = useDiscountFilter();
   const [locationSearch, setLocationSearch] = useState(''); // Location filter from main screen (tap location row to search)
   const [favorites, setFavorites] = useState(new Set());
+  const [showFollowNudge, setShowFollowNudge] = useState(false);
+
+  /**
+   * The follow nudge: shown once, part-way down the list, to a donor who has
+   * not followed anybody.
+   *
+   * `armed` is only set after confirming they have not seen it before, so a
+   * scroll that happens while that read is still in flight cannot fire it.
+   * `fired` then makes it strictly once per mount: onScroll runs on every
+   * frame of a flick, and setState would not settle fast enough to stop a
+   * second one on its own.
+   */
+  const followNudgeArmed = useRef(false);
+  const followNudgeFired = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(FOLLOW_NUDGE_SEEN_KEY)
+      .then((seen) => {
+        if (!cancelled && !seen) followNudgeArmed.current = true;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleListScroll = useCallback(
+    (event) => {
+      if (!followNudgeArmed.current || followNudgeFired.current) return;
+      // Already follows somebody, so the lesson has landed. Disarm rather
+      // than skip: a favourites set only grows during a session.
+      if (favorites.size > 0) {
+        followNudgeArmed.current = false;
+        return;
+      }
+      // Never on top of the lock overlay. A donor who cannot redeem anything
+      // does not need advice about following businesses.
+      if (discountsLocked) return;
+
+      const y = event?.nativeEvent?.contentOffset?.y || 0;
+      if (y < FOLLOW_NUDGE_SCROLL_PX) return;
+
+      followNudgeFired.current = true;
+      followNudgeArmed.current = false;
+      setShowFollowNudge(true);
+      // Recorded when shown rather than when dismissed: a donor who swipes
+      // the app away instead of closing the sheet has still been asked.
+      AsyncStorage.setItem(FOLLOW_NUDGE_SEEN_KEY, '1').catch(() => {});
+    },
+    [favorites.size, discountsLocked],
+  );
+
   const [geocodedCoords, setGeocodedCoords] = useState({});
 
   const DEFAULT_LAT = 34.0754;
@@ -991,6 +1058,11 @@ export default function DiscountsScreen() {
               showsVerticalScrollIndicator={false}
               automaticallyAdjustKeyboardInsets={true}
               keyboardShouldPersistTaps="handled"
+              onScroll={handleListScroll}
+              // 16 rather than the default 0: the handler is a few cheap
+              // comparisons and bails immediately once it has fired, but
+              // there is no reason to run it on every single frame.
+              scrollEventThrottle={16}
             >
               {filteredVendors.length > 0 ? (
                 <View>
@@ -1070,6 +1142,11 @@ export default function DiscountsScreen() {
             </ScrollView>
           )}
         </View>
+
+        <FollowNudgeSheet
+          visible={showFollowNudge}
+          onClose={() => setShowFollowNudge(false)}
+        />
 
         {discountsLocked && (
           <DiscountsLockOverlay
