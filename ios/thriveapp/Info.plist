@@ -73,6 +73,8 @@
 	<string>91df4ea8e91af96eba396afe8cc5f233</string>
 	<key>FacebookDisplayName</key>
 	<string>Thrive</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>whatsapp</string>
