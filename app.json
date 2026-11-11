@@ -3,7 +3,7 @@
     "owner": "sbeverage",
     "name": "THRIVE",
     "slug": "thrive-app",
-    "version": "1.0.8",
+    "version": "1.0.9",
     "orientation": "portrait",
     "icon": "./assets/images/piggy-heart.png",
     "scheme": "thriveapp",
@@ -15,7 +15,7 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "buildNumber": "74",
+      "buildNumber": "75",
       "config": {
         "usesNonExemptEncryption": false
       },
