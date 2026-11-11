@@ -5,7 +5,7 @@
     "slug": "thrive-app",
     "version": "1.0.9",
     "orientation": "portrait",
-    "icon": "./assets/images/piggy-heart.png",
+    "icon": "./assets/images/piggy-heart-gradient.png",
     "scheme": "thriveapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
