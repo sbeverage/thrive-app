@@ -45,6 +45,7 @@ type InvitationsHandler = (
 export type AdminRouteDeps = {
   handleAdminVendors: RouteHandler;
   handleAdminDiscounts: RouteHandler;
+  handleAdminRedemptions: RouteHandler;
   handleAdminAnalytics: AnalyticsHandler;
   handleAdminNotifications: RouteHandler;
   handleAdminSettings: SettingsHandler;
@@ -71,6 +72,7 @@ export async function handleAdminRoute(
   const {
     handleAdminVendors,
     handleAdminDiscounts,
+    handleAdminRedemptions,
     handleAdminAnalytics,
     handleAdminNotifications,
     handleAdminSettings,
@@ -125,6 +127,14 @@ export async function handleAdminRoute(
   // Discounts routes under /admin/discounts
   if (route.startsWith("/admin/discounts")) {
     return await handleAdminDiscounts(req, supabase, route, method);
+  }
+
+  // Every redemption, with the donor, vendor, money and attribution attached.
+  // Above /admin/discounts would be wrong and below it is fine: the prefixes
+  // do not overlap, but keeping them adjacent keeps the two discount-shaped
+  // pages together.
+  if (route.startsWith("/admin/redemptions")) {
+    return await handleAdminRedemptions(req, supabase, route, method);
   }
 
   // Analytics routes

@@ -57,6 +57,7 @@ import { handleAdminRoute } from "./routes/adminRouter.ts";
 import { handleAdminDonors } from "./routes/adminDonors.ts";
 import { handleAdminAnalytics } from "./routes/adminAnalytics.ts";
 import { handleAdminDiscounts } from "./routes/adminDiscounts.ts";
+import { handleAdminRedemptions } from "./routes/adminRedemptions.ts";
 import { handleAdminVendors } from "./routes/adminVendors.ts";
 import {
   sendInvitationEmail,
@@ -643,6 +644,7 @@ serve(async (req) => {
       response = await handleAdminRoute(req, supabase, route, method, {
         handleAdminVendors,
         handleAdminDiscounts,
+        handleAdminRedemptions,
         handleAdminAnalytics,
         handleAdminNotifications,
         handleAdminSettings,
