@@ -160,6 +160,9 @@ SELECT u.id,
        md.amount,
        md.status,
        md.stripe_subscription_id IS NOT NULL AS reached_stripe,
+       -- The id itself, not just whether one exists: this is what you paste
+       -- into Stripe to find out whether it ever charged.
+       md.stripe_subscription_id,
        md.created_at,
        EXTRACT(DAY FROM now() - md.created_at)::int AS days_old
 FROM monthly_donations md
