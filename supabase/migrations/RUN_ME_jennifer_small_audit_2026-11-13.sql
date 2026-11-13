@@ -43,14 +43,14 @@ WHERE lower(first_name || ' ' || last_name) LIKE '%jennifer%small%'
 ORDER BY created_at;
 
 -- 2. Her subscription rows. `amount` here is the PLEDGE, not a payment.
---    last_payment_at is the field that says whether money ever arrived, and
+--    last_payment_date is the field that says whether money ever arrived, and
 --    it is the field the new guard classifies on.
 SELECT md.id, md.user_id, md.amount, md.status,
        md.stripe_subscription_id,
-       md.last_payment_at, md.last_payment_amount,
+       md.last_payment_date, md.last_payment_amount,
        md.beneficiary_id, md.created_at,
        CASE
-         WHEN md.last_payment_at IS NOT NULL
+         WHEN md.last_payment_date IS NOT NULL
            OR COALESCE(md.last_payment_amount, 0) > 0 THEN 'charged, still blocks'
          WHEN md.stripe_subscription_id IS NOT NULL THEN 'pledge, guard asks Stripe first'
          ELSE 'pledge, never reached Stripe, deletes'
@@ -90,12 +90,17 @@ SELECT
   (SELECT COUNT(*) FROM transactions      WHERE user_id  = u.id)
   + (SELECT COUNT(*) FROM monthly_donations
      WHERE user_id = u.id
-       AND (last_payment_at IS NOT NULL OR COALESCE(last_payment_amount, 0) > 0))
+       AND (last_payment_date IS NOT NULL OR COALESCE(last_payment_amount, 0) > 0))
   + (SELECT COUNT(*) FROM one_time_gifts  WHERE user_id  = u.id)
   + (SELECT COUNT(*) FROM donations       WHERE donor_id = u.id) AS new_guard_blocks_on,
   COALESCE((SELECT SUM(amount) FROM transactions
-            WHERE user_id = u.id AND type = 'monthly_donation'), 0) AS money_recorded,
-  (SELECT MAX(last_payment_at) FROM monthly_donations WHERE user_id = u.id) AS last_payment_at
+            WHERE user_id = u.id
+              AND type IN ('monthly_donation', 'held_release')), 0) AS money_recorded,
+  -- Every transaction type on this account, so a payment recorded under a
+  -- type this query did not anticipate is visible rather than invisible.
+  (SELECT string_agg(DISTINCT t.type, ', ' ORDER BY t.type)
+     FROM transactions t WHERE t.user_id = u.id)                   AS transaction_types,
+  (SELECT MAX(last_payment_date) FROM monthly_donations WHERE user_id = u.id) AS last_payment_date
 FROM users u
 WHERE lower(u.first_name || ' ' || u.last_name) LIKE '%jennifer%small%';
 
@@ -137,6 +142,12 @@ ORDER BY donors DESC, amount;
 --    pledge row behind whenever a card fails, and the real fix is upstream in
 --    signup, not in the delete guard.
 --
+--    Money is counted as any transaction of type 'monthly_donation' or
+--    'held_release'. The second one matters: donations.ts writes held_release
+--    when funds held for a donor who had not yet chosen a charity are
+--    released, so filtering on 'monthly_donation' alone would report those
+--    donors as never having paid.
+--
 --    `reached_stripe` splits them. A row with a stripe_subscription_id got as
 --    far as creating a subscription and then stopped, which the new guard will
 --    verify against Stripe before deleting. A row without one never reached
@@ -153,11 +164,12 @@ SELECT u.id,
        EXTRACT(DAY FROM now() - md.created_at)::int AS days_old
 FROM monthly_donations md
 JOIN users u ON u.id = md.user_id
-WHERE md.last_payment_at IS NULL
+WHERE md.last_payment_date IS NULL
   AND COALESCE(md.last_payment_amount, 0) = 0
   AND NOT EXISTS (
     SELECT 1 FROM transactions t
-    WHERE t.user_id = md.user_id AND t.type = 'monthly_donation'
+    WHERE t.user_id = md.user_id
+      AND t.type IN ('monthly_donation', 'held_release')
   )
 ORDER BY md.created_at DESC;
 
@@ -169,9 +181,10 @@ SELECT COUNT(*)                                                   AS stuck_pledg
        MIN(md.created_at)                                         AS earliest,
        MAX(md.created_at)                                         AS latest
 FROM monthly_donations md
-WHERE md.last_payment_at IS NULL
+WHERE md.last_payment_date IS NULL
   AND COALESCE(md.last_payment_amount, 0) = 0
   AND NOT EXISTS (
     SELECT 1 FROM transactions t
-    WHERE t.user_id = md.user_id AND t.type = 'monthly_donation'
+    WHERE t.user_id = md.user_id
+      AND t.type IN ('monthly_donation', 'held_release')
   );
