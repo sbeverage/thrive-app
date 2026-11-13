@@ -1,4 +1,5 @@
 import { corsHeaders } from "../lib/cors.ts";
+import { verifyAdminToken } from "../lib/adminAuth.ts";
 import { handleAdminApprovals } from "./adminApprovals.ts";
 import { handleAdminCron } from "./adminCron.ts";
 import { handleAdminDashboard } from "./adminDashboard.ts";
@@ -88,18 +89,55 @@ export async function handleAdminRoute(
     sendAdminTempPasswordEmail,
     sendInvitationEmail,
   } = deps;
-  // Check admin secret
-  const adminSecret = req.headers.get("x-admin-secret");
-  const expectedSecret = Deno.env.get("ADMIN_SECRET_KEY");
+  // ---------------------------------------------------------------- auth
+  //
+  // Two accepted credentials, on purpose and only for now:
+  //
+  //   1. An admin token from POST /admin/settings/team/login. This is the one
+  //      that should be used. It is per-person, expires in eight hours, and
+  //      never exists anywhere but that person's tab.
+  //   2. X-Admin-Secret matching ADMIN_SECRET_KEY. Legacy, and the reason this
+  //      work exists: the panel bundled it into public JavaScript, so the key
+  //      was readable by anyone who opened the site. It stays accepted so the
+  //      function and the panel do not have to deploy in lockstep.
+  //
+  // Removing (2) is the last step, after the panel ships without the secret
+  // and ADMIN_SECRET_KEY is rotated. Until then the exposure is unchanged, so
+  // this is a bridge, not the fix.
+  //
+  // The login route is deliberately outside both checks. It did its own bcrypt
+  // check all along, but it sat behind the secret, which meant you needed the
+  // secret in order to log in — which is precisely why the secret had to be
+  // shipped to the browser in the first place.
+  const isAdminLoginRoute =
+    method === "POST" && route === "/admin/settings/team/login";
 
-  if (!adminSecret || adminSecret !== expectedSecret) {
-    return new Response(JSON.stringify({error: "Unauthorized admin access"}), {
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json",
-      },
-      status: 401,
-    });
+  if (!isAdminLoginRoute) {
+    const adminSecret = req.headers.get("x-admin-secret");
+    const expectedSecret = Deno.env.get("ADMIN_SECRET_KEY");
+    const hasLegacySecret = Boolean(
+      adminSecret && expectedSecret && adminSecret === expectedSecret,
+    );
+
+    const adminToken = hasLegacySecret ? null : await verifyAdminToken(req);
+
+    if (!hasLegacySecret && !adminToken) {
+      return new Response(
+        JSON.stringify({
+          error: "Unauthorized admin access",
+          // Distinguishable from a wrong password so the panel can send the
+          // person back to the login screen rather than showing a dead page.
+          code: "admin_auth_required",
+        }),
+        {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+          status: 401,
+        },
+      );
+    }
   }
 
   // Admin homepage cards. This branch did not exist, so every

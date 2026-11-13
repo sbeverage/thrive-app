@@ -1,5 +1,80 @@
 import { corsHeaders } from "../lib/cors.ts";
 import { bcryptHash, bcryptCompare } from "../lib/password.ts";
+import { createAdminToken } from "../lib/adminAuth.ts";
+
+/**
+ * Failed-login lockout.
+ *
+ * Until now the admin API was gated by a shared secret, so the login endpoint
+ * was unreachable without it and brute force was not a concern. The login
+ * route is now public (it has to be — requiring the secret to log in is what
+ * forced the secret into the browser), so the password is the only thing
+ * standing in front of donor data and it needs a cost per guess.
+ *
+ * State lives on admin_team_members. Both helpers are best effort: if the
+ * columns have not been added yet, they log once and carry on rather than
+ * failing the login. The alternative is that a missing column locks every
+ * admin out of the panel, which is a worse failure than a missing lockout.
+ * The migration is
+ * supabase/migrations/RUN_ME_admin_login_lockout_2026-11-13.sql.
+ */
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_MINUTES = 15;
+
+async function readLockout(
+  supabase: any,
+  memberId: number,
+): Promise<{ lockedUntil: Date | null; attempts: number }> {
+  try {
+    const {data, error} = await supabase
+      .from("admin_team_members")
+      .select("failed_login_attempts, locked_until")
+      .eq("id", memberId)
+      .single();
+    if (error || !data) return {lockedUntil: null, attempts: 0};
+    const lu = data.locked_until ? new Date(data.locked_until) : null;
+    return {
+      lockedUntil: lu && !Number.isNaN(lu.getTime()) ? lu : null,
+      attempts: Number(data.failed_login_attempts) || 0,
+    };
+  } catch (_err) {
+    console.warn("admin login: lockout columns unavailable, lockout disabled");
+    return {lockedUntil: null, attempts: 0};
+  }
+}
+
+async function recordFailedAttempt(
+  supabase: any,
+  memberId: number,
+  attempts: number,
+): Promise<void> {
+  const next = attempts + 1;
+  const payload: Record<string, unknown> = {failed_login_attempts: next};
+  if (next >= MAX_FAILED_ATTEMPTS) {
+    payload.locked_until = new Date(
+      Date.now() + LOCKOUT_MINUTES * 60 * 1000,
+    ).toISOString();
+  }
+  try {
+    await supabase.from("admin_team_members").update(payload).eq("id", memberId);
+  } catch (_err) {
+    console.warn("admin login: could not record a failed attempt");
+  }
+}
+
+async function clearFailedAttempts(
+  supabase: any,
+  memberId: number,
+): Promise<void> {
+  try {
+    await supabase
+      .from("admin_team_members")
+      .update({failed_login_attempts: 0, locked_until: null})
+      .eq("id", memberId);
+  } catch (_err) {
+    /* best effort */
+  }
+}
 
 export type AdminSettingsDeps = {
   sendAdminTempPasswordEmail: (args: {
@@ -435,12 +510,40 @@ export async function handleAdminSettings(
         );
       }
 
+      // Locked out from earlier failures? Checked after the account is known
+      // to exist and be active, so the response for a locked account is not a
+      // way to discover which emails are real.
+      const lockout = await readLockout(supabase, member.id);
+      if (lockout.lockedUntil && lockout.lockedUntil.getTime() > Date.now()) {
+        const minutes = Math.max(
+          1,
+          Math.ceil((lockout.lockedUntil.getTime() - Date.now()) / 60000),
+        );
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error:
+              `Too many sign-in attempts. Try again in ${minutes} minute` +
+              `${minutes === 1 ? "" : "s"}, or reset your password.`,
+            code: "locked_out",
+          }),
+          {
+            headers: {...corsHeaders, "Content-Type": "application/json"},
+            status: 429,
+          },
+        );
+      }
+
       if (
         !member.password_hash ||
         !(await bcryptCompare(password, member.password_hash))
       ) {
+        await recordFailedAttempt(supabase, member.id, lockout.attempts);
         return new Response(
-          JSON.stringify({success: false, error: "Invalid email or password"}),
+          JSON.stringify({
+            success: false,
+            error: "That email and password do not match. Give it another try?",
+          }),
           {
             headers: {...corsHeaders, "Content-Type": "application/json"},
             status: 401,
@@ -448,14 +551,43 @@ export async function handleAdminSettings(
         );
       }
 
+      // must_reset_password is deliberately NOT cleared here. It used to be,
+      // which meant a temporary password emailed to a new admin became their
+      // permanent password the moment they first used it, and the reset they
+      // were supposed to be forced through never happened. The flag is now
+      // returned to the panel, and only POST /admin/settings/team/reset-password
+      // clears it, which is the endpoint that actually changes the password.
       await supabase
         .from("admin_team_members")
         .update({
           last_login_at: new Date().toISOString(),
-          must_reset_password: false,
           updated_at: new Date().toISOString(),
         })
         .eq("id", member.id);
+
+      await clearFailedAttempts(supabase, member.id);
+
+      // The token every later admin request authenticates with. Without it the
+      // panel has nothing to send but the shared secret, which is the whole
+      // problem this replaces, so a failure to mint one has to fail the login
+      // rather than quietly fall back.
+      const issued = await createAdminToken(member);
+      if (!issued) {
+        console.error("admin login: JWT_SECRET missing, cannot issue a token");
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error:
+              "Sign-in is not available right now because the server is missing " +
+              "its signing key. Nothing is wrong with your password.",
+            code: "token_unavailable",
+          }),
+          {
+            headers: {...corsHeaders, "Content-Type": "application/json"},
+            status: 503,
+          },
+        );
+      }
 
       return new Response(
         JSON.stringify({
@@ -474,6 +606,12 @@ export async function handleAdminSettings(
             // holds display text ("Super Admin").
             is_super_admin:
               String(member.role || "").trim().toLowerCase() === "super admin",
+            // The panel sends this as `Authorization: Bearer <token>` on every
+            // later request, in place of the shared secret.
+            token: issued.token,
+            expires_at: issued.expiresAt,
+            // True while this account is still on the password it was emailed.
+            must_reset_password: member.must_reset_password === true,
           },
         }),
         {
