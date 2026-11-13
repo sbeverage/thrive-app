@@ -1116,19 +1116,46 @@ export async function handleAdminDonors(
       // constraint rather than succeeding quietly. This check exists so the
       // admin gets a sentence explaining what to do instead of a raw
       // foreign-key error.
+      //
+      // A monthly_donations row is NOT by itself evidence that money moved.
+      // It is created when a donor sets up giving, before the first charge
+      // succeeds, and it carries the pledged `amount` that the donor list
+      // displays. So an abandoned signup shows a figure on screen, has no
+      // payment anywhere, and still blocked deletion. Those pledges no longer
+      // block. Anything that actually charged still does.
+      //
+      // "No local record" is NOT proof nothing was charged. Between May and
+      // August 2026 sixteen paid invoices recorded nothing locally because the
+      // webhook silently failed. A donor with an unpaid-looking pledge and a
+      // real Stripe subscription is exactly the shape that bug produced, so
+      // before letting a pledge through we ask Stripe directly, and refuse if
+      // we cannot get an answer. Failing closed costs an admin one click.
+      // Failing open costs a receipt nobody can reproduce.
+      let deletablePledgeIds: number[] = [];
       {
-        const [txns, monthly, gifts, donationRows] = await Promise.all([
+        const [txns, monthlyRes, gifts, donationRows] = await Promise.all([
           supabase.from("transactions").select("id", {count: "exact", head: true})
             .eq("user_id", donorId),
-          supabase.from("monthly_donations").select("id", {count: "exact", head: true})
+          supabase.from("monthly_donations")
+            .select("id, amount, status, stripe_subscription_id, last_payment_at, last_payment_amount")
             .eq("user_id", donorId),
           supabase.from("one_time_gifts").select("id", {count: "exact", head: true})
             .eq("user_id", donorId),
           supabase.from("donations").select("id", {count: "exact", head: true})
             .eq("donor_id", donorId),
         ]);
+
+        const monthlyRows = monthlyRes.data || [];
+        // Charged if we have any local trace of a payment against it.
+        const charged = monthlyRows.filter(
+          (m: any) => m.last_payment_at || Number(m.last_payment_amount) > 0,
+        );
+        const pledges = monthlyRows.filter(
+          (m: any) => !(m.last_payment_at || Number(m.last_payment_amount) > 0),
+        );
+
         const history =
-          (txns.count || 0) + (monthly.count || 0) +
+          (txns.count || 0) + charged.length +
           (gifts.count || 0) + (donationRows.count || 0);
 
         if (history > 0) {
@@ -1142,9 +1169,10 @@ export async function handleAdminDonors(
               code: "donor_has_financial_history",
               counts: {
                 transactions: txns.count || 0,
-                monthly_donations: monthly.count || 0,
+                monthly_donations: charged.length,
                 one_time_gifts: gifts.count || 0,
                 donations: donationRows.count || 0,
+                unpaid_pledges: pledges.length,
               },
             }),
             {
@@ -1153,6 +1181,120 @@ export async function handleAdminDonors(
             },
           );
         }
+
+        // Nothing charged locally. Before trusting that, check every pledge
+        // that ever reached Stripe.
+        for (const m of pledges) {
+          if (!m.stripe_subscription_id) continue; // never reached Stripe
+
+          const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+          if (!stripeKey) {
+            return new Response(
+              JSON.stringify({
+                success: false,
+                error:
+                  "This donor has a subscription on file and Stripe is not reachable from the server, " +
+                  "so we cannot confirm it never charged. Deactivate the account instead.",
+                code: "stripe_unavailable",
+              }),
+              {headers: {...corsHeaders, "Content-Type": "application/json"}, status: 409},
+            );
+          }
+
+          let paidCount = 0;
+          let subStatus: string | null = null;
+          try {
+            const sid = encodeURIComponent(m.stripe_subscription_id);
+            const [invRes, subRes] = await Promise.all([
+              fetch(`https://api.stripe.com/v1/invoices?subscription=${sid}&status=paid&limit=1`,
+                {headers: {Authorization: `Bearer ${stripeKey}`}}),
+              fetch(`https://api.stripe.com/v1/subscriptions/${sid}`,
+                {headers: {Authorization: `Bearer ${stripeKey}`}}),
+            ]);
+            if (!invRes.ok) throw new Error(`invoices ${invRes.status}`);
+            paidCount = ((await invRes.json()).data || []).length;
+            // A 404 means the subscription is gone, which is fine. Any other
+            // failure is unknown, and unknown means refuse.
+            if (subRes.ok) subStatus = (await subRes.json()).status || null;
+            else if (subRes.status !== 404) throw new Error(`subscription ${subRes.status}`);
+          } catch (stripeErr) {
+            console.error("delete donor: Stripe check failed:", stripeErr);
+            return new Response(
+              JSON.stringify({
+                success: false,
+                error:
+                  "We could not reach Stripe to confirm this subscription never charged, " +
+                  "so the account was not deleted. Try again, or deactivate it instead.",
+                code: "stripe_check_failed",
+              }),
+              {headers: {...corsHeaders, "Content-Type": "application/json"}, status: 409},
+            );
+          }
+
+          if (paidCount > 0) {
+            // Paid in Stripe, absent locally. Deleting would bury the single
+            // clearest signal that reconciliation is needed.
+            return new Response(
+              JSON.stringify({
+                success: false,
+                error:
+                  "Stripe shows a paid invoice for this donor that was never recorded here. " +
+                  "That is a reconciliation problem, not an empty account. " +
+                  "Run the paid-invoice reconciliation before deleting anything.",
+                code: "unrecorded_stripe_payment",
+                stripe_subscription_id: m.stripe_subscription_id,
+              }),
+              {headers: {...corsHeaders, "Content-Type": "application/json"}, status: 409},
+            );
+          }
+
+          // Never charged, but still live: deleting the donor would leave a
+          // subscription that can bill with no account behind it.
+          if (subStatus && ["active", "trialing", "past_due", "unpaid"].includes(subStatus)) {
+            return new Response(
+              JSON.stringify({
+                success: false,
+                error:
+                  `This donor's subscription is still ${subStatus} in Stripe. Cancel it first, ` +
+                  `otherwise it could charge a card with no account attached to it.`,
+                code: "live_subscription",
+                stripe_subscription_id: m.stripe_subscription_id,
+              }),
+              {headers: {...corsHeaders, "Content-Type": "application/json"}, status: 409},
+            );
+          }
+        }
+
+        // Every pledge is confirmed unpaid and not live. The FK into users is
+        // RESTRICT, so these rows have to go before the user can, or the
+        // delete fails at the constraint with a message nobody can act on.
+        deletablePledgeIds = pledges.map((m: any) => m.id);
+      }
+
+      if (deletablePledgeIds.length) {
+        const {error: pledgeErr} = await supabase
+          .from("monthly_donations")
+          .delete()
+          .in("id", deletablePledgeIds)
+          // Belt and braces: scope the delete to this donor as well as the
+          // ids, so a mistake upstream cannot reach another donor's rows.
+          .eq("user_id", donorId)
+          // And never touch one that charged, whatever the list said.
+          .is("last_payment_at", null);
+        if (pledgeErr) {
+          console.error("delete donor: could not clear unpaid pledges:", pledgeErr);
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: "We could not clear this donor's unpaid signup before deleting them. Nothing was deleted.",
+              code: "pledge_cleanup_failed",
+            }),
+            {headers: {...corsHeaders, "Content-Type": "application/json"}, status: 500},
+          );
+        }
+        console.log(
+          `🧹 Cleared ${deletablePledgeIds.length} unpaid pledge row(s) for donor ${donorId} before deletion`,
+        );
       }
 
       // Delete profile picture from Supabase Storage if it exists
