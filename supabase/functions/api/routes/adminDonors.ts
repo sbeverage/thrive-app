@@ -1148,7 +1148,12 @@ export async function handleAdminDonors(
           supabase.from("transactions").select("id", {count: "exact", head: true})
             .eq("user_id", donorId),
           supabase.from("monthly_donations")
-            .select("id, amount, status, stripe_subscription_id, last_payment_at, last_payment_amount")
+            // last_payment_DATE, not last_payment_at. last_payment_at is a
+            // column on `referrals`; monthly_donations has never had it. Every
+            // writer of a real monthly payment (webhooks.ts invoice handler,
+            // donations.ts sync) sets last_payment_date, and adminAnalytics
+            // calls it the canonical source.
+            .select("id, amount, status, stripe_subscription_id, last_payment_date, last_payment_amount")
             .eq("user_id", donorId),
           supabase.from("one_time_gifts").select("id", {count: "exact", head: true})
             .eq("user_id", donorId),
@@ -1156,14 +1161,31 @@ export async function handleAdminDonors(
             .eq("donor_id", donorId),
         ]);
 
+        // A failed query is not an empty result. Reading `.data || []` on an
+        // error would say "this donor has no subscriptions" about a question
+        // we never got to ask, and that reading is what decides whether money
+        // is in the way. Refuse instead.
+        if (monthlyRes.error) {
+          console.error("delete donor: subscription lookup failed:", monthlyRes.error);
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error:
+                "We could not read this donor's subscriptions, so we cannot tell " +
+                "whether deleting them would erase giving history. Nothing was deleted. " +
+                "Try again, or deactivate the account instead.",
+              code: "subscription_lookup_failed",
+            }),
+            {headers: {...corsHeaders, "Content-Type": "application/json"}, status: 409},
+          );
+        }
+
         const monthlyRows = monthlyRes.data || [];
         // Charged if we have any local trace of a payment against it.
-        const charged = monthlyRows.filter(
-          (m: any) => m.last_payment_at || Number(m.last_payment_amount) > 0,
-        );
-        const pledges = monthlyRows.filter(
-          (m: any) => !(m.last_payment_at || Number(m.last_payment_amount) > 0),
-        );
+        const isCharged = (m: any) =>
+          Boolean(m.last_payment_date) || Number(m.last_payment_amount) > 0;
+        const charged = monthlyRows.filter(isCharged);
+        const pledges = monthlyRows.filter((m: any) => !isCharged(m));
 
         const history =
           (txns.count || 0) + charged.length +
@@ -1290,8 +1312,12 @@ export async function handleAdminDonors(
           // Belt and braces: scope the delete to this donor as well as the
           // ids, so a mistake upstream cannot reach another donor's rows.
           .eq("user_id", donorId)
-          // And never touch one that charged, whatever the list said.
-          .is("last_payment_at", null);
+          // And never touch one that charged, whatever the list said. Both
+          // payment columns are checked here, not just the one classified on,
+          // so this stays a real safety net rather than a restatement of the
+          // filter above.
+          .is("last_payment_date", null)
+          .or("last_payment_amount.is.null,last_payment_amount.eq.0");
         if (pledgeErr) {
           console.error("delete donor: could not clear unpaid pledges:", pledgeErr);
           return new Response(
