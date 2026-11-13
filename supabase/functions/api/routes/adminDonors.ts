@@ -531,7 +531,15 @@ export async function handleAdminDonors(
           user.preferences?.preferredCharity ||
           user.preferences?.beneficiary ||
           null;
-        const monthlyDonation =
+        // The donor's MONTHLY PLEDGE, not a lifetime total of money given.
+        // The last fallback is written from the signup form before any payment
+        // is attempted, so this figure can exist with no subscription and no
+        // charge behind it: a donor who abandoned signup still shows an amount.
+        // It was previously returned as `total_donations`, which read on screen
+        // as money received and made an abandoned signup look like a donor with
+        // giving history. The endpoint that does return a lifetime total is
+        // GET /admin/donors/:id, whose `total_donations` sums donation_history.
+        const monthlyPledge =
           user.total_monthly_donation ??
           user.preferences?.monthlyDonation ??
           user.preferences?.donationAmount ??
@@ -564,7 +572,11 @@ export async function handleAdminDonors(
           inviteType: membershipOf(user),
           sponsor_amount: Number(user.sponsor_amount || 0),
           external_billed: user.external_billed === true,
-          total_donations: parseFloat(monthlyDonation) || 0,
+          monthly_pledge: parseFloat(monthlyPledge) || 0,
+          // Deprecated alias for monthly_pledge. Kept so a panel bundle that
+          // has not reloaded yet does not silently render $0 for every donor.
+          // Remove once the panel has been deployed for a release.
+          total_donations: parseFloat(monthlyPledge) || 0,
           one_time_donation: parseFloat(oneTimeDonation) || 0,
           last_donation_date: lastDonationByUser.get(user.id) || null,
           subscription_status:
@@ -659,7 +671,6 @@ export async function handleAdminDonors(
         donationAmount,
         one_time_donation,
         oneTimeDonation,
-        total_donations,
         last_donation_date,
         address,
         latitude,
@@ -885,7 +896,7 @@ export async function handleAdminDonors(
       }
 
       // Update notes field if provided (if notes column exists in users table)
-      // Other metadata fields (beneficiary_name, coworking, total_donations, etc.)
+      // Other metadata fields (beneficiary_name, coworking, monthly_pledge, etc.)
       // are typically calculated from related tables and not stored directly on users
       // If you need to store these, consider creating a user_metadata JSONB column
       if (notes !== undefined) {
