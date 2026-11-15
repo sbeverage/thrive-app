@@ -489,9 +489,19 @@ export async function handleAdminSettings(
         .eq("email", email)
         .limit(1);
 
+      // Same wording as a wrong password below, deliberately. Different
+      // messages for "no such admin" and "wrong password" let anyone with the
+      // login URL discover which addresses are admins, which mattered less
+      // when the shared secret gated this route and matters now that it is
+      // public. A timing difference remains, because only the branch below
+      // runs bcrypt; closing that needs a dummy hash comparison and is not
+      // worth the complexity against this threat.
       if (error || !members || members.length === 0) {
         return new Response(
-          JSON.stringify({success: false, error: "Invalid email or password"}),
+          JSON.stringify({
+            success: false,
+            error: "That email and password do not match. Give it another try?",
+          }),
           {
             headers: {...corsHeaders, "Content-Type": "application/json"},
             status: 401,
