@@ -3,6 +3,53 @@ import { getAppAuthHeader } from "../lib/jwt-app.ts";
 import { isCompedAccount, MEMBERSHIP_COLUMNS } from "../lib/membership.ts";
 
 // Public discounts routes handler (for mobile app)
+/**
+ * A code that identifies ONE redemption.
+ *
+ * redemptions.redemption_code carries a UNIQUE constraint
+ * (redemptions_redemption_code_key). This route used to store
+ * `discount.discount_code` in it, which is the same value for every redemption
+ * of that discount, by anyone, forever. So the first redemption of a discount
+ * recorded and every later one was rejected by the constraint. Between April
+ * and September 2026 the table captured 4 of 28 actual redemptions, which is
+ * what that looks like across four discounts.
+ *
+ * The constraint is right and stays: a redemption code that does not identify a
+ * redemption is not a code. What was wrong is writing a shared value into a
+ * column that promises uniqueness.
+ *
+ * Format is `<DISCOUNTCODE>-<10 random>`, keeping the vendor-recognisable part
+ * in front. The alphabet drops I, O, 0 and 1 so a code can be read aloud, and
+ * has 32 characters, which divides 256 exactly, so taking a random byte modulo
+ * its length stays uniform rather than quietly favouring early letters.
+ *
+ * Ten characters, not six. What matters is not the chance that two given codes
+ * match but the chance that ANY two in the table do, and that grows with the
+ * square of the row count. Six characters is 32^6, about a billion, which
+ * sounds ample and is not: a run of 200,000 produced 20 collisions in testing,
+ * and even 10,000 redemptions would collide roughly 5% of the time over the
+ * table's life. Ten characters is 32^10, about 10^15, which puts the same
+ * 100,000-row case near one in 200,000. The retry below then covers the rest.
+ */
+function buildRedemptionCode(
+  discountCode: string | null | undefined,
+  discountId: number | string,
+): string {
+  const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint8Array(10);
+  crypto.getRandomValues(bytes);
+  let suffix = "";
+  for (const b of bytes) suffix += ALPHABET[b % ALPHABET.length];
+
+  const prefix =
+    String(discountCode || "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 12) || `D${discountId}`;
+
+  return `${prefix}-${suffix}`;
+}
+
 export async function handleDiscountRoute(
   req: Request,
   supabase: any,
@@ -725,8 +772,6 @@ export async function handleDiscountRoute(
         discount_id: parseInt(discountId),
         user_id: userId,
         vendor_id: discount.vendor_id || null,
-        redemption_code:
-          discount.discount_code || `REDEEM-${discountId}-${Date.now()}`,
         redeemed_at: new Date().toISOString(),
       };
 
@@ -738,11 +783,30 @@ export async function handleDiscountRoute(
         redemptionData.total_savings = parseFloat(totalSavings);
       }
 
-      const { error: redemptionError } = await supabase
-        .from("redemptions")
-        .insert([redemptionData])
-        .select()
-        .single();
+      // Retry only on 23505, the unique-violation code. With a 50-bit random
+      // suffix a collision is already remote, so this is for the pathological
+      // case rather than the expected one, and a fresh code is generated each
+      // pass. Any other error falls straight through to the handler below:
+      // retrying a NOT NULL or FK violation only makes the donor wait longer
+      // for the same answer.
+      let redemptionError: any = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        redemptionData.redemption_code = buildRedemptionCode(
+          discount.discount_code,
+          discountId,
+        );
+        const { error } = await supabase
+          .from("redemptions")
+          .insert([redemptionData])
+          .select()
+          .single();
+        redemptionError = error;
+        if (!error) break;
+        if (error.code !== "23505") break;
+        console.warn(
+          `⚠️ redemption_code collision on attempt ${attempt + 1}, regenerating`,
+        );
+      }
 
       if (redemptionError) {
         // Fail the request. This used to log and carry on, returning 200 with
