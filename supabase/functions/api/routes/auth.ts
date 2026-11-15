@@ -3,6 +3,7 @@ import {
   verify as verifyJWT,
 } from "https://deno.land/x/djwt@v2.9/mod.ts";
 import { corsHeaders } from "../lib/cors.ts";
+import { isAdminRequest } from "../lib/adminAuth.ts";
 import { bcryptHash, bcryptCompare } from "../lib/password.ts";
 import { capitalizeName } from "../lib/strings.ts";
 import { geocodeAddress } from "../lib/geocoding.ts";
@@ -2401,14 +2402,14 @@ export async function handleAuthRoute(
       // secured in production."
       //
       // Two callers, both already sending credentials, so both keep working:
-      //   • admin panel  → X-Admin-Secret
+      //   • admin panel  → an admin token, or the legacy X-Admin-Secret
       //   • donor app    → user JWT (axios interceptor), deleting themselves
       // A JWT only authorises deleting your OWN account; anything else needs
-      // the admin secret.
+      // admin credentials. isAdminRequest() accepts either, which is the whole
+      // point: this check used to read the shared secret directly, so it broke
+      // the moment the panel stopped sending one.
       {
-        const adminSecret = req.headers.get("x-admin-secret");
-        const expectedSecret = Deno.env.get("ADMIN_SECRET_KEY");
-        const isAdmin = !!expectedSecret && adminSecret === expectedSecret;
+        const isAdmin = await isAdminRequest(req);
 
         if (!isAdmin) {
           const payload: any = await getJwtPayload(getAppAuthHeader(req));

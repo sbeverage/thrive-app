@@ -1,5 +1,6 @@
 import { corsHeaders } from "../lib/cors.ts";
 import { getAppAuthHeader, getJwtPayload } from "../lib/jwt-app.ts";
+import { isAdminRequest } from "../lib/adminAuth.ts";
 
 // Data deletion request handler (partial data deletion)
 export async function handleDataDeletionRoute(
@@ -101,9 +102,7 @@ export async function handleDataDeletionRoute(
       // owner (or an admin) can actually trigger the deletion.
       let authorisedForDeletion = false;
       if (email) {
-        const adminSecret = req.headers.get("x-admin-secret");
-        const expectedSecret = Deno.env.get("ADMIN_SECRET_KEY");
-        if (expectedSecret && adminSecret === expectedSecret) {
+        if (await isAdminRequest(req)) {
           authorisedForDeletion = true;
         } else {
           const payload: any = await getJwtPayload(getAppAuthHeader(req));

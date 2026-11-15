@@ -1,4 +1,5 @@
 import { corsHeaders } from "../lib/cors.ts";
+import { isAdminRequest } from "../lib/adminAuth.ts";
 
 export async function handleUploadRoute(
   req: Request,
@@ -20,9 +21,7 @@ export async function handleUploadRoute(
       // the admin panel uses /admin/storage/upload. Widen this to accept a
       // user JWT if a donor-facing upload ever needs it, but scope the path
       // to that user.
-      const adminSecret = req.headers.get("x-admin-secret");
-      const expectedSecret = Deno.env.get("ADMIN_SECRET_KEY");
-      if (!expectedSecret || adminSecret !== expectedSecret) {
+      if (!(await isAdminRequest(req))) {
         return new Response(
           JSON.stringify({ success: false, error: "Unauthorized" }),
           {

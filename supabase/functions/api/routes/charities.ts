@@ -1,6 +1,7 @@
 import { getStripeClient } from "../lib/stripe.ts";
 import { formatCharityResponse } from "../lib/charities.ts";
 import { getAppAuthHeader, getJwtPayload } from "../lib/jwt-app.ts";
+import { isAdminRequest } from "../lib/adminAuth.ts";
 
 // Map ProPublica NTEE category codes to the high-level categories we use on
 // the donor app. NTEE codes are letter+digit (e.g. "H31Z" = pediatric medical
@@ -162,9 +163,7 @@ export async function handleCharityRoute(
       // anon key could publish a live, donor-selectable charity with any name
       // and EIN. Nothing legitimate calls this route: the app never posts
       // here and the admin panel uses POST /admin/charities.
-      const adminSecret = req.headers.get("x-admin-secret");
-      const expectedSecret = Deno.env.get("ADMIN_SECRET_KEY");
-      if (!expectedSecret || adminSecret !== expectedSecret) {
+      if (!(await isAdminRequest(req))) {
         return new Response(
           JSON.stringify({error: "Unauthorized"}),
           {headers: {"Content-Type": "application/json"}, status: 401},
@@ -263,9 +262,7 @@ export async function handleCharityRoute(
       // the mobile app. Note the contrast with DELETE /admin/charities/:id,
       // which only soft-deletes by setting is_active = false; this route is
       // the only way to actually remove a row, so it needs the stronger gate.
-      const adminSecret = req.headers.get("x-admin-secret");
-      const expectedSecret = Deno.env.get("ADMIN_SECRET_KEY");
-      if (!expectedSecret || adminSecret !== expectedSecret) {
+      if (!(await isAdminRequest(req))) {
         return new Response(
           JSON.stringify({error: "Unauthorized"}),
           {headers: {"Content-Type": "application/json"}, status: 401},

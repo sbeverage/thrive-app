@@ -529,9 +529,10 @@ serve(async (req) => {
 
     // For public routes, allow requests with or without Authorization header
     // For protected routes, require Authorization header with valid JWT
-    // Exception: Admin routes can use X-Admin-Secret header instead of JWT
+    // Exception: admin routes carry their own credential and are checked in
+    // adminRouter.ts, which accepts an admin token or the legacy shared
+    // secret. This gate only decides whether a user JWT is required here.
     const isAdminRoute = route.startsWith("/admin/");
-    const adminSecret = req.headers.get("x-admin-secret");
 
     // Special handling for delete-account route - always allow (it's public)
     const isDeleteAccountRoute =

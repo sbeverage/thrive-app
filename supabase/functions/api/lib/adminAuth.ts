@@ -118,3 +118,23 @@ export async function verifyAdminToken(
     return null;
   }
 }
+
+/**
+ * Is this request from an admin, by either accepted credential?
+ *
+ * Several routes outside the /admin router gate on the admin secret directly:
+ * DELETE /auth/delete-user, the data-deletion request handler, POST and DELETE
+ * /charities, and /uploads. They sit under public prefixes, so the secret was
+ * the only thing standing in front of a hard delete.
+ *
+ * Each had its own copy of the same two lines. When the panel moved to tokens
+ * the /admin router learned about them and these four did not, which broke
+ * DELETE /auth/delete-user the moment the panel stopped sending the secret.
+ * One helper so the next change cannot miss a copy.
+ */
+export async function isAdminRequest(req: Request): Promise<boolean> {
+  const adminSecret = req.headers.get("x-admin-secret");
+  const expectedSecret = Deno.env.get("ADMIN_SECRET_KEY");
+  if (expectedSecret && adminSecret === expectedSecret) return true;
+  return (await verifyAdminToken(req)) !== null;
+}
