@@ -1192,31 +1192,79 @@ export async function handleAdminAnalytics(
         userCity[d.id] = state ? `${city}, ${state}` : city;
       }
 
-      // Pull every redemption — small enough to aggregate in JS.
+      // Redemptions are the count of record: one row per redemption that
+      // happened, including the 25 rebuilt on 2026-11-16.
       const { data: redemptions } = await supabase
         .from("redemptions")
-        .select(
-          "id, user_id, vendor_id, redeemed_at, total_bill, total_savings",
-        );
+        .select("id, user_id, vendor_id, redeemed_at");
+
+      // Dollars come from transactions, NOT from redemptions.total_savings.
+      //
+      // The redeem call happens before the donor ever sees the savings form:
+      // app/(tabs)/(main)/discounts/[id].js calls redeemDiscount(id) with no
+      // body, so the redemption row is written with no money in it. The amount
+      // arrives afterwards as POST /transactions with type 'redemption', and
+      // nothing writes it back. This handler used to aggregate
+      // redemptions.total_savings, so every savings figure on the dashboard
+      // read close to $0 for the life of the feature.
+      //
+      // Reading both tables and adding them would double count. The only
+      // non-null total_savings values in redemptions are the ones the
+      // 2026-11-16 backfill copied out of these same transaction rows.
+      const { data: savingsTxns } = await supabase
+        .from("transactions")
+        .select("id, user_id, vendor_id, discount_id, savings, created_at")
+        .eq("type", "redemption");
+
+      // vendor_id is null on some older transaction rows, so fall back to the
+      // discount's vendor and the money still reaches the right one.
+      const { data: discountVendors } = await supabase
+        .from("discounts")
+        .select("id, vendor_id");
+      const vendorByDiscount: Record<number, number> = {};
+      for (const d of discountVendors || []) {
+        if (d.vendor_id != null) vendorByDiscount[d.id] = d.vendor_id;
+      }
+
+      // A savings figure of 0 means "the donor skipped the form", not "they
+      // saved nothing": a $0 row is auto-created when they leave without
+      // filling it in. Counting those as reported zeroes would drag every
+      // average down with numbers nobody gave us.
+      const reportedSaving = (raw: unknown): number | null => {
+        const n = parseFloat((raw ?? 0).toString());
+        return Number.isNaN(n) || n <= 0 ? null : n;
+      };
 
       // Current month boundary (last 30 days, rolling).
       const ms = (days: number) => days * 24 * 60 * 60 * 1000;
       const thirtyDaysAgo = new Date(now.getTime() - ms(30)).toISOString();
 
       // --- Monthly + Total savings ---
+      // Counts from redemptions, dollars from transactions. A redemption with
+      // no reported amount still counts as a redemption, it just adds $0.
       let monthlyCount = 0;
-      let monthlyTotal = 0;
-      let monthlyDonors = new Set<number>();
+      const monthlyDonors = new Set<number>();
       let allCount = 0;
-      let allTotal = 0;
       for (const r of redemptions || []) {
         allCount += 1;
-        const saved = parseFloat((r.total_savings ?? 0).toString());
-        if (!Number.isNaN(saved)) allTotal += saved;
         if (r.redeemed_at && r.redeemed_at >= thirtyDaysAgo) {
           monthlyCount += 1;
-          if (!Number.isNaN(saved)) monthlyTotal += saved;
           if (r.user_id != null) monthlyDonors.add(r.user_id);
+        }
+      }
+
+      let monthlyTotal = 0;
+      let monthlyReported = 0;
+      let allTotal = 0;
+      let allReported = 0;
+      for (const t of savingsTxns || []) {
+        const saved = reportedSaving(t.savings);
+        if (saved === null) continue;
+        allTotal += saved;
+        allReported += 1;
+        if (t.created_at && t.created_at >= thirtyDaysAgo) {
+          monthlyTotal += saved;
+          monthlyReported += 1;
         }
       }
       const monthlyAvgPerDonor =
@@ -1236,12 +1284,16 @@ export async function handleAdminAnalytics(
       const countByMonth = new Array(12).fill(0);
       for (const r of redemptions || []) {
         if (!r.redeemed_at) continue;
-        const ym = r.redeemed_at.slice(0, 7);
-        const idx = monthIdx[ym];
+        const idx = monthIdx[r.redeemed_at.slice(0, 7)];
         if (idx === undefined) continue;
-        const saved = parseFloat((r.total_savings ?? 0).toString());
-        if (!Number.isNaN(saved)) savingsByMonth[idx] += saved;
         countByMonth[idx] += 1;
+      }
+      for (const t of savingsTxns || []) {
+        if (!t.created_at) continue;
+        const idx = monthIdx[t.created_at.slice(0, 7)];
+        if (idx === undefined) continue;
+        const saved = reportedSaving(t.savings);
+        if (saved !== null) savingsByMonth[idx] += saved;
       }
       const savingsTrends = months.map((m, i) => ({
         month: m,
@@ -1249,22 +1301,31 @@ export async function handleAdminAnalytics(
         count: countByMonth[i],
       }));
 
-      // --- Top vendors by $ saved ---
+      // --- Top vendors by $ saved, and by redemption count ---
+      // Counts are per redemption, dollars are per reported transaction, so a
+      // vendor can appear in one list and not the other. That is the honest
+      // picture: a vendor with ten redemptions and nobody filling in the form
+      // has ten redemptions and no recorded savings.
       const dollarsByVendor: Record<number, number> = {};
       const countsByVendor: Record<number, number> = {};
       const cityTotals: Record<string, number> = {};
+
       for (const r of redemptions || []) {
-        const saved = parseFloat((r.total_savings ?? 0).toString());
         if (r.vendor_id != null) {
-          if (!Number.isNaN(saved)) {
-            dollarsByVendor[r.vendor_id] =
-              (dollarsByVendor[r.vendor_id] || 0) + saved;
-          }
-          countsByVendor[r.vendor_id] =
-            (countsByVendor[r.vendor_id] || 0) + 1;
+          countsByVendor[r.vendor_id] = (countsByVendor[r.vendor_id] || 0) + 1;
         }
-        const cityLabel = r.user_id != null ? userCity[r.user_id] : undefined;
-        if (cityLabel && !Number.isNaN(saved)) {
+      }
+
+      for (const t of savingsTxns || []) {
+        const saved = reportedSaving(t.savings);
+        if (saved === null) continue;
+        const vendorId = t.vendor_id ??
+          (t.discount_id != null ? vendorByDiscount[t.discount_id] : undefined);
+        if (vendorId != null) {
+          dollarsByVendor[vendorId] = (dollarsByVendor[vendorId] || 0) + saved;
+        }
+        const cityLabel = t.user_id != null ? userCity[t.user_id] : undefined;
+        if (cityLabel) {
           cityTotals[cityLabel] = (cityTotals[cityLabel] || 0) + saved;
         }
       }
@@ -1304,10 +1365,15 @@ export async function handleAdminAnalytics(
               total: Math.round(monthlyTotal * 100) / 100,
               avgPerDonor: Math.round(monthlyAvgPerDonor * 100) / 100,
               uniqueDonors: monthlyDonors.size,
+              // How many of those redemptions came with an amount. Without it
+              // a small total reads as "nobody saved much" when it means
+              // "almost nobody told us".
+              reported: monthlyReported,
             },
             totalSavings: {
               count: allCount,
               total: Math.round(allTotal * 100) / 100,
+              reported: allReported,
             },
             savingsTrends,
             topVendorsByDollars,
