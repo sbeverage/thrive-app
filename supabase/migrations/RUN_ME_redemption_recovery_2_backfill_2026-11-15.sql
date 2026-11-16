@@ -1,3 +1,22 @@
+-- RUN 2026-11-16. Results, for the record:
+--   recovered_rows 25, with_savings 1, amount_not_told 24
+--   earliest 2026-07-15, latest 2026-10-06
+--   still_unmatched 0
+--   redemptions_total 34 (was 9), savings_recorded 25.00,
+--   distinct_donors 6, distinct_vendors 8
+-- One transaction was dropped as a double-tap, 211, as intended. Five
+-- transactions remain unrecoverable: no discount_id, April to June, from an
+-- older app build.
+--
+-- NOTE FOR WHOEVER READS THIS NEXT: savings_recorded across all 34 rows is
+-- $25. redemptions.total_savings is nearly always NULL because the redeem
+-- call happens before the donor sees the savings form, and the amount arrives
+-- later in a separate POST /transactions that never writes back. Meanwhile
+-- GET /admin/analytics/savings-overview aggregates redemptions.total_savings,
+-- so the savings dashboard has been reading close to zero since launch. The
+-- real figures are in transactions.savings. Statement 2 above now links the
+-- two via transactions.redemption_id, which makes that fixable.
+--
 -- WRITES. Run file 1 first and read its query 2, which lists exactly the rows
 -- this creates. Nothing here deletes or changes an existing redemption.
 --
