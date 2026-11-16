@@ -28,6 +28,14 @@
 -- savings totals and admin averages. NULL reads as "Not told", which is what
 -- the panel already shows.
 --
+-- A donor who double-taps Redeem writes two transaction rows for one real
+-- visit. Transactions 210 and 211 are 1.56 seconds apart, same donor, same
+-- discount: without a guard the backfill would record two redemptions and
+-- overstate that vendor. The guard drops a transaction when an earlier one
+-- exists for the same donor and discount within two minutes, which keeps the
+-- first of a burst. Two minutes is short enough that genuine repeat visits
+-- survive: transactions 194 and 195 are three hours apart and both recover.
+--
 -- `source` stays NULL. It records which entry point a redemption came from,
 -- and these came from a recovery, which is not one. Inventing a value would
 -- corrupt the attribution the column exists to measure.
@@ -53,6 +61,15 @@ WHERE t.type = 'redemption'
       AND r.discount_id = t.discount_id
       AND r.redeemed_at BETWEEN t.created_at - INTERVAL '1 hour'
                             AND t.created_at + INTERVAL '1 hour'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM transactions t2
+    WHERE t2.type = 'redemption'
+      AND t2.user_id = t.user_id
+      AND t2.discount_id = t.discount_id
+      AND t2.id < t.id
+      AND t2.created_at > t.created_at - INTERVAL '2 minutes'
+      AND t2.created_at <= t.created_at
   );
 
 -- ---------------------------------------------------------------------------
@@ -91,6 +108,15 @@ WHERE t.type = 'redemption'
       AND r.discount_id = t.discount_id
       AND r.redeemed_at BETWEEN t.created_at - INTERVAL '1 hour'
                             AND t.created_at + INTERVAL '1 hour'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM transactions t2
+    WHERE t2.type = 'redemption'
+      AND t2.user_id = t.user_id
+      AND t2.discount_id = t.discount_id
+      AND t2.id < t.id
+      AND t2.created_at > t.created_at - INTERVAL '2 minutes'
+      AND t2.created_at <= t.created_at
   );
 
 -- ---------------------------------------------------------------------------
