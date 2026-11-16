@@ -91,53 +91,45 @@ export async function handleAdminRoute(
   } = deps;
   // ---------------------------------------------------------------- auth
   //
-  // Two accepted credentials, on purpose and only for now:
+  // One accepted credential: an admin token from
+  // POST /admin/settings/team/login. Per-person, it expires in eight hours,
+  // and it never exists anywhere but that person's tab.
   //
-  //   1. An admin token from POST /admin/settings/team/login. This is the one
-  //      that should be used. It is per-person, expires in eight hours, and
-  //      never exists anywhere but that person's tab.
-  //   2. X-Admin-Secret matching ADMIN_SECRET_KEY. Legacy, and the reason this
-  //      work exists: the panel bundled it into public JavaScript, so the key
-  //      was readable by anyone who opened the site. It stays accepted so the
-  //      function and the panel do not have to deploy in lockstep.
+  // There used to be a second, X-Admin-Secret matching ADMIN_SECRET_KEY, and
+  // it is the reason this work exists. The panel is a Create React App build,
+  // so REACT_APP_ADMIN_SECRET was inlined into the public JavaScript and the
+  // working key was readable by anyone who opened the site. It stayed
+  // accepted as a bridge so the function and the panel did not have to deploy
+  // in lockstep. Removed 2026-11-16, once the panel shipped without it and
+  // ADMIN_SECRET_KEY had been rotated.
   //
-  // Removing (2) is the last step, after the panel ships without the secret
-  // and ADMIN_SECRET_KEY is rotated. Until then the exposure is unchanged, so
-  // this is a bridge, not the fix.
+  // Do not add it back. A static shared secret carries no identity, so it
+  // leaves no audit trail and cannot be revoked for one person without
+  // locking out everyone.
   //
-  // The login route is deliberately outside both checks. It did its own bcrypt
+  // The login route is deliberately outside the check. It did its own bcrypt
   // check all along, but it sat behind the secret, which meant you needed the
   // secret in order to log in — which is precisely why the secret had to be
   // shipped to the browser in the first place.
   const isAdminLoginRoute =
     method === "POST" && route === "/admin/settings/team/login";
 
-  if (!isAdminLoginRoute) {
-    const adminSecret = req.headers.get("x-admin-secret");
-    const expectedSecret = Deno.env.get("ADMIN_SECRET_KEY");
-    const hasLegacySecret = Boolean(
-      adminSecret && expectedSecret && adminSecret === expectedSecret,
-    );
-
-    const adminToken = hasLegacySecret ? null : await verifyAdminToken(req);
-
-    if (!hasLegacySecret && !adminToken) {
-      return new Response(
-        JSON.stringify({
-          error: "Unauthorized admin access",
-          // Distinguishable from a wrong password so the panel can send the
-          // person back to the login screen rather than showing a dead page.
-          code: "admin_auth_required",
-        }),
-        {
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-          status: 401,
+  if (!isAdminLoginRoute && !(await verifyAdminToken(req))) {
+    return new Response(
+      JSON.stringify({
+        error: "Unauthorized admin access",
+        // Distinguishable from a wrong password so the panel can send the
+        // person back to the login screen rather than showing a dead page.
+        code: "admin_auth_required",
+      }),
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
         },
-      );
-    }
+        status: 401,
+      },
+    );
   }
 
   // Admin homepage cards. This branch did not exist, so every

@@ -2402,7 +2402,7 @@ export async function handleAuthRoute(
       // secured in production."
       //
       // Two callers, both already sending credentials, so both keep working:
-      //   • admin panel  → an admin token, or the legacy X-Admin-Secret
+      //   • admin panel  → an admin token from the admin login
       //   • donor app    → user JWT (axios interceptor), deleting themselves
       // A JWT only authorises deleting your OWN account; anything else needs
       // admin credentials. isAdminRequest() accepts either, which is the whole
