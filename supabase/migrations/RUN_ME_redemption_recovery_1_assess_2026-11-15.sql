@@ -78,15 +78,28 @@ ORDER BY t.created_at;
 
 -- 3. Which discounts lost the most. Under the unique-code theory each discount
 --    should have exactly one recorded redemption and the rest in this column.
-SELECT d.id, d.title,
-       COUNT(r.id)                                    AS recorded_now,
-       COUNT(*) FILTER (WHERE t.id IS NOT NULL)       AS redemption_transactions
+--
+--    Counted with scalar subqueries, not two LEFT JOINs. Joining redemptions
+--    and transactions to discounts in one query fans out: a discount with 2
+--    redemptions and 5 transactions yields 10 rows, so both counts come back
+--    as 10 and the comparison this query exists to make is destroyed.
+SELECT d.id,
+       d.title,
+       (SELECT COUNT(*) FROM redemptions r
+         WHERE r.discount_id = d.id)                  AS recorded_now,
+       (SELECT COUNT(*) FROM transactions t
+         WHERE t.discount_id = d.id
+           AND t.type = 'redemption')                 AS redemption_transactions,
+       (SELECT COUNT(*) FROM transactions t
+         WHERE t.discount_id = d.id
+           AND t.type = 'redemption')
+         - (SELECT COUNT(*) FROM redemptions r
+             WHERE r.discount_id = d.id)              AS apparent_shortfall
 FROM discounts d
-LEFT JOIN redemptions  r ON r.discount_id = d.id
-LEFT JOIN transactions t ON t.discount_id = d.id AND t.type = 'redemption'
-GROUP BY d.id, d.title
-HAVING COUNT(r.id) > 0 OR COUNT(*) FILTER (WHERE t.id IS NOT NULL) > 0
-ORDER BY redemption_transactions DESC, d.id;
+WHERE EXISTS (SELECT 1 FROM redemptions r WHERE r.discount_id = d.id)
+   OR EXISTS (SELECT 1 FROM transactions t
+               WHERE t.discount_id = d.id AND t.type = 'redemption')
+ORDER BY apparent_shortfall DESC, d.id;
 
 -- 4. THE GAP THIS CANNOT CLOSE.
 --    Once the route began failing loudly, the donor saw an error and never
